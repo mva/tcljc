@@ -1,0 +1,348 @@
+(ns tcljc.compiler.resolve
+  (:require
+   [tcljc.classfile :as cf]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.expr :as x])
+  (:import
+   (tcljc.expr Expr InvokeXref)
+   (clojure.lang IPersistentVector)
+   (java.lang.constant MethodTypeDesc)
+   (java.lang.reflect Executable Field Method Constructor Modifier)
+   (java.util Arrays)))
+
+(letfn [(numeric-order ^int [^Class tp] ;note: `char` is not numeric in Clojure
+          ;; double=6 > float > long > int > short > byte=0
+          (condp identical? tp
+            Integer/TYPE 3
+            Long/TYPE 4
+            Float/TYPE 5
+            Double/TYPE 6
+            Byte/TYPE 0 
+            Short/TYPE 2))]
+  (defn numeric-assignable-to? ^boolean [^Class from-tp ^Class to-tp]
+    (and (jb/numeric? to-tp) (jb/numeric? from-tp)
+         (>= (numeric-order to-tp) (numeric-order from-tp)))))
+
+(defn- assignable-to? ^boolean [^Class from-tp ^Class to-tp]
+  (cond
+    (identical? to-tp from-tp)
+    true
+
+    (or (jb/primitive? to-tp) (jb/primitive? from-tp))
+    (numeric-assignable-to? from-tp to-tp)
+
+    (and (jb/reference? to-tp) (jb/object? from-tp) )
+    true
+    
+    :else (.isAssignableFrom to-tp from-tp)))
+
+
+(defn fields-with [^boolean static? ^Class owner ^String nm]
+  (try
+    (let [f (.getField owner nm)]
+      (when (= (Modifier/isStatic (.getModifiers f)) static?)
+        [f]))
+    (catch NoSuchFieldException _
+      nil)))
+
+(letfn [(parameter-count-match? ^boolean [^int parameter-count ^Executable e]
+          (let [n (.getParameterCount e)]
+            (or (= n parameter-count)
+                (and (.isVarArgs e) (>= n (dec parameter-count))))))]
+
+  (defn methods-exact [^boolean static? ^Class owner ^String nm
+                       ^"[Ljava.lang.Class;" atypes]
+    ;; returns nil if there is no exact match
+    (letfn [(match-static [^Method m]
+              (when (= (Modifier/isStatic (.getModifiers m)) static?)
+                (list m)))]
+      (try
+        (match-static (.getMethod owner nm atypes))
+        (catch NoSuchMethodException _
+          (when (jb/interface? owner)
+            (try ;if owner is an interface, then try again with Object
+              (match-static (.getMethod Object nm atypes))
+              (catch NoSuchMethodException _
+                nil)))))))
+  
+  (defn methods-with [^boolean static? ^Class owner ^String nm
+                      ^int parameter-count]
+    (filter (fn ^boolean [^Method m]
+              (and (= nm (.getName m))
+                   (= (Modifier/isStatic (.getModifiers m)) static?)
+                   (parameter-count-match? parameter-count m)
+                   (not (.isBridge m))))
+            (.getMethods owner)))
+
+  (defn constructors-exact [^Class owner ^"[Ljava.lang.Class;" atypes]
+    ;; returns nil if there is no exact match
+    (try
+      (list (.getConstructor owner atypes))
+      (catch NoSuchMethodException _
+        nil)))
+  
+  (defn constructors-with [^Class owner ^int parameter-count]
+    (filter (fn ^boolean [^Constructor c]
+              (parameter-count-match? parameter-count c))
+            (.getConstructors owner))))
+
+
+(letfn [(settable? ^boolean [^Field f]  ;pre: `f` is public
+          (not (Modifier/isFinal (.getModifiers f))))]
+
+  (defn load-static ^Expr [^Class owner ^Field f ^IPersistentVector argv]
+    (x/invoke-xref (.getType f) argv nil rt/mhk-static-getter
+                   (rt/describe-class owner) (.getName f)
+                   (.descriptorString (.getType f))
+                   (.isInterface owner) (settable? f)))
+  (defn static-fields [^Class owner ^String nm ^"[Ljava.lang.Class;" atypes]
+    (when (zero? (alength atypes))
+      (fields-with true owner nm)))
+
+  (defn load-virtual ^Expr [^Class owner ^Field f ^IPersistentVector argv]
+    (x/invoke-xref (.getType f) argv nil rt/mhk-getter
+                   (rt/describe-class owner) (.getName f)
+                   (.descriptorString (.getType f))
+                   (.isInterface owner) (settable? f)))
+  (defn virtual-fields [^Class owner ^String nm ^"[Ljava.lang.Class;" atypes]
+    (when (zero? (alength atypes))
+      (fields-with false owner nm))))
+
+(letfn [(compatible-prefix? ^boolean [^"[Ljava.lang.Class;" atypes
+                                      ^"[Ljava.lang.Class;" ptypes
+                                      ^int pdelta-end]
+          (loop [i (+ (alength ptypes) pdelta-end)]
+            (cond
+              (neg? i) true
+              (assignable-to? (aget atypes i) (aget ptypes i)) (recur (dec i))
+              :else false)))
+        (compatible-suffix? ^boolean [^"[Ljava.lang.Class;" atypes
+                                      ^Class ptype ^int start]
+          (loop [i (dec (alength atypes))]
+            (cond
+              (< i start) true
+              (neg? i) true
+              (assignable-to? (aget atypes i) ptype) (recur (dec i))
+              :else false)))
+        
+        (compatible-fix-args? ^boolean [^"[Ljava.lang.Class;" atypes
+                                        ^"[Ljava.lang.Class;" ptypes]
+          (and (= (alength atypes) (alength ptypes))
+               (compatible-prefix? atypes ptypes -1)))
+        (compatible-var-args? ^boolean [^"[Ljava.lang.Class;" atypes
+                                        ^"[Ljava.lang.Class;" ptypes]
+          (and (>= (alength atypes) (dec (alength ptypes)))
+               (compatible-prefix? atypes ptypes -2)
+               (let [va-tp (aget ptypes (dec (alength ptypes)))]
+                 (compatible-suffix? atypes (.getComponentType va-tp)
+                                     (dec (alength atypes))))))
+        (compatible-var-array? ^boolean [^"[Ljava.lang.Class;" atypes
+                                         ^"[Ljava.lang.Class;" ptypes]
+          (and (= (alength atypes) (alength ptypes))
+               (identical? (aget atypes (dec (alength atypes)))
+                           (aget ptypes (dec (alength ptypes))))
+               (compatible-prefix? atypes ptypes -2)))
+
+        (signature-polymorphic* ^boolean [^Method m] ;pre: m.isVarArgs()
+          ;; problem: class MethodHandle.PolymorphicSignature is not public
+          (and (jb/object? (.getReturnType m)) ;valid assumption?
+               (= (.getParameterCount m) 1)    ;always just Object[]?
+               (let [as (.getAnnotations m)]
+                 (loop [i (dec (alength as))]
+                   (cond (neg? i) false
+                         (= "java.lang.invoke.MethodHandle$PolymorphicSignature"
+                            (-> (aget as i) (.annotationType) (.getName))) true
+                         :else (recur (dec i)))))))]
+  
+  (defn- signature-polymorphic? ^boolean [^Executable e]
+    (instance? Method e)
+    (signature-polymorphic* ^Method e))
+  
+  (defn- compatible-args? ^boolean [^"[Ljava.lang.Class;" atypes ^Executable e]
+    (let [ptypes (.getParameterTypes e)]
+      (if (.isVarArgs e)
+        (or (compatible-var-args? atypes ptypes)
+            (compatible-var-array? atypes ptypes)
+            (signature-polymorphic? ^Method e))
+        (compatible-fix-args? atypes ptypes))))
+  
+  (defn- filter-dominators [es]
+    (letfn [(dominates-all? ^boolean [^Executable e]
+              (every? #(compatible-args? (.getParameterTypes e) %) es))
+            (filter-dominators* [es]
+              (if (next es)
+                (filter dominates-all? es)
+                es))]
+      (or (seq (filter-dominators* es)) es))))
+
+(letfn [(method-descriptor ^String [^Method m]
+          (let [tp (.getReturnType m)
+                param-descs (rt/cd-array-of (.getParameterTypes m))
+                mtd (MethodTypeDesc/of (rt/describe-class tp) param-descs)]
+            (.descriptorString mtd)))
+
+        (invoke-via-method-handle? ^boolean [^Executable e
+                                             ^IPersistentVector argv]
+          (and (.isVarArgs e)
+               (or (not= (.getParameterCount e) (count argv))
+                   (let [ptypes (.getParameterTypes e)
+                         ptype (aget ptypes (dec (alength ptypes)))
+                         atype (x/type (peek argv))]
+                     (not (.isAssignableFrom ptype atype))))))]
+
+  (defn invoke-constr ^Expr [^Class owner ^Constructor c ^IPersistentVector argv]
+    (let [owner-cd (rt/describe-class owner)
+          param-descs (rt/cd-array-of (.getParameterTypes c))
+          desc (.descriptorString  (MethodTypeDesc/of rt/void param-descs))]
+      (if (invoke-via-method-handle? c argv)
+        (x/mh-invoke-xref owner argv nil rt/mhk-constructor
+                          owner-cd cf/object-initializer-name desc)
+        (x/invoke-xref owner argv nil rt/mhk-constructor
+                       owner-cd cf/object-initializer-name desc false false))))
+  (defn constructors [^Class owner ^"[Ljava.lang.Class;" atypes]
+    (or (constructors-exact owner atypes)
+        (->> (constructors-with owner (alength atypes))
+             (filter #(compatible-args? atypes %))
+             (filter-dominators))))
+
+  (defn invoke-static ^Expr [^Class owner ^Method m ^IPersistentVector argv]
+    (let [owner-cd (rt/describe-class owner)
+          k (if (.isInterface owner)
+              rt/mhk-interface-static
+              rt/mhk-static)]
+      (cond
+        (signature-polymorphic? m)
+        (x/invoke-poly jb/cl-polymorphic-type argv nil k owner-cd (.getName m))
+
+        (invoke-via-method-handle? m argv)
+        (x/mh-invoke-xref (.getReturnType m) argv nil k
+                          owner-cd (.getName m) (method-descriptor m))
+
+        :else (x/invoke-xref (.getReturnType m) argv nil k
+                             owner-cd (.getName m) (method-descriptor m)
+                             (.isInterface owner) false))))
+  (defn static-methods [^Class owner ^String nm ^"[Ljava.lang.Class;" atypes]
+    (or (methods-exact true owner nm atypes)
+        (->> (methods-with true owner nm (alength atypes))
+             (filter #(compatible-args? atypes %))
+             (filter-dominators))))
+
+  (defn invoke-virtual ^Expr [^Class owner ^Method m ^IPersistentVector argv]
+    (let [owner-cd (rt/describe-class owner)
+          k (if (.isInterface owner)
+              rt/mhk-interface-virtual
+              rt/mhk-virtual)]
+      (cond
+        (signature-polymorphic? m)
+        (x/invoke-poly jb/cl-polymorphic-type argv nil k owner-cd (.getName m))
+
+        (invoke-via-method-handle? m argv)
+        (x/mh-invoke-xref (.getReturnType m) argv nil k
+                          owner-cd (.getName m) (method-descriptor m))
+
+        :else (x/invoke-xref (.getReturnType m) argv nil k
+                             owner-cd (.getName m) (method-descriptor m)
+                             (.isInterface owner) false))))
+  (defn virtual-methods [^Class owner ^String nm ^"[Ljava.lang.Class;" atypes]
+    (or (methods-exact false owner nm atypes)
+        (->> (methods-with false owner nm (alength atypes))
+             (filter #(compatible-args? atypes %))
+             (filter-dominators)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn array-clone? ^boolean [^Class owner ^String nm
+                             ^"[Ljava.lang.Class;" atypes]
+  (and (.isArray owner) (= "clone" nm) (zero? (alength atypes))))
+
+(defn invoke-array-clone ^Expr [^Class owner ^Expr arg]
+  (x/invoke-xref jb/Object [arg] nil rt/mhk-virtual
+                 (rt/describe-class owner) "clone"
+                 "()Ljava/lang/Object;" (.isInterface owner) false))
+
+;;; ------------------------------------------------------------------------
+
+(letfn [(vp? ^boolean [^Method m]
+          (let [mods (.getModifiers m)]
+            (and (not (Modifier/isStatic mods))
+                 (Modifier/isProtected mods)
+                 (not (.isBridge m)))))
+        (protected-methods [^Class cl]
+          (when (some? cl)
+            (lazy-seq
+             (concat (filter vp? (.getDeclaredMethods cl))
+                     (protected-methods (.getSuperclass cl))))))
+        (vpp? ^boolean [^Method m]
+          (let [mods (.getModifiers m)]
+            (and (not (Modifier/isStatic mods))
+                 (or (Modifier/isPublic mods) (Modifier/isProtected mods))
+                 (not (.isBridge m)))))
+        (public-or-protected-methods [^Class cl]
+          (concat
+           (filter vpp? (.getMethods cl)) ;all public methods (incl. inherited)
+           (protected-methods cl))) ;protected methods from superclass chain
+
+        ;; Picks up any matching virtual method, public *or*
+        ;; protected.  Used to override protected method in reify*.
+        (methods-exact-pp [^Class owner ^String nm ^"[Ljava.lang.Class;" ptypes]
+          (->> (public-or-protected-methods owner)
+               (filter (fn ^boolean [^Method m]
+                         (and
+                          (= (.getName m) nm)
+                          (Arrays/equals (.getParameterTypes m) ptypes))))))
+
+        (drop-equal-parameters [ms]
+          ;; get rid of any matches with different owners by equal
+          ;; parameter types, like
+          ;; (.containsKey ^boolean [clojure.lang.Associative Object]
+          ;; (.containsKey ^boolean [java.util.Map Object]
+          (if (next ms)
+            (let [m ^Method (first ms)
+                  pred (fn ^boolean [^Method o]
+                         (and (= (.isVarArgs m) (.isVarArgs o))
+                              (Arrays/equals (.getParameterTypes m)
+                                             (.getParameterTypes o))))]
+              (cons m (lazy-seq (->> (remove pred (rest ms))
+                                     (drop-equal-parameters)))))
+            ms))]
+  
+  ;; Picks up public or protected virtual method.
+  (defn itf-methods-with-name [^Class owner ^String nm ^int arity]
+    (->> (public-or-protected-methods owner)
+         (filter (fn ^boolean [^Method m]
+                   (and (= nm (.getName m))
+                        (= arity (.getParameterCount m)))))
+         (filter-dominators)
+         (drop-equal-parameters)))
+
+  ;; If `return-type` is not cl-polymorphic-type, then it must match
+  ;; the the return type of the method.
+  (defn itf-method-exact ^Method [^Class owner ^String nm ^Class return-type
+                                  ^"[Ljava.lang.Class;" atypes]
+    (when-some [^Method m (->> (or (methods-exact false owner nm atypes)
+                                   (methods-exact-pp owner nm atypes))
+                               (first))]
+      (when (or (jb/polymorphic? return-type)
+                (jb/same-class? (.getReturnType m) return-type))
+        m))))
+
+(letfn [(functional-itf? ^boolean [^Class cl]
+          (some? (.getAnnotation cl java.lang.FunctionalInterface)))
+        (object-method? ^boolean [^Method m]
+          (try
+            (let [m* (.getMethod Object (.getName m) (.getParameterTypes m))]
+              (and (jb/same-class? (.getReturnType m) (.getReturnType m*))
+                   (= (.isVarArgs m) (.isVarArgs m*))))
+            (catch NoSuchMethodException _
+              false)))
+        (abstract-method? ^boolean [^Method m]
+          (Modifier/isAbstract (.getModifiers m)))]
+  (defn itf-methods [^Class itf]
+    (let [ms (.getDeclaredMethods itf)]
+      (if (functional-itf? itf)
+        (let [abs-ms (->> (filter abstract-method? ms)
+                          (remove object-method?))]
+          (assert (= (count abs-ms) 1))
+          abs-ms)
+        (filter abstract-method? ms)))))

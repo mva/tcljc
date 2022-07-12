@@ -1,0 +1,127 @@
+(ns tcljc.resolve-test
+  (:require [tcljc.javabase :as jb]
+            [tcljc.compiler.resolve :refer :all]
+            [tcljc.expr :as x]
+            [tinyclj.alpha.ptest :refer :all])
+  (:import (tcljc.expr Expr InvokeXref)))
+
+(letfn [(xref [^InvokeXref x]
+          (list 'INVOKE-XREF (-> x .kind (str) (symbol))
+                (.displayName (.owner x))
+                (.method-name x) (.lookup-descriptor x)
+                (if (.owner-interface? x) :owner-is-itf :owner-is-class)))
+        (inv1 [^Expr x]
+          (assert (some? x))
+          (cond
+            (instance? InvokeXref x) (xref ^InvokeXref x)
+            :else (throw (IllegalArgumentException. (str (class x))))))]
+  (defn inv [xs]
+    (mapv inv1 xs)))
+
+(defn acl [& ^"[Ljava.lang.Class;" atypes]
+  atypes)
+
+
+
+(deftest constructor-invoke-test
+  (letfn [(inv-constr [^Class owner & ^"[Ljava.lang.Class;" atypes]
+            (->> (constructors owner atypes)
+                 (map #(invoke-constr owner % []))
+                 (inv)))]
+    
+    (is (= '[(INVOKE-XREF CONSTRUCTOR "HashMap" "<init>"
+                          "()V"
+                          :owner-is-class)]
+           (inv-constr java.util.HashMap)))))
+
+
+(deftest static-field-test
+  (letfn [(ld-static [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
+            (->> (static-fields owner nm atypes)
+                 (map #(load-static owner % []))
+                 (inv)))]
+    (is (= '[(INVOKE-XREF STATIC_GETTER "Math" "PI" "D" :owner-is-class)]
+           (ld-static java.lang.Math "PI")))))
+
+(deftest static-invoke-test
+  (letfn [(inv-static [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
+            (->> (static-methods owner nm atypes)
+                 (map #(invoke-static owner % []))
+                 (inv)))]
+    (is (= '[(INVOKE-XREF STATIC "System" "getProperties"
+                          "()Ljava/util/Properties;"
+                          :owner-is-class)]
+           (inv-static java.lang.System "getProperties")))
+    (is (= '[(INVOKE-XREF STATIC "System" "getProperty"
+                          "(Ljava/lang/String;)Ljava/lang/String;"
+                          :owner-is-class)]
+           (inv-static java.lang.System "getProperty" String)))
+
+    (is (= '[(INVOKE-XREF STATIC "MethodHandles" "lookup"
+                          "()Ljava/lang/invoke/MethodHandles$Lookup;"
+                          :owner-is-class)]
+           (inv-static java.lang.invoke.MethodHandles "lookup")))
+    (is (= '[(INVOKE-XREF STATIC "RT" "setCoreLookup"
+                          "(Ljava/lang/invoke/MethodHandles$Lookup;)V"
+                          :owner-is-class)]
+           (inv-static tinyclj.lang.RT "setCoreLookup"
+                       java.lang.invoke.MethodHandles$Lookup)))
+
+    ;; Math/log takes a double and requires implicit conversion from int
+    (is (= '[(INVOKE-XREF STATIC "Math" "log" "(D)D" :owner-is-class)]
+           (inv-static java.lang.Math "log" jb/int)))
+    (is (= '[] (static-methods java.lang.Math "log" (acl jb/boolean))))
+    (is (= '[] (static-methods java.lang.Math "log" (acl jb/char))))
+    (is (= '[] (static-methods java.lang.Math "log" (acl jb/void))))
+
+    ;; Math/max has four paired overloads
+    (is (= '[(INVOKE-XREF STATIC "Math" "max" "(II)I" :owner-is-class)]
+           (inv-static java.lang.Math "max" jb/int jb/int)))
+    (is (= '[(INVOKE-XREF STATIC "Math" "max" "(JJ)J" :owner-is-class)]
+           (inv-static java.lang.Math "max" jb/long jb/long)))
+    (is (= '[(INVOKE-XREF STATIC "Math" "max" "(FF)F" :owner-is-class)]
+           (inv-static java.lang.Math "max" jb/float jb/float)))
+    (is (= '[(INVOKE-XREF STATIC "Math" "max" "(DD)D" :owner-is-class)]
+           (inv-static java.lang.Math "max" jb/double jb/double)))))
+
+
+(deftest virtual-field-test
+  (letfn [(ld-virtual [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
+            (->> (virtual-fields owner nm atypes)
+                 (map #(load-virtual owner % []))
+                 (inv)))]
+    (is (= '[(INVOKE-XREF GETTER "Point" "x" "I" :owner-is-class)]
+           (ld-virtual java.awt.Point "x")))))
+
+(deftest virtual-invoke-test
+  (letfn [(inv-virtual [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
+            (->> (virtual-methods owner nm atypes)
+                 (map #(invoke-virtual owner % []))
+                 (inv)))]
+    (is (= '[(INVOKE-XREF VIRTUAL "String" "toUpperCase"
+                          "()Ljava/lang/String;"
+                          :owner-is-class)]
+           (inv-virtual String "toUpperCase")))
+    (is (= '[(INVOKE-XREF VIRTUAL "Class" "getName"
+                          "()Ljava/lang/String;"
+                          :owner-is-class)]
+           (inv-virtual Class "getName")))
+
+    ;; Note: In general, the owner of an invoke instruction is the
+    ;; class from which the resolve process started, *not* the class
+    ;; that defines the invoked method.  The same is true for field
+    ;; instructions, when e.g. a static final field of a base class is
+    ;; resolved using one of its extending classes.
+    (is (= '[(INVOKE-XREF INTERFACE_VIRTUAL "CodeModel" "labelToBci"
+                        "(Ljdk/classfile/Label;)I"
+                        :owner-is-itf)]
+           (inv-virtual jdk.classfile.CodeModel "labelToBci"
+                        jdk.classfile.Label)))))
+
+
+(deftest invoke-array-clone-test
+  (is (array-clone? (.arrayType String) "clone" (acl)))
+  (is (= '[(INVOKE-XREF VIRTUAL "String[]" "clone"
+                        "()Ljava/lang/Object;"
+                        :owner-is-class)]
+         (inv [(invoke-array-clone (.arrayType String) x/expr-nil)]))))

@@ -1,0 +1,52 @@
+(ns tcljc.run-rtiow
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.classfile :as cf]
+   [tcljc.runtime :as rt]
+   [tcljc.expr :as x]
+   [tcljc.context :as ctx]
+   [tcljc.emitter :as em]
+   [tcljc.predefined :as predefined])
+  (:import
+   (tcljc.context FnRequireNamespace)))
+
+(def ^:private app-paths
+  [#_(cfg/path-of "../jvm-stuff/bootstrap-tclj/tinyclj.rt")
+   (cfg/path-of "test")])
+
+(defn- ^FnRequireNamespace noop-require-namespace [ns-str provided-ns]
+  nil)
+
+(defn- core-ns-globals [^java.lang.invoke.MethodHandles$Lookup l]
+  (let [tp (.findClass l "clojure.lang.Namespace")
+        bref (x/global-ref '*ns* "tinyclj.core" tp false true nil)
+        ld-st (cf/ld-st-static rt/ClojureRT "CURRENT_NS" rt/Var)]
+    (.deliver-load bref ld-st)
+    {"*ns*" bref}))
+
+(defn run []
+  (let [app-ld (cfg/app-class-loader :system app-paths)
+        rt-lookup (cfg/get-rt-lookup app-ld)
+        dyn-ld (cfg/dyn-class-loader app-ld [])
+        dest-dir (cfg/dest-dir "tcljc.rtiow")
+        env (em/mk-build-env app-ld dest-dir dyn-ld)]
+     (ctx/with-executor exc-nmsp
+       ;; manual unrolled reduce to reduce stack trace noise; during
+       ;; development, `emit-namespace` will die uncountable times
+       (let [ns-str "tcljc.rtiow-nocore-ref"
+             known-ns (assoc predefined/implicit-known-ns cfg/core-lib {})
+             
+             exc-method (when-not cfg/deterministic-namespace-compile?
+                          exc-nmsp)
+             globals (core-ns-globals rt-lookup)
+             tl-ctx (em/mk-nmsp-ctx env noop-require-namespace
+                                    known-ns globals ns-str
+                                    exc-method)]
+         (em/emit-thread env known-ns tl-ctx)
+         :success))))
+
+(defn -main [& args]
+  (try
+    (apply run args)
+    (finally
+      (shutdown-agents))))     ;can only shut down when owning the JVM

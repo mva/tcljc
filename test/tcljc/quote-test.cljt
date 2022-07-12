@@ -1,0 +1,133 @@
+(ns tcljc.quote-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr data-expr is-asm]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest symbol-test
+  (is-asm 'foo/bar [(LDC [:bsm-quote "symbol" "Lclojure/lang/Symbol;"
+                          ["foo" "bar"]])
+                    (ARETURN)])
+  (is-asm 'bar [(LDC [:bsm-quote "symbol" "Lclojure/lang/Symbol;"
+                      ["bar"]])
+                (ARETURN)]))
+
+(deftest symbol-value-test
+  (is (= 'foo/bar (data-expr 'foo/bar)))
+  (is (= 'bar (data-expr 'bar))))
+
+
+(deftest keyword-test
+  (is-asm :foo/bar [(LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;"
+                          ["foo" "bar"]])
+                    (ARETURN)])
+  (is-asm :bar [(LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;"
+                      ["bar"]])
+                (ARETURN)]))
+
+(deftest keyword-value-test
+  (is (= :foo/bar (data-expr :foo/bar)))
+  (is (= :bar (data-expr :bar))))
+
+
+(deftest map-test
+  (is-asm '{:a 1, :b 2}
+          [(LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
+                 [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["a"]]
+                  1
+                  [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["b"]]
+                  2]])
+           (ARETURN)]))
+
+(deftest map-value-test
+  (is (= '{:a 1, :b 2} (data-expr '{:a 1, :b 2}))))
+
+
+(deftest set-asm-test
+  (is-asm '#{1 2}
+          [(LDC [:bsm-quote "set" "Lclojure/lang/IPersistentSet;" [1 2]])
+           (ARETURN)]))
+
+(deftest set-value-test
+  (is (= '#{1 2} (data-expr '#{1 2}))))
+
+
+(deftest vector-test
+  (is-asm '[1 2]
+          [(LDC [:bsm-quote "vector" "Lclojure/lang/IPersistentVector;" [1 2]])
+           (ARETURN)]))
+
+(deftest vector-value-test
+  (is (= '[1 2] (data-expr '[1 2]))))
+
+
+(deftest list-test
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/ISeq;" [1 2]])
+           (ARETURN)]
+         (asm-expr '(1 2)))))
+
+(deftest list-value-test
+  (is (= '(1 2) (data-expr '(1 2)))))
+
+
+(defmacro is-data-first [exp form]
+  (with-meta
+    `(is (java.util.Objects/equals (object ~exp) (first (data-expr ~form))))
+    (meta &form)))
+
+(deftest literal-in-collection-test
+  (is-data-first 1 [1])
+  (is-data-first :a [:a])
+  (is-data-first nil [nil])
+  (is-data-first true [true])
+  (is-data-first () [()])
+  (is-data-first \a [\a]))
+
+(deftest literal-in-quoted-collection-test
+  (is-data-first 1 '[1])
+  (is-data-first :a '[:a])
+  (is-data-first nil '[nil])
+  (is-data-first true '[true])
+  (is-data-first () '[()])
+  (is-data-first \a '[\a])
+  (is-data-first 'foo '[foo]))
+
+
+(defmacro is-same-asm [form q-form]
+  (with-meta `(is (= (asm-expr ~form) (asm-expr ~q-form)))
+    (meta &form)))
+
+(deftest autoquote-test
+  ;; Not autoquoted are symbols (and anything written as symbols:
+  ;; class names, static field names, var names, and so on) and
+  ;; non-empty lists.  With constant propagation into collection
+  ;; literals, constant collections become autoquoted as well.
+  (is-same-asm 1 '1)
+  (is-same-asm 1.0 '1.0)
+  (is-same-asm "a" '"a")
+  (is-same-asm \a '\a)    
+
+  (is-same-asm nil 'nil)
+  (is-same-asm true 'true)
+  (is-same-asm false 'false)
+
+  (is-same-asm () '())
+  (is-same-asm :foo ':foo)
+  (is-same-asm #"foo" '#"foo")
+  
+  (is-same-asm {:a 1 :b 2} '{:a 1 :b 2})
+  (is-same-asm #{1 2 3} '#{1 2 3})
+  (is-same-asm [1 2 3] '[1 2 3])
+
+  (is-same-asm ^:foo [1 2 3] '^:foo [1 2 3])
+  (is-same-asm ^{:foo true} [1 2 3] '^{:foo true} [1 2 3]))
+
+(deftest quoted-suffix-text
+  (let [x '(quote 1l)]
+    (is (seq? x))
+    (is (= (count x) 2))
+    (is (= (first x) 'quote))
+    (is (.equals (second x) (Long/valueOf 1))))
+  (let [x '(quote 1.0f)]
+    (is (seq? x))
+    (is (= (count x) 2))
+    (is (= (first x) 'quote))
+    (is (.equals (second x) (Float/valueOf 1)))))

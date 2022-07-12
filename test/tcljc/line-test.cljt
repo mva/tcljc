@@ -1,0 +1,83 @@
+(ns tcljc.line-test
+  (:require [tcljc.bootstrap :refer [nmsp]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+;;; Not strictly a unit test: The javap output should show decent line
+;;; numbers for all the given code fragments, even though they have no
+;;; list forms.
+;;;
+;;; NOTE: Right now the line numbers from the quoted expression are
+;;; discarded by the compiler, so this test CANNOT work.
+;;; 
+;;; make test TEST=tcljc.line-test/line-numbers-present
+;;;
+;;; javap -l -c /tmp/$USER/tinyclj/tcljc.test/tcljc.line-test/line-numbers-present/pkg/ns0/__ns100.class
+
+(deftest line-numbers-present
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            
+            [(METHOD [PUBLIC STATIC FINAL] "const-body"
+                     "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "const-body~0" "()I"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "const-body~0" "()I")
+             (BIPUSH 123)
+             (IRETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "const-body-m"
+                     "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "const-body-m~0" "()I"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "const-body-m~0" "()I")
+             (BIPUSH 123)
+             (IRETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "const-try"
+                     "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "const-try~0" "()I"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "const-try~0" "()I")
+             [L:0]
+             (BIPUSH 123)
+             (IRETURN)
+             (EXCEPTION_CATCH L:0 L:1 L:1 Exception)
+             [L:1]
+             (ASTORE_0)
+             ["LOCAL 0: Exception e"]
+             (SIPUSH 234)
+             (IRETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 
+                 (def const-body
+                   ^{:line 1} (fn* const-body ^int [] ;<--- line of bci 0
+                                   123))
+
+                 (def const-body-m
+                   (fn* const-body-m
+                        ^{:line 2} (^int [] ;<--- line of bci 0
+                                    123)))
+                 
+                 (def const-try
+                   (fn* const-try ^int []
+                        ^{:line 3} (try ;<--- line of bci 0
+                                     123
+                                     ^{:line 4} (catch Exception e ;<--- line of handler
+                                                  234)
+                                     ^{:line 5} (finally ;<--- line of ireturn
+                                                  345))))]))))
+

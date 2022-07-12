@@ -1,0 +1,484 @@
+(ns tcljc.emitter.emitfn
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.classfile :as cf]
+   [tcljc.util :as util]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.expr :as x]
+   [tcljc.emitter.bytecode :as bytecode]
+   [tcljc.emitter.classes :as classes])
+  (:import
+   (tcljc.classfile ILdStInstr LdStMember)
+   (tcljc.expr FnForm Arity FnCode ArityCode BindingRef IEmitPlan)
+   (tcljc.emitter.bytecode EmitState)
+   (clojure.lang IPersistentVector ISeq)
+   (jdk.classfile Classfile ClassBuilder CodeBuilder TypeKind)
+   (java.lang.constant ClassDesc MethodTypeDesc MethodHandleDesc
+                       ConstantDesc DynamicConstantDesc
+                       DirectMethodHandleDesc)
+   (java.lang.invoke TypeDescriptor$OfField)))
+
+;; `origin-bref` is the binding from which the closed over value
+;; originates.  It may be from a level lower than the parent arity of
+;; this function.  `root-bref` is the non-alias binding from which
+;; `origin-bref` takes its value.  It is currently possible for
+;; distinct `origin-bref` instances to have the same `root-bref`, in
+;; which case their EnvEntry would produce an identical value.
+(deftype EnvEntry [^BindingRef origin-bref
+                   ^BindingRef root-bref
+                   ^FnCode root-fnc
+                   ^ILdStInstr ld-st-instr
+                   ^boolean forward-ref?])
+
+(defn with-ld-st ^EnvEntry [^EnvEntry ee ^ILdStInstr ld-st-instr
+                            ^boolean forward-ref?]
+  (EnvEntry. (.origin-bref ee) (.root-bref ee) (.root-fnc ee) ld-st-instr
+             forward-ref?))
+
+(defn ee-exact-type ^TypeDescriptor$OfField [^EnvEntry ee]
+  (if-some [fnc (.root-fnc ee)]
+    (.ld-clx fnc)
+    (x/type (.origin-bref ee))))
+
+(defn ee-ld-st-instr? ^boolean [^EnvEntry ee]
+  (some? (.ld-st-instr ee)))
+
+(defn ee-materialized? ^boolean [^EnvEntry ee]
+  (cond
+    (ee-ld-st-instr? ee) true
+    (= x/lvl-global (x/b-level (.root-bref ee))) false
+    (some? (-> ee .root-bref .const-value)) false
+    (some? (.root-fnc ee)) (and (.used-as-value? (.root-fnc ee))
+                                (.variable-environment? (.root-fnc ee)))
+    :else true))
+
+
+(deftype FnSpec [^FnForm fn-form
+                 ^"[Ltcljc.emitter.emitfn.EnvEntry;" fn-env])
+
+(defn fn-spec ^FnSpec [^FnForm fn-form]
+  (FnSpec. fn-form nil))
+
+(defn- arity-code-array ^"[Ltcljc.expr.ArityCode;" [^FnSpec fspec]
+  (-> fspec .fn-form .!fnc (.arity-code-array)))
+
+(defn materialized-env? ^boolean [^FnSpec fspec]
+  (boolean (some ee-materialized? (.fn-env fspec))))
+
+(defn- final-entries ^ISeq [^FnSpec fspec] ;omits forward entries
+  (filter (fn ^boolean [^EnvEntry ee]
+            (and (ee-ld-st-instr? ee) (not (.forward-ref? ee))))
+          (.fn-env fspec)))
+
+(defn- patched-entries ^ISeq [^FnSpec fspec] ;returns only forward entries
+  (filter (fn ^boolean [^EnvEntry ee]
+            (and (ee-ld-st-instr? ee) (.forward-ref? ee)))
+          (.fn-env fspec)))
+
+(defn- ld-sts-for ^ISeq [^ISeq ees]
+  (map #(.ld-st-instr ^EnvEntry %) ees))
+
+(defn- ee-mtd ^MethodTypeDesc [^TypeDescriptor$OfField clx ^ISeq ees]
+  (->> (map ee-exact-type ees)
+       (rt/cd-array-of)
+       (MethodTypeDesc/of (rt/cd-of clx))))
+
+;;; ------------------------------------------------------------------------
+
+;; For every variable that this function closes over, set a "load from
+;; instance field".  Inlined environment values are loaded as
+;; constants.
+(defn- install-env! ^void [^FnSpec fspec ^ILdStInstr ld-this ^ArityCode ac]
+  (.deliver-load (.this-bref ac) ld-this)
+  (dotimes [i (alength (.fn-env fspec))]
+    (let [ee (aget (.fn-env fspec) i)
+          closes-over (-> ac .at .!closes-over)]
+      (when-some [display (util/sim-get closes-over (.origin-bref ee))]
+        (if-some [ld (.ld-st-instr ee)]
+          (.deliver-load ^BindingRef display ld)
+          ;; assume that this is an elided function value represented
+          ;; by a condy; FIXME... where does the constant value come
+          ;; from if this is not a function?
+          (when-some [root-fnc (.root-fnc ee)]
+            (.deliver-load ^BindingRef display
+                           (-> (.fn-value-const (.emit-plan root-fnc))
+                               (cf/ld-st-constant)))))))))
+
+(defn static-parameter-env [^FnSpec fspec ^Arity at] ;seq of EnvEntry
+  (filter (fn ^boolean [^EnvEntry ee]
+            (and (ee-ld-st-instr? ee)
+                 (some? (util/sim-get (.!closes-over at) (.origin-bref ee)))))
+          (.fn-env fspec)))
+
+(defn- static-mdef-impl ^void [^ClassBuilder cb ^FnSpec fspec
+                               ^ILdStInstr ld-this ^ArityCode ac]
+  (when (.body-node? ac)
+    (install-env! fspec ld-this ac)
+    (let [at (.at ac)
+          flags (cond-> bytecode/acc-static
+                  (.varargs? (.at ac)) (bit-or Classfile/ACC_VARARGS))
+          nm (-> ac .load-mh-impl .methodName)
+          mtd (-> ac .load-mh-impl .invocationType)
+          xbh (cf/with-xbh [xb]
+                (let [env-params (static-parameter-env fspec (.at ac))]
+                  (doseq [^EnvEntry ee env-params]
+                    (cf/st-insn xb (.ld-st-instr ee) true))
+                  (bytecode/emit-body xb ld-this at (count env-params)
+                                      (.body-expr ac))))]
+      (.withMethodBody cb nm mtd flags xbh))))
+
+(defn mk-emit-statics ^IEmitPlan [^FnSpec fspec]
+  (reify
+    IEmitPlan
+    (fn-value-const [_]
+      (let [mh-array (->> (x/aca-by-n (arity-code-array fspec))
+                          (map #(.load-mh-ext ^ArityCode %))
+                          (into-array ConstantDesc))]
+        (DynamicConstantDesc/ofNamed
+         rt/bsm-static-fn rt/dcd-default-name rt/StaticFnMh
+         ^"[Ljava.lang.constant.ConstantDesc;" mh-array)))
+    (fn-value-instr [this xb caller-closes-over]
+      (.constantInstruction xb (.fn-value-const this)))
+    (fn-patch-instr [_ xb bref-mapper bref]
+      xb)
+
+    (fn-class-hierarchy-info [_]
+      nil)
+    (fn-class [_ dyn-chr]
+      nil)
+    (fn-methods [this cb]
+      (let [aca (arity-code-array fspec)
+            ld-this (cf/ld-st-constant (.fn-value-const this))]
+        (dotimes [i (alength aca)]
+          (let [ac (aget aca i)]
+            (classes/bridge-method cb (.load-mh-ext ac) (.load-mh-impl ac))
+            (static-mdef-impl cb fspec ld-this ac)))))
+    
+    (invoke-arity-with-self? [_]
+      false)
+    (arity-env [_ xb bref-mapper at]
+      (reduce (fn [acc ^EnvEntry ee]
+                (if (some? (util/sim-get (.!closes-over at) (.origin-bref ee)))
+                  (do (cf/ld-insn xb (.apply bref-mapper (.origin-bref ee)))
+                      (conj acc (ee-exact-type ee)))
+                  acc))
+              [] (final-entries fspec)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- return-switch-fixargs ^void [^CodeBuilder xb
+                                    ^"[Ltcljc.expr.ArityCode;" aca]
+  (loop [acc {}, i 0]
+    (if (= i (alength aca))
+      (cf/const-switch-return xb jb/jvm-null acc)
+      (let [ac (aget aca i)
+            at (.at ac)]
+        (recur (assoc acc (object (x/at-n at)) (.load-mh-ext ac))
+               (inc i))))))
+
+(defn- return-switch-varargs ^void [^CodeBuilder xb
+                                    ^"[Ltcljc.expr.ArityCode;" aca]
+  (let [aca (x/aca-by-n aca)
+        vac (aget aca (dec (alength aca)))
+        vat (.at vac)]
+    (loop [acc {}
+           i 0                          ;index into aca
+           n 0]                         ;arity
+      (let [ac (aget aca i)
+            at (.at ac)]
+        (cond
+          (< n (x/at-n at))
+          (recur (if (= (inc n) (x/at-n vat))
+                   acc            ;variadic arity covers (n-1) as well
+                   (assoc acc (object n) jb/jvm-null))
+                 i (inc n))
+
+          (identical? at vat)
+          (cf/const-switch-return xb (.load-mh-ext vac) acc)
+          
+          :else
+          (recur (assoc acc (object n) (.load-mh-ext ac))
+                 (inc i) (inc n)))))))
+
+(defn- arity-or-null-method ^void [^ClassBuilder cb ^FnForm fn-form]
+  (let [aca (-> fn-form .!fnc .arity-code-array)
+        flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL)]
+    (.withMethodBody cb rt/name-arity-method rt/mtd-arity-method flags
+                     (cf/with-xbh [xb]
+                       (if (some? (x/fn-rest-param fn-form))
+                         (return-switch-varargs xb aca)
+                         (return-switch-fixargs xb aca))))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- dmh-method ^void [^ClassBuilder cb ^"[Ltcljc.expr.ArityCode;" aca]
+  (let [aca (x/aca-by-n aca)
+        xbh (cf/with-xbh [xb]
+              (if (= (alength aca) 1)
+                (-> (.constantInstruction xb (.load-mh-ext (aget aca 0)))
+                    (cf/invoke rt/mhd-methodHandleArray1)
+                    (.areturn))
+                (let [x (x/mh-invoke-inexact
+                         jb/MethodHandleArray
+                         (->> (map #(x/const jb/MethodHandle
+                                             (.load-mh-ext ^ArityCode %)) aca)
+                              (cons (x/const jb/MethodHandle
+                                             rt/mhd-methodHandleArray*)))
+                         nil)]
+                  (bytecode/emit-into xb x)
+                  (.areturn xb))))]
+    (.withMethodBody cb rt/name-dmh-method rt/mtd-dmh-method
+                     (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL) xbh)))
+
+;;; ------------------------------------------------------------------------
+
+(def ^:private super-param-ldv [(cf/ld-st-parameter rt/map "__meta" 0)])
+
+(defn- constructor-impl ^void [^ClassBuilder cb
+                               ^DirectMethodHandleDesc super-mhd
+                               ^IPersistentVector param-ldv ^ISeq ees]
+  (let [field-lds (ld-sts-for ees)]
+    (cf/constructor cb Classfile/ACC_PRIVATE super-mhd
+                    (cf/as-parameters param-ldv field-lds)
+                    field-lds)))
+
+(defn- create-fn-method ^void [^ClassBuilder cb ^ClassDesc this-class ^ISeq ees]
+  (let [flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
+                      Classfile/ACC_FINAL)
+        param-lds (cf/as-parameters [] (ld-sts-for ees))
+        factory-mtd (ee-mtd this-class ees)
+        constr-mtd (.insertParameterTypes (ee-mtd rt/void ees) 0 rt/map)
+        xbh (cf/with-xbh [xb]
+              (-> (.new_ xb this-class)
+                  (.dup)
+                  (.aconst_null))
+              (doseq [^tcljc.classfile.LdStParameter param-ld param-lds]
+                (cf/ld-insn xb param-ld))
+              (-> (.invokespecial xb this-class cf/object-initializer-name
+                                  constr-mtd)
+                  (.areturn)))]
+    (.withMethodBody cb rt/name-factory-method factory-mtd flags xbh)))
+
+(defn- patch-fn-method ^void [^ClassBuilder cb ^ISeq ees]
+  (let [flags Classfile/ACC_FINAL
+        param-lds (cf/as-parameters [] (ld-sts-for ees))
+        patch-mtd (ee-mtd rt/void ees)
+        xbh (cf/with-xbh [xb]
+              (->> (map-indexed
+                    (fn [^int i ^EnvEntry ee]
+                      (let [field-st ^LdStMember (.ld-st-instr ee)
+                            param-ld (cf/as-parameter field-st i)]
+                        (-> (.aload xb 0)
+                            (cf/ld-insn param-ld)
+                            (cf/st-insn field-st false))))
+                    ees)
+                   (doall))
+              (.return_ xb))]
+    (.withMethodBody cb rt/name-patch-method patch-mtd flags xbh)))
+
+(defn- with-meta-method ^void [^ClassBuilder cb ^ClassDesc this-class
+                               ^ISeq ees]
+  (let [flags (bit-or Classfile/ACC_PROTECTED Classfile/ACC_FINAL)
+        member-lds (ld-sts-for ees)
+        constr-mtd (.insertParameterTypes (ee-mtd rt/void ees) 0 rt/map)
+        xbh (cf/with-xbh [xb]
+              (-> (.new_ xb this-class)
+                  (.dup)
+                  (.aload 1))
+              (doseq [^LdStMember member-ld member-lds]
+                (cf/ld-insn xb member-ld))
+              (-> (.invokespecial xb this-class cf/object-initializer-name
+                                  constr-mtd)
+                  (.areturn)))]
+    (.withMethodBody cb rt/name-with-meta-impl 
+                     (MethodTypeDesc/of this-class rt/map) flags xbh)))
+
+;;; ------------------------------------------------------------------------
+
+(defn- virtual-mdef-impl ^void [^ClassBuilder cb ^FnSpec fspec
+                                ^ILdStInstr ld-this ^ArityCode ac]
+  (install-env! fspec ld-this ac)
+  (let [at (.at ac)
+        flags (cond-> bytecode/acc-virtual
+                (.varargs? (.at ac)) (bit-or Classfile/ACC_VARARGS))
+        nm (-> ac .load-mh-impl .methodName)
+        mtd (-> ac .load-mh-impl .invocationType (.dropParameterTypes 0 1))
+        xbh (cf/with-xbh [xb]
+              (cf/st-insn xb ld-this true) ;emit LocalVariable entry
+              (bytecode/emit-body xb ld-this at 0 (.body-expr ac)))]
+    (.withMethodBody cb nm mtd flags xbh)))
+
+(defn mk-emit-virtuals ^IEmitPlan [^ClassDesc this-class ^ClassDesc super-class
+                                   itfs ^String this-mnm
+                                   ^DirectMethodHandleDesc super-mhd
+                                   ^FnSpec fspec]
+  (reify
+    IEmitPlan
+    (fn-value-const [_]
+      (when-not (materialized-env? fspec)
+        (let [mtd (MethodTypeDesc/of this-class)
+              mhd (MethodHandleDesc/ofMethod rt/mhk-static this-class
+                                             rt/name-factory-method mtd)]
+          (DynamicConstantDesc/ofNamed rt/bsm-invoke rt/dcd-default-name
+                                       this-class mhd))))
+    (fn-value-instr [this xb bref-mapper]
+      (if (materialized-env? fspec)
+        (let [ees (final-entries fspec)]
+          (doseq [^EnvEntry ee ees]
+            (cf/ld-insn xb (.apply bref-mapper (.origin-bref ee))))
+          (.invokestatic xb this-class rt/name-factory-method
+                         (ee-mtd this-class ees)))
+        (.constantInstruction xb (.fn-value-const this))))
+    (fn-patch-instr [_ xb bref-mapper bref]
+      (when-some [patched-ees (seq (patched-entries fspec))]
+        (cf/ld-insn xb (x/deref-load bref))
+        (doseq [^EnvEntry ee patched-ees]
+          (cf/ld-insn xb (.apply bref-mapper (.origin-bref ee))))
+        (.invokevirtual xb this-class rt/name-patch-method
+                        (ee-mtd rt/void patched-ees)))
+      xb)
+
+    (fn-class-hierarchy-info [_]
+      (jdk.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
+       this-class false super-class))
+    (fn-class [_ dyn-chr]
+      (let [aca (arity-code-array fspec)
+            ld-this (cf/ld-st-receiver this-class this-mnm)
+            final-ees (final-entries fspec)
+            patched-ees (patched-entries fspec)
+            all-ees (concat final-ees patched-ees)
+
+            cbh (cf/with-cbh [cb]
+                  (-> cb
+                      (.withFlags (bit-or Classfile/ACC_PUBLIC
+                                          Classfile/ACC_FINAL
+                                          Classfile/ACC_SUPER))
+                      (.withSuperclass super-class)
+                      (.withInterfaceSymbols itfs))
+
+                  (doseq [^EnvEntry ee all-ees
+                          :let [ld ^LdStMember (.ld-st-instr ee)]]
+                    (.withField cb (cf/member-nm ld) (cf/member-tp ld)
+                                (cond-> Classfile/ACC_PRIVATE
+                                  (not (.forward-ref? ee))
+                                  (bit-or Classfile/ACC_FINAL))))
+                  
+                  (dotimes [i (alength aca)]
+                    (let [ac (aget aca i)]
+                      (classes/bridge-method cb (.load-mh-ext ac)
+                                             (.load-mh-impl ac))
+                      (virtual-mdef-impl cb fspec ld-this ac)))
+                  
+                  (arity-or-null-method cb (.fn-form fspec))
+                  (dmh-method cb aca)
+                  (when (seq patched-ees)
+                    (constructor-impl cb super-mhd super-param-ldv all-ees))
+                  (constructor-impl cb super-mhd super-param-ldv final-ees)
+                  (create-fn-method cb this-class final-ees)
+                  (when (seq patched-ees)
+                    (patch-fn-method cb patched-ees))
+                  (with-meta-method cb this-class all-ees))]
+        (cf/build this-class cbh dyn-chr)))
+    (fn-methods [_ cb]
+      cb)
+    
+    (invoke-arity-with-self? [_]
+      true)
+    (arity-env [_ xb bref-mapper at]
+      [])))
+
+;;; ------------------------------------------------------------------------
+
+(defn- create-reify-method ^void [^ClassBuilder cb ^ClassDesc this-class
+                                  ^ISeq ees]
+  (let [flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
+                      Classfile/ACC_FINAL)
+        param-lds (cf/as-parameters [] (ld-sts-for ees))
+        factory-mtd (ee-mtd this-class ees)
+        constr-mtd (ee-mtd rt/void ees)
+        xbh (cf/with-xbh [xb]
+              (-> (.new_ xb this-class)
+                  (.dup))
+              (doseq [^tcljc.classfile.LdStParameter param-ld param-lds]
+                (cf/ld-insn xb param-ld))
+              (-> (.invokespecial xb this-class cf/object-initializer-name
+                                  constr-mtd)
+                  (.areturn)))]
+    (.withMethodBody cb rt/name-factory-method factory-mtd flags xbh)))
+
+(defn- meta-method ^ClassBuilder [^ClassBuilder cb ^EnvEntry meta-ee]
+  (let [flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL)
+        mtd (MethodTypeDesc/of rt/map)
+        xbh (cf/with-xbh [xb]
+              (-> (cf/ld-insn xb (.ld-st-instr meta-ee))
+                  (.areturn)))]
+    (.withMethodBody cb rt/name-meta-method mtd flags xbh)))
+
+(defn mk-emit-reify ^IEmitPlan [^ClassDesc this-class ^ClassDesc super-class
+                                itfs ^String this-mnm
+                                ^DirectMethodHandleDesc super-mhd
+                                ^FnSpec fspec]
+  (reify
+    IEmitPlan
+    (fn-value-const [_]
+      nil)
+    (fn-value-instr [_ xb bref-mapper]
+      (let [ees (final-entries fspec)
+            factory-mtd (-> (ee-mtd this-class ees)
+                            (.insertParameterTypes 0 rt/map))]
+        (doseq [^EnvEntry ee ees]
+          (cf/ld-insn xb (.apply bref-mapper (.origin-bref ee))))
+        (.invokestatic xb this-class rt/name-factory-method factory-mtd)))
+    (fn-patch-instr [_ xb bref-mapper bref]
+      xb)
+
+    (fn-class-hierarchy-info [_]
+      (jdk.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
+       this-class false super-class))
+    (fn-class [_ dyn-chr]
+      (let [aca (arity-code-array fspec)
+            
+            all-ees (let [nm "__meta"
+                          tp clojure.lang.IPersistentMap ;only used as name
+                          bref (x/field-ref (symbol nm) tp false)
+                          field-ld (cf/ld-st-virtual this-class nm rt/map)]
+                      (cons (EnvEntry. bref bref nil field-ld false)
+                            (final-entries fspec)))
+            
+            cbh (cf/with-cbh [cb]
+                  (-> cb
+                      (.withFlags (bit-or Classfile/ACC_PUBLIC
+                                          Classfile/ACC_FINAL
+                                          Classfile/ACC_SUPER))
+                      (.withSuperclass super-class)
+                      (.withInterfaceSymbols itfs))
+
+                  (doseq [^EnvEntry ee all-ees
+                          :let [ld ^LdStMember (.ld-st-instr ee)]]
+                    (.withField cb (cf/member-nm ld) (cf/member-tp ld)
+                                (cond-> Classfile/ACC_PRIVATE
+                                  (not (.forward-ref? ee))
+                                  (bit-or Classfile/ACC_FINAL))))
+                  
+                  (dotimes [i (alength aca)]
+                    (let [ac (aget aca i)
+                          this-mnm (-> ac .at .this-name (cfg/munge-name))
+                          ld-this (cf/ld-st-receiver this-class this-mnm)]
+                      (classes/bridge-method cb (.load-mh-ext ac)
+                                             (.load-mh-impl ac))
+                      (virtual-mdef-impl cb fspec ld-this ac)))
+                  
+                  (constructor-impl cb super-mhd [] all-ees)
+                  (create-reify-method cb this-class all-ees)
+                  (with-meta-method cb this-class (rest all-ees))
+                  (meta-method cb (first all-ees)))]
+        (cf/build this-class cbh dyn-chr)))
+    (fn-methods [_ cb]
+      cb)
+    
+    (invoke-arity-with-self? [_]
+      true)
+    (arity-env [_ xb bref-mapper at]
+      [])))
+

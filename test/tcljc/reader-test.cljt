@@ -1,0 +1,670 @@
+(ns tcljc.reader-test
+  (:require [tcljc.synquote :as sq]
+            [tcljc.reader :as rd]
+            [tinyclj.string :as str]
+            [tinyclj.alpha.ptest :refer :all])
+  (:import (tcljc.reader Tokens)
+           (clojure.lang ExceptionInfo)
+           (java.util.regex Pattern)))
+
+;;; Part 1: Parser.
+
+(defn to-str ^String [^Tokens t]
+  (let [sb (StringBuilder.)
+        tokens (.tokens t)]
+    (loop [pos 0, i 0]
+      (if (< i (alength tokens))
+        (let [tk (rd/get-tk tokens i)
+              len (rd/tk-length tk)]
+          (.append sb (.substring (.cs t) pos (+ pos len)))
+          (recur (+ pos len) (inc i)))
+        (.toString sb)))))
+
+(defn tag-name [^int tk]
+  (nth [:unused-empty-0 :open-delim-1 :open-delim-2 :close-delim
+        :token :number :text :text-nl] tk))
+
+(defn token-seq [^Tokens t]
+  ((fn t* [^int i ^int pos]
+     (lazy-seq
+      (when (not= i (alength (.tokens t)))
+        (let [tk (rd/get-tk (.tokens t) i)
+              end (+ pos (rd/tk-length tk))]
+          (cons [(tag-name (rd/tk-tag tk)) (.substring (.cs t) pos end)]
+                (t* (inc i) end))))))
+   0 0))
+
+(defn tokens [^String s]
+  (let [t (rd/tokenize s)]
+    (is (= s (to-str t)))
+    (token-seq t)))
+
+;;; ------------------------------------------------------------------------
+
+(deftest whitespace-tokens
+  (is (= [] (tokens "")))
+  (is (= [[:text-nl " "]] (tokens " ")))
+  (is (= [[:text-nl ","]] (tokens ",")))
+  (is (= [[:text-nl "\n"]] (tokens "\n")))
+  (is (= [[:text-nl ";\n"]] (tokens ";\n")))
+  (is (= [[:text-nl ";"]] (tokens ";"))))
+
+(deftest number-tokens
+  (is (= [[:number "123"]] (tokens "123")))
+  (is (= [[:number "+123"]] (tokens "+123")))
+  (is (= [[:number "-123"]] (tokens "-123")))
+  (is (= [[:number "123.0"]] (tokens "123.0"))))
+
+(deftest token-tokens
+  (is (= [[:token "nil"]] (tokens "nil")))
+  (is (= [[:token "abc"]] (tokens "abc")))
+  (is (= [[:token "foo/bar"]] (tokens "foo/bar")))
+  (is (= [[:token ":abc"]] (tokens ":abc")))
+  (is (= [[:token ":foo/bar"]] (tokens ":foo/bar")))
+  (is (= [[:token "\\a"]] (tokens "\\a"))))
+
+(deftest string-tokens
+  (is (= [[:open-delim-1 "\""] [:text ""] [:close-delim "\""]]
+         (tokens "\"\"")))
+  (is (= [[:open-delim-1 "\""] [:text "foo"] [:close-delim "\""]]
+         (tokens "\"foo\"")))
+  (is (= [[:open-delim-1 "\""] [:text "a b"] [:close-delim "\""]]
+         (tokens "\"a b\"")))
+  
+  (is (= [[:open-delim-1 "\""] [:text-nl "a\n"] [:text "b"] [:close-delim "\""]]
+         (tokens "\"a\nb\"")))
+  (is (= [[:open-delim-1 "\""] [:text "a\\nb"] [:close-delim "\""]]
+         (tokens "\"a\\nb\"")))
+  
+  (is (= [[:open-delim-2 "#\""] [:text "[\\u0000-\\u001f]"] [:close-delim "\""]]
+         (tokens "#\"[\\u0000-\\u001f]\""))))
+
+(deftest collection-tokens
+  (is (= [[:open-delim-1 "("] [:close-delim ")"]]
+         (tokens "()")))
+  (is (= [[:open-delim-1 "("] [:token "nil"] [:close-delim ")"]]
+         (tokens "(nil)")))
+  (is (= [[:open-delim-1 "("]
+          [:token "nil"] [:text " "] [:token "nil"]
+          [:close-delim ")"]]
+         (tokens "(nil nil)"))))
+
+(deftest discard-tokens
+  (is (= [[:open-delim-2 "#_"] [:number "1"]]
+         (tokens "#_1")))
+  (is (= [[:open-delim-2 "#_"] [:number "1"]
+          [:open-delim-2 "#_"] [:number "2"]]
+         (tokens "#_1#_2")))
+  (is (= [[:open-delim-2 "#_"] [:open-delim-2 "#_"] [:number "1"]
+          [:text " "] [:number "2"]]
+         (tokens "#_#_1 2"))))
+
+(deftest meta-tokens
+  (is (= [[:open-delim-1 "^"] [:token ":foo"] [:text " "] [:token "sym"]]
+         (tokens "^:foo sym")))
+  (is (= [[:open-delim-1 "^"] [:token ":foo"] [:text " "]
+          [:open-delim-1 "^"] [:token ":bar"] [:text " "] [:token "sym"]]
+         (tokens "^:foo ^:bar sym"))))
+
+;;; ------------------------------------------------------------------------
+
+;;; Part 2: Reader.
+
+(defn read-all [^String s ^clojure.lang.IPersistentMap ns-alias]
+  (-> (rd/tokenize s)
+      (rd/mk-reader)
+      (rd/read-all ns-alias)))
+
+(defn read1 [^String s]         ;one form, no syntax-quote processing
+  (let [forms (seq (read-all s {}))]
+    (when (nil? forms)
+      (throw (IllegalArgumentException. "no data in input")))
+    (when (some? (next forms))
+      (throw (IllegalArgumentException. "unexpected data after form")))
+    (first forms)))
+
+
+(deftest unreadable-test
+  (is (thrown-with-msg? ExceptionInfo #"unreadable form"
+                        (read1 "#<"))))
+
+(deftest discard-test
+  (is (= () (read-all "#_a" {})))
+  
+  ;; discards stack
+  (is (= 'b (read1 "#_a b")))
+  (is (= 'c (read1 "#_a #_b c")))
+  (is (= 'c (read1 "#_#_a b c")))
+
+  ;; discard at end of collection is ok
+  (is (= '() (read1 "(#_{})")))
+  (is (= '() (read1 "(#_#_{}{})")))
+
+  ;; errors in discarded forms are ignored by the reader
+  (is (= 'b (read1 "#_#< b"))))
+
+(deftest empty-list-test
+  (is (identical? () (read1 "()")))
+  (is (identical? () (read1 "( )")))
+  (is (identical? () (read1 "(\n)"))))
+
+(deftest lazy-list-test
+  (letfn [(generate-list [^int n]
+            (let [sym-cnt (quot n 2)
+                  whitespace-cnt (dec sym-cnt)
+                  exp-tk-cnt (+ sym-cnt whitespace-cnt 2)
+                  exp (repeat sym-cnt 'a)
+                  input (str exp)
+                  t (rd/tokenize input)
+                  d0 (rd/tk-delta 0 (.tokens t) (.deltas t))]
+              (is (= exp-tk-cnt (.tokens d0)))
+              (is (= exp-tk-cnt (.chars d0))) ;all tokens have length 1
+              (is (= 0 (.newlines d0)))
+              (let [out (read1 (str exp))]
+                (is (= exp out))
+                out)))]
+    
+    (let [out (generate-list rd/eager-list-limit)] ;65 tokens
+      (is (identical? clojure.lang.LazySeq (class (rest out))))
+      ;; seq can be large but still effectively empty; note: str does
+      ;; not expand LazySeq automatically and uses object notation
+      ;; "c.l.LazySeq@..." instead
+      (is (identical? () (read1 (str "(#_" (seq out) ")")))))
+    
+    (let [out (generate-list (dec rd/eager-list-limit))] ;63 tokens
+      (is (identical? clojure.lang.PersistentList (class out))))))
+
+(deftest integer-value-test
+  ;; test for expected box type: match against Integer only
+  (is (.equals (Integer/valueOf 0) (read1 "0")))
+  (is (.equals (Integer/valueOf 2147483647) (read1 "2147483647")))
+  (is (.equals (Integer/valueOf -2147483648) (read1 "-2147483648")))
+  (is (.equals (Integer/valueOf 0) (read1 "10r0")))
+  (is (.equals (Integer/valueOf 2147483647) (read1 "10r2147483647")))
+  (is (.equals (Integer/valueOf -2147483648) (read1 "-10r2147483648")))
+
+  (is (= (object 2) (read1 "2r10")))
+  (is (= (object 8) (read1 "010")))
+  (is (= (object 8) (read1 "8r10")))
+  (is (= (object 16) (read1 "0x10")))
+  (is (= (object 16) (read1 "16r10")))
+
+  (is (= (object 2) (read1 "+2r10")))
+  (is (= (object 8) (read1 "+010")))
+  (is (= (object 8) (read1 "+8r10")))
+  (is (= (object 16) (read1 "+0x10")))
+  (is (= (object 16) (read1 "+16r10")))
+
+  (is (= (object -2) (read1 "-2r10")))
+  (is (= (object -8) (read1 "-010")))
+  (is (= (object -8) (read1 "-8r10")))
+  (is (= (object -16) (read1 "-0x10")))
+  (is (= (object -16) (read1 "-16r10"))))
+
+(deftest float-value-test
+  (is (.equals (Double/valueOf 0.123) (read1 "0.123")))
+  (is (.equals (Double/valueOf 0.123) (read1 "+0.123")))
+  (is (.equals (Double/valueOf -0.123) (read1 "-0.123")))
+  (is (.equals (Double/valueOf 1.23e4) (read1 "1.23e4")))
+  (is (.equals (Double/valueOf 1.23e4) (read1 "1.23E4")))
+  (is (.equals (Double/valueOf 1.23e4) (read1 "+1.23e4")))
+  (is (.equals (Double/valueOf -1.23e4) (read1 "-1.23e4"))))
+
+(deftest suffixed-value-test
+  ;; suffix [lL] produces instance of Long (invalid in Clojure)
+  (is (.equals (Long/valueOf 0) (read1 "0l")))
+  (is (.equals (Long/valueOf 0) (read1 "0L")))
+  (is (.equals (Long/valueOf 0) (read1 "+0l")))
+  (is (.equals (Long/valueOf 0) (read1 "-0l")))
+  (is (.equals (Long/valueOf 123) (read1 "123l")))
+  ;; [fF] produces instance of Float (invalid in Clojure)
+  (is (.equals (Float/valueOf "0.0") (read1 "0.0f")))
+  (is (.equals (Float/valueOf "0.0") (read1 "0.0F")))
+  (is (.equals (Float/valueOf "0.0") (read1 "+0.0f")))
+  (is (.equals (Float/valueOf "-0.0") (read1 "-0.0f")))
+  (is (.equals (Float/valueOf "1.23") (read1 "1.23f")))
+  ;; these are parsed as floats, *not* as integers:
+  (is (.equals (Float/valueOf "0.0") (read1 "0f")))
+  (is (.equals (Float/valueOf "0.0") (read1 "0F")))
+  (is (.equals (Float/valueOf "123.0") (read1 "123f"))))
+
+(deftest number-error-test
+  (is (thrown-with-msg? ExceptionInfo #"invalid integer number: 0128"
+                        (read1 "0128")))
+  (is (thrown-with-msg? ExceptionInfo #"invalid number: 1e"
+                        (read1 "1e")))
+  (is (thrown-with-msg? ExceptionInfo #"number format error: Radix out of range"
+                        (read1 "1r0")))
+  (is (thrown-with-msg? ExceptionInfo #"number format error: Radix out of range"
+                        (read1 "37r0"))))
+
+(deftest symbol-value-test
+  (is (= 'abc (read1 "abc")))
+  (is (= 'abc/def (read1 "abc/def"))))
+
+(deftest keyword-value-test
+  (is (= :abc (read1 ":abc")))
+  (is (= :abc/def (read1 ":abc/def")))
+  (is (= :nil (read1 ":nil")))
+  (is (= :nil/nil (read1 ":nil/nil"))))
+
+(deftest keyword-auto-resolving-test
+  (let [ns-alias {rd/this-namespace-key "this-namespace"
+                  "alias" "aliased-namespace"
+                  "known-namespace" "known-namespace"}]
+    (is (= [::this-namespace/bar]
+           (read-all "::bar" ns-alias)))
+    (is (= [::aliased-namespace/bar]
+           (read-all "::alias/bar" ns-alias)))
+    (is (= [::known-namespace/bar]
+           (read-all "::known-namespace/bar" ns-alias)))
+
+    (is (thrown-with-msg? ExceptionInfo #"invalid token: ::foo/bar"
+                          (read1 "::foo/bar")))))
+
+(deftest symbolic-values-test
+  (is (= nil (read1 "nil")))
+  (is (= (object true) (read1 "true")))
+  (is (= (object false) (read1 "false")))
+
+  (is (= (object Double/POSITIVE_INFINITY) (read1 "##Inf")))
+  (is (= (object Double/NEGATIVE_INFINITY) (read1 "##-Inf")))
+  (is (.isNaN ^Double (read1 "##NaN")))
+
+  (is (thrown-with-msg? ExceptionInfo #"unknown symbolic value: ##nan"
+                        (read1 "##nan"))))
+
+(deftest character-value-test
+  (letfn [(readc ^int [^String s]
+            (int ^char (read1 s)))]
+    (is (= 32 (readc "\\space")))
+    (is (= 40 (readc "\\(")))
+    
+    ;; from test/clojure/test_clojure/reader.cljc
+    (is (= 0x6f (readc "\\o")))
+    (is (= 0 (readc "\\o0")))
+    (is (= 0 (readc "\\o000")))
+    (is (= 047 (readc "\\o47")))
+    (is (= 0377 (readc "\\o377")))
+
+    (is (= 0x75 (readc "\\u")))
+    (is (= 0x41 (readc "\\u0041")))
+    (is (= 0 (readc "\\u0000")))
+    (is (= 0xd7ff (readc "\\ud7ff")))
+    (is (= 0xe000 (readc "\\ue000")))
+    (is (= 0xffff (readc "\\uffff")))))
+
+(deftest character-error-test
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid character code: \\u\+0009"
+                        (read1 "\\u+0009")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid character code: \\o\+40"
+                        (read1 "\\o+40")))
+  
+  ;; from test/clojure/test_clojure/reader.cljc
+  (is (thrown-with-msg? ExceptionInfo
+                        #"unsupported character: \\"
+                        (read1 "\\")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"unsupported character: \\00"
+                        (read1 "\\00")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"unsupported character: \\0009"
+                        (read1 "\\0009")))
+
+  (is (thrown-with-msg? ExceptionInfo
+                        #"number format error: Error at index 2 in: \"378\""
+                        (read1 "\\o378")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"octal escape sequence must be in range \[0, 377\]"
+                        (read1 "\\o400")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid character code: \\o800"
+                        (read1 "\\o800")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid character code: \\oand"
+                        (read1 "\\oand")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid octal escape sequence length: \\o0470"
+                        (read1 "\\o0470")))
+
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid character code: \\u0"
+                        (read1 "\\u0")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid character code: \\ug"
+                        (read1 "\\ug")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid character code: \\u000"
+                        (read1 "\\u000")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid surrogate character: \\ud800"
+                        (read1 "\\ud800")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid surrogate character: \\udfff"
+                        (read1 "\\udfff")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid character code: \\u004"
+                        (read1 "\\u004")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid character code: \\u00041"
+                        (read1 "\\u00041")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"number format error: Error at index 3 in: \"004g\""
+                        (read1 "\\u004g"))))
+
+(defn reads [^String s]
+  (mapv #(int ^char %) (read1 (str "\"" s "\""))))
+
+(deftest string-value-test
+  ;; ok in jshell (OpenJDK 14), error in Clojure (as of 1.10.1)
+  (is (= [0 56 48 48] (reads "\\0800")))
+  (is (= [0 56 48] (reads "\\0080")))
+  (is (= [2 97 110 100] (reads "\\2and")))
+  
+  ;; from test/clojure/test_clojure/reader.cljc
+  (is (= [] (reads "")))
+  (is (= [34] (reads "\\\"")))
+  (is (= [10] (reads "\\n")))
+
+  (is (= [0] (reads "\\0")))
+  (is (= [0] (reads "\\000")))
+  (is (= [3] (reads "\\3")))
+  (is (= [3] (reads "\\03")))
+  (is (= [3] (reads "\\003")))
+  (is (= [0 51] (reads "\\0003")))
+  (is (= [3 48] (reads "\\0030")))
+  (is (= [0377] (reads "\\377")))
+  (is (= [0 56] (reads "\\0008")))
+
+  (is (= [0] (reads "\\u0000")))
+  (is (= [0xd7ff] (reads "\\ud7ff")))
+  (is (= [0xd800] (reads "\\ud800")))
+  (is (= [0xdfff] (reads "\\udfff")))
+  (is (= [0xe000] (reads "\\ue000")))
+  (is (= [0xffff] (reads "\\uffff")))
+  (is (= [4 49] (reads "\\u00041"))))
+
+(deftest string-error-test
+  ;; from test/clojure/test_clojure/reader.cljc
+  
+  (is (thrown-with-msg? ExceptionInfo #"unterminated string"
+                        (reads "\\")))
+  (is (thrown-with-msg? ExceptionInfo #"unsupported escape character: \\o"
+                        (reads "\\o")))
+
+  (is (thrown-with-msg? ExceptionInfo #"octal escape sequence must be in range \[0, 377\]"
+                        (reads "\\400")))
+  (is (thrown-with-msg? ExceptionInfo #"invalid character code: \\8"
+                        (reads "\\8")))
+  (is (thrown-with-msg? ExceptionInfo #"invalid character code: \\800"
+                        (reads "\\8000")))
+
+  (is (thrown-with-msg? ExceptionInfo #"invalid character code: \\u"
+                        (reads "\\u")))
+  (is (thrown-with-msg? ExceptionInfo #"invalid character code: \\ug"
+                        (reads "\\ug")))
+  (is (thrown-with-msg? ExceptionInfo #"invalid character code: \\ug000"
+                        (reads "\\ug000")))
+  (is (thrown-with-msg? ExceptionInfo #"invalid character code: \\u0"
+                        (reads "\\u0")))
+  (is (thrown-with-msg? ExceptionInfo #"invalid character code: \\u004"
+                        (reads "\\u004")))
+  (is (thrown-with-msg? ExceptionInfo #"number format error: Error at index 3 in: \"004g\""
+                        (reads "\\u004g"))))
+
+(defn readr [^String s]
+  (.toString ^Pattern (read1 (str "#\"" s "\""))))
+
+(deftest regex-value-test
+  (is (= "" (readr "")))
+  (is (= "abc" (readr "abc")))
+  (is (= "\n" (readr "\n")))
+
+  (is (= "\\\"" (readr "\\\"")))
+  (is (= "\\\\" (readr "\\\\"))))
+
+(deftest regex-error-test
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid regex: java.util.regex.PatternSyntaxException: Unclosed character class near index 0\n\[\n\^"
+                        (readr "["))))
+
+;;; ------------------------------------------------------------------------
+
+(deftest collection-value-test
+  (is (= '() (read1 "()")))
+  (is (= '(a) (read1 "(a)")))
+
+  (is (= '[] (read1 "[]")))
+  (is (= '[a] (read1 "[a]")))
+
+  (is (= '{} (read1 "{}")))
+  (is (= '{a b} (read1 "{a b}")))
+
+  (is (= '#{} (read1 "#{}")))
+  (is (= '#{a} (read1 "#{a}"))))
+
+(deftest collection-error-test
+  (is (thrown-with-msg? ExceptionInfo #"invalid start of token"
+                        (read1 "{a}")))
+  (is (thrown-with-msg? ExceptionInfo #"duplicate key: a"
+                        (read1 "{a 1, a 2}")))
+  (is (thrown-with-msg? ExceptionInfo #"duplicate key: a"
+                        (read1 "#{a a}"))))
+
+
+
+(deftest prefix-value-test
+  (is (= '(quote a) (read1 "'a")))
+  (is (= '(deref a) (read1 "@a")))
+  
+  (is (thrown-with-msg? ExceptionInfo
+                        #"unquote outside of syntax quote `\.\.\."
+                        (read1 "~a")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"unquote outside of syntax quote `\.\.\."
+                        (read1 "`~~a")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"unquote outside of syntax quote `\.\.\."
+                        (read1 "~@a")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"unquote outside of syntax quote `\.\.\."
+                        (read1 "`~~@a"))))
+
+(deftest meta-value-test
+  (is (= '{:k v} (meta (read1 "^{:k v} a"))))
+
+  ;; Meta maps to the left overwrite maps to the right.  This happens
+  ;; early, in the reader.  As a consequence, superseeded map entries
+  ;; are not passed on to the compiler and are never evaluated.
+  (is (= 'a (read1 "^{:k 1} ^{:k 2, :l 2} a")))
+  (is (= '{:k 1, :l 2} (meta (read1 "^{:k 1} ^{:k 2, :l 2} a"))))
+  (is (= '(quote a) (read1 "^{:k 1} ' ^{:k 2, :l 2} a")))
+  
+  (is (= '{:k 1, :line 1}
+         (meta (read1 "^{:k 1} ' ^{:k 2, :l 2} a"))))
+
+  (is (thrown-with-msg? ExceptionInfo
+                        #"metadata must be symbol, keyword, string or map"
+                        (read1 "^123 a")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"metadata can only be applied to IMeta instances"
+                        (read1 "^:foo nil"))))
+
+(deftest meta-discard-test
+  (is (= '{:foo true} (meta (read1 "^:foo #_b a")))))
+
+(deftest line-column-test
+  ;; Note: Clojure's reader does not add implicit :line/:column meta
+  ;; to (), which means its identity is preserved until meta is
+  ;; explicitly applied.
+  (is (= nil (-> (read1 "()") (meta))))
+  (is (= (object 1) (-> (read1 "(1 2 3)") (meta) :line))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- walk-meta [inner outer form]
+  (letfn [(out [x]
+            (let [y (outer x)]
+              (if-some [m (meta form)]
+                (with-meta y m)
+                y)))]
+    (cond
+      (list? form) (out (apply list (map inner form)))
+      (instance? clojure.lang.IMapEntry form) (out (vec (map inner form)))
+      (seq? form) (out (doall (map inner form)))
+      (instance? clojure.lang.IRecord form)
+      (out (reduce (fn [r x] (conj r (inner x))) form form))
+      (coll? form) (out (into (empty form) (map inner form)))
+      :else (out form))))
+
+(defn postwalk-meta [f form]
+  (walk-meta (partial postwalk-meta f) f form))
+
+(defn deterministic-gensyms [form]
+  (let [gensym-map (atom {})]
+    (letfn [(add-replacement [m sym prefix suffix]
+              (let [sym' (symbol (str prefix "$" (inc (count m)) "$" suffix))]
+                (assoc m sym sym')))
+            (replacement [x]
+              (cond
+                (symbol? x)
+                (or (when-some [y (@gensym-map x)]
+                      (with-meta y (meta x))) ;preserve meta of replaced symbol
+                    (if-some [[_ p n s] (re-matches #"(.*[^$0-9])(\d+)([^$0-9]*)"
+                                                    (str x))]
+                      (let [i (Integer/parseInt n)]
+                        (if (or (>= i 100)
+                                (str/ends-with? p "__")
+                                (str/starts-with? s "__")
+                                (str/ends-with? s "__"))
+                          ;; likely produced by Clojure gensym on the
+                          ;; compiler side, i.e. not deterministic
+                          (do (swap! gensym-map add-replacement x p s)
+                              (recur x))
+                          x))
+                      x))
+
+                (string? x)
+                (if-some [[_ p s] (re-matches #"^(LOCAL \d+: .* )(.+)$" x)]
+                  (str p (-> s (symbol) (replacement)))
+                  x)
+
+                :else x))]
+      (postwalk-meta replacement form))))
+
+
+(deftest synquote-wrapping-test
+  ;; Suffix "...#" has no special meaning for keywords.
+  (is (= :foo/bar# (read1 ":foo/bar#")))
+  (is (= :foo# (read1 ":foo#")))
+  
+  (is (= '(quote :foo/bar#) (read1 "':foo/bar#")))
+  (is (= '(quote :foo#) (read1 "':foo#")))
+
+  ;; FIXME... tclj eats `(tinyclj.core/syntax-quote ...)`, so go the
+  ;; manual route
+  (is (= (list 'tinyclj.core/syntax-quote :foo/bar#)
+         (read1 "`:foo/bar#")))
+  (is (= (list 'tinyclj.core/syntax-quote :foo#)
+         (read1 "`:foo#")))
+  
+  ;; In Clojure (as of 1.11-rc1) the symbol suffix "...#" has no
+  ;; special meaning outside of a syntax quote form "`...".
+  ;; FIXME... old tclj rejects this, so manually construct symbol for
+  ;; now
+  (is (= (symbol "foo" "bar#") (read1 "foo/bar#")))
+  (is (= (symbol nil "foo#") (read1 "foo#")))
+  
+  (is (= (list 'quote (symbol "foo" "bar#")) (read1 "'foo/bar#")))
+  (is (= (list 'quote (symbol nil "foo#")) (read1 "'foo#")))
+  
+  (is (= (list 'tinyclj.core/syntax-quote (symbol "foo" "bar#"))
+         (read1 "`foo/bar#")))
+  (is (= (list 'tinyclj.core/syntax-quote 'foo__$1$__auto__)
+         (-> (read1 "`foo#")
+             (deterministic-gensyms))))
+  (is (= (list 'quote (list 'tinyclj.core/syntax-quote
+                            'foo__$1$__auto__))
+         (-> (read1 "'`foo#")
+             (deterministic-gensyms))))
+  (is (= (list 'tinyclj.core/syntax-quote (list 'quote
+                                                'foo__$1$__auto__))
+         (-> (read1 "`'foo#")
+             (deterministic-gensyms)))))
+
+(deftest fnlit-test
+  ;; no parameters
+  (is (= '(fn* [] ())
+         (read1 "#()")))
+  (is (true? (-> (read1 "#()") (second) (meta) :auto-return-type)))
+
+  ;; one parameter
+  (is (= '(fn* [p$1$__fnlit__] (p$1$__fnlit__))
+         (-> (read1 "#(%)")
+             (deterministic-gensyms))))
+  (is (= '(fn* [p$1$__fnlit__] (p$1$__fnlit__))
+         (-> (read1 "#(%1)")
+             (deterministic-gensyms))))
+  (is (= '(fn* [p$1$__fnlit__] (+ p$1$__fnlit__ p$1$__fnlit__))
+         (-> (read1 "#(+ % %1)")
+             (deterministic-gensyms))))
+
+  ;; two parameters
+  (is (= '(fn* [p$1$__fnlit__ p$2$__fnlit__] (p$1$__fnlit__ p$2$__fnlit__))
+         (-> (read1 "#(%1 %2)")
+             (deterministic-gensyms))))
+  (is (= '(fn* [p$1$__fnlit__ p$2$__fnlit__] (p$2$__fnlit__ p$1$__fnlit__))
+         (-> (read1 "#(%2 %1)")
+             (deterministic-gensyms))))
+  (is (= '(fn* [p$1$__fnlit__ p$2$__fnlit__] (p$2$__fnlit__))
+         (-> (read1 "#(%2)")
+             (deterministic-gensyms))))
+
+  ;; rest parameter
+  (is (= '(fn* [& rest__fnlit__] (rest__fnlit__))
+         (-> (read1 "#(%&)")
+             (deterministic-gensyms))))
+  (is (= '(fn* [p$1$__fnlit__ & rest__fnlit__] (p$1$__fnlit__ rest__fnlit__))
+         (-> (read1 "#(%1 %&)")
+             (deterministic-gensyms))))
+  (is (= '(fn* [p$1$__fnlit__ p$2$__fnlit__ & rest__fnlit__] (rest__fnlit__ p$2$__fnlit__))
+         (-> (read1 "#(%& %2)")
+             (deterministic-gensyms))))
+
+  (is (thrown-with-msg? ExceptionInfo
+                        #"nested fn literals #\(\.\.\.\) are not allowed"
+                        (read1 "#(#())")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"arg literal must be %, %& or %integer"
+                        (read1 "#(%+1)"))))
+
+(deftest fnlit-type-tag-test
+  ;; type tag moved into parameter and meta is retained by argument
+  ;; use FIXME... why did old tclj strip it from the use site?
+  (is (= '(fn* [p$1$__fnlit__] (p$1$__fnlit__))
+         (-> (read1 "#(^Object %)")
+             (deterministic-gensyms))))
+  (is (= 'Object
+         (-> (read1 "#(^Object %)") (second) (first) (meta) :tag)))
+  (is (= '{:tag Object}
+         (-> (read1 "#(^Object %)") (nth 2) (first) (meta))))
+
+  ;; all uses must agree FIXME... old tclj ignored untagged uses; why?
+  (is (thrown-with-msg?
+       ExceptionInfo
+       #"conflicting type tags for arg literal: \(none\) int"
+       (-> (read1 "#(+ % ^int %)") (second) (first) (meta) :tag)))
+  (is (thrown-with-msg?
+       ExceptionInfo
+       #"conflicting type tags for arg literal: float int"
+       (read1 "#(+ ^int % ^float %)")))
+
+  ;; second meta (to left) overwrites first meta (to right)
+  (is (= 'int
+         (-> (read1 "#(^int ^longs %)") (second) (first) (meta) :tag)))
+  (is (thrown-with-msg?
+       ExceptionInfo
+       #"conflicting type tags for arg literal: int long"
+       (-> (read1 "#(+ ^long % ^int ^long %)") (second) (first) (meta) :tag))))

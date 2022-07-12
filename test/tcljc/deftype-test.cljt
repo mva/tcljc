@@ -1,0 +1,1132 @@
+(ns tcljc.deftype-test
+  (:require [tcljc.bootstrap :refer [nmsp]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest data-only
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/Vec3"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "F")]
+            [(FIELD [PUBLIC FINAL] "y" "F")]
+            [(FIELD [PUBLIC FINAL] "z" "F")]
+            
+            [(METHOD [PUBLIC] "<init>" "(FFF)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: float x"]
+             #_["LOCAL 2: float y"]
+             #_["LOCAL 3: float z"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (FLOAD_1)
+             (PUTFIELD . "x" "F")
+             (ALOAD_0)
+             (FLOAD_2)
+             (PUTFIELD . "y" "F")
+             (ALOAD_0)
+             (FLOAD_3)
+             (PUTFIELD . "z" "F")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 ;; Expansion of (deftype Vec3 [^float x ^float y
+                 ;; ^float z]) minus the class import, the factory
+                 ;; function, and the class reference.
+                 (deftype*
+                   pkg.ns0/Vec3
+                   pkg.ns0.Vec3
+                   [^float x ^float y ^float z]
+                   :implements
+                   [clojure.lang.IType])]))))
+
+(deftest data-only-reference-within-do
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/A"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "F")]
+            
+            [(METHOD [PUBLIC] "<init>" "(F)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: float x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (FLOAD_1)
+             (PUTFIELD . "x" "F")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/B"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "a" "Lpkg/ns0/A;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Lpkg/ns0/A;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: A a"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "a" "Lpkg/ns0/A;")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (do
+                   (deftype*
+                     pkg.ns0/A
+                     pkg.ns0.A
+                     [^float x]
+                     :implements
+                     [clojure.lang.IType])
+                   (deftype*
+                     pkg.ns0/B
+                     pkg.ns0.B
+                     [^pkg.ns0.A a]     ;must use full name
+                     :implements
+                     [clojure.lang.IType]))]))))
+
+(deftest data-only-constructor
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/Vec3"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "F")]
+            [(FIELD [PUBLIC FINAL] "y" "F")]
+            [(FIELD [PUBLIC FINAL] "z" "F")]
+
+            [(METHOD [PUBLIC] "<init>" "(FFF)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: float x"]
+             #_["LOCAL 2: float y"]
+             #_["LOCAL 3: float z"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (FLOAD_1)
+             (PUTFIELD . "x" "F")
+             (ALOAD_0)
+             (FLOAD_2)
+             (PUTFIELD . "y" "F")
+             (ALOAD_0)
+             (FLOAD_3)
+             (PUTFIELD . "z" "F")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/Vec3;")]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (NEW Vec3) (DUP)
+             (FCONST_1)
+             (FCONST_1)
+             (FCONST_1)
+             (INVOKESPECIAL Vec3 "<init>" "(FFF)V")
+             (PUTSTATIC . "x" "Lpkg/ns0/Vec3;")
+             
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/Vec3
+                   pkg.ns0.Vec3
+                   [^float x ^float y ^float z]
+                   :implements
+                   [clojure.lang.IType])
+                 ;; fully qualified class name should be accessible
+                 ;; immediately after the deftype
+                 (def x (pkg.ns0.Vec3. 1 1 1))]))))
+
+(deftest data-only-factory-and-alias
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/Vec3"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "F")]
+            [(FIELD [PUBLIC FINAL] "y" "F")]
+            [(FIELD [PUBLIC FINAL] "z" "F")]
+            
+            [(METHOD [PUBLIC] "<init>" "(FFF)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: float x"]
+             #_["LOCAL 2: float y"]
+             #_["LOCAL 3: float z"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (FLOAD_1)
+             (PUTFIELD . "x" "F")
+             (ALOAD_0)
+             (FLOAD_2)
+             (PUTFIELD . "y" "F")
+             (ALOAD_0)
+             (FLOAD_3)
+             (PUTFIELD . "z" "F")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC VOLATILE] "v3" "Ljava/lang/Object;")
+             (RuntimeVisibleAnnotations (Alias ["of" "pkg.ns0/->Vec3"]))]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/Vec3;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "y" "Lpkg/ns0/Vec3;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "-_GT_Vec3" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "-_GT_Vec3~3" "(FFF)Lpkg/ns0/Vec3;"]]
+                   #_[[CONSTRUCTOR Vec3 "<init>" "(FFF)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "-_GT_Vec3~3" "(FFF)Lpkg/ns0/Vec3;")
+             ["LOCAL 0: float x"]
+             ["LOCAL 1: float y"]
+             ["LOCAL 2: float z"]
+             (NEW Vec3)
+             (DUP)
+             (FLOAD_0)
+             (FLOAD_1)
+             (FLOAD_2)
+             (INVOKESPECIAL Vec3 "<init>" "(FFF)V")
+             (ARETURN)]
+            
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (FCONST_1)
+             (FCONST_1)
+             (FCONST_1)
+             (INVOKESTATIC . "-_GT_Vec3~3" "(FFF)Lpkg/ns0/Vec3;")
+             (PUTSTATIC . "x" "Lpkg/ns0/Vec3;")
+             
+             (FCONST_1)
+             (FCONST_1)
+             (FCONST_1)
+             (INVOKESTATIC . "-_GT_Vec3~3" "(FFF)Lpkg/ns0/Vec3;")
+             (PUTSTATIC . "y" "Lpkg/ns0/Vec3;")
+             
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/Vec3
+                   pkg.ns0.Vec3
+                   [^float x ^float y ^float z]
+                   :implements
+                   [clojure.lang.IType])
+                 (import* pkg.ns0.Vec3)
+                 (def ->Vec3
+                   (fn* ->Vec3 ^Vec3 [^float x ^float y ^float z]
+                        (Vec3. x y z)))
+                 (def v3 ->Vec3)        ;alias
+                 (def x (->Vec3 1 1 1))
+                 (def y (v3 1 1 1))]))))
+
+(deftest object-return-ldc
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: String x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/String;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (LDC "foo")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 ;; Expansion of (deftype T ...) minus the class
+                 ;; import, the factory function, and the class
+                 ;; reference.
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^String x]
+                   :implements
+                   [clojure.lang.IType]
+                   (toString [_] "foo"))]))))
+
+(deftest object-return-field
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: String x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/String;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (ALOAD_0)
+             (GETFIELD . "x" "Ljava/lang/String;")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 ;; Expansion of (deftype T ...) minus the class
+                 ;; import, the factory function, and the class
+                 ;; reference.
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^String x]
+                   :implements
+                   [clojure.lang.IType]
+                   (toString [_] x))]))))
+
+(deftest object-closure
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: String x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/String;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (ALOAD_0)
+             (GETFIELD . "x" "Ljava/lang/String;")
+             (INVOKESTATIC __ns100 "fn~0" "(Ljava/lang/String;)Ljava/lang/String;")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            
+            ;; FIXME... should this method be placed into class T?
+            [(METHOD [PUBLIC STATIC FINAL] "fn~0" "(Ljava/lang/String;)Ljava/lang/String;")
+             ["LOCAL 0: String x"]
+             (ALOAD_0)
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 ;; Expansion of (deftype T ...) minus the class
+                 ;; import, the factory function, and the class
+                 ;; reference.
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^String x]
+                   :implements
+                   [clojure.lang.IType]
+                   (toString [_] (let* [f (fn* ^String [] x)] (f))))]))))
+
+(deftest object-closure-direct
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: String x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/String;")
+             (RETURN)]
+                        
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (ALOAD_0)
+             (GETFIELD . "x" "Ljava/lang/String;")
+             (INVOKESTATIC __ns100 "fn~0" "(Ljava/lang/String;)Ljava/lang/String;")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            ;; FIXME... should this method be placed into class T?
+            [(METHOD [PUBLIC STATIC FINAL] "fn~0" "(Ljava/lang/String;)Ljava/lang/String;")
+             ["LOCAL 0: String x"]
+             (ALOAD_0)
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 ;; Expansion of (deftype T ...) minus the class
+                 ;; import, the factory function, and the class
+                 ;; reference.
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^String x]
+                   :implements
+                   [clojure.lang.IType]
+                   (toString [_] ((fn* ^String [] x))))]))))
+
+(deftest constructor
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType Supplier])
+            [(FIELD [PUBLIC FINAL] "x" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: String x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/String;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "get" "()Ljava/lang/Object;")
+             ["LOCAL 0: T _"]
+             (NEW T) (DUP)
+             (LDC "foo")
+             (INVOKESPECIAL . "<init>" "(Ljava/lang/String;)V")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 ;; Expansion of (deftype T ...) minus the class
+                 ;; import, the factory function, and the class
+                 ;; reference.
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^String x]
+                   :implements
+                   [clojure.lang.IType java.util.function.Supplier]
+                   (get [_] (new T "foo")))]))))
+
+(deftest constructor-field
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: String x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/String;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (NEW T) (DUP)
+             (LDC "foo")
+             (INVOKESPECIAL . "<init>" "(Ljava/lang/String;)V")
+             (GETFIELD . "x" "Ljava/lang/String;")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 ;; Expansion of (deftype T ...) minus the class
+                 ;; import, the factory function, and the class
+                 ;; reference.
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^String x]
+                   :implements
+                   [clojure.lang.IType]
+                   (toString [_] (.-x (T. "foo"))))]))))
+
+(deftest closure-materialized
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType Supplier])
+            [(FIELD [PUBLIC FINAL] "x" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: String x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/String;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "get" "()Ljava/lang/Object;")
+             ["LOCAL 0: T _"]
+             (ALOAD_0)
+             (GETFIELD . "x" "Ljava/lang/String;")
+             (INVOKESTATIC fn "__create" "(Ljava/lang/String;)Lpkg/ns0/fn;")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/fn" nil "tinyclj/lang/AFnMh")
+            [(FIELD [PRIVATE FINAL] "x" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC FINAL] "fn0" "()Ljava/lang/String;")
+             ["LOCAL 0: fn fn"]
+             (ALOAD_0)
+             (GETFIELD . "x" "Ljava/lang/String;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
+             #_["LOCAL 0: fn __this"]
+             #_["LOCAL 1: int n"]
+             (ILOAD_1)
+             (IFNE L:0)
+             (LDC [VIRTUAL . "fn0" "()Ljava/lang/String;"])
+             (ARETURN)
+             [L:0]
+             (ACONST_NULL)
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
+             #_["LOCAL 0: fn __this"]
+             (LDC [VIRTUAL . "fn0" "()Ljava/lang/String;"])
+             (INVOKESTATIC RT "methodHandleArray"
+                           "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
+             (ARETURN)]
+            
+            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: IPersistentMap __meta"]
+             #_["LOCAL 2: String x"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (ALOAD_0)
+             (ALOAD_2)
+             (PUTFIELD . "x" "Ljava/lang/String;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "__create" "(Ljava/lang/String;)Lpkg/ns0/fn;")
+             #_["LOCAL 0: String x"]
+             (NEW fn) (DUP)
+             (ACONST_NULL)
+             (ALOAD_0)
+             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
+             (ARETURN)]
+            
+            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/fn;")
+             #_["LOCAL 0: fn __this"]
+             #_["LOCAL 1: IPersistentMap __meta"]
+             (NEW fn) (DUP)
+             (ALOAD_1)
+             (ALOAD_0)
+             (GETFIELD . "x" "Ljava/lang/String;")
+             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 ;; Expansion of (deftype T ...) minus the class
+                 ;; import, the factory function, and the class
+                 ;; reference.
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^String x]
+                   :implements
+                   [clojure.lang.IType java.util.function.Supplier]
+                   (get [_] (fn* ^String [] x)))]))))
+
+;; (deftest deftype-closes-over-variable-error
+;;   (is (= '[]
+;;          (nmsp '[(ns pkg.ns0)
+;;                  (let* [n (+ 1 2)]
+;;                    (deftype*
+;;                      pkg.ns0/T
+;;                      pkg.ns0.T
+;;                      [^String x]
+;;                      :implements
+;;                      [clojure.lang.IType]
+;;                      (toString [_] (str n))))]))))
+
+;;; Expansion of a (defrecord T ...) example.  Three user defined
+;;; fields, plus 4 fields added by the defrecord macro.  The compiler
+;;; must emit two additional constructors, of arity 3 and 5, on top of
+;;; the default 7 argument constructor.
+(deftest defrecord-constructors
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T" nil "java/lang/Object"
+                   [IRecord IHashEq IObj ILookup IKeywordLookup IPersistentMap
+                    Map Serializable])
+            [(FIELD [PUBLIC FINAL] "width" "I")]
+            [(FIELD [PUBLIC FINAL] "height" "I")]
+            [(FIELD [PUBLIC FINAL] "obj" "Ljava/lang/String;")]
+            [(FIELD [PUBLIC FINAL] "__meta" "Ljava/lang/Object;")]
+            [(FIELD [PUBLIC FINAL] "__extmap" "Ljava/lang/Object;")]
+            [(FIELD [PRIVATE] "__hash" "I")]
+            [(FIELD [PRIVATE] "__hasheq" "I")]
+            
+            [(METHOD [PUBLIC] "<init>" "(IILjava/lang/String;Ljava/lang/Object;Ljava/lang/Object;II)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int width"]
+             #_["LOCAL 2: int height"]
+             #_["LOCAL 3: String obj"]
+             #_["LOCAL 4: Object __meta"]
+             #_["LOCAL 5: Object __extmap"]
+             #_["LOCAL 6: int __hash"]
+             #_["LOCAL 7: int __hasheq"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ILOAD_1)
+             (PUTFIELD . "width" "I")
+             (ALOAD_0)
+             (ILOAD_2)
+             (PUTFIELD . "height" "I")
+             (ALOAD_0)
+             (ALOAD_3)
+             (PUTFIELD . "obj" "Ljava/lang/String;")
+             (ALOAD_0)
+             (ALOAD 4)
+             (PUTFIELD . "__meta" "Ljava/lang/Object;")
+             (ALOAD_0)
+             (ALOAD 5)
+             (PUTFIELD . "__extmap" "Ljava/lang/Object;")
+             (ALOAD_0)
+             (ILOAD 6)
+             (PUTFIELD . "__hash" "I")
+             (ALOAD_0)
+             (ILOAD 7)
+             (PUTFIELD . "__hasheq" "I")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "<init>" "(IILjava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int width"]
+             #_["LOCAL 2: int height"]
+             #_["LOCAL 3: String obj"]
+             (ALOAD_0)
+             (ILOAD_1)
+             (ILOAD_2)
+             (ALOAD_3)
+             (ACONST_NULL)
+             (ACONST_NULL)
+             (ICONST_0)
+             (ICONST_0)
+             (INVOKESPECIAL . "<init>" "(IILjava/lang/String;Ljava/lang/Object;Ljava/lang/Object;II)V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "<init>" "(IILjava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int width"]
+             #_["LOCAL 2: int height"]
+             #_["LOCAL 3: String obj"]
+             #_["LOCAL 4: Object __meta"]
+             #_["LOCAL 5: Object __extmap"]
+             (ALOAD_0)
+             (ILOAD_1)
+             (ILOAD_2)
+             (ALOAD_3)
+             (ALOAD 4)
+             (ALOAD 5)
+             (ICONST_0)
+             (ICONST_0)
+             (INVOKESPECIAL . "<init>" "(IILjava/lang/String;Ljava/lang/Object;Ljava/lang/Object;II)V")
+             (RETURN)]
+
+            [(METHOD [PUBLIC STATIC] "create"
+                     "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/T;")
+             #_["LOCAL 0: IPersistentMap m"]
+             (NEW T)
+             (DUP)
+             (ALOAD_0)
+             (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["width"]])
+             (ACONST_NULL)
+             (INVOKEINTERFACE IPersistentMap "valAt"
+                              "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;" :itf)
+             (CHECKCAST Integer)
+             (INVOKEVIRTUAL Integer "intValue" "()I")
+             (ALOAD_0)
+             (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["height"]])
+             (ACONST_NULL)
+             (INVOKEINTERFACE IPersistentMap "valAt"
+                              "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;" :itf)
+             (CHECKCAST Integer)
+             (INVOKEVIRTUAL Integer "intValue" "()I")
+             (ALOAD_0)
+             (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["obj"]])
+             (ACONST_NULL)
+             (INVOKEINTERFACE IPersistentMap "valAt"
+                              "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;" :itf)
+             (CHECKCAST String)
+             (ACONST_NULL)
+             (ALOAD_0)
+             (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["width"]])
+             (INVOKEINTERFACE IPersistentMap "without"
+                              "(Ljava/lang/Object;)Lclojure/lang/IPersistentMap;" :itf)
+             (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["height"]])
+             (INVOKEINTERFACE IPersistentMap "without"
+                              "(Ljava/lang/Object;)Lclojure/lang/IPersistentMap;" :itf)
+             (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["obj"]])
+             (INVOKEINTERFACE IPersistentMap "without"
+                              "(Ljava/lang/Object;)Lclojure/lang/IPersistentMap;" :itf)
+             (INVOKESTATIC RT "seqOrElse" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (ICONST_0)
+             (ICONST_0)
+             (INVOKESPECIAL . "<init>" "(IILjava/lang/String;Ljava/lang/Object;Ljava/lang/Object;II)V")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^int width
+                    ^int height
+                    ^String obj
+                    __meta
+                    __extmap
+                    ^{:unsynchronized-mutable true, :tag int} __hash
+                    ^{:unsynchronized-mutable true, :tag int} __hasheq]
+                   :implements
+                   [clojure.lang.IRecord
+                    clojure.lang.IHashEq
+                    clojure.lang.IObj
+                    clojure.lang.ILookup
+                    clojure.lang.IKeywordLookup
+                    clojure.lang.IPersistentMap
+                    java.util.Map
+                    java.io.Serializable])]))))
+
+(deftest volatile-mutable
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PRIVATE VOLATILE] "x" "Ljava/lang/Object;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/Object;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: Object x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/Object;")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^:volatile-mutable x]
+                   :implements [clojure.lang.IType])
+                 ]))))
+
+(deftest method-recur-test
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType Function])
+            [(FIELD [PUBLIC FINAL] "x" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: String x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/String;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "apply" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: T _"]
+             ["LOCAL 1: Object x"]
+             [L:0]
+             (ALOAD_1)
+             (IFNONNULL L:1)
+             (LDC "foo")
+             (ASTORE_1)
+             (GOTO L:0)
+             [L:1]
+             (ACONST_NULL)
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^String x]
+                   :implements
+                   [clojure.lang.IType java.util.function.Function]
+                   (apply [_ x] (if (nil? x)
+                                  (recur "foo"))))]))))
+
+(deftest method-reiver-test
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType Function])
+            
+            [(METHOD [PUBLIC] "<init>" "()V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "apply" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: T this"]
+             ["LOCAL 1: Object x"]
+             (ALOAD_0)
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   []
+                   :implements
+                   [clojure.lang.IType java.util.function.Function]
+                   (apply [this x] this))]))))
+
+(deftest deftype-macro-test
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(METHOD [PUBLIC] "<init>" "()V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns101")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "deftype" "()Ltinyclj/lang/StaticFnMh;")
+             (RuntimeVisibleAnnotations (Macro))
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;" [[STATIC . "deftype~2" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "deftype~2" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object &form"]
+             ["LOCAL 1: Object &env"]
+             (LDC [:bsm-quote "list" "Lclojure/lang/ISeq;"
+                   [[:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["deftype*"]]
+                    [:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["pkg.ns0" "T"]]
+                    [:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["pkg.ns0.T"]]
+                    [:bsm-quote "vector" "Lclojure/lang/IPersistentVector;" []]
+                    [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["implements"]]
+                    [:bsm-quote "vector" "Lclojure/lang/IPersistentVector;"
+                     [[:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["clojure.lang.IType"]]]]]])
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns101" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def ^:macro deftype
+                   (fn* deftype [&form &env]
+                        '(deftype*
+                           pkg.ns0/T
+                           pkg.ns0.T
+                           []
+                           :implements
+                           [clojure.lang.IType])))
+                 (deftype)]))))
+
+;;; ------------------------------------------------------------------------
+
+(deftest option-load-ns        ;option ":load-ns" is currently ignored
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "Ljava/lang/Object;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/Object;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: Object x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/Object;")
+             (RETURN)]
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (LDC "foo")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [x]
+                   :implements [clojure.lang.IType]
+                   :load-ns true
+                   (toString [_] "foo"))]))))
+
+;;; EXPERIMENTAL
+(deftest option-abstract
+  (is (= '[[(CLASS Vx [PUBLIC ABSTRACT] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "Ljava/lang/Object;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/Object;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: Object x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "Ljava/lang/Object;")
+             (RETURN)]
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (LDC "foo")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [x]
+                   :implements [clojure.lang.IType]
+                   :abstract true
+                   (toString [_] "foo"))]))))
+
+;;; EXPERIMENTAL
+(deftest pass-to-super-constructor
+  (is (= '[[(CLASS Vx [PUBLIC ABSTRACT] "pkg/ns0/B"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "I")]
+            
+            [(METHOD [PUBLIC] "<init>" "(I)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ILOAD_1)
+             (PUTFIELD . "x" "I")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "pkg/ns0/B" [IType])
+            [(FIELD [PUBLIC FINAL] "y" "I")]
+            
+            [(METHOD [PUBLIC] "<init>" "(II)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int x"]
+             #_["LOCAL 2: int y"]
+             (ALOAD_0)
+             (ILOAD_1)
+             (INVOKESPECIAL B "<init>" "(I)V")
+             (ALOAD_0)
+             (ILOAD_2)
+             (PUTFIELD . "y" "I")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns"
+                   nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/B
+                   pkg.ns0.B
+                   [^int x]
+                   :implements [clojure.lang.IType]
+                   :abstract true)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^int y
+                    ^:pass-to-super-constructor ^int x]
+                   :implements [pkg.ns0.B clojure.lang.IType])]))))

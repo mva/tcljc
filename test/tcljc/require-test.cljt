@@ -1,0 +1,262 @@
+(ns tcljc.require-test
+  (:require [tcljc.bootstrap :refer [nmsp]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest two-namespaces-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            (LDC "pkg.ns0")
+            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")]
+
+           [(CLASS Vx [PUBLIC] "pkg/ns1/__ns" nil "pkg/ns1/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns1/__ns100")
+            (LDC "pkg.ns1")
+            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")]]
+         (nmsp '[(ns pkg.ns0)
+                 (ns pkg.ns1)]))))
+
+(deftest export-redef-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/exp/__ns" nil "pkg/exp/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
+            (LDC "pkg.exp")
+            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+            (FIELD [PUBLIC STATIC VOLATILE] "foo" "I" 123)]
+
+           [(CLASS Vx [PUBLIC] "pkg/ns1/__ns" nil "pkg/ns1/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "pkg.exp,tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns1/__ns100")
+            (LDC "pkg.ns1")
+            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+            (INVOKESTATIC __ns "forceClinit~1" "()V")]]
+         (nmsp '[(ns pkg.exp)
+                 (def ^:redef foo 123)
+                 (ns pkg.ns1
+                   (:require pkg.exp))]))))
+
+(deftest export-rename-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/exp/__ns" nil "pkg/exp/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
+            (LDC "pkg.exp")
+            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+            
+            (FIELD [PUBLIC STATIC FINAL] "foo" "I" 123)]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns1/__ns" nil "pkg/ns1/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "pkg.exp,tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns1/__ns100")
+            (LDC "pkg.ns1")
+            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+            (INVOKESTATIC __ns "forceClinit~1" "()V")
+
+            (FIELD [PUBLIC STATIC FINAL] "x" "I" 124)]]
+
+         (nmsp '[(ns pkg.exp)
+                 (def foo 123)
+                 (ns pkg.ns1
+                   (:require [pkg.exp :refer :all :rename {foo bar}]))
+                 (def x (+ bar 1))]))))
+
+(deftest public-var-test
+  (let [exp '[[(CLASS Vx [PUBLIC] "pkg/exp/__ns" nil "pkg/exp/__ns100")
+               [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+                (RETURN)]
+               [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+                (LDC "tinyclj.core")
+                (ARETURN)]]
+              [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
+               (LDC "pkg.exp")
+               (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+               (FIELD [PUBLIC STATIC FINAL] "public-var" "I" 123)]
+             
+              [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+               [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+                (RETURN)]
+               [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+                (LDC "pkg.exp,tinyclj.core")
+                (ARETURN)]]
+              [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+               (LDC "pkg.ns0")
+               (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+               (INVOKESTATIC __ns "forceClinit~1" "()V")
+               
+               (FIELD [PUBLIC STATIC FINAL] "local-var" "I" 123)]]]
+    (is (= exp (nmsp '[(ns pkg.exp)
+                       (def public-var 123)
+
+                       (ns pkg.ns0
+                         (:require pkg.exp))
+                       (def local-var (+ pkg.exp/public-var 0))])))
+
+    (is (= exp (nmsp '[(ns pkg.exp)
+                       (def public-var 123)
+
+                       (ns pkg.ns0
+                         (:require [pkg.exp :as a]))
+                       (def local-var (+ a/public-var 0))])))
+
+    (is (= exp (nmsp '[(ns pkg.exp)
+                       (def public-var 123)
+
+                       (ns pkg.ns0
+                         (:require [pkg.exp :refer [public-var]]))
+                       (def local-var (+ public-var 0))])))
+
+    (is (= exp (nmsp '[(ns pkg.exp)
+                       (def public-var 123)
+
+                       (ns pkg.ns0
+                         (:require [pkg.exp :refer :all]))
+                       (def local-var (+ public-var 0))])))))
+
+(deftest export-clojure-var-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/exp/__ns" nil "pkg/exp/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
+            (LDC "pkg.exp")
+            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+            
+            (FIELD [PUBLIC STATIC FINAL TRANSIENT] "public-var" "Lclojure/lang/Var;"
+                   nil "Lclojure/lang/Var<Ljava/lang/Object;>;")
+            (LDC "pkg.exp")
+            (LDC "public-var")
+            (LDC "123")
+            (INVOKESTATIC RT "var" "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)Lclojure/lang/Var;")
+            (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
+                  [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["var"]]
+                   [:bsm-invoke "_" "Z" [:mhd-not-zero-int 1]]]])
+            (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
+            (PUTSTATIC . "public-var" "Lclojure/lang/Var;")]
+
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "pkg.exp,tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            (LDC "pkg.ns0")
+            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+            (INVOKESTATIC __ns "forceClinit~1" "()V")
+            
+            (FIELD [PUBLIC STATIC FINAL TRANSIENT] "local-var" "Ljava/lang/Object;")
+            (GETSTATIC __ns100 "public-var" "Lclojure/lang/Var;")
+            (INVOKEVIRTUAL Var "deref" "()Ljava/lang/Object;")
+            (PUTSTATIC . "local-var" "Ljava/lang/Object;")]]
+         (nmsp '[(ns pkg.exp)
+                 (def ^:var public-var "123")
+                 
+                 (ns pkg.ns0
+                   (:require pkg.exp))
+                 (def local-var pkg.exp/public-var)]))))
+
+(deftest refer-static-fn-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/exp/__ns" nil "pkg/exp/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+
+           [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
+            (LDC "pkg.exp")
+            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+            
+            [(METHOD [PUBLIC STATIC FINAL] "inc1" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "inc1~1" "(I)I"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "inc1~1" "(I)I")
+             ["LOCAL 0: int n"]
+             (ILOAD_0)
+             (ICONST_1)
+             (IADD)
+             (IRETURN)]]
+
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "pkg.exp,tinyclj.core")
+             (ARETURN)]]
+
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            (LDC "pkg.ns0")
+            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+            (INVOKESTATIC __ns "forceClinit~1" "()V")
+            
+            [(METHOD [PUBLIC STATIC FINAL] "apply1" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "apply1~2" "(Ljava/lang/Object;I)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "apply1~2" "(Ljava/lang/Object;I)Ljava/lang/Object;")
+             ["LOCAL 0: Object f"]
+             ["LOCAL 1: int n"]
+             (ALOAD_0)
+             (ILOAD_1)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;I)Ljava/lang/Object;" :bsm-invoke-n [])
+             (ARETURN)]
+
+            #_[(METHOD [PUBLIC STATIC FINAL] "inc1_alias" "()Ltinyclj/lang/StaticFnMh;")
+               (INVOKESTATIC __ns100 "inc1" "()Ltinyclj/lang/StaticFnMh;")
+               (ARETURN)]
+
+            (FIELD [PUBLIC STATIC VOLATILE] "inc1_alias" "Ljava/lang/Object;"
+                   nil nil (RuntimeVisibleAnnotations
+                            ["Ltinyclj/lang/Alias;" "of" "pkg.exp/inc1"]))
+            
+            (FIELD [PUBLIC STATIC FINAL TRANSIENT] "three" "Ljava/lang/Object;")
+            (INVOKESTATIC __ns100 "inc1" "()Ltinyclj/lang/StaticFnMh;")
+            (ICONST_2)
+            (INVOKESTATIC . "apply1~2" "(Ljava/lang/Object;I)Ljava/lang/Object;")
+            (PUTSTATIC . "three" "Ljava/lang/Object;")
+
+            (FIELD [PUBLIC STATIC FINAL TRANSIENT] "three_alias" "I")
+            (ICONST_2)
+            (INVOKESTATIC __ns100 "inc1~1" "(I)I")
+            (PUTSTATIC . "three_alias" "I")]]
+         (nmsp '[(ns pkg.exp)
+                 (def inc1 (fn* inc1 ^int [^int n]
+                                (+ n 1)))
+                 
+                 (ns pkg.ns0
+                   (:require pkg.exp))
+                 (def apply1 (fn* apply1 [f ^int n]
+                                  (f n)))
+                 ;; this should also be turned into a lazy static:
+                 (def inc1_alias pkg.exp/inc1)
+                 (def three (apply1 pkg.exp/inc1 2))
+                 ;; this should call original static method:
+                 (def three_alias (inc1_alias 2))]))))

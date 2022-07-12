@@ -1,0 +1,602 @@
+(ns tcljc.conv-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr nmsp is-asm is-error]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest to-byte-conversion-test
+  ;; test conversion opcode
+  (is (= '[["LOCAL 0: int n"] (ILOAD_0) (I2B) (IRETURN)]
+         (asm-expr [^int n] (byte n))))
+  ;; test result type of expression
+  (is (java.util.Objects/equals (Byte/valueOf (byte 1))
+                                (call-expr [^int n] (byte n) [1])))
+  ;; test constant folding & numeric wrap around
+  (is-asm (byte -129) [(BIPUSH 127) (IRETURN)]) ;outside of value set
+  (is-asm (byte -128) [(BIPUSH -128) (IRETURN)])
+  (is-asm (byte 0) [(ICONST_0) (IRETURN)])
+  (is-asm (byte 127) [(BIPUSH 127) (IRETURN)])
+  (is-asm (byte 128) [(BIPUSH -128) (IRETURN)])) ;outside of value set
+
+(deftest to-short-conversion-test
+  ;; test conversion opcode
+  (is (= '[["LOCAL 0: int n"] (ILOAD_0) (I2S) (IRETURN)]
+         (asm-expr [^int n] (short n))))
+  ;; test result type of expression
+  (is (java.util.Objects/equals (Short/valueOf (short 1))
+                                (call-expr [^int n] (short n) [1])))
+  ;; test constant folding & numeric wrap around
+  (is-asm (short -32769) [(SIPUSH 32767) (IRETURN)]) ;outside of value set
+  (is-asm (short -32768) [(SIPUSH -32768) (IRETURN)])
+  (is-asm (short 0) [(ICONST_0) (IRETURN)])
+  (is-asm (short 32767) [(SIPUSH 32767) (IRETURN)])
+  (is-asm (short 32768) [(SIPUSH -32768) (IRETURN)])) ;outside of value set
+
+(deftest to-char-conversion-test
+  ;; test conversion opcode
+  (is (= '[["LOCAL 0: int n"] (ILOAD_0) (I2C) (IRETURN)]
+         (asm-expr [^int n] (char n))))
+  ;; test result type of expression
+  (is (java.util.Objects/equals (Character/valueOf (char 1))
+                                (call-expr [^int n] (char n) [1])))
+  ;; test constant folding & numeric wrap around
+  (is-asm (char -1) [(LDC 65535) (IRETURN)]) ;outside of value set
+  (is-asm (char 0) [(ICONST_0) (IRETURN)])
+  (is-asm (char 65535) [(LDC 65535) (IRETURN)])
+  (is-asm (char 65536) [(ICONST_0) (IRETURN)])) ;outside of value set
+
+(deftest conv-errors-test
+  (is-error (int) #"takes 1 argument")
+  (is-error (int 11 22) #"takes 1 argument"))
+
+
+(deftest loss-of-precision-test
+  ;; from JLS8 "Example 5.1.2-1. Widening Primitive Conversion"
+  (is (= '[#_(LDC 1234567890)
+           #_(LDC 1234567936)
+           #_(ISUB)
+           (BIPUSH -46)
+           (IRETURN)]
+         (asm-expr (let* [big 1234567890
+                          approx (float big)]
+                     (- big (int approx)))))))
+
+(deftest narrowing-primitive-test
+  ;; from JLS8 "Example 5.1.3-1. Narrowing Primitive Conversion"
+  (is (= '[(GETSTATIC Float "NEGATIVE_INFINITY" "F")
+           (FRETURN)]
+         (asm-expr (identity Float/NEGATIVE_INFINITY))))
+  (is (= "long: -9223372036854775808..9223372036854775807"
+         (call-expr (let* [fmin Float/NEGATIVE_INFINITY
+                           fmax Float/POSITIVE_INFINITY]
+                      (str "long: " (long fmin) ".." (long fmax))))))
+  (is (= "int: -2147483648..2147483647"
+         (call-expr (let* [fmin Float/NEGATIVE_INFINITY
+                           fmax Float/POSITIVE_INFINITY]
+                      (str "int: " (int fmin) ".." (int fmax))))))
+  (is (= "short: 0..-1"
+         (call-expr (let* [fmin Float/NEGATIVE_INFINITY
+                           fmax Float/POSITIVE_INFINITY]
+                      (str "short: " (short fmin) ".." (short fmax))))))
+  (is (= "char: 0..65535"
+         (call-expr (let* [fmin Float/NEGATIVE_INFINITY
+                           fmax Float/POSITIVE_INFINITY]
+                      (str "char: " (int (char fmin)) ".." (int (char fmax)))))))
+  (is (= "byte: 0..-1"
+         (call-expr (let* [fmin Float/NEGATIVE_INFINITY
+                           fmax Float/POSITIVE_INFINITY]
+                      (str "byte: " (byte fmin) ".." (byte fmax)))))))
+
+(deftest boolean-conv-test
+  (is-asm (boolean true) [(ICONST_1) (IRETURN)])
+  (is-asm (boolean false) [(ICONST_0) (IRETURN)])
+  (is-asm (boolean nil) [(ICONST_0) (IRETURN)])
+  (is-asm (boolean 123) [(ICONST_1) (IRETURN)])
+  
+  (is (= '[["LOCAL 0: String x"]
+           (ALOAD_0)
+           (IFNULL L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^String x] (boolean x)))))
+
+(deftest widen-argument-test
+  (is-asm (Math/log 1)
+          [(DCONST_1)
+           (INVOKESTATIC Math "log" "(D)D")
+           (DRETURN)]))
+
+(deftest boxing-test
+  (is-asm (object 123)
+          [(BIPUSH 123)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ARETURN)]))
+
+(deftest unboxing-test
+  (is-asm (int (Integer/valueOf 123))
+          [(BIPUSH 123)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (INVOKEVIRTUAL Integer "intValue" "()I")
+           (IRETURN)])
+  (is (= '[(BIPUSH 97)
+           (INVOKESTATIC Character "valueOf" "(C)Ljava/lang/Character;")
+           (INVOKEVIRTUAL Character "charValue" "()C")
+           (IRETURN)]
+         (asm-expr (char (Character/valueOf \a))))))
+
+(deftest primitive-cast-test
+  ;; Casting a primitive value to its own type has no effect.
+  (is (= '[(BIPUSH 123)
+           (IRETURN)]
+         (asm-expr (let* [i 123] ^int i))))
+  (is-error (let* [i 123] ^long i) #"cannot cast to")
+  (is-error (let* [i 123] ^Integer i) #"cannot cast to")
+  (is-error (let* [i 123] ^Object i) #"cannot cast to"))
+
+(deftest object-conv-test
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ARETURN)]
+         (asm-expr [^int x] (identity (object x)))))
+  (is (= '[["LOCAL 0: char x"]
+           (ILOAD_0)
+           (INVOKESTATIC Character "valueOf" "(C)Ljava/lang/Character;")
+           (ARETURN)]
+         (asm-expr [^char x] (identity (object x)))))
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (INVOKESTATIC Boolean "valueOf" "(Z)Ljava/lang/Boolean;")
+           (ARETURN)]
+         (asm-expr [^boolean x] (identity (object x)))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (ARETURN)]
+         (asm-expr [^Object x] (object x))))
+  
+  (is (= '[(ACONST_NULL) (ARETURN)]
+         (asm-expr (object nil))))
+  (is (= '[(ICONST_1)
+           (INVOKESTATIC Boolean "valueOf" "(Z)Ljava/lang/Boolean;")
+           (ARETURN)]
+         (asm-expr (object true))))
+  (is (= '[(ICONST_0)
+           (INVOKESTATIC Boolean "valueOf" "(Z)Ljava/lang/Boolean;")
+           (ARETURN)]
+         (asm-expr (object false)))))
+
+(deftest identity-test
+  (is (= '[(ACONST_NULL) (ARETURN)]
+         (asm-expr nil)))
+  (is (= '[(ICONST_1) (IRETURN)]
+         (asm-expr 1)))
+  (is (= '[["LOCAL 0: int a"] (ILOAD_0) (ICONST_2) (IADD) (IRETURN)]
+         (asm-expr [^int a] (+ a 2)))))
+
+(deftest type-conv
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f~1" "(I)Ljava/lang/Object;")
+             ["LOCAL 0: int i"]
+             (ACONST_NULL)
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "prim-arg-cast~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object x"]
+             (ALOAD_0)
+             (CHECKCAST Integer)
+             (INVOKEVIRTUAL Integer "intValue" "()I")
+             (INVOKESTATIC . "f~1" "(I)Ljava/lang/Object;")
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "prim-arg-conv~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object x"]
+             (ALOAD_0)
+             (INVOKESTATIC RT "intCast" "(Ljava/lang/Object;)I")
+             (INVOKESTATIC . "f~1" "(I)Ljava/lang/Object;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "prim-result-cast~1" "(Ljava/lang/Object;)I")
+             ["LOCAL 0: Object x"]
+             (ALOAD_0)
+             (CHECKCAST Integer)
+             (INVOKEVIRTUAL Integer "intValue" "()I")
+             (IRETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "prim-result-conv~1" "(Ljava/lang/Object;)I")
+             ["LOCAL 0: Object x"]
+             (ALOAD_0)
+             (INVOKESTATIC RT "intCast" "(Ljava/lang/Object;)I")
+             (IRETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "prim-result-generic-cast~1" "(Ljava/lang/Object;)I")
+             ["LOCAL 0: Object g"]
+             (ALOAD_0)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)I" :bsm-invoke-fn [])
+             (IRETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "prim-result-generic-conv~1" "(Ljava/lang/Object;)I")
+             ["LOCAL 0: Object g"]
+             (ALOAD_0)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)Ljava/lang/Object;" :bsm-invoke-fn [])
+             (INVOKESTATIC RT "intCast" "(Ljava/lang/Object;)I")
+             (IRETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (letfn* [(f [^int i]
+                             nil)
+                          (prim-arg-cast [^Object x]
+                                         (f ^int x))
+                          ;; (int reference-value) works like ^int and
+                          ;; expects an Integer
+                          (prim-arg-conv [^Object x]
+                                         (f (int x)))
+                          (prim-result-cast ^int [^Object x]
+                                            ^int x)
+                          ;; (int reference-value) works like ^int and
+                          ;; expects an Integer
+                          (prim-result-conv ^int [^Object x]
+                                            (identity (int x)))
+                          (prim-result-generic-cast ^int [g]
+                                                    ^int (g))
+                          ;; unlike ^int reference-value, (int
+                          ;; reference-value) does not push the
+                          ;; expected result type into a polymorphic
+                          ;; invoke
+                          (prim-result-generic-conv ^int [g]
+                                                    (int (g)))
+                          ;; (prim-result-generic-error ^int [g]
+                          ;;   (let [^int i (g)])            ;incompatible types
+                          ;;   (g))                          ;incompatible types
+                          ])]))))
+
+(deftest number-conv-test
+  (is (= '[["LOCAL 0: Number n"]
+           (ALOAD_0)
+           (INVOKESTATIC RT "longCast" "(Ljava/lang/Object;)J")
+           (LRETURN)]
+         (asm-expr [^Number n] (identity (long n))))))
+
+(deftest cast-to-void-test
+  ;; constant in void context is the empty instuction
+  (is (= '[["LOCAL 0: Object x"] (RETURN)]
+         (asm-expr [^Object x] ^void x)))
+  (is (= '[["LOCAL 0: int x"] (RETURN)]
+         (asm-expr [^int x] ^void x)))
+  ;; void in expression context is nil
+  (is (= '[["LOCAL 0: Object x"] (ACONST_NULL) (ARETURN)]
+         (asm-expr ^Object [^Object x] ^void x)))
+  (is (= '[["LOCAL 0: int x"] (ACONST_NULL) (ARETURN)]
+         (asm-expr ^Object [^int x] ^void x))))
+
+(deftest checkcast-null-test
+  (is (= '[(ACONST_NULL)
+           (ASTORE_0)
+           ["LOCAL 0: String x"]
+           (ALOAD_0)
+           (ARETURN)]
+         (asm-expr ^String [] (loop* [^String x nil] x)))))
+
+(deftest checkcast-join-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/String;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/lang/Object;)Ljava/lang/String;")
+             ["LOCAL 0: Object x"]
+             (ALOAD_0)
+             (IFNONNULL L:0)
+             (ALOAD_0)
+             (CHECKCAST String)
+             (ARETURN)
+             [L:0]
+             (LDC "foo")
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^String [^Object x]
+                             (if (nil? x)
+                               x
+                               "foo")))]))))
+
+(deftest checkcast-switch-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~2" "(ILjava/lang/Object;)Ljava/lang/String;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~2" "(ILjava/lang/Object;)Ljava/lang/String;")
+             ["LOCAL 0: int n"]
+             ["LOCAL 1: Object x"]
+             (ILOAD_0)
+             (LOOKUPSWITCH L:2 [0 1] [L:0 L:1])
+             [L:0]
+             (ALOAD_1)
+             (CHECKCAST String)
+             (ARETURN)
+             [L:1]
+             (LDC "foo")
+             (ARETURN)
+             [L:2]
+             (ILOAD_0)
+             (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+             (INVOKESTATIC RT "noMatchingClause" "(Ljava/lang/Object;)Ljava/lang/Exception;")
+             (ATHROW)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^String [^int n ^Object x]
+                             (case* n
+                                    0 x
+                                    1 "foo")))]))))
+
+(deftest checkcast-loop-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/String;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/lang/Object;)Ljava/lang/String;")
+             ["LOCAL 0: Object x"]
+             [L:0]
+             (ALOAD_0)
+             (IFNONNULL L:1)
+             (GOTO L:0)
+             [L:1]
+             (ALOAD_0)
+             (CHECKCAST String)
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^String [^Object x]
+                             (loop* []
+                                    (if (nil? x)
+                                      (recur)
+                                      x))))]))))
+
+(deftest checkcast-try-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/String;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/lang/Object;)Ljava/lang/String;")
+             ["LOCAL 0: Object x"]
+             [L:0]
+             (ALOAD_0)
+             (CHECKCAST String)
+             (ARETURN)
+             (EXCEPTION_CATCH L:0 L:1 L:1 Exception)
+             [L:1]
+             (ASTORE_1)
+             ["LOCAL 1: Exception _"]
+             (LDC "foo")
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^String [^Object x]
+                             (try
+                               x
+                               (catch Exception _
+                                 "foo"))))]))))
+
+;;; (int <boolean>) is a non-Clojure/non-Java extension that helps
+;;; with certain patterns of branchless code.  The alternative is to
+;;; use something like "(defn bool2int ^int [^boolean x] (if x 1 0))".
+;;; For a simple micro benchmark the "no instruction" version is as
+;;; fast as the function call when using OpenJDK 17.0.1.  But for an
+;;; early access version of OpenJDK 18 it is significantly faster
+;;; (speedup ~1.5).  Emitting no method call means smaller bytecode,
+;;; which should help with inlining decisions in any case.
+(deftest boolean-to-int-conversion-test
+  ;; test conversion opcode
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (INVOKESTATIC RT "booleanToZeroOne" "(Z)I")
+           (IRETURN)]
+         (asm-expr [^boolean x] (identity (int x)))))
+  ;; test result type of expression
+  (is (java.util.Objects/equals (Integer/valueOf 1)
+                                (call-expr [^boolean x] (int x) [true])))
+  (is (java.util.Objects/equals (Integer/valueOf 0)
+                                (call-expr [^boolean x] (int x) [false])))
+  ;; test constant folding
+  (is-asm (int true) [(ICONST_1) (IRETURN)])
+  (is-asm (int false) [(ICONST_0) (IRETURN)]))
+
+(deftest boolean-to-byte-conversion-test
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (INVOKESTATIC RT "booleanToZeroOne" "(Z)I")
+           (I2B)
+           (IRETURN)]
+         (asm-expr [^boolean x] (byte x))))
+  (is-asm (byte true) [(ICONST_1) (IRETURN)])
+  (is-asm (byte false) [(ICONST_0) (IRETURN)]))
+
+(deftest boolean-to-double-conversion-test
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (INVOKESTATIC RT "booleanToZeroOne" "(Z)I")
+           (I2D)
+           (DRETURN)]
+         (asm-expr [^boolean x] (double x))))
+  (is-asm (double true) [(DCONST_1) (DRETURN)])
+  (is-asm (double false) [(DCONST_0) (DRETURN)]))
+
+
+(deftest void-conversion-assign
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr ^int [] (.println System/out "foo"))))
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr ^boolean [] (.println System/out "foo"))))
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (DCONST_0)
+           (DRETURN)]
+         (asm-expr ^double [] (.println System/out "foo"))))
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr ^char [] (.println System/out "foo"))))
+  
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ACONST_NULL)
+           (ARETURN)]
+         (asm-expr ^Object [] (.println System/out "foo"))))
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ACONST_NULL)
+           (ARETURN)]
+         (asm-expr ^String [] (.println System/out "foo")))))
+
+(deftest void-conversion-path
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ICONST_0)
+           (IRETURN)
+           [L:0]
+           (ICONST_1)
+           (IRETURN)]
+         (asm-expr [^boolean x] (if x (.println System/out "foo") 1))))
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ICONST_0)
+           (IRETURN)
+           [L:0]
+           (ICONST_1)
+           (IRETURN)]
+         (asm-expr [^boolean x] (if x (.println System/out "foo") true))))
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (DCONST_0)
+           (DRETURN)
+           [L:0]
+           (DCONST_1)
+           (DRETURN)]
+         (asm-expr [^boolean x] (if x (.println System/out "foo") 1.0))))
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ICONST_0)
+           (IRETURN)
+           [L:0]
+           (ICONST_1)
+           (IRETURN)]
+         (asm-expr [^boolean x] (if x (.println System/out "foo") \u0001))))
+  
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "foo")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ACONST_NULL)
+           (ARETURN)
+           [L:0]
+           (LDC "bar")
+           (ARETURN)]
+         (asm-expr [^boolean x] (if x (.println System/out "foo") "bar")))))
+
+(deftest if-without-else-test
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (LDC "bar")
+           (ARETURN)
+           [L:0]
+           (ACONST_NULL)
+           (ARETURN)]
+         (asm-expr [^boolean x] (if x "bar"))))
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^boolean x] (if x 1)))))

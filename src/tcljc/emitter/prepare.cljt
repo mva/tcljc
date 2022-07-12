@@ -1,0 +1,553 @@
+(ns tcljc.emitter.prepare
+  (:require
+   [tcljc.classfile :as cf]
+   [tcljc.util :as util]
+   [tcljc.config :as cfg]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.expr :as x]
+   [tcljc.context :as ctx]
+   [tcljc.emitter.bytecode :as bytecode]
+   [tcljc.emitter.classes :as classes]
+   [tcljc.emitter.emitfn :as emitfn])
+  (:import
+   (tcljc.classfile ILdStInstr)
+   (tcljc.expr Expr InvokeXref InvokeArity Binding BindingRef AliasRef LoopBody
+               FnForm Arity ArityCode FnCode)
+   (tcljc.emitter.emitfn FnSpec EnvEntry)
+   (clojure.lang Symbol ISeq IPersistentVector)
+   (java.lang.constant ClassDesc MethodHandleDesc DirectMethodHandleDesc)
+   (java.lang.invoke MethodHandles$Lookup TypeDescriptor$OfField)
+   (java.lang.reflect Constructor)
+   (java.util HashSet Set HashMap ArrayList)
+   (java.util.function Consumer ToIntFunction)))
+
+(defn- member-type ^TypeDescriptor$OfField [^BindingRef bref ^Expr init-x]
+  (if (some? init-x)
+    (if-some [fn-form (x/root-fn-form init-x)]
+      (-> fn-form .!fnc .ld-clx)
+      (x/type init-x))
+    (x/type bref)))
+
+(defn- lazy? ^boolean [^Expr x]
+  ;; Returns true if `x` is a constant expression that should be
+  ;; materialized via a "constant dynamic" construction.  In
+  ;; particular, the expression should not be eagerly assigned to
+  ;; variables (either static fields or locals) that are mere aliases
+  ;; for the original value.  Additional consideration: Copying a
+  ;; condy recipe into a second class file will eventually create a
+  ;; second instance of the value in question -- which may or may not
+  ;; be a problem depending on identity assumptions.
+  (and (x/const-value? x)
+       (not (x/const-value? x jb/jvm-null))
+       (let [tp (x/type x)]
+         ;; All primitive types (including null_type) are materialized
+         ;; eagerly.  Likewise specialized loadables like
+         ;; String/Class.  The type check is an approximation and
+         ;; assumes that CONDY only produces function instances or
+         ;; collections (or user defined types in general).  Open
+         ;; question: Should all primitive box types be classified as
+         ;; "eager" as well?
+         (and (jb/reference? tp)
+              (not (jb/same-class? Class tp))
+              (not (jb/same-class? String tp))))))
+
+;;; pre: `prepare-fns!` for the top-level form has completed
+(defn prepare-globals! ^void [^ClassDesc segm-cld ^IPersistentVector global-bs]
+  (letfn [(static-field? ^boolean [^BindingRef bref ^Expr init-x]
+            (or (x/b-mutable? bref)
+                (not (or (some? (x/root-fn-const init-x)) (lazy? init-x)))))
+          (prepare-global-b ^ILdStInstr [^Binding b]
+            (let [bref (.bref b)]
+              (if (x/alias-ref? bref)
+                (x/deref-load (.alias-for ^AliasRef bref))
+                (let [mnm (x/mnm bref)
+                      init-x (x/nth-arg b 0 nil)
+                      member-tp (rt/cd-of (member-type bref init-x))]
+                  (if (static-field? bref init-x)
+                    (cf/ld-st-static segm-cld mnm member-tp)
+                    (cf/ld-st-method segm-cld mnm member-tp))))))]
+    (doseq [^Binding b global-bs]
+      (.deliver-load (.bref b) (prepare-global-b b)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- parameters-to-args? ^boolean [paramv argv]
+  (let [n (count paramv)]
+    (and (= (count argv) n)
+         (loop [i (dec n)]
+           (cond
+             (neg? i)
+             true
+             (identical? (.bref ^Binding (nth paramv i)) (nth argv i))
+             (recur (dec i))
+             :else
+             false)))))
+
+(defn- at-mref-static ^DirectMethodHandleDesc
+  [^ClassDesc statics-owner ^FnSpec fspec ^Arity at]
+  (let [mnm (str (-> fspec .fn-form .unique-mnm) "~" (.n at))
+        mtd (->> (emitfn/static-parameter-env fspec at)
+                 (map emitfn/ee-exact-type)
+                 (x/at-mtd at))]
+    (MethodHandleDesc/ofMethod rt/mhk-static statics-owner mnm mtd)))
+
+(defn- arity-code-static ^ArityCode [^ClassDesc statics-owner
+                                     ^ArityCode ac
+                                     ^FnSpec fspec]
+  (let [at (.at ac)
+        body-expr (x/nth-arg ^LoopBody (.body-expr ac) 0)]
+    
+    (letfn [(arity-static* ^ArityCode [^DirectMethodHandleDesc load-mh-ext]
+              (if (and (x/invoke-xref-not-special? body-expr)
+                       (jb/same-class? (.rtype at) (x/type body-expr))
+                       (parameters-to-args? (.paramv at) (x/argv body-expr))
+                       (some? (x/invoke-xref-mhd ^InvokeXref body-expr)))
+                ;; elide method definition, use wrapped invoke directly
+                (let [mhd (x/invoke-xref-mhd ^InvokeXref body-expr)]
+                  (x/with-arity-impl ac load-mh-ext mhd false))
+                ;; emit static method definition
+                (let [mhd (at-mref-static statics-owner fspec at)]
+                  (x/with-arity-impl ac load-mh-ext mhd true))))]
+      (if-some [at-bridge (x/at-bridged-from at)]
+        (let [mhd (at-mref-static statics-owner fspec at-bridge)]
+          (arity-static* mhd))
+        (arity-static* nil)))))
+
+;;; pre: called after completion of `collect-fn-info`
+(defn- with-param-ld-st ^FnSpec [^FnSpec fspec]
+  (let [a (.fn-env fspec)
+        b (aclone a)]
+    (loop [param-no 0, i 0]
+      (when-not (= i (alength b))
+        (let [ee (aget a i)]
+          (if (emitfn/ee-materialized? ee)
+            (let [tp (emitfn/ee-exact-type ee)
+                  ld-st (cf/ld-st-parameter tp (x/mnm (.origin-bref ee))
+                                            param-no)]
+              (aset b i (emitfn/with-ld-st ee ld-st false))
+              (recur (inc param-no) (inc i)))
+            (recur param-no (inc i))))))
+    (FnSpec. (.fn-form fspec) b)))
+
+(defn- prepare-statics ^void [^ClassDesc statics-owner ^FnSpec fspec]
+  (let [fn-form (.fn-form fspec)
+        aca (ctx/fn-body-now fn-form)
+        fnc (.!fnc fn-form)
+        fspec (with-param-ld-st fspec)]
+    (.set-emit-plan fnc (emitfn/mk-emit-statics fspec))
+    (dotimes [i (.arity-count fnc)]
+      (let [ac (arity-code-static statics-owner (aget aca i) fspec)]
+        (.set-arity-code fnc i ac)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- at-mref-virtual ^DirectMethodHandleDesc [^ClassDesc this ^Arity at]
+  (let [mnm (or (.method-name at) (str "fn" (.n at)))
+        mtd (x/at-mtd at)]
+    (MethodHandleDesc/ofMethod rt/mhk-virtual this mnm mtd)))
+
+(defn- arity-code-virtual ^ArityCode [^ArityCode ac ^FnCode fnc]
+  (let [at (.at ac)
+        this ^ClassDesc (.ld-clx fnc)]
+    
+    (letfn [(arity-virtual* ^ArityCode [^DirectMethodHandleDesc load-mh-ext]
+              (let [mhd (at-mref-virtual this at)]
+                (x/with-arity-impl ac load-mh-ext mhd true)))]
+      (if-some [at-bridge (x/at-bridged-from at)]
+        (let [mhd (at-mref-virtual this at-bridge)]
+          (arity-virtual* mhd))
+        (arity-virtual* nil)))))
+
+;;; pre: called after completion of `collect-fn-info`
+(defn- with-field-ld-st ^FnSpec [^FnSpec fspec ^ClassDesc this-class]
+  (let [!field-names (HashSet.)]
+    (letfn [(unique-mnm ^String [^Symbol nm]
+              (let [mnm (cfg/munge-name nm)
+                    unm (if (.contains !field-names mnm)
+                          (str mnm "^" (.size !field-names))
+                          mnm)]
+                (.add !field-names unm)
+                unm))
+            (env-as-field ^ILdStInstr [^EnvEntry ee]
+              (cf/ld-st-virtual this-class (unique-mnm (x/form (.root-bref ee)))
+                                (rt/cd-of (emitfn/ee-exact-type ee))))]
+      (let [a (.fn-env fspec)
+            b (aclone a)
+            parent-level (dec (-> fspec .fn-form .level))
+            fspec-seqnum (-> fspec .fn-form .!fnc .seqnum)]
+        (dotimes [i (alength b)]
+          (let [ee (aget a i)]
+            (when (emitfn/ee-materialized? ee)
+              (let [forward? (and (some? (.root-fnc ee))
+                                  (= (x/b-level (.root-bref ee)) parent-level)
+                                  (> (-> ee .root-fnc .seqnum) fspec-seqnum))]
+                (aset b i (emitfn/with-ld-st ee (env-as-field ee) forward?))))))
+        (FnSpec. (.fn-form fspec) b)))))
+
+(defn- prepare-virtuals ^void [^FnSpec fspec]
+  (let [fn-form (.fn-form fspec)
+        aca (ctx/fn-body-now fn-form)
+        fnc (.!fnc fn-form)
+        this-class ^ClassDesc (.ld-clx fnc)
+        
+        super-class rt/AFn
+        itfs (map rt/cd-of (.itf-tags fn-form))
+        this-mnm (name (or (x/fn-this-name fn-form) "fn"))
+        
+        emit-plan (emitfn/mk-emit-virtuals this-class super-class itfs this-mnm
+                                           (.super-mhd fn-form)
+                                           (with-field-ld-st fspec this-class))]
+    (.set-emit-plan fnc emit-plan)
+    (dotimes [i (.arity-count fnc)]
+      (let [ac (arity-code-virtual (aget aca i) fnc)]
+        (.set-arity-code fnc i ac)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- prepare-reify ^void [^FnSpec fspec]
+  (let [fn-form (.fn-form fspec)
+        aca (ctx/fn-body-now fn-form)
+        fnc (.!fnc fn-form)
+        this-class ^ClassDesc (.ld-clx fnc)
+        
+        super-class (-> fn-form .super-mhd .owner)
+        itfs (map rt/cd-of (.itf-tags fn-form))
+        this-mnm "this"
+        
+        emit-plan (emitfn/mk-emit-reify this-class super-class itfs this-mnm
+                                        (.super-mhd fn-form)
+                                        (with-field-ld-st fspec this-class))]
+    (.set-emit-plan fnc emit-plan)
+    (dotimes [i (.arity-count fnc)]
+      (let [ac (arity-code-virtual (aget aca i) fnc)]
+        (.set-arity-code fnc i ac)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- implements-interfaces? ^boolean [^FnForm fn-form]
+  (pos? (alength (.itf-tags fn-form))))
+
+(defn prepare-fns! ^void [^ClassDesc statics-owner ^IPersistentVector fn-specs]
+  (letfn [(translate-to-class? ^boolean [^FnSpec fspec]
+            (or (implements-interfaces? (.fn-form fspec))
+                (let [fnc (-> fspec .fn-form .!fnc)]
+                  (and (.used-as-value? fnc) (.variable-environment? fnc)))))]
+    
+    ;; Must provide type information for all functions first, so that
+    ;; it is avaiable even for functions that mutually depend on each
+    ;; other.
+    (doseq [^FnSpec fspec fn-specs
+            :let [fn-form (.fn-form fspec)]]
+      (->> (if (translate-to-class? fspec)
+             (ClassDesc/of (str (.packageName statics-owner) "."
+                                (.unique-mnm fn-form)))
+             rt/StaticFnMh)
+           (.set-ld-clx (.!fnc fn-form))))
+
+    ;; Assign translation patterns.
+    (doseq [^FnSpec fspec fn-specs]
+      (if (translate-to-class? fspec)
+        (if (x/fn-reify? (.fn-form fspec))
+          (prepare-reify fspec)
+          (prepare-virtuals fspec))
+        (prepare-statics statics-owner fspec)))))
+
+;;; ------------------------------------------------------------------------
+
+(deftype TlfSummary [^IPersistentVector fn-specs
+                     ^IPersistentVector global-bs
+                     ^Expr top-level-form])
+
+(def ^:private aid-key 0)
+(def ^:private aid-consumer-is-invoke 1)
+(def ^:private aid-consumer-is-factory 2)
+
+;;; ArityId is used as aggregate key [fn-form at-idx], and it can
+;;; carry information whether a providing arity passes environment
+;;; bindings to an arity invoke or an fn factory invoke.
+(deftype ArityId [^FnForm fn-form
+                  ^int at-idx
+                  ^int category]        ;ignored for equals & hashCode
+  Object
+  (equals [_ o]
+    (let [o ^ArityId o]
+      (and (identical? fn-form (.fn-form o))
+           (= at-idx (.at-idx o)))))
+  (hashCode [_]
+    (+ (.hashCode fn-form) at-idx))     ;very simplistic
+  (toString [_]
+    (str (if (some? fn-form)
+           (str (.unique-mnm fn-form) "[" at-idx "]")
+           "not-in-arity")
+         (case category
+           #_aid-key 0 ""
+           #_aid-consumer-is-invoke 1 " :consumer-is-invoke"
+           #_aid-consumer-is-factory 2 " :consumer-is-factory"))))
+
+(defn- mk-aid-key ^ArityId [^FnForm fn-form ^int at-idx]
+  (ArityId. fn-form at-idx aid-key))
+(defn- mk-aid-invoke ^ArityId [^ArityId aid]
+  (ArityId. (.fn-form aid) (.at-idx aid) aid-consumer-is-invoke))
+(defn- mk-aid-factory ^ArityId [^ArityId aid]
+  (ArityId. (.fn-form aid) (.at-idx aid) aid-consumer-is-factory))
+
+;;; Note: The current implementation uses HashMap and HashSet.  It is
+;;; only determistic in its output as long as the underlying hash
+;;; function is fixed.
+(letfn [(get-closes-over ^objects [^ArityId aid]
+          (-> (.fn-form aid)
+              (.at-sigs)
+              ^Arity (nth (.at-idx aid))
+              .!closes-over))
+        (outside-reference-to-this? ^boolean [^FnCode this-fnc
+                                              ^BindingRef closing-over]
+          ;; With letfn*, the consumer can close over the provider
+          ;; function via its external name.  The provider cannot
+          ;; close over itself, but it always has its own function
+          ;; value reachable via its internal binding.  Satisfy the
+          ;; closed over value from the internal binding and do not
+          ;; add it to the provider's `.!closes-over` set.
+          (if-some [co-fn (x/root-fn-form closing-over)]
+            (identical? this-fnc (.!fnc co-fn))
+            false))
+        (propagate-closes-over! ^boolean [^ArityId provider ^object closes-over]
+          (let [p-level (-> provider .fn-form .level)
+                p-fnc (-> provider .fn-form .!fnc)
+                p-co (get-closes-over provider)]
+            (pos? (util/sim-sum-keys!
+                   (fn ^ToIntFunction process-co! [closing-over]
+                     (let [closing-over ^BindingRef closing-over]
+                       (if (or (= (x/b-level closing-over) p-level)
+                               (some? (util/sim-get p-co closing-over))
+                               (outside-reference-to-this? p-fnc closing-over))
+                         0
+                         (let [x (x/closure-alias p-level (x/form closing-over)
+                                                  closing-over)]
+                           (util/sim-put-absent! p-co closing-over x)
+                           1))))
+                   0 closes-over))))]
+  
+  (defn- propagate-env-demands! ^Set [^Set env-consumers ^HashMap env-providers]
+    (let [modified (HashSet.)]
+      (->> (fn ^Consumer propagate [consumer]
+             (let [consumer ^ArityId consumer
+                   consumer-category (if (-> consumer .fn-form .!fnc
+                                             (.used-as-value?))
+                                       aid-consumer-is-factory
+                                       aid-consumer-is-invoke)
+                   consumer-closes-over (get-closes-over consumer)]
+               (when-not (util/sim-empty? consumer-closes-over)
+                 (doseq [^ArityId provider (.get env-providers consumer)
+                         :when (= (.category provider) consumer-category)]
+                   (when (propagate-closes-over! provider consumer-closes-over)
+                     (.add modified provider))))))
+           (.forEach env-consumers))
+      modified)))
+
+;; (defn print-env-providers ^void [msg ^HashMap env-providers]
+;;   (println)
+;;   (println msg)
+;;   (doseq [[k v] env-providers]
+;;     (prn (str k) :-> (map str v)))
+;;   (println))
+
+(defn print-fn-summary ^TlfSummary [^TlfSummary summary ^HashMap env-providers]
+  (letfn [(print-fn-form [^FnSpec fspec]
+            (let [fn-form (.fn-form fspec)
+                  fnc (.!fnc fn-form)]
+              (println :fn (x/fn-this-name fn-form) (.unique-mnm fn-form))
+              (println " " :level (.level fn-form))
+              (println " " :used-as-value (.used-as-value? fnc))
+              (println " " (if (.variable-environment? fnc)
+                             :variable-environment
+                             :constant-environment))
+              (if (zero? (alength (.fn-env fspec)))
+                (println "  (empty env)")
+                (doseq [^EnvEntry ee (.fn-env fspec)
+                        :let [bref (.origin-bref ee)]]
+                  (println " "  :closes-over
+                           (str "lvl" (x/b-level bref) "." (x/form bref))
+                           (if (emitfn/ee-materialized? ee)
+                             :materialized-in-env
+                             :inlined-constant))))
+              
+              (dotimes [i (.arity-count fnc)]
+                (let [epv (.get env-providers (mk-aid-key fn-form i))]
+                  (doseq [^ArityId ep epv]
+                    (println " " (str ep)))))))]
+
+    (run! print-fn-form (.fn-specs summary))
+    summary))
+
+(deftype TraversalContext [^HashSet !private-names
+                           ^HashMap env-providers
+                           ^ArrayList fn-specs
+                           ^ArrayList global-bs
+                           ^ArityId this-arity])
+
+(defn- with-enter-arity ^TraversalContext [^TraversalContext tctx
+                                           ^FnForm fn-form ^int at-idx]
+  (let [aid (mk-aid-key fn-form at-idx)
+        at ^Arity (nth (.at-sigs fn-form) at-idx)]
+    (TraversalContext. (.!private-names tctx) (.env-providers tctx)
+                       (.fn-specs tctx) (.global-bs tctx) aid)))
+
+;;; Traverses all expressions in tree, including the arities of nested
+;;; functions.  For every FnForm encountered it adds a vector [fn-form
+;;; at-fn-forms...] to `fn-forms`.  On completion, all function bodies
+;;; have completed compilation.
+(defn- traverse-expr ^void [^TraversalContext tctx ^Expr x]
+  (letfn [(visit-arg ^void [^Expr arg]
+            (traverse-expr tctx arg))
+          (visit-args ^void [^IPersistentVector argv]
+            (doseq [arg argv]
+              (visit-arg arg)))
+          
+          (add-env-provider [^ArityId provided-by ^ArityId provided-to]
+            ;; note: `provided-to` is only used as key
+            (.put (.env-providers tctx) provided-to
+                  (if-some [v (.get (.env-providers tctx) provided-to)]
+                    (conj v provided-by)
+                    [provided-by])))
+          (inside-arity? ^boolean []
+            (some? (-> tctx .this-arity .fn-form)))
+          (known-fn-value? ^boolean [^FnForm fn-form]
+            (-> fn-form .!fnc (.used-as-value?)))
+
+          (process-fn-form ^void [^FnForm fn-form]
+            (.set-seqnum (.!fnc fn-form) (.size (.fn-specs tctx)))
+            (when (implements-interfaces? fn-form)
+              (.mark-used-as-value (.!fnc fn-form)))
+            
+            (when (inside-arity?)
+              ;; this arity potentially provides environment to
+              ;; the constructed function
+              (let [fnc (.!fnc fn-form)
+                    provided-by (mk-aid-factory (-> tctx .this-arity))]
+                (dotimes [at-idx (.arity-count fnc)]
+                  (add-env-provider provided-by
+                                    (mk-aid-key fn-form at-idx)))))
+            
+            (let [aca (ctx/wait-for-fn-body fn-form)]
+              (when (some? aca)
+                (.add (.fn-specs tctx) (emitfn/fn-spec fn-form))
+                (dotimes [at-idx (alength aca)]
+                  (let [tctx' (with-enter-arity tctx fn-form at-idx)]
+                    (traverse-expr tctx' (.body-expr (aget aca at-idx))))))))]
+          
+    (when (x/fn-form? x)
+      (process-fn-form ^FnForm x))
+    (when-some [fn-form (x/root-fn-form x)]
+      (.mark-used-as-value (.!fnc fn-form)))
+
+    ;; Recursivly process the arguments, but make sure that
+    ;; neither invoked nor let-bound FnForm instances are
+    ;; marked as `used-as-value`.
+    (cond
+      (instance? InvokeArity x)
+      (let [inv ^InvokeArity x
+            arg-fn (x/nth-arg x 0)]
+        (when (x/fn-form? arg-fn)
+          (process-fn-form ^FnForm arg-fn))
+        (when (and (inside-arity?) (not (known-fn-value? (.fn-form inv))))
+          ;; this arity potentially provides environment to the
+          ;; called arity; functions that are already known to be
+          ;; materialized as value are omitted (for the most part
+          ;; defs and imports)
+          (let [provided-by (mk-aid-invoke (.this-arity tctx))
+                provided-to (mk-aid-key (.fn-form inv) (.at-idx inv))]
+            (add-env-provider provided-by provided-to)))
+        (visit-args (subvec (x/argv x) 1)))
+            
+      (and (instance? Binding x)
+           (= (x/b-kind (.bref ^Binding x)) x/b-let))
+      (let [arg-init (x/nth-arg x 0)]   ;let binding always has init
+        (if (x/fn-form? arg-init)
+          (process-fn-form ^FnForm arg-init)
+          (when (nil? (x/root-fn-form arg-init))
+            (visit-arg arg-init))))
+            
+      :else
+      (do (when (and (instance? Binding x)
+                     (= (x/b-kind (.bref ^Binding x)) x/b-def))
+            (.add (.global-bs tctx) x))
+          (visit-args (x/argv x))))))
+
+;;; Returns a seq of EnvEntry based on deduplicated `origin-bref`
+;;; values from all arities of `fn-form`.
+(defn- fn-env ^"[Ltcljc.emitter.emitfn.EnvEntry;" [^FnForm fn-form]
+  (letfn [(env-entry ^EnvEntry [^BindingRef origin-bref]
+            (let [root-bref (x/root-bref origin-bref)
+                  root-fnc (when-some [fn-form (x/root-fn-form root-bref)]
+                             (.!fnc fn-form))]
+              ;; FIXME... how to determine forward? here???
+              (EnvEntry. origin-bref root-bref root-fnc nil false)))]
+    (->> (.at-sigs fn-form)
+         (mapcat #(util/sim-keys (.!closes-over ^Arity %)))
+         (dedupe)
+         (sort-by (fn [^BindingRef bref]
+                    [(x/b-level bref) (x/form bref)]))
+         (map env-entry)
+         ^"[Ltcljc.emitter.emitfn.EnvEntry;" (into-array EnvEntry))))
+
+(defn collect-fn-info ^TlfSummary [^HashSet !private-names ^Expr x]
+  (let [fn-specs (ArrayList.)
+        global-bs (ArrayList.)
+        env-providers (HashMap.)]
+    ;; `env-providers` maps ArityId to a vector of arities that invoke
+    ;; this arity/construct this fn and may provide the environment
+    ;; that the arity closes over.
+
+    (-> (TraversalContext. !private-names env-providers fn-specs global-bs
+                           (mk-aid-key nil -1))
+        (traverse-expr x))
+    ;; At this point every function's `used-as-value` member is stable.
+    #_(print-env-providers :after-traverse-expr env-providers)
+    
+    ;; An arity `a` provides the value `v` that another arity `b`
+    ;; closes over if (a) `v` is a a binding of `a` (parameter, let,
+    ;; etc.), or (b) `a` closes over `v` itself.
+    ;;
+    ;; If arity `a` invokes arity `b` and `b`'s function is not used
+    ;; as a value, then `a` must provide all values that `b` closes
+    ;; over.
+    ;;
+    ;; If arity `a` instanciates a function `f` (i.e. the function
+    ;; literal of `f` is a subexpression of `a`) and `f` is used as a
+    ;; value, then `a` must provide the union of all values that any
+    ;; arity of `f` closes over.
+    ;;
+    ;; Implementation note: This is a nested loop three levels deep.
+    ;; First over environment consumers that may have unmet
+    ;; dependencies, then over all their environment providers, and
+    ;; finally over the values the consumer closes over.
+    (loop [env-consumers (.keySet env-providers)]
+      (when-not (.isEmpty env-consumers)
+        (recur (propagate-env-demands! env-consumers env-providers))))
+    ;; At this point every function's `!closes-over` member is stable.
+
+    (let [fn-specs (mapv (fn ^FnSpec [^FnSpec fspec]
+                           (FnSpec. (.fn-form fspec) (fn-env (.fn-form fspec))))
+                         fn-specs)]
+      ;; Now determine for every FnSpec its "constantness" and store
+      ;; the result in its mutable FnCode blob.
+      (loop []
+        (let [n (reduce (fn ^int [^int flipped ^FnSpec fspec]
+                          (let [fnc (-> fspec .fn-form .!fnc)]
+                            (cond
+                              (.variable-environment? fnc)
+                              flipped   ;already flipped to true
+                       
+                              (emitfn/materialized-env? fspec)
+                              (do (.mark-variable-environment fnc)
+                                  (inc flipped)) ;one more non-constant value
+
+                              :else flipped)))
+                        (object 0) fn-specs)]
+          (when (pos? ^int n) (recur))))
+      ;; At this point every function's `variable-environment?` member
+      ;; is stable.
+      
+      (-> (TlfSummary. fn-specs (vec global-bs) x)
+          #_(print-fn-summary env-providers)))))

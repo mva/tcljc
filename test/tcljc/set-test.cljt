@@ -1,0 +1,428 @@
+(ns tcljc.set-test
+  (:require [tcljc.bootstrap :refer [asm-expr nmsp]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest set-instance-field-test
+  ;; setting a public volatile field (orignally a member of
+  ;; clojure.lang.AFunction)
+  (is (= '[["LOCAL 0: AFnMh pf"]
+           (ALOAD_0)
+           (ACONST_NULL)
+           (DUP_X1)
+           (PUTFIELD AFnMh "__methodImplCache" "Lclojure/lang/MethodImplCache;")
+           (ARETURN)]
+         (asm-expr [^tinyclj.lang.AFnMh pf]
+                   (set! (.__methodImplCache pf) nil))))
+  (is (= '[["LOCAL 0: AFnMh pf"]
+           (ALOAD_0)
+           (ACONST_NULL)
+           (PUTFIELD AFnMh "__methodImplCache" "Lclojure/lang/MethodImplCache;")
+           (RETURN)]
+         (asm-expr ^void [^tinyclj.lang.AFnMh pf]
+                   (set! (.__methodImplCache pf) nil)))))
+
+(deftest set-volatile-mutable-statm
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PRIVATE VOLATILE] "x" "I")]
+            
+            [(METHOD [PUBLIC] "<init>" "(I)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ILOAD_1)
+             (PUTFIELD . "x" "I")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (ALOAD_0)
+             (ICONST_1)
+             (PUTFIELD . "x" "I")
+             (LDC "foo")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^:volatile-mutable ^int x]
+                   :implements [clojure.lang.IType]
+                   (toString [_]
+                             (set! x 1)
+                             "foo"))]))))
+
+(deftest set-volatile-mutable-expr
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PRIVATE VOLATILE] "x" "I")]
+            
+            [(METHOD [PUBLIC] "<init>" "(I)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ILOAD_1)
+             (PUTFIELD . "x" "I")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (ALOAD_0)
+             (ICONST_1)
+             (DUP_X1)
+             (PUTFIELD . "x" "I")
+             (INVOKEDYNAMIC "_" "(I)Ljava/lang/String;"
+                            :bsm-concat ["foo\\u0001"])
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^:volatile-mutable ^int x]
+                   :implements [clojure.lang.IType]
+                   (toString [_]
+                             (str "foo" (set! x 1))))]))))
+
+(deftest set-unsynchronized-mutable-statm
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PRIVATE] "x" "I")]
+            
+            [(METHOD [PUBLIC] "<init>" "(I)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ILOAD_1)
+             (PUTFIELD . "x" "I")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (ALOAD_0)
+             (ICONST_1)
+             (PUTFIELD . "x" "I")
+             (LDC "foo")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^:unsynchronized-mutable ^int x]
+                   :implements [clojure.lang.IType]
+                   (toString [_]
+                             (set! x 1)
+                             "foo"))]))))
+
+(deftest set-unsynchronized-mutable-expr
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PRIVATE] "x" "I")]
+            
+            [(METHOD [PUBLIC] "<init>" "(I)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ILOAD_1)
+             (PUTFIELD . "x" "I")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (ALOAD_0)
+             (ICONST_1)
+             (DUP_X1)
+             (PUTFIELD . "x" "I")
+             (INVOKEDYNAMIC "_" "(I)Ljava/lang/String;"
+                            :bsm-concat ["foo\\u0001"])
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^:unsynchronized-mutable ^int x]
+                   :implements [clojure.lang.IType]
+                   (toString [_]
+                             (str "foo" (set! x 1))))]))))
+
+(deftest overwrite-unsynchronized-mutable-statm
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PRIVATE] "x" "I")]
+            
+            [(METHOD [PUBLIC] "<init>" "(I)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int x"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ILOAD_1)
+             (PUTFIELD . "x" "I")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (ALOAD_0)
+             (GETFIELD . "x" "I")
+             (ISTORE_1)
+             ["LOCAL 1: int t"]
+             (ALOAD_0)
+             (ICONST_1)
+             (PUTFIELD . "x" "I")
+             (ILOAD_1)
+             (INVOKEDYNAMIC "_" "(I)Ljava/lang/String;"
+                            :bsm-concat ["foo\\u0001"])
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^:unsynchronized-mutable ^int x]
+                   :implements [clojure.lang.IType]
+                   (toString [_]
+                             (let* [t x]
+                               (set! x 1)
+                               (str "foo" t))))]))))
+
+(deftest swap-unsynchronized-mutable-statm
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PRIVATE] "x" "I")]
+            [(FIELD [PRIVATE] "y" "I")]
+            
+            [(METHOD [PUBLIC] "<init>" "(II)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: int x"]
+             #_["LOCAL 2: int y"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ILOAD_1)
+             (PUTFIELD . "x" "I")
+             (ALOAD_0)
+             (ILOAD_2)
+             (PUTFIELD . "y" "I")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: T _"]
+             (ALOAD_0)
+             (GETFIELD . "x" "I")
+             (ISTORE_1)
+             ["LOCAL 1: int t"]
+             (ALOAD_0)
+             (ALOAD_0)
+             (GETFIELD . "y" "I")
+             (PUTFIELD . "x" "I")
+             (ALOAD_0)
+             (ILOAD_1)
+             (PUTFIELD . "y" "I")
+             (LDC "foo")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^:unsynchronized-mutable ^int x
+                    ^:unsynchronized-mutable ^int y]
+                   :implements [clojure.lang.IType]
+                   (toString [_]
+                             (let* [t x]
+                               (set! x y)
+                               (set! y t))
+                             "foo"))]))))
+
+(deftest set-var-statement-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
+             (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (LDC "pkg.ns0")
+             (LDC "v")
+             (LDC "foo")
+             (INVOKESTATIC RT "var" "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)Lclojure/lang/Var;")
+             (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
+                   [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["var"]]
+                    [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
+             (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
+             (PUTSTATIC . "v" "Lclojure/lang/Var;")
+             (GETSTATIC . "v" "Lclojure/lang/Var;")
+             (LDC "bar")
+             (INVOKEVIRTUAL Var "set" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (POP)
+             
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def ^:var v "foo")
+                 (set! v "bar")])))
+  
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
+             (Signature "Lclojure/lang/Var<Ljava/lang/String;>;")]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (LDC "pkg.ns0")
+             (LDC "v")
+             (LDC "foo")
+             (INVOKESTATIC RT "var" "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)Lclojure/lang/Var;")
+             (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
+                   [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["tag"]]
+                    [:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["String"]]
+                    [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["var"]]
+                    [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
+             (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
+             (PUTSTATIC . "v" "Lclojure/lang/Var;")
+            
+             (GETSTATIC . "v" "Lclojure/lang/Var;")
+             (LDC "bar")
+             (INVOKEVIRTUAL Var "set" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (CHECKCAST String)
+             (POP)
+             
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def ^:var ^String v "foo")
+                 (set! v "bar")]))))
+
+(deftest set-var-expression-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
+             (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (LDC "pkg.ns0")
+             (LDC "v")
+             (LDC "foo")
+             (INVOKESTATIC RT "var" "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)Lclojure/lang/Var;")
+             (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
+                   [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["var"]]
+                    [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
+             (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
+             (PUTSTATIC . "v" "Lclojure/lang/Var;")
+            
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (GETSTATIC . "v" "Lclojure/lang/Var;")
+             (LDC "bar")
+             (INVOKEVIRTUAL Var "set" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/Object;)V")
+             
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def ^:var v "foo")
+                 (.println System/out (set! v "bar"))]))))

@@ -1,0 +1,529 @@
+(ns tcljc.classfile
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.runtime :as rt])
+  (:import
+   (clojure.lang IPersistentVector)
+   (jdk.classfile Classfile Classfile$Option ClassHierarchyResolver
+                  ClassHierarchyResolver$ClassHierarchyInfo
+                  Opcode TypeKind ClassBuilder MethodBuilder CodeBuilder Label)
+   (jdk.classfile.constantpool ConstantPoolBuilder MethodRefEntry)
+   (jdk.classfile.instruction SwitchCase)
+   (java.lang.constant ConstantDesc ClassDesc MethodTypeDesc MethodHandleDesc
+                       DirectMethodHandleDesc DirectMethodHandleDesc$Kind)
+   (java.lang.invoke MethodHandle TypeDescriptor$OfField MethodHandles$Lookup)
+   (java.util.concurrent ConcurrentHashMap)
+   (java.util.function Consumer Function)))
+
+(def object-initializer-name "<init>")
+(def class-initializer-name "<clinit>")
+
+(def ^:private dot \.)
+(defn valid-java-class-name? ^boolean [^String s]
+  ;; reject dot at beginning or end, consecutive dots, and munged characters
+  (if (or (.isEmpty s) (= (.charAt s 0) dot)
+          (= (.charAt s (dec (.length s))) dot))
+    false
+    (loop [i 0]
+      (if (= i (.length s))
+        true
+        (let [c (.charAt s i)]
+          (if (or (nil? (cfg/nm-repl c))
+                  (and (= c dot) (not (= (.charAt s (inc i)) dot))))
+            (recur (inc i))
+            false))))))
+
+;;; Constants of this type are always materialized via LDC, even when
+;;; loaded in other classes.
+(defn constant-loads-as-ldc? ^boolean [^TypeDescriptor$OfField tp]
+  (letfn [(class-as-ldc? ^boolean [^Class cl]
+            (cond
+              (.isPrimitive cl) true    ;cannot be void
+              (identical? String cl) true
+              (identical? Class cl) true
+              :else false))]
+    (and (instance? Class tp) (class-as-ldc? ^Class tp))))
+
+;;; ------------------------------------------------------------------------
+
+(def ^:private bytecode2opcode (new "[Ljdk.classfile.Opcode;" 256))
+(doseq [^Opcode opc (Opcode/values)]
+  (when-not (or (.isPseudo opc) (.isWide opc))
+    (aset bytecode2opcode (.bytecode opc) opc)))
+
+(defn bc2opc
+  (^Opcode [^int bytecode]
+   (aget bytecode2opcode bytecode))
+  (^Opcode [^Opcode base-opcode ^int delta]
+   (aget bytecode2opcode (+ (.bytecode base-opcode) delta))))
+
+(defn type-kind ^TypeKind [^TypeDescriptor$OfField tp]
+  (if (.isPrimitive tp)
+    (TypeKind/fromDescriptor (.descriptorString tp))
+    TypeKind/ReferenceType))    ;no need to compute descriptorString()
+
+(defn between ^boolean [^int start-incl ^Opcode opc ^int end-excl]
+  (let [bytecode (.bytecode opc)]
+    (and (<= start-incl bytecode) (< bytecode end-excl))))
+
+(defn by-slot-size ^Opcode [^Class tp ^Opcode if-slot-1 ^Opcode if-slot-2]
+  (condp identical? tp
+    Long/TYPE if-slot-2
+    Double/TYPE if-slot-2
+    #_else if-slot-1))
+
+;;; Values for `test-opcd`.
+(def eq 0)
+(def ne 1)
+(def lt 2)
+(def ge 3)
+(def gt 4)
+(def le 5)
+
+(defn negate-cmp ^int [^int test-opcd]
+  (bit-xor test-opcd 0x1))              ;even -> inc, odd -> dec
+
+(defn swap-cmp ^int [^int test-opcd]
+  (case test-opcd
+    (0 1) test-opcd                     ;eq -> eq, ne -> ne
+    (2 3) (+ test-opcd 2)               ;lt -> gt, ge -> le
+    (4 5) (- test-opcd 2)))             ;gt -> lt, le -> ge
+
+;;; Returned values follow the ordering of xastore opcodes.
+(defn opcode-delta ^int [^Class cl]     ;pre: `cl` is not void
+  (letfn [(primitive-delta ^int [^Class cl]
+            (condp identical? cl
+              Integer/TYPE 0
+              Long/TYPE 1
+              Float/TYPE 2
+              Double/TYPE 3
+              Byte/TYPE 5
+              Boolean/TYPE 5
+              Character/TYPE 6
+              Short/TYPE 7))]
+    (if (.isPrimitive cl)
+      (primitive-delta cl)
+      4)))
+
+(defn empty-bci-range? ^boolean [^CodeBuilder xb ^Label start ^Label end]
+  (not (< (.labelToBci xb start) (.labelToBci xb end))))
+
+;;; ------------------------------------------------------------------------
+
+(defmacro with-cbh [sig & body]
+  (assert (vector? sig))
+  (assert (= (count sig) 1))
+  (let [[nm] sig]
+    `(reify*
+      [java.util.function.Consumer]
+      (accept [_ ~nm]
+              (let* [~nm ~(with-meta nm {:tag jdk.classfile.ClassBuilder})]
+                #_(.println System/out ":accept ClassBuilder start")
+                ~@body
+                #_(.println System/out ":accept ClassBuilder end"))))))
+
+(defmacro with-mbh [sig & body]
+  (assert (vector? sig))
+  (assert (= (count sig) 1))
+  (let [[nm] sig]
+    `(reify*
+      [java.util.function.Consumer]
+      (accept [_ ~nm]
+              (let* [~nm ~(with-meta nm {:tag jdk.classfile.MethodBuilder})]
+                #_(.println System/out ":accept MethodBuilder start")
+                ~@body
+                #_(.println System/out ":accept MethodBuilder end"))))))
+
+(defmacro with-xbh [sig & body]
+  (assert (vector? sig))
+  (assert (= (count sig) 1))
+  (let [[nm] sig]
+    `(reify*
+      [java.util.function.Consumer]
+      (accept [_ ~nm]
+              (let* [~nm ~(with-meta nm {:tag jdk.classfile.CodeBuilder})]
+                #_(.println System/out "\n:accept CodeBuilder start")
+                ~@body
+                #_(.println System/out ":accept CodeBuilder end\n"))))))
+
+(defmacro with-fbh [sig & body]
+  (assert (vector? sig))
+  (assert (= (count sig) 1))
+  (let [[nm] sig]
+    `(reify*
+      [java.util.function.Consumer]
+      (accept [_ ~nm]
+              (let* [~nm ~(with-meta nm {:tag jdk.classfile.FieldBuilder})]
+                #_(.println System/out ":accept FieldBuilder start")
+                ~@body
+                #_(.println System/out ":accept FieldBuilder end"))))))
+
+
+(definterface IClassHierarchyRegistry
+  (register! ^void [^ClassHierarchyResolver$ClassHierarchyInfo ch-info]))
+
+(deftype CHR [^ClassHierarchyResolver from-file
+              ^ConcurrentHashMap class-map]
+  ClassHierarchyResolver
+  (getClassInfo [_ class-desc]
+    (or (.get class-map class-desc)
+        (.getClassInfo from-file class-desc)))
+
+  IClassHierarchyRegistry
+  (register! [_ ch-info]
+    (.put class-map (.thisClass ch-info) ch-info)))
+
+(letfn [(internal-name ^String [^ClassDesc cd]
+           (assert (not (.isArray cd)))
+           (assert (not (.isPrimitive cd)))
+           (let [desc (.descriptorString cd)]
+             (.substring desc 1 (dec (.length desc)))))]
+  (defn mk-chr ^CHR [^ClassLoader dyn-ld]
+    (CHR. (ClassHierarchyResolver/ofCached
+           (fn ^Function dyn-ld-stream [class-desc]
+             (.getResourceAsStream dyn-ld (str (internal-name class-desc)
+                                               cfg/class-suffix))))
+          (ConcurrentHashMap.))))
+
+(defn build ^bytes [^ClassDesc this-class ^Consumer cbh
+                    ^ClassHierarchyResolver dyn-chr]
+  (let [options [(Classfile$Option/patchDeadCode false)
+                 (Classfile$Option/classHierarchyResolver dyn-chr)]]
+    (Classfile/build this-class ^java.util.Collection options cbh)
+    #_(catch Throwable ex
+        (.println System/err (str :build-failed " " (.descriptorString this-class)))
+        (.println System/err (str (.getMessage ex) " // suppressed: " (alength (.getSuppressed ex))))
+        (.printStackTrace ex)
+        (let [a (.getSuppressed ex)]
+          (dotimes [i (alength a)]
+            (.println System/err (str "suppressed #" i))
+            (.printStackTrace (aget a i))))
+        (.println System/err)
+        (throw ex))))
+
+;;; ------------------------------------------------------------------------
+
+(defn invoke-instr ^CodeBuilder [^CodeBuilder xb
+                                 ^DirectMethodHandleDesc$Kind k ^ClassDesc owner
+                                 ^String name ^MethodTypeDesc mtd]
+  (let [opc (case (.refKind k)
+              #_REF_invokeVirtual 5 Opcode/INVOKEVIRTUAL
+              #_REF_invokeStatic 6 Opcode/INVOKESTATIC
+              #_REF_invokeSpecial 7 Opcode/INVOKESPECIAL
+              #_REF_newInvokeSpecial 8 Opcode/INVOKESPECIAL
+              #_REF_invokeInterface 9 Opcode/INVOKEINTERFACE)]
+    (.invokeInstruction xb opc owner name mtd (.isInterface k))))
+
+(defn invoke
+  (^CodeBuilder [^CodeBuilder xb ^DirectMethodHandleDesc$Kind kind
+                 ^ClassDesc owner ^String method-name
+                 ^String lookup-descriptor ^boolean owner-interface?]
+   (let [cp (.constantPool xb)
+         owner (.classEntry cp owner)
+         nm (.utf8Entry cp method-name)
+         tp (.utf8Entry cp lookup-descriptor)
+         nat (.natEntry cp nm tp)
+         opc (case (.refKind kind)
+               #_REF_getField 1 Opcode/GETFIELD
+               #_REF_getStatic 2 Opcode/GETSTATIC
+               #_REF_putField 3 Opcode/PUTFIELD
+               #_REF_putStatic 4 Opcode/PUTSTATIC
+               #_REF_invokeVirtual 5 Opcode/INVOKEVIRTUAL
+               #_REF_invokeStatic 6 Opcode/INVOKESTATIC
+               #_REF_invokeSpecial 7 Opcode/INVOKESPECIAL
+               #_REF_newInvokeSpecial 8 Opcode/INVOKESPECIAL
+               #_REF_invokeInterface 9 Opcode/INVOKEINTERFACE)]
+     (if (< (.refKind kind) #_REF_invokeVirtual 5)
+       (.fieldInstruction xb opc (.fieldRefEntry cp owner nat))
+       (.invokeInstruction xb opc (if owner-interface?
+                                    (.interfaceMethodRefEntry cp owner nat)
+                                    (.methodRefEntry cp owner nat))))))
+  (^CodeBuilder [^CodeBuilder xb ^DirectMethodHandleDesc mhd]
+   (invoke xb (.kind mhd) (.owner mhd) (.methodName mhd) (.lookupDescriptor mhd)
+           (.isOwnerInterface mhd))))
+
+;;; ------------------------------------------------------------------------
+
+(definterface ILdStInstr
+  (emit-load ^void [^CodeBuilder xb])
+  (emit-store ^void [^CodeBuilder xb ^boolean binding?])
+  (emit-iinc ^void [^CodeBuilder xb ^int iinc-delta])
+  (mh-if-global ^MethodHandle [^MethodHandles$Lookup l]))
+(defn ld-insn ^CodeBuilder [^CodeBuilder xb ^ILdStInstr ld-st]
+  (.emit-load ld-st xb)
+  xb)
+(defn st-insn ^CodeBuilder [^CodeBuilder xb ^ILdStInstr ld-st ^boolean binding?]
+  (.emit-store ld-st xb binding?)
+  xb)
+(defn st-iinc ^CodeBuilder [^CodeBuilder xb ^ILdStInstr ld-st ^int iinc-delta]
+  ;; a delta of zero is interpreted as "identity store" and is elided
+  ;; from the output irrespective of the type of the local
+  (when-not (zero? iinc-delta)
+    (.emit-iinc ld-st xb iinc-delta))
+  xb)
+
+(deftype LdStConstant [^ConstantDesc const]
+  ILdStInstr
+  (emit-load [_ xb]
+    (.constantInstruction xb const))
+  (emit-store [_ xb binding?]
+    (throw (UnsupportedOperationException.)))
+  (emit-iinc [_ xb iinc-delta]
+    (throw (UnsupportedOperationException.)))
+  (mh-if-global [_ l]
+    (throw (UnsupportedOperationException.))))
+(def ld-st-constant ->LdStConstant)
+
+(deftype LdStPrimitive []
+  ILdStInstr
+  (emit-load [_ xb]
+    (throw (UnsupportedOperationException.)))
+  (emit-store [_ xb binding?]
+    (throw (UnsupportedOperationException.)))
+  (emit-iinc [_ xb iinc-delta]
+    (throw (UnsupportedOperationException.)))
+  (mh-if-global [_ l]
+    (throw (UnsupportedOperationException.))))
+;; Special "cannot be loaded" entry for primitive function.  Also used
+;; for the symbol table entry of a macro name.
+(def ld-st-primitive (LdStPrimitive.))
+
+(deftype LdStReceiver [^TypeDescriptor$OfField tp ^String mnm]
+  ILdStInstr
+  (emit-load [_ xb]
+    (.loadInstruction xb (type-kind tp) (.receiverSlot xb)))
+  (emit-store [_ xb binding?]
+    (assert binding?)
+    (when cfg/enable-local-variables
+      (.localVariable xb (.receiverSlot xb) mnm (rt/cd-of tp)
+                      (.startLabel xb) (.endLabel xb))))
+  (emit-iinc [_ xb iinc-delta]
+    (throw (UnsupportedOperationException.)))
+  (mh-if-global [_ l]
+    (throw (UnsupportedOperationException.))))
+(def ld-st-receiver ->LdStReceiver)
+
+(deftype LdStParameter [^TypeDescriptor$OfField tp ^String mnm
+                        ^int param-no]
+  ILdStInstr
+  (emit-load [_ xb]
+    (.loadInstruction xb (type-kind tp) (.parameterSlot xb param-no)))
+  (emit-store [_ xb binding?]
+    (let [slot (.parameterSlot xb param-no)]
+      (when-not binding?
+        (.storeInstruction xb (type-kind tp) slot))
+      (when (and cfg/enable-local-variables binding?)
+        (.localVariable xb slot mnm (rt/cd-of tp)
+                        (.startLabel xb) (.endLabel xb)))))
+  (emit-iinc [_ xb iinc-delta]
+    (.iinc xb (.parameterSlot xb param-no) iinc-delta))
+  (mh-if-global [_ l]
+    (throw (UnsupportedOperationException.))))
+(def ld-st-parameter ->LdStParameter)
+
+(deftype LdStLocal [^TypeDescriptor$OfField tp ^String mnm ^int slot]
+  ILdStInstr
+  (emit-load [_ xb]
+    (.loadInstruction xb (type-kind tp) slot))
+  (emit-store [_ xb binding?]
+    (.storeInstruction xb (type-kind tp) slot)
+    (when (and cfg/enable-local-variables binding?)
+      (let [label (.newLabel xb)]
+        (-> (.labelBinding xb label)
+            (.localVariable slot mnm (rt/cd-of tp) label (.endLabel xb))))))
+  (emit-iinc [_ xb iinc-delta]
+    (.iinc xb slot iinc-delta))
+  (mh-if-global [_ l]
+    (throw (UnsupportedOperationException.))))
+(def ld-st-local ->LdStLocal)
+
+(deftype LdStMember [^DirectMethodHandleDesc ld-mhd
+                     ^DirectMethodHandleDesc st-mhd
+                     ^boolean virtual?]
+  ILdStInstr
+  (emit-load [_ xb]
+    (when virtual? (.aload xb 0))
+    (invoke xb ld-mhd))
+  (emit-store [_ xb iinc-delta]
+    ;; CAVEAT: virtual store must bring its own ALOAD_0 (SWAP only
+    ;; works with two category 1 operands)
+    (invoke xb st-mhd))
+  (emit-iinc [_ xb iinc-delta]
+    (throw (UnsupportedOperationException.)))
+  (mh-if-global [_ l]
+    (assert (not virtual?))
+    (.resolveConstantDesc ld-mhd l)))
+
+(defn ld-st-static ^LdStMember [^ClassDesc owner ^String name ^ClassDesc tp]
+  (LdStMember. (MethodHandleDesc/ofField rt/mhk-static-getter owner name tp)
+               (MethodHandleDesc/ofField rt/mhk-static-setter owner name tp)
+               false))
+(defn ld-st-virtual ^LdStMember [^ClassDesc owner ^String name ^ClassDesc tp]
+  (LdStMember. (MethodHandleDesc/ofField rt/mhk-getter owner name tp)
+               (MethodHandleDesc/ofField rt/mhk-setter owner name tp)
+               true))
+(defn ld-st-field? ^boolean [^ILdStInstr x]
+  (and (instance? LdStMember x) (some? (.st-mhd ^LdStMember x))))
+
+(defn ld-st-method ^LdStMember [^ClassDesc owner ^String name ^ClassDesc tp]
+  (let [lookup-tp (MethodTypeDesc/of tp)]
+    (LdStMember. (MethodHandleDesc/ofMethod rt/mhk-static owner name lookup-tp)
+                 nil false)))
+(defn ld-st-method? ^boolean [^ILdStInstr x]
+  (and (instance? LdStMember x) (nil? (.st-mhd ^LdStMember x))))
+
+(defn member-tp ^ClassDesc [^LdStMember ld-st]
+  (-> ld-st .ld-mhd .invocationType .returnType))
+(defn member-nm ^String [^LdStMember ld-st]
+  (-> ld-st .ld-mhd .methodName))
+
+(defn as-parameter ^LdStParameter [^LdStMember ld-st ^int param-no]
+  (ld-st-parameter (member-tp ld-st) (member-nm ld-st) param-no))
+
+(defn as-parameters [^IPersistentVector prefix ld-sts]
+  (let [n (count prefix)]
+    (into prefix
+          (map-indexed (fn [^int i ^LdStMember ld-st]
+                         (as-parameter ld-st (+ n i))))
+          ld-sts)))
+
+;;; ------------------------------------------------------------------------
+
+(defn parameter-mtd ^MethodTypeDesc [^ClassDesc rtype prefix-cds param-lds]
+  (->> (into prefix-cds
+             (map #(.tp ^tcljc.classfile.LdStParameter %))
+             param-lds)
+       (rt/cd-array-of)
+       (MethodTypeDesc/of rtype)))
+
+(defn constructor ^void [^ClassBuilder cb ^int flags
+                         ^DirectMethodHandleDesc super-mhd
+                         param-lds field-sts]
+  (let [super-argn (-> super-mhd .invocationType .parameterCount)
+        xbh (with-xbh [xb]
+              (assert (= (+ super-argn (count field-sts)) (count param-lds)))
+              (.aload xb 0)
+              (doseq [param-ld (take super-argn param-lds)]
+                (ld-insn xb param-ld))
+              (invoke xb super-mhd)
+              (->> (map (fn [param-ld field-st]
+                          (-> (.aload xb 0)
+                              (ld-insn param-ld)
+                              (st-insn field-st false)))
+                        (drop super-argn param-lds) field-sts)
+                   (doall))
+              (.return_ xb))]
+    (.withMethodBody cb object-initializer-name
+                     (parameter-mtd rt/void [] param-lds) flags xbh)))
+
+(defn delegating-constructor ^void [^ClassBuilder cb ^int flags
+                                    ^ClassDesc this-class
+                                    primary-param-lds dflt-consts]
+  (let [n (count dflt-consts)
+        param-lds (drop-last n primary-param-lds)
+        xbh (with-xbh [xb]
+              (.aload xb 0)
+              (doseq [param-ld param-lds]
+                (ld-insn xb param-ld))
+              (doseq [const dflt-consts]
+                (.constantInstruction xb const))
+              (.invokespecial xb this-class object-initializer-name
+                              (parameter-mtd rt/void [] primary-param-lds))
+              (.return_ xb))]
+    (.withMethodBody cb object-initializer-name
+                     (parameter-mtd rt/void [] param-lds)
+                     flags xbh)))
+
+
+(deftype FieldDef [^String mnm
+                   ^Class tp
+                   ^ClassDesc tpd
+                   ^int flags
+                   ^boolean pass-to-super?])
+
+(defn field-def ^FieldDef [^String mnm ^Class tp ^int flags
+                           ^boolean pass-to-super?]
+  (FieldDef. mnm tp (rt/describe-class tp) flags pass-to-super?))
+
+;;; Holds just enough information to pass a definterface* class or a
+;;; skeletal deftype* class to the emitter.
+(deftype ClassDef [^ClassHierarchyResolver$ClassHierarchyInfo ch-info
+                   ^int flags
+                   itfs                 ;seq of ClassDesc
+                   ^DirectMethodHandleDesc super-mhd ;FIXME... drop this
+                   ^IPersistentVector fieldv      ;vector of FieldDef
+                   ^IPersistentVector cb-handlerv ;vector to force eager
+                   ])
+
+(defn class-def ^ClassDef [^ClassDesc this-class
+                           ^ClassDesc super-class
+                           ^int flags
+                           itfs
+                           ^DirectMethodHandleDesc super-mhd ;nil for interface
+                           ^IPersistentVector fieldv
+                           ^IPersistentVector cb-handlerv]
+  (let [interface? (not (zero? (bit-and flags Classfile/ACC_INTERFACE)))]
+    (ClassDef. (ClassHierarchyResolver$ClassHierarchyInfo.
+                this-class interface? super-class)
+               flags itfs super-mhd fieldv cb-handlerv)))
+
+(defn with-methods ^ClassDef [^ClassDef cdef cbhs]
+  (ClassDef. (.ch-info cdef) (.flags cdef) (.itfs cdef)
+             (.super-mhd cdef) (.fieldv cdef) (into (.cb-handlerv cdef) cbhs)))
+
+;;; ------------------------------------------------------------------------
+
+(defn table-switch? ^boolean [^int lo ^int hi ^int nlabels]
+  ;; com/sun/tools/javac/jvm/Gen.java
+  (let [table-space-cost (+ 5 (- hi lo)) ;words
+        table-time-cost 3                ;comparisons
+        lookup-space-cost (+ 3 (* 2 nlabels))
+        lookup-time-cost nlabels]
+    (<= (+ table-space-cost (* 3 table-time-cost))
+        (+ lookup-space-cost (* 3 lookup-time-cost)))))
+
+;; Takes integer operand from parameter 0 and returns the matching
+;; reference value from `const-map`, or `default`.
+(defn const-switch-return [^CodeBuilder xb ^ConstantDesc default const-map]
+  ;; pre: all values in `const-map` have the same TypeKind as
+  ;; `default`
+  (let [smap (sort-by key const-map)
+        v-to-label (java.util.HashMap.)]
+    (letfn [(label+return [^CodeBuilder xb ^Label label ^ConstantDesc const]
+              (cond-> xb
+                (some? label) (.labelBinding label)
+                true (.constantInstruction const)
+                true (.areturn)))
+            
+            (branch-on-opnd [[k v]]
+              (let [start-false (.newLabel xb)]
+                (if (zero? ^int k)
+                  (.branchInstruction xb Opcode/IFNE start-false)
+                  (-> (.constantInstruction xb k)
+                      (.branchInstruction Opcode/IF_ICMPNE start-false)))
+                (-> (label+return xb nil v)
+                    (label+return start-false default))))
+            
+            (^Function mk-label [_]
+             (.newLabel xb))
+            (conj-sc+lv [acc [k v]]     ;uses mutable map v-to-label
+              (let [l (.computeIfAbsent v-to-label v mk-label)]
+                (conj acc [(SwitchCase/of ^int k l) [l v]])))
+            (switch-on-opnd [cases]
+              (let [scs (map first cases)
+                    lvs (distinct (map second cases))
+                    lo ^int (key (first smap))
+                    hi ^int (key (last smap))
+                    start-default (.newLabel xb)]
+                (if (table-switch? lo hi (count const-map)) ;or (count lvs)?
+                  (.tableSwitchInstruction xb lo hi start-default scs)
+                  (.lookupSwitchInstruction xb start-default scs))
+                (run! (fn [[l v]] (label+return xb l v)) lvs)
+                (label+return xb start-default default)))]
+
+      (case (count const-map)
+        0 (label+return xb nil default)
+        1 (do (.iload xb (.parameterSlot xb 0))
+              (branch-on-opnd (first smap)))
+        #_else (do (.iload xb (.parameterSlot xb 0))
+                   (switch-on-opnd (reduce conj-sc+lv [] smap)))))))

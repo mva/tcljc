@@ -1,0 +1,117 @@
+(ns tcljc.grammar-test
+  (:require [tcljc.grammar :as grammar :refer :all]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(defn- p-out [form]
+  (grammar/parse-ns-form form))
+
+(deftest ns-test
+  (is (= '[foo]
+         (p-out '(ns foo))))
+  
+  (is (= '[foo
+           {:tag :require, :ns-sym bar}]
+         (p-out '(ns foo (:require bar)))))
+  (is (= '[foo
+           {:tag :require, :ns-sym bar1}
+           {:tag :require, :ns-sym bar2}]
+         (p-out '(ns foo (:require bar1) (:require bar2)))))
+
+  (is (= '[foo]
+         (p-out '(ns foo (:require)))))
+  (is (= '[foo
+           {:tag :require, :ns-sym bar1}
+           {:tag :require, :ns-sym bar2}]
+         (p-out '(ns foo (:require bar1 bar2))))))
+
+(deftest require-pkg-test
+  (is (= '[pkg.ns0 {:tag :require, :ns-sym pkg.exp}]
+         (p-out '(ns pkg.ns0
+                   (:require pkg.exp)))))
+  (is (= '[pkg.ns0 {:tag :require, :ns-sym pkg.exp}]
+         (p-out '(ns pkg.ns0
+                   (:require [pkg.exp])))))
+  (is (= '[pkg.ns0 {:tag :require, :ns-sym pkg.exp}]
+         (p-out '(ns pkg.ns0
+                   (:require (pkg exp))))))
+  (is (= '[pkg.ns0 {:tag :require, :ns-sym pkg.exp}]
+         (p-out '(ns pkg.ns0
+                   (:require (pkg [exp])))))))
+
+(deftest require-options-test
+  (is (= '[pkg.ns0 {:tag :require, :ns-sym pkg.exp, :as alias}]
+         (p-out '(ns pkg.ns0
+                   (:require [pkg.exp :as alias])))))
+  (is (= '[pkg.ns0 {:tag :require, :ns-sym pkg.exp, :refer-include [foo]}]
+         (p-out '(ns pkg.ns0
+                   (:require [pkg.exp :refer [foo]])))))
+  (is (= '[pkg.ns0 {:tag :require, :ns-sym pkg.exp, :refer-include :all}]
+         (p-out '(ns pkg.ns0
+                   (:require [pkg.exp :refer :all])))))
+  (is (= '[pkg.ns0 {:tag :require, :ns-sym pkg.exp, :rename {foo bar}}]
+         (p-out '(ns pkg.ns0
+                   (:require [pkg.exp :rename {foo bar}]))))))
+
+(deftest refer-clojure-test
+  (is (= '[pkg.ns0 {:tag :require, :refer-clojure true,
+                    :ns-sym tinyclj.core, :as clojure.core,
+                    :refer-exclude [vector]}]
+         (p-out '(ns pkg.ns0
+                   (:refer-clojure :exclude [vector])))))
+  (is (= '[pkg.ns0 {:tag :require, :refer-clojure true,
+                    :ns-sym tinyclj.core, :as clojure.core,
+                    :refer-include []}]
+         (p-out '(ns pkg.ns0
+                   (:refer-clojure :only [])))))
+  (is (= '[pkg.ns0 {:tag :require, :refer-clojure true,
+                    :ns-sym tinyclj.core, :as clojure.core,
+                    :rename {foo bar}}]
+         (p-out '(ns pkg.ns0
+                   (:refer-clojure :rename {foo bar})))))
+  
+  (is (= '[{:tag :require,
+            :refer-clojure true,
+            :ns-sym tinyclj.core,
+            :as clojure.core,
+            :refer-include :all}]
+         (->> (p-out '(ns pkg.ns0))
+              (massage-refer-clojure))))
+  (is (= '[{:tag :require,
+            :refer-clojure true,
+            :ns-sym tinyclj.core,
+            :as clojure.core,
+            :refer-include []}]
+         (->> (p-out '(ns pkg.ns0 (:refer-clojure :only [])))
+              (massage-refer-clojure)))))
+
+(deftest refer-clojure-none-test
+  (is (= '[pkg.ns0 {:tag :require, :refer-clojure true,
+                    :ns-sym tinyclj.core, :as clojure.core,
+                    :refer-clojure-mode :none}]
+         (p-out '(ns pkg.ns0
+                   (:refer-clojure :none)))))
+
+  (is (= '[]
+         (->> (p-out '(ns tinyclj.core (:refer-clojure :none)))
+              (massage-refer-clojure))))
+  (is (= '[]
+         (->> (p-out '(ns some.other.namespace (:refer-clojure :none)))
+              (massage-refer-clojure)))))
+
+(deftest import-class-test
+  (is (= '[pkg.ns0 {:tag :import, :classes [pkg.exp]}]
+         (p-out '(ns pkg.ns0
+                   (:import pkg.exp)))))
+  (is (= '[pkg.ns0 {:tag :import, :classes []}]
+         (p-out '(ns pkg.ns0
+                   (:import)))))
+  (is (= '[pkg.ns0 {:tag :import, :classes []}]
+         (p-out '(ns pkg.ns0
+                   (:import (pkg.exp))))))
+  (is (= '[pkg.ns0 {:tag :import, :classes [pkg.exp]}]
+         (p-out '(ns pkg.ns0
+                   (:import (pkg exp))))))
+  (is (= '[pkg.ns0
+           {:tag :import, :classes [pkg.exp1 pkg.exp2]}]
+         (p-out '(ns pkg.ns0
+                   (:import (pkg exp1 exp2)))))))

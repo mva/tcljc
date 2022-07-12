@@ -1,0 +1,291 @@
+(ns tcljc.dot-form-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr
+                                     is-asm is-asm* is-error]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+;;; [The Dot special form]
+;;; https://clojure.org/reference/java_interop#_the_dot_special_form
+;;; [Member access]
+;;; https://clojure.org/reference/java_interop#_member_access
+
+(deftest dot-instance-test
+  (let [exp-asm '[(LDC "fred")
+                  (INVOKEVIRTUAL String "toUpperCase" "()Ljava/lang/String;")
+                  (ARETURN)]]
+    ;; syntax variants
+    (is-asm* (. "fred" toUpperCase) exp-asm)
+    (is-asm* (. "fred" (toUpperCase)) exp-asm)
+    (is-asm* (.toUpperCase "fred") exp-asm))
+  ;; evaluation
+  (is (= "FRED"
+         (call-expr (. "fred" toUpperCase))))
+  ;; error cases
+  (is-error (. "fred" no_such_method 123)
+            #"no virtual method matching .*no_such_method.*")
+  
+  (is-error (. "fred" (no_such_method))
+            #"no virtual member matching .*no_such_method.*")
+  
+  (is-error (. "fred" no_such_method)
+            #"no virtual member matching .*no_such_method.*")
+  
+  (is-error (. "fred" -toUpperCase)
+            #"no virtual field matching .*toUpperCase.*")
+  
+  ;; what about "exotic" instance values?
+  (is-error (. nil no_such_method)
+            #"no virtual member matching .*no_such_method.*")
+  
+  (is-error (. 123 no_such_method)
+            #"no virtual member matching .*no_such_method.*")
+  
+  (is-error (. nil (no_such_method))
+            #"no virtual member matching .*no_such_method.*")
+  
+  (is-error (. 123 (no_such_method))
+            #"no virtual member matching .*no_such_method.*")
+  
+  ;; syntax errors
+  (is-error (. "fred" (toUpperCase) 123) #"takes 2 arguments")
+  (is-error (. "fred") #"takes 2 or more arguments")
+  (is-error (.) #"takes 2 or more arguments"))
+
+(deftest dot-instance-class-test
+  (let [exp-asm '[(LDC String)
+                  (INVOKEVIRTUAL Class "getName" "()Ljava/lang/String;")
+                  (ARETURN)]]
+    ;; syntax variants
+    (is-asm* (. (identity java.lang.String) getName) exp-asm)
+    (is-asm* (. (identity java.lang.String) (getName)) exp-asm)
+    (is-asm* (.getName java.lang.String) exp-asm))
+  ;; evaluation
+  (is (= "java.lang.String"
+         (call-expr (. (identity java.lang.String) getName)))))
+
+(deftest dot-instance-field-test
+  (is-error (. "fred" no_such_field)
+            #"no virtual member matching .*no_such_field.*")
+  
+  (is-error (. "fred" -no_such_field)
+            #"no virtual field matching .*no_such_field.*")
+  
+  ;; exists as static field:
+  (is-error (. "fred" CASE_INSENSITIVE_ORDER)
+            #"no virtual member matching .*CASE_INSENSITIVE_ORDER.*"))
+
+
+(deftest dot-classname-method-test
+  (let [exp-asm '[(LDC "java.vm.version")
+                  (INVOKESTATIC System "getProperty"
+                                "(Ljava/lang/String;)Ljava/lang/String;")
+                  (ARETURN)]]
+    ;; syntax variants
+    (is-asm* (. java.lang.System getProperty "java.vm.version") exp-asm)
+    (is-asm* (. java.lang.System (getProperty "java.vm.version")) exp-asm)
+    (is-asm* (java.lang.System/getProperty "java.vm.version") exp-asm)
+    (is-asm* (System/getProperty "java.vm.version") exp-asm))
+  ;; evaluation
+  (is (string? (call-expr (. java.lang.System getProperty "java.vm.version"))))
+  ;; error cases
+  (is-error (. java.lang.String toUpperCase 123)
+            #"no static method matching .*toUpperCase.*")
+  
+  (is-error (. java.lang.String (toUpperCase))
+            #"no static member matching .*toUpperCase.*")
+  
+  (is-error (. java.lang.String toUpperCase)
+            #"no static member matching .*toUpperCase.*"))
+
+(deftest dot-classname-field-test
+  (let [exp-asm '[(GETSTATIC String "CASE_INSENSITIVE_ORDER"
+                             "Ljava/util/Comparator;")
+                  (ARETURN)]]
+    ;; syntax variants
+    (is-asm* (identity (. java.lang.String CASE_INSENSITIVE_ORDER)) exp-asm)
+    (is-asm* (identity (. java.lang.String -CASE_INSENSITIVE_ORDER)) exp-asm)
+    (is-asm* (identity (. String CASE_INSENSITIVE_ORDER)) exp-asm)
+    (is-asm* (identity java.lang.String/CASE_INSENSITIVE_ORDER) exp-asm)
+    (is-asm* (identity String/CASE_INSENSITIVE_ORDER) exp-asm)
+    ;; evaluation
+    (is (= System/out (call-expr (. java.lang.System out))))))
+
+
+(deftest dot-macro-test
+  (is-error (..) #".*\.\..* takes 2 or more arguments")
+  (is-error (.. x) #".*\.\..* takes 2 or more arguments")
+  (is-error (.x) #".*\.x.* takes 1 or more argument"))
+
+(deftest dot-call-inexact
+  ;; widen float argument to double before calling `sqrt`
+  (is (= '[(DCONST_1)
+           (INVOKESTATIC Math "sqrt" "(D)D")
+           (DRETURN)]
+         (asm-expr (Math/sqrt (float 1.0))))))
+
+(deftest static-call-inexact-match
+  (is (= '[["LOCAL 0: Object name"]
+           (ALOAD_0)
+           (CHECKCAST String)
+           (INVOKESTATIC Symbol "intern" "(Ljava/lang/String;)Lclojure/lang/Symbol;")
+           (ARETURN)]
+         (asm-expr [^Object name] (clojure.lang.Symbol/intern name)))))
+
+(deftest polymorphic-signature-virtual
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invoke" "()Ljava/lang/Object;")
+           (ARETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   (.invoke mh))))
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invokeExact" "()Ljava/lang/Object;")
+           (ARETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   (.invokeExact mh))))
+
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (ICONST_1)
+           (INVOKEVIRTUAL MethodHandle "invoke" "(Z)Ljava/lang/Object;")
+           (ARETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   (.invoke mh true))))
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (ICONST_1)
+           (BIPUSH 123)
+           (INVOKEVIRTUAL MethodHandle "invoke" "(ZI)Ljava/lang/Object;")
+           (ARETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   (.invoke mh true 123))))
+  
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invoke" "()I")
+           (IRETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   ^int (.invoke mh))))
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invoke" "()Z")
+           (IRETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   ^boolean (.invoke mh))))
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invoke" "()C")
+           (IRETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   ^char (.invoke mh))))
+
+  ;; A type hint like ^int reaches into a polymorphic form and changes
+  ;; its invocation signature.  A type conversion like (int ...) is
+  ;; always applied to the argument without changing it.
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invoke" "()Ljava/lang/Object;")
+           (INVOKESTATIC RT "intCast" "(Ljava/lang/Object;)I")
+           (IRETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   (int (.invoke mh)))))
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invoke" "()Ljava/lang/Object;")
+           (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+           (IRETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   (boolean (.invoke mh)))))
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invoke" "()Ljava/lang/Object;")
+           (INVOKESTATIC RT "charCast" "(Ljava/lang/Object;)C")
+           (IRETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   (char (.invoke mh)))))
+
+  ;; type hint ^void changes the invocation signature as well
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invoke" "()V")
+           (RETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh]
+                   ^void (.invoke mh)))))
+
+
+;; (deftest class-in-op-position
+;;   ;; happens when (clojure.lang.MapEntry. ...) is missing the dot
+;;   (is (thrown-with-msg? Exception #"does not implement `IFn`"
+;;                         (asm-expr []
+;;                                   (clojure.lang.MapEntry "foo" "bar")))))
+
+;; ;;; ------------------------------------------------------------------------
+
+(deftest dot-call-varargs-inexact-1
+  (is (= '[(LDC [STATIC Objects "hash" "([Ljava/lang/Object;)I"])
+           (INVOKEVIRTUAL MethodHandle "invoke" "()I")
+           (IRETURN)]
+         (asm-expr (java.util.Objects/hash))))
+  (is (= '[(LDC [STATIC Objects "hash" "([Ljava/lang/Object;)I"])
+           (LDC "a")
+           (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/String;)I")
+           (IRETURN)]
+         (asm-expr (java.util.Objects/hash "a"))))
+  (is (= '[(LDC [STATIC Objects "hash" "([Ljava/lang/Object;)I"])
+           (LDC "a")
+           (LDC "b")
+           (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/String;Ljava/lang/String;)I")
+           (IRETURN)]
+         (asm-expr (java.util.Objects/hash "a" "b")))))
+
+(deftest dot-call-varargs-inexact-2
+  (is (= '[(LDC [STATIC Paths "get" "(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;"])
+           (LDC "")
+           (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/String;)Ljava/nio/file/Path;")
+           (ARETURN)]
+         ;; there is also a one-argument `get` taking an URI
+         (asm-expr (java.nio.file.Paths/get "")))))
+
+(deftest dot-call-varargs-exact
+  (is (= '[(ICONST_0)
+           (ANEWARRAY Object)
+           (INVOKESTATIC Objects "hash" "([Ljava/lang/Object;)I")
+           (IRETURN)]
+         (asm-expr (java.util.Objects/hash (new objects 0)))))
+  (is (= '[(ICONST_0)
+           (ANEWARRAY String)
+           (INVOKESTATIC Objects "hash" "([Ljava/lang/Object;)I")
+           (IRETURN)]
+         (asm-expr (java.util.Objects/hash (new "[Ljava.lang.String;" 0))))))
+
+(deftest dot-call-varargs-array-to-array
+  (is (= '[(LDC [STATIC Objects "hash" "([Ljava/lang/Object;)I"])
+           (ICONST_0)
+           (NEWARRAY int)
+           (INVOKEVIRTUAL MethodHandle "invoke" "([I)I")
+           (IRETURN)]
+         (asm-expr (java.util.Objects/hash (new ints 0)))))
+  ;; At the moment, ints cannot be passed to an objects vararg
+  ;; directly.  As such there is no need to cast them to object if
+  ;; they appear in a vararg argument position.  This will probably
+  ;; change with Valhalla.  (Also applies to call to variadic
+  ;; function.)
+  (is (not (.isAssignableFrom objects ints))))
+
+(deftest dot-call-varargs-newOutputStream
+  (is (= '[["LOCAL 0: Path path"]
+           (LDC [STATIC Files "newOutputStream"
+                 "(Ljava/nio/file/Path;[Ljava/nio/file/OpenOption;)Ljava/io/OutputStream;"])
+           (ALOAD_0)
+           (GETSTATIC StandardOpenOption "WRITE"
+                      "Ljava/nio/file/StandardOpenOption;")
+           (GETSTATIC StandardOpenOption "CREATE_NEW"
+                      "Ljava/nio/file/StandardOpenOption;")
+           (INVOKEVIRTUAL MethodHandle
+                          "invoke" "(Ljava/nio/file/Path;Ljava/nio/file/StandardOpenOption;Ljava/nio/file/StandardOpenOption;)Ljava/io/OutputStream;")
+           (ARETURN)]
+         (asm-expr [^java.nio.file.Path path]
+                   (java.nio.file.Files/newOutputStream
+                    path
+                    java.nio.file.StandardOpenOption/WRITE
+                    java.nio.file.StandardOpenOption/CREATE_NEW)))))

@@ -1,0 +1,50 @@
+(ns tcljc.emitter.classes
+  (:require
+   [tcljc.util :as util]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.expr :as x]
+   [tcljc.classfile :as cf]
+   [tcljc.emitter.bytecode :as bytecode])
+  (:import
+   (tcljc.expr Arity Expr Binding BindingRef)
+   (clojure.lang Symbol)
+   (jdk.classfile Classfile ClassBuilder CodeBuilder)
+   (java.lang.constant MethodTypeDesc DirectMethodHandleDesc ClassDesc)))
+
+(defn member-mtd ^MethodTypeDesc [^ClassDesc rtype member-lds]
+  (->> (map #(-> ^tcljc.classfile.LdStMember %
+                 .ld-mhd .invocationType .returnType)
+            member-lds)
+       (rt/cd-array-of)
+       (MethodTypeDesc/of rtype)))
+
+;;; ------------------------------------------------------------------------
+
+(letfn [(bridge-body ^CodeBuilder [^CodeBuilder xb ^boolean virtual?
+                                   ^MethodTypeDesc mtd
+                                   ^DirectMethodHandleDesc mhd-to]
+          (when virtual?
+            (.aload xb (.receiverSlot xb)))
+          (dotimes [i (.parameterCount mtd)]
+            (.loadInstruction xb (cf/type-kind (.parameterType mtd i))
+                              (.parameterSlot xb i)))
+          (-> (cf/invoke xb rt/mhd-array-to-iseq)
+              (cf/invoke mhd-to)
+              (.returnInstruction (cf/type-kind (.returnType mtd)))))]
+  
+  (defn bridge-method ^ClassBuilder [^ClassBuilder cb
+                                     ^DirectMethodHandleDesc mhd-from
+                                     ^DirectMethodHandleDesc mhd-to]
+    (when-not (identical? mhd-from mhd-to)
+      (let [virtual? (identical? (.kind mhd-from) rt/mhk-virtual)
+            access (bit-or (if virtual?
+                             bytecode/acc-virtual
+                             bytecode/acc-static)
+                           Classfile/ACC_BRIDGE
+                           Classfile/ACC_VARARGS)
+            mtd (cond-> (.invocationType mhd-from)
+                  virtual? (.dropParameterTypes 0 1))]
+        (.withMethodBody cb (.methodName mhd-from) mtd access
+                         (cf/with-xbh [xb]
+                           (bridge-body xb virtual? mtd mhd-to)))))))

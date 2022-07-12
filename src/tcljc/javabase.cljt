@@ -1,0 +1,263 @@
+(ns tcljc.javabase     ;supporting code for stuff from java.base & JVM
+  (:require
+   [tcljc.config :as config])
+  (:import
+   (clojure.lang Symbol)
+   (jdk.classfile Opcode)
+   (java.lang.invoke MethodHandle)
+   (java.lang.constant ClassDesc DirectMethodHandleDesc$Kind
+                       ConstantDesc ConstantDescs))
+  (:refer-clojure
+   :exclude [int long float double boolean char byte short void]))
+
+;;; primitive operand types
+(def void Void/TYPE)
+(def int Integer/TYPE)
+(def long Long/TYPE)
+(def float Float/TYPE)
+(def double Double/TYPE)
+;;; "computational int" types
+(def boolean Boolean/TYPE)
+(def char Character/TYPE)
+(def byte Byte/TYPE)
+(def short Short/TYPE)
+
+;;; ------------------------------------------------------------------------
+
+(defn same-class? ^boolean [^Class a ^Class b]
+  (identical? a b))
+(defn same-classname? ^boolean [^String clnm ^Class a]
+  (= clnm (.getName a)))
+
+;; Note: `void` is also considered a primitive.  Result is undefined
+;; for `no-return`.
+(defn primitive? ^boolean [^Class tp]
+  (.isPrimitive tp))
+
+(defn statement? ^boolean [^Class tp]
+  (same-class? void tp))
+
+(defn numeric? ^boolean [^Class tp]
+  (and (.isPrimitive tp)
+       ;; FIXME... once inline classes are available, replace this
+       ;; with something like (.isAssignableFrom Number tp)
+       (not (same-class? boolean tp))
+       (not (same-class? void tp))
+       (not (same-class? char tp))))    ;not numeric in Clojure
+
+(defn character? ^boolean [^Class tp]
+  (same-class? char tp))
+
+
+;; Note: `cl-null` is considered a reference.  Result is undefined for
+;; `no-return`.
+(defn reference? ^boolean [^Class tp]
+  (not (primitive? tp)))
+
+(defn array? ^boolean [^Class tp]
+  (.isArray tp))
+
+(defn interface? ^boolean [^Class tp]
+  (.isInterface tp))
+
+
+;;; More permissive assignment compatibility than Java, but more
+;;; restrictive than what the JVM allows.  For type checking, the JVM
+;;; treats an interface class similar to j.l.Object.  On the other
+;;; hand, Tinyclj should reject assigning a value of a known class
+;;; (including primitives) to an interface that the class does not
+;;; implement.
+(defn jvm-assignable-to? ^boolean [^Class a ^Class b]
+  (or (.isAssignableFrom b a)
+      (and (interface? b) (interface? a))))
+
+;;; ------------------------------------------------------------------------
+
+(def jvm-null ConstantDescs/NULL)
+(def jvm-int-zero (Integer/valueOf 0))
+(def jvm-int-one (Integer/valueOf 1))
+(def jvm-float-one (Float/valueOf 1))
+
+(defn in-short? ^boolean [^int n]
+  (<= Short/MIN_VALUE n Short/MAX_VALUE))
+
+(def Object java.lang.Object)
+(def ObjectArray (.arrayType Object))
+(def String java.lang.String)
+(def Class java.lang.Class)
+(def Pattern java.util.regex.Pattern)
+(def Exception java.lang.Exception)
+(def MethodHandle MethodHandle)
+(def MethodHandleArray (.arrayType MethodHandle))
+
+(defn object? ^boolean [^Class tp]      ;exact match
+  (same-class? Object tp))
+
+;;; ------------------------------------------------------------------------
+
+;;; null_type is a special case with a verification type of
+;;; `Null_variable_info`.  An operand of this type usually originates
+;;; from an ACONST_NULL.  Storing an ACONST_NULL in a local and
+;;; retrieving it is also an option, but not with user-visible locals.
+(deftype NullTypeMarker []
+  Object
+  (clone [_]                           ;see `method-clone-array` below
+    (throw (CloneNotSupportedException.))))
+(def cl-null NullTypeMarker)
+(defn null? ^boolean [^Class cl]
+  (same-class? cl-null cl))
+
+;;; Artificial method instance used to mark a call to the polymorphic
+;;; `clone` virtual method that every array type implicitly has.
+(def method-clone-array (.getMethod NullTypeMarker "clone"))
+
+
+;;; Special type of expressions that interrupt the normal flow of
+;;; control: return, recur, throw.  This is a control flow indicator.
+;;; Expressions that split/join control flow handle it specially.
+;;; Otherwise it is usually treated like `void`.
+(deftype NoReturnMarker [])
+(def no-return NoReturnMarker)
+(defn returns? ^boolean [^Class tp]
+  (not (same-class? no-return tp)))
+
+
+;;; This type is used to mark macro and primitive function values.
+(def ^Class cl-compile-time-entity nil)
+
+(defn compile-time-entity? ^boolean [^Class cl]
+  (identical? cl-compile-time-entity cl))
+
+
+;;; Special type indicating that the source or destination of an
+;;; operand can be of arbitrary type.
+;;;
+;;; For the destination of an operand (parameter, return value, or
+;;; field) this type indicates that the destination's type is that of
+;;; the operand.
+;;;
+;;; As the return type of an expression, this type is short lived.  If
+;;; some path of `compile-form` translates a form into such an
+;;; expression, then the type tag processing at the end of
+;;; `compile-form` replaces it with a proper class.
+;;;
+;;; Another short lived use is as marker of the still unknown return
+;;; type of an :auto-return-type arity.  This is an implementation
+;;; detail private to `fn*-form`, `letfn*-form`, and `call-fn-def`.
+(deftype PolymorphicType [])
+(def cl-polymorphic-type PolymorphicType)
+
+(defn polymorphic? ^boolean [^Class cl]
+  (identical? cl-polymorphic-type cl))
+
+
+;;; Returns true if the instruction either pushes a result onto the
+;;; operand stack, or leaves the result of its last argument on the
+;;; stack.
+(defn pushes-result? ^boolean [^Class tp]
+  ;; `InsnUninitialized` produces negative verification type values
+  ;; representing the byte code index of a NEW instruction.  An
+  ;; invalid vtype is not allowed.  Instructions that do not return
+  ;; also have a verification type of `void`.
+  (and (returns? tp) (not (statement? tp))))
+
+(defn throwable? ^boolean [^Class tp]   ;Throwable or subclass of it
+  (.isAssignableFrom Throwable tp))
+
+;;; ------------------------------------------------------------------------
+
+(defn import-symbol-short ^Symbol [^Class cl]
+  (let [s (.getName cl), i (.lastIndexOf s (tinyclj.core/int \.))]
+    (symbol (.substring s (inc i)))))
+;; (defn import-symbol-long ^Symbol [^Class cl]
+;;   (let [s (.getName cl)]
+;;     (symbol s)))
+
+(def initial-imports
+  (let [m (java.util.HashMap.)]
+    ;; by default, import certain java.lang.* classes using their
+    ;; short name; references using the long name are resolved on
+    ;; demand and refer to the same JVM-level class instance
+    (doseq [^Class cl config/java-lang-classes]
+      (.put m (import-symbol-short cl) cl))
+    
+    ;; pseudo-import of primitive and primitive array types types by
+    ;; their lower-case Java name; technically, `^object` should not
+    ;; exist, but for symmetry it does
+    (.put m 'object Object)
+    (.put m 'objects (.arrayType Object))
+    (.put m 'void Void/TYPE)
+    ;; type `void` is treated specially (the JVM considers it to be a
+    ;; primitive as well), and null_type does not exist as a named
+    ;; entity
+    (doseq [^Class cl [boolean byte short char int float long double]
+            :let [nm (.getSimpleName cl)]]
+      (.put m (symbol nm) cl)
+      (.put m (symbol (str nm "s")) (.arrayType cl)))
+    (into {} m)))
+
+(defn computational-const ^Object [^Object x]
+  (cond
+    (nil? x) jvm-null
+    (true? x) jvm-int-one
+    (false? x) jvm-int-zero
+    (instance? Character x) (object (tinyclj.core/int (.charValue ^Character x)))
+    (instance? Byte x) (object (.intValue ^Byte x))
+    (instance? Short x) (object (.intValue ^Short x))
+    :else x))
+
+(defn int-value-of ^int [^Object x]     ;pre: `x` is computational int
+  (cond (instance? Number x) (.intValue ^Number x)
+        (instance? Character x) (tinyclj.core/int (.charValue ^Character x))
+        (instance? Boolean x) (if ^boolean x 1 0)
+        :else (throw (IllegalArgumentException. (str (class x))))))
+
+;;; ------------------------------------------------------------------------
+
+;;; Simulate a small relational database of type mappings.  Number of
+;;; types is small, with 2 or 3 cache lines holding all the data of a
+;;; single column.
+
+(def ^:private box-types                ;types produced by the reader
+  (doto (new objects 12)
+    ;; native constant pool loadable
+    (aset 0 java.lang.Integer)
+    (aset 1 java.lang.Long)
+    (aset 2 java.lang.Float)
+    (aset 3 java.lang.Double)
+    (aset 4 java.lang.String)
+    (aset 5 java.lang.Class)
+    ;; mapped to condy
+    (aset 6 cl-null)
+    (aset 7 java.lang.Boolean)
+    (aset 8 java.lang.Character)
+    (aset 9 java.lang.Byte)
+    (aset 10 java.lang.Short)
+    (aset 11 Pattern)
+    ))
+
+(def logical-types       ;types assigned internally to constant values
+  (doto (new "[Ljava.lang.Class;" 12)
+    ;; native constant pool loadable
+    (aset 0 int)
+    (aset 1 long)
+    (aset 2 float)
+    (aset 3 double)
+    (aset 4 String)
+    (aset 5 Class)
+    ;; mapped to condy
+    (aset 6 cl-null)
+    (aset 7 boolean)                    ;computational int
+    (aset 8 char)                       ;computational int
+    (aset 9 byte)                       ;computational int
+    (aset 10 short)                     ;computational int
+    (aset 11 Pattern)))
+
+(defn aidx ^int [^objects a ^Object x]
+  (loop [i 0]
+    (if (identical? x (aget a i))
+      i
+      (recur (inc i)))))
+
+(defn logical->box ^Class [^Class tp] ;pre: `cl` is a non-void primitive type
+  (aget box-types (aidx logical-types tp)))

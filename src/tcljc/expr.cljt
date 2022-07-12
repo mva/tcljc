@@ -1,0 +1,1471 @@
+(ns tcljc.expr
+  (:require                 ;cannot require or depend on tclj.context!
+   [tcljc.classfile :as cf]
+   [tcljc.util :as util]
+   [tcljc.config :as cfg]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.wrong :as wrong])
+  (:import
+   (tcljc.classfile CHR ILdStInstr ClassDef)
+   (clojure.lang Symbol Keyword ISeq IPersistentVector)
+   (jdk.classfile TypeKind Opcode Instruction FieldModel
+                  Classfile ClassBuilder CodeBuilder
+                  ClassHierarchyResolver$ClassHierarchyInfo)
+   (jdk.classfile.constantpool MethodRefEntry)
+   (jdk.classfile.instruction ConstantInstruction FieldInstruction)
+   (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
+                       DirectMethodHandleDesc$Kind MethodHandleDesc
+                       MethodTypeDesc ConstantDescs)
+   (java.lang.invoke MethodHandles$Lookup TypeDescriptor$OfField)
+   (java.lang.reflect Member Method Field)
+   (java.util.concurrent Future))
+  (:refer-clojure :exclude [type identity pop]))
+
+(definterface __IExpr             ;template for the abstract base type
+  (form ^Object [])
+  (initialize-form ^void [^Object form])
+  (safe-to-discard? ^boolean []))
+
+;; Optional field `form` is only set for expressions compiled from
+;; source code.  If it's an ISeq with :line meta, it also provides the
+;; line number.
+(deftype Expr
+    [^:unsynchronized-mutable ^Object !form
+     ;; The form from which this the expression was compiled.  Limited
+     ;; mutability: stable after `compile-form` is done.
+     
+     ^Class type
+     
+     ^IPersistentVector _args ;no ISeq to prevent lazy seqs
+     
+     ^Object const-value
+     ;; Non-nil if this instruction can be emitted as a constant
+     ;; value.  Either a ConstantDesc or something that can be turned
+     ;; into one (like Class or Pattern).  jb/jvm-null is the only
+     ;; representation of the value `nil`: no other non-nil
+     ;; `const-value` must ever evaluate to `nil` at runtime(!).
+     ;; Computational int values are represented by Integer instances.
+     ;; tcljc.runtime/describe-const-expr maps this to a ConstantDesc.
+     ;;
+     ;; The marker `const-value-empty` signals the empty statement, a
+     ;; form of constant that does not emit any code.  It can only
+     ;; appear in a void context.  Any Expr *not* marked as empty is
+     ;; expected to emit at least one bytecode instruction (although
+     ;; at least Binding violates this expectation).
+     ]
+  
+  :abstract true
+  __IExpr
+  (form [_]
+    !form)
+  (initialize-form [_ form]
+    ;; Only set `_form` once.  Important: Some expressions are shared
+    ;; (like `BindingRef` instances) and their form is set as part of
+    ;; the definition.  Uses must not clobber this value.
+    (when (nil? !form)
+      (set! !form form)))
+  (safe-to-discard? [_]
+    ;; An expression is safe to discard as an argument of a POP/POP2
+    ;; instruction, if its own operation and all its arguments have no
+    ;; visible side-effects.  If the effect of an operation is
+    ;; unknown, or if it can throw an exception, then it must be
+    ;; preserved.
+    (some? const-value)))
+
+(defn expr? ^boolean [x] (instance? Expr x))
+(defn type ^Class [^Expr x] (.type x))
+(defn type-kind ^TypeKind [^Expr x] (cf/type-kind (.type x)))
+(defn argv ^IPersistentVector [^Expr x] (._args x))
+(defn form ^Object [^Expr x] (.form x))
+
+(defn with-innermost-form ^Expr [^Expr x form]
+  (.initialize-form x form)
+  x)
+
+(defn same-type? ^boolean [^Expr a ^Expr b]
+  (jb/same-class? (.type a) (.type b)))
+(defn type? ^boolean [^Class tp ^Expr x]
+  (jb/same-class? tp (type x)))
+
+(defn primitive? ^boolean [^Expr x]
+  (jb/primitive? (type x)))
+(defn numeric? ^boolean [^Expr x]
+  (jb/numeric? (type x)))
+(defn character? ^boolean [^Expr x]
+  (jb/character? (type x)))
+(defn boolean? ^boolean [^Expr x]
+  (type? jb/boolean x))
+(defn reference? ^boolean [^Expr x]
+  (jb/reference? (type x)))
+(defn statement? ^boolean [^Expr x]
+  (jb/statement? (type x)))
+(defn null-type? ^boolean [^Expr x]
+  (jb/null? (type x)))
+(defn returns? ^boolean [^Expr x] ;excludes macro or primitive function values
+  (jb/returns? (type x)))
+(defn pushes-result? ^boolean [^Expr x]
+  (let [tp (type x)]
+    (and (jb/returns? tp) (not (jb/statement? tp)))))
+
+;;; This indicates an error regarding the type *of* an expression.
+(defn wrong-type
+  ([^String msg-prefix ^Expr x]
+   (wrong-type msg-prefix x (type x)))
+  ([^String msg-prefix ^Expr x ^Class tp]
+   (throw (wrong/mk-e (str msg-prefix (wrong/got tp)) {} (form x)))))
+(defn wrong [^String msg-prefix ^Expr x]
+  (throw (wrong/mk-e msg-prefix {} (form x))))
+
+(defn arg-count ^int [^Expr x]
+  (count (argv x)))
+(defn nth-arg
+  (^Expr [^Expr x ^int i]
+   (nth-arg x i nil))
+  (^Expr [^Expr x ^int i ^Expr not-found]
+   (nth (argv x) i not-found)))
+
+(defn vararg-array-compatible? ^boolean [^Class parameter-type ^Expr arg]
+  (.isAssignableFrom parameter-type (type arg)))
+
+;;; ------------------------------------------------------------------------
+
+;;; Represents constant literals and type converted constant literals.
+;;; For example, `-1.0f` and `(float -1.0)` are both mapped to Const,
+;;; but not `(- 1.0f)`.
+(deftype Const [^:pass-to-super-constructor ^Object _form
+                ^:pass-to-super-constructor ^Class type
+                ^:pass-to-super-constructor ^IPersistentVector argv
+                ^:pass-to-super-constructor ^Object const-value]
+  Expr)
+
+(defn const ^Const [^Class type ^Object value]
+  (Const. nil type [] (jb/computational-const value)))
+
+(defn const? ^boolean [^Expr x]
+  (instance? Const x))
+(defn const-value?
+  (^boolean [^Expr x]
+   (some? (.const-value x)))
+  (^boolean [^Expr x ^Object const-value]
+   (.equals const-value (.const-value x))))
+(defn constant-desc ^ConstantDesc [^Expr x]
+  (assert (some? (.const-value x)))
+  (-> (.const-value x)
+      (rt/recover-primitive (type x))
+      (rt/describe-const-expr)))
+(defn constant-desc-array ^"[Ljava.lang.constant.ConstantDesc;" [xs]
+  (into-array ConstantDesc (map constant-desc xs)))
+
+(def expr-true (const jb/boolean jb/jvm-int-one))
+(def expr-false (const jb/boolean jb/jvm-int-zero))
+(defn expr-boolean ^Expr [^boolean b]
+  (if b expr-true expr-false))
+(defn const-value-true? ^boolean [^Expr x]
+  (.equals jb/jvm-int-one (.const-value x)))
+(defn const-value-false? ^boolean [^Expr x]
+  (.equals jb/jvm-int-zero (.const-value x)))
+
+(def expr-nil (const jb/cl-null nil))
+(def expr-nil-object (const jb/Object nil))
+(def expr-zero-int (const jb/int jb/jvm-int-zero))
+(def expr-one-int (const jb/int jb/jvm-int-one))
+(def expr-zero-byte (const jb/byte jb/jvm-int-zero))
+(def expr-zero-char (const jb/char jb/jvm-int-zero))
+
+
+;;; Returns the class instance if `x` is a class name.  `x` can be
+;;; nil.
+(defn classname-type ^Class [^Expr x]
+  (when (and (const? x) (class? (.const-value x)))
+    (.const-value x)))
+
+;;; ------------------------------------------------------------------------
+
+;;; Maps directly to an invoke instruction of a class member.  When
+;;; derived from source code, `member` is one of Method, Field, or
+;;; Constructor.  Vararg methods expect a matching array argument to
+;;; be passed to the vararg parameter.  Fields are interpreted as
+;;; "get" operations.  `Setter` takes care of the "put" operations.
+(deftype InvokeXref [^:pass-to-super-constructor ^Object _form
+                     ^:pass-to-super-constructor ^Class type
+                     ^:pass-to-super-constructor ^IPersistentVector argv
+                     ^:pass-to-super-constructor ^Object const-value
+                     ^DirectMethodHandleDesc$Kind kind
+                     ^ClassDesc owner
+                     ^String method-name
+                     ^String lookup-descriptor
+                     ^boolean owner-interface?
+                     ^boolean settable-field?]
+  Expr)
+
+(defn invoke-xref
+  (^InvokeXref [^Class type ^IPersistentVector argv ^DirectMethodHandleDesc mhd]
+   (invoke-xref type argv nil mhd false))
+  (^InvokeXref [^Class type ^IPersistentVector argv ^Object const-value
+                ^DirectMethodHandleDesc mhd ^boolean settable-field?]
+   (invoke-xref type argv const-value (.kind mhd) (.owner mhd)
+                (.methodName mhd) (.lookupDescriptor mhd)
+                (.isOwnerInterface mhd) settable-field?))
+  (^InvokeXref [^Class type ^IPersistentVector argv ^Object const-value
+                ^DirectMethodHandleDesc$Kind kind
+                ^ClassDesc owner ^String method-name
+                ^String lookup-descriptor ^boolean owner-interface?
+                ^boolean settable-field?]
+   (InvokeXref. nil type argv const-value kind owner
+                method-name lookup-descriptor owner-interface?
+                settable-field?)))
+
+(defn invoke-xref? ^boolean [^Expr x]
+  (instance? InvokeXref x))
+
+(defn invoke-xref-static? ^boolean [^Expr x]
+  (and (invoke-xref? x)
+       (case (-> ^InvokeXref x .kind .refKind)
+         (#_REF_getStatic 2 #_REF_putStatic 4 #_REF_invokeStatic 6) true
+         #_else false)))
+
+(defn invoke-xref-not-special? ^boolean [^Expr x]
+  (and (invoke-xref? x)
+       (case (-> ^InvokeXref x .kind .refKind)
+         (#_REF_invokeSpecial 7 #_REF_newInvokeSpecial 8) false
+         #_else true)))
+
+(defn settable-getter? ^boolean [^Expr x]
+  (and (invoke-xref? x) (.settable-field? ^InvokeXref x)))
+
+(defn invoke-xref-mhd ^DirectMethodHandleDesc [^InvokeXref x]
+  (when (.isClassOrInterface (.owner x)) ;fails for T[].clone()
+    (MethodHandleDesc/of (.kind x) (.owner x) (.method-name x)
+                         (.lookup-descriptor x))))
+
+
+(deftype InvokeDynamic [^:pass-to-super-constructor ^Object _form
+                        ^:pass-to-super-constructor ^Class type
+                        ^:pass-to-super-constructor ^IPersistentVector argv
+                        ^:pass-to-super-constructor ^Object const-value
+                        ^String invocation-name
+                        ^DirectMethodHandleDesc bsm
+                        ^IPersistentVector cexprs]
+  Expr)
+
+(defn invoke-dynamic ^InvokeDynamic [^Class tp ^IPersistentVector argv
+                                     ^DirectMethodHandleDesc bsm
+                                     ^IPersistentVector cexprs]
+  (let [invocation-name rt/dcd-default-name]
+    (InvokeDynamic. nil tp argv nil invocation-name bsm cexprs)))
+
+(defn invoke-fn ^InvokeDynamic [^Class tp ^IPersistentVector fn+argv]
+  (invoke-dynamic tp fn+argv rt/bsm-invoke-fn []))
+
+
+;;; `m` either satisfies `signature-polymorphic?` or is identical to
+;;; `method-clone`.
+(deftype InvokePoly [^:pass-to-super-constructor ^Object _form
+                     ^:pass-to-super-constructor ^Class type
+                     ^:pass-to-super-constructor ^IPersistentVector argv
+                     ^:pass-to-super-constructor ^Object const-value
+                     ^DirectMethodHandleDesc$Kind kind
+                     ^ClassDesc owner
+                     ^String method-name]
+  Expr)
+
+(defn invoke-poly ^InvokePoly [^Class tp ^IPersistentVector argv
+                               ^Object const-value
+                               ^DirectMethodHandleDesc$Kind kind
+                               ^ClassDesc owner ^String method-name]
+  (InvokePoly. nil tp argv const-value kind owner method-name))
+
+(defn invoke-poly? ^boolean [^Expr x]
+  (instance? InvokePoly x))
+
+(defn mh-invoke-inexact ^InvokePoly [^Class tp mh+argv ^Object const-value]
+  (invoke-poly tp (vec mh+argv) const-value
+               rt/mhk-virtual rt/MethodHandle "invoke"))
+
+(defn mh-invoke-xref ^InvokePoly [^Class tp ^IPersistentVector argv
+                                  ^Object const-value
+                                  ^DirectMethodHandleDesc$Kind kind
+                                  ^ClassDesc owner ^String method-name
+                                  ^String lookup-descriptor]
+  (let [mhd (MethodHandleDesc/of kind owner method-name lookup-descriptor)
+        mh-x (const jb/MethodHandle mhd)]
+    (mh-invoke-inexact tp (cons mh-x argv) const-value)))
+
+;;; ------------------------------------------------------------------------
+
+(deftype Insn [^:pass-to-super-constructor ^Object _form
+               ^:pass-to-super-constructor ^Class type
+               ^:pass-to-super-constructor ^IPersistentVector argv
+               ^:pass-to-super-constructor ^Object const-value
+               ^Instruction instr]
+  Expr
+  (safe-to-discard? [this]
+    (or (some? (.const-value ^Expr this))
+        (< (-> instr .opcode .bytecode) Classfile/IALOAD))))
+
+(defn insn* ^Insn [^Class type ^IPersistentVector argv ^Instruction instr]
+  (Insn. nil type argv nil instr))      ;no constant folding!
+
+(defn insn? ^boolean [^Expr x]
+  (instance? Insn x))
+
+(defn dup? ^boolean [^Expr x]
+  (and (insn? x)
+       (cf/between Classfile/DUP (-> ^Insn x .instr .opcode) Classfile/SWAP)))
+(defn dup ^Insn [^Class tp]
+  (insn* tp [] (-> (cf/by-slot-size tp Opcode/DUP Opcode/DUP2)
+                   (jdk.classfile.instruction.StackInstruction/of))))
+(defn dup-x1 ^Insn [^Class tp]
+  (insn* tp [] (-> (cf/by-slot-size tp Opcode/DUP_X1 Opcode/DUP2_X1)
+                   (jdk.classfile.instruction.StackInstruction/of))))
+(defn dup-x2 ^Insn [^Class tp]
+  (insn* tp [] (-> (cf/by-slot-size tp Opcode/DUP_X2 Opcode/DUP2_X2)
+                   (jdk.classfile.instruction.StackInstruction/of))))
+
+(defn return ^Expr [^Expr arg ^Class to-tp] ;pre: `to-tp` is jb/no-return
+  (if (returns? arg)
+    (insn* to-tp [arg] (-> (type-kind arg)
+                           (jdk.classfile.instruction.ReturnInstruction/of)))
+    arg))
+
+(defn throw ^Expr [^Expr arg]
+  (insn* jb/no-return [arg]
+         (jdk.classfile.instruction.ThrowInstruction/of)))
+
+;;; JVM's "checkcast" and "instanceof".
+(defn type-check ^Insn [^Expr arg ^Opcode opcode ^Class check-tp]
+  (let [cd (rt/describe-class check-tp)
+        instr (jdk.classfile.instruction.TypeCheckInstruction/of opcode cd)
+        return-tp (condp identical? opcode
+                    Opcode/CHECKCAST check-tp
+                    Opcode/INSTANCEOF jb/boolean
+                    #_else (throw (IllegalArgumentException.)))]
+    (insn* return-tp [arg] instr)))
+
+
+;;; First argument invokes some kind of "get" operation, second
+;;; argument is the value that should be passed to the corresponding
+;;; setter.  Third argument is a DUP* that leaves the value on the
+;;; stack on completion (and which may be dropped when followed by a
+;;; POP*).
+(deftype Setter [^:pass-to-super-constructor ^Object _form
+                 ^:pass-to-super-constructor ^Class type
+                 ^:pass-to-super-constructor ^IPersistentVector argv
+                 ^:pass-to-super-constructor ^Object const-value]
+  Expr)
+
+(defn setter ^Setter [^Class tp ^Expr var-expr ^Expr value ^boolean static?]
+  (Setter. nil tp [var-expr value (if static? (dup tp) (dup-x1 tp))] nil))
+
+(defn setter? ^boolean [^Expr x]
+  (instance? Setter x))
+
+
+(deftype NewArray [^:pass-to-super-constructor ^Object _form
+                   ^:pass-to-super-constructor ^Class type
+                   ^:pass-to-super-constructor ^IPersistentVector argv
+                   ^:pass-to-super-constructor ^Object const-value]
+  Expr)
+
+(defn new-array ^NewArray [^Class tp ^IPersistentVector argv]
+  (NewArray. nil tp argv nil))
+
+;;; ------------------------------------------------------------------------
+
+;;; Single argument identity operation, possibly changing the
+;;; expression's type.  Empty instruction on the level of the JVM,
+;;; i.e. the operation disappears when bytecode is emitted.
+(deftype Identity [^:pass-to-super-constructor ^Object _form
+                   ^:pass-to-super-constructor ^Class type
+                   ^:pass-to-super-constructor ^IPersistentVector argv
+                   ^:pass-to-super-constructor ^Object const-value]
+  Expr)
+
+(defn identity? ^boolean [x]
+  (instance? Identity x))
+
+;;; Identity nodes are used to change the internal type of an
+;;; expression for the compiler without emitting an additional
+;;; instruction into the generated bytecode.  It's a kind of type cast
+;;; that is invisible to the JVM: the verification type on the operand
+;;; stack is not changed.
+(defn identity
+  (^Expr [^Expr arg]
+   (identity (type arg) arg))
+  (^Expr [^Class tp ^Expr arg]
+   (Identity. nil tp [arg] (.const-value arg))))
+
+(defn objectcast ^Expr [^Expr x]
+  (identity jb/Object x))
+
+
+;;; Representation of a `do` block: a sequence of statements followed
+;;; by an expression.  Argument at index `result-idx` provides the
+;;; type of the `progn` expression.  Unless there is a non-returning
+;;; statement, it is equal to `(dec (count argv))`.
+;;; 
+;;; No arguments represent the empty instruction with a type of `void`
+;;; and a `result-idx` of -1.
+(deftype Progn [^:pass-to-super-constructor ^Object _form
+                ^:pass-to-super-constructor ^Class type
+                ^:pass-to-super-constructor ^IPersistentVector argv
+                ^:pass-to-super-constructor ^Object const-value
+                ^int result-idx]
+  Expr)
+
+(defn progn? ^boolean [x]
+  (instance? Progn x))
+
+(def const-value-empty
+  (ClassDesc/of "tinyclj.lang" "EmptyStatementMarker"))
+
+(def expr-empty
+  (Progn. (list 'do) jb/void [] const-value-empty -1)) ;stable non-nil form
+(def expr-provided  ;"produces" method argument, or exception of catch handler
+  (Progn. (list 'do) jb/void [] nil -1)) ;stable non-nil form
+
+(defn expr-empty? ^boolean [^Expr x]
+  (identical? const-value-empty (.const-value x)))
+
+(defn empty-when [^boolean cond]
+  (when cond const-value-empty))
+(defn propagate-empty
+  ([^Expr x1]
+   (empty-when (expr-empty? x1)))
+  ([^Expr x1 ^Expr x2]
+   (empty-when (and (expr-empty? x1) (expr-empty? x2)))))
+
+;;; Lexically scoped block: the lifetime of locals created within the
+;;; block ends with the end of the block.  It contains a sequence of
+;;; Binding statements followed by a single Expr with the body.
+(deftype Block [^:pass-to-super-constructor ^Object _form
+                ^:pass-to-super-constructor ^Class type
+                ^:pass-to-super-constructor ^IPersistentVector argv
+                ^:pass-to-super-constructor ^Object const-value]
+  Expr)
+
+(defn block ^Expr [bexprs ^Expr body]
+  (if (some? (seq bexprs))
+    (Block. nil (type body) (conj (vec bexprs) body) nil)
+    body))
+
+;;; ------------------------------------------------------------------------
+
+;;; Catch all instruction for JVM conditional branches.  This
+;;; operation is unusual in that it has two translation patterns to
+;;; code.  If it appears as a standalone expression, then its return
+;;; type is `boolean` and it is implicitly paired with two paths
+;;; producing the boolean values `true` and `false`.  If it is the
+;;; test of a SplitJoin expression, then it is a translated as a
+;;; statement and emits the "test and branch" instruction for which
+;;; the SplitJoin provides the paths for true and false.
+;;;
+;;; The sense of the compare is that of the instruction opcode,
+;;; i.e. the one that must be fulfilled for the "branch to true" to be
+;;; taken.  As a consequence, a non-nil `const-value` represents
+;;; "branch taken" if 1, and "branch not taken" if 0.
+(deftype Branch [^:pass-to-super-constructor ^Object _form
+                 ^:pass-to-super-constructor ^Class type
+                 ^:pass-to-super-constructor ^IPersistentVector argv
+                 ^:pass-to-super-constructor ^Object const-value
+                 ^Opcode opcode ^int opcd]
+  Expr)
+
+(defn branch? ^boolean [^Expr x]
+  (instance? Branch x))
+
+(defn with-negate-cmp ^Branch [^Branch x]
+  (Branch. nil jb/boolean (argv x)
+        (when-some [c (.const-value x)] (object (- 1 ^int c)))
+        (.opcode x) (cf/negate-cmp (.opcd x))))
+
+
+
+;;; Return first returning expression if one exists, and an arbitrary
+;;; non-returning expression otherwise.
+(defn- some-returning
+  ([[^Expr x & xr]]
+   (cond (returns? x) x
+         (some? xr) (recur xr)
+         :else x))
+  (^Expr [^Expr a ^Expr b]
+   (if (returns? a) a b)))
+
+;;; Combines a `Branch` with split & join of control flow.  Takes
+;;; three arguments `[branch-to-true if-true if-false]`.  During emit,
+;;; the sense of the branch instructions is negated so that it targets
+;;; the false path.
+(deftype SplitJoin [^:pass-to-super-constructor ^Object _form
+                    ^:pass-to-super-constructor ^Class type
+                    ^:pass-to-super-constructor ^IPersistentVector argv
+                    ^:pass-to-super-constructor ^Object const-value]
+  Expr)
+
+(defn split-join? ^boolean [x]
+  (instance? SplitJoin x))
+
+;;; `branch-to-true` is a branch instruction going to the `if-true`
+;;; path for the successful test.  If the test fails, control goes to
+;;; the `if-false` path.
+(defn split&join
+  (^Expr [^Branch branch-to-true]
+   (split&join branch-to-true expr-true expr-false))
+  (^Expr [^Branch branch-to-true ^Expr if-true ^Expr if-false]
+   (SplitJoin. nil (type (some-returning if-true if-false))
+               [branch-to-true if-true if-false]
+               (cond (const-value-true? branch-to-true) (.const-value if-true)
+                     (const-value-false? branch-to-true) (.const-value if-false)
+                     :else nil))))
+
+
+
+(deftype Guard [^int path-idx
+                ^Expr path-expr
+                ^Object gvalue
+                ^int gint])
+
+(defn mk-guard ^Guard [^int path-idx ^Expr path-expr ^Object gvalue]
+  (Guard. path-idx path-expr gvalue 0))
+(defn with-path-expr ^Guard [^Guard g ^Expr path-expr]
+  (Guard. (.path-idx g) path-expr (.gvalue g) (.gint g)))
+(defn with-guard-int-value ^Guard [^Guard g]
+  (Guard. (.path-idx g) (.path-expr g) nil (jb/int-value-of (.gvalue g))))
+(defn with-guard-path-idx ^Guard [^Guard g]
+  (Guard. (.path-idx g) (.path-expr g) nil (.path-idx g)))
+
+(defn guard-paths ^IPersistentVector [^IPersistentVector guardv]
+  (let [path-count (when-some [g ^Guard (peek guardv)] ;zero if empty
+                     (inc (.path-idx g)))
+        a (new "[Ltcljc.expr.Expr;" path-count)]
+    (doseq [^Guard g guardv]
+      (aset a (.path-idx g) (.path-expr g)))
+    (vec a)))
+
+;;; Arguments are the tested expression followed by the possible paths
+;;; through the switch, with the last argument being the default path.
+;;; There is one `guardv` entry for every guard value.
+;;;
+;;; Note: While Guard holds a path expression as well, only the entry
+;;; from `argv` must be used to emit code.  `argv` may have been
+;;; subjected to rewriting, e.g. pushing a return instruction into it.
+(deftype Switch [^:pass-to-super-constructor ^Object _form
+                 ^:pass-to-super-constructor ^Class type
+                 ^:pass-to-super-constructor ^IPersistentVector argv
+                 ^:pass-to-super-constructor ^Object const-value
+                 ^IPersistentVector guardv]
+  Expr)
+
+(defn switch ^Switch [^Class tp ^Expr test ^Expr dflt-path
+                      ^IPersistentVector guardv]
+  (let [argv (-> [test] (into (guard-paths guardv)) (conj dflt-path))]
+    (Switch. nil tp argv nil guardv)))
+
+
+;;; The body of a handler must take an "out of thin air" operand of
+;;; type Throwable from the stack.
+(deftype TryHandler [^Class exception   ;non-nil for catch block
+                     ^Expr initial-body]) ;superseded by arg of TryCatchFinally
+(def try-handler ->TryHandler)
+
+;;; Takes 1+n+1 arguments, if n is the number of catch clauses.  First
+;;; is the main body of the try expression followed by the n bodies of
+;;; the catch blocks, then the single copy of the finally statement.
+;;; The finally statement will be emitted 1+n+1 times in total!
+(deftype TryCatchFinally
+    [^:pass-to-super-constructor ^Object _form
+     ^:pass-to-super-constructor ^Class type
+     ^:pass-to-super-constructor ^IPersistentVector argv
+     ^:pass-to-super-constructor ^Object const-value
+     handlerv]
+  Expr)
+
+(defn try-catch-finally ^TryCatchFinally [^Class tp ^Expr body
+                                          handlers ^Expr finally]
+  (let [argv (-> [body]
+                 (into (map #(.initial-body ^TryHandler %)) handlers)
+                 (conj finally))]
+    (TryCatchFinally. nil tp argv (propagate-empty body finally)
+                      (vec handlers))))
+
+
+;;; Creates a label before emitting its arguments and pushes it onto
+;;; the stack of recur targets.
+(deftype LoopBody [^:pass-to-super-constructor ^Object _form
+                   ^:pass-to-super-constructor ^Class type
+                   ^:pass-to-super-constructor ^IPersistentVector argv
+                   ^:pass-to-super-constructor ^Object const-value]
+  Expr)
+
+(defn loop-body ^Expr [^Expr body]
+  (LoopBody. nil (type body) [body] (propagate-empty body)))
+
+
+;;; Parallel assignment of the arguments to their corresponding
+;;; variables, followed by an unconditional jump to `l-start`.
+(deftype Recur [^:pass-to-super-constructor ^Object _form
+                ^:pass-to-super-constructor ^Class type
+                ^:pass-to-super-constructor ^IPersistentVector argv
+                ^:pass-to-super-constructor ^Object const-value
+                bv]             ;vec of Binding, one for each argument
+                
+  Expr)
+
+(defn insn-recur ^Recur [^Class tp ^IPersistentVector argv
+                         ^IPersistentVector bv]
+  (Recur. nil tp argv nil bv))
+
+;;; ------------------------------------------------------------------------
+
+;;; Bound entity: plain value, macro, or primitive function.
+(def ^:private mask-b-entity 2r11)
+(def ^:private b-value 2r00)
+(def ^:private b-entity-unused 2r01)
+(def ^:private b-macro 2r10)
+(def ^:private b-primitive 2r11)
+
+;;; Kind of binding: def, parameter, let, etc.
+(def ^:private mask-b-kind 2r11100)
+(def b-def 2r00000)
+(def b-parameter 2r00100)
+(def b-let 2r01000)
+(def b-loop 2r01100)
+;; (def b-exception 2r10000) -- no longer used
+(def b-this-object 2r10100)             ;also refers to this fn
+(def b-field 2r11000)
+(def b-closure 2r11100)
+
+(def ^:private mask-b-flags 0xe0)
+(def ^:private b-mutable 0x20)          ;def ^:redef or mutable field
+(def ^:private b-def-var 0x40)          ;Clojure's namespace var
+(def ^:private b-private 0x80)
+
+(def ^:private b-level-shift 8)
+(def ^:private b-alias-inherited (bit-or mask-b-entity mask-b-flags))
+
+(def lvl-global 0)
+;;; A namespace-level `def` binding has the lowest level.  Usually it
+;;; defines a named value, but it can also be a macro or a primitive
+;;; function definition.
+
+(def lvl-environment 1)
+;;; Level assigned to let bindings outside of any function, bindings
+;;; provided for `deftype*` fields, and all bindings in `deftype*`
+;;; methods.  This makes field bindings local to all methods, similar
+;;; to the methods' parameter bindings.
+
+;; (def lvl-outermost-fn 2)
+;;; The lowest level assigned to an `fn*` or `reify*` form.
+
+;; Level indicates the enclosing fn*/reify*/deftype* forms.  Global
+;; bindings are level 0, fields and method parameters of a deftype*
+;; are level 1, the outermost fn*/reify* is level 2, and any further
+;; nested fn*/reify* increases this by 1.  Expressions can access
+;; bindings of the same level (or level 0) directly, but a fn*/reify*
+;; becomes a closure if any of its expressions refers to a binding of
+;; non-zero lower level.
+(defn- mk-flags ^int [^int entity ^int kind ^int flags ^int level]
+  (bit-or entity kind flags (bit-shift-left level b-level-shift)))
+
+;;; `BindingRef` has a mutable field `load-promise` that provides the
+;;; load implementation for the method bodies using it.  When closing
+;;; over a (non-global & non-local) binding, the closure gets a fresh
+;;; `AliasRef` instance with its own `load-promise`.  There may be
+;;; different access mechanisms for closed over names.
+(definterface ILoadPromise
+  (deliver-load ^void [^ILdStInstr ld-st-instr])
+  (deref-load ^ILdStInstr [])
+  (realized? ^boolean []))
+
+(defn deref-load ^ILdStInstr [^ILoadPromise x]
+  (.deref-load x))
+
+(deftype BindingRef
+    [^:pass-to-super-constructor ^Object _form
+     ^:pass-to-super-constructor ^Class type
+     ^:pass-to-super-constructor ^IPersistentVector argv
+     ^:pass-to-super-constructor ^Object const-value
+     
+     ^String ns-str
+     ;; Non-nil if this refers to a namespace def.  This is equivalent
+     ;; implies to level being zero.  This string is used to recover
+     ;; the namespace qualified name for error messages.
+     
+     ^int flags
+     ;; Encodes the category of the bound entity, additional flags,
+     ;; and the level.
+     
+     ^:unsynchronized-mutable ^ILdStInstr load-promise]
+  :abstract true
+  Expr
+  (safe-to-discard? [this]
+    true)
+  
+  ILoadPromise
+  (deliver-load [_ load]
+    #_(assert (nil? load-promise)) ;Classfile API can cause repeated deliver
+    (assert (some? load))
+    ;; loads of this reference should not pull in the line number of
+    ;; the expression that produced the value
+    (set! load-promise load))
+  (deref-load [this]
+    (assert (some? load-promise) (str "no load value has been delivered for"
+                                      " nm `" (form this) "`"))
+    load-promise)
+  (realized? [_]
+    (some? load-promise)))
+
+(defn bref? ^boolean [x]
+  (instance? BindingRef x))
+
+(defn sname ^Symbol [^BindingRef x]     ;simple name without namespace
+  (form x))
+(defn qname ^Symbol [^BindingRef x] ;namespace qualified name if global
+  (if-some [ns-part (.ns-str x)]
+    (symbol ns-part (name (sname x)))
+    (form x)))
+(defn mnm ^String [^BindingRef x]
+  (cfg/munge-name (sname x))) ;munge, so that this can be the name of a field
+
+(defn meta-flag? ^boolean [x ^Keyword kw]
+  (if (symbol? x)
+    (boolean (get (meta x) kw))
+    (recur (sname x) kw)))
+
+(defn- b-test?
+  (^boolean [^int want ^BindingRef bref]
+   (b-test? want bref want))
+  (^boolean [^int want ^BindingRef bref ^int mask]
+   (= (bit-and (.flags bref) mask) want)))
+
+(defn b-value? ^boolean [^BindingRef bref]
+  (b-test? b-value bref mask-b-entity))
+(defn b-macro? ^boolean [^BindingRef bref]
+  (b-test? b-macro bref mask-b-entity))
+(defn b-primitive? ^boolean [^BindingRef bref]
+  (b-test? b-primitive bref mask-b-entity))
+
+(defn b-kind ^int [^BindingRef bref]
+  (bit-and (.flags bref) mask-b-kind))
+
+(defn b-mutable? ^boolean [^BindingRef bref]
+  (b-test? b-mutable bref))
+(defn b-def-var? ^boolean [^BindingRef bref]
+  (b-test? b-def-var bref))
+(defn b-private? ^boolean [^BindingRef bref]
+  (b-test? b-private bref))
+
+(defn b-level ^int [^BindingRef bref]
+  (unsigned-bit-shift-right (.flags bref) b-level-shift))
+
+
+;;; An alias is created if a let binding introduces an alternative
+;;; name for a name.  This alias binding takes on the `kind` and
+;;; `flags` properties of the original name, e.g. an alias for a macro
+;;; is used exactly like the original macro.
+;;; 
+;;; In addition to this, an alias is created for a reference to a
+;;; binding from another function.
+(deftype AliasRef [^:pass-to-super-constructor ^Object _form
+                   ^:pass-to-super-constructor ^Class type
+                   ^:pass-to-super-constructor ^IPersistentVector argv
+                   ^:pass-to-super-constructor ^Object const-value
+                   ^:pass-to-super-constructor ^String ns-str
+                   ^:pass-to-super-constructor ^int flags
+                   ^:pass-to-super-constructor ^ILdStInstr load-promise
+                   ^BindingRef alias-for]
+  BindingRef)
+
+(defn alias-ref ^AliasRef [^int level ^Symbol simple-nm ^String ns-str
+                           ^BindingRef alias-for ^int kind]
+  ;; An alias inherits the category and flags of the root binding, but
+  ;; its level may differ.
+  (AliasRef. simple-nm (type alias-for) [] (.const-value alias-for) ns-str
+             (mk-flags 0 kind (bit-and b-alias-inherited (.flags alias-for))
+                       level)
+             nil alias-for))
+
+(defn alias-ref? ^boolean [x]
+  (instance? AliasRef x))
+
+(defn root-bref ^BindingRef [^BindingRef x]
+  (if (instance? AliasRef x)
+    (recur (.alias-for ^AliasRef x))
+    x))
+
+(defn closure-alias ^AliasRef [^int env-level ^Symbol sym
+                               ^BindingRef closing-over]
+  (alias-ref env-level sym nil closing-over b-closure))
+
+;;; True if a let binding's value is a binding itself and does not
+;;; need to be stored into a dedicated local.  This means that the let
+;;; binding can safely act as an alias on the bytecode level.
+(defn pure-let-initialization? ^boolean [^Expr x]
+  (if (bref? x)
+    (let [bref ^BindingRef x]
+      ;; mutable globals and mutable deftype fields must be stored; ok
+      ;; are primitives, immutable globals, parameters, loop bindings
+      ;; & standard let bindings
+      (not (or (b-mutable? bref) (b-def-var? bref))))
+    false))
+
+;;; True if the name reference does not need to be stored into a local
+;;; if it appears on the right hand side of a let.
+(defn pure-global-ref? ^boolean [^Expr x]
+  ;; Mutable global defs must be stored.  Ok are primitives, macros,
+  ;; and immutable globals.  For this, level must be zero and neither
+  ;; `redef?` nor `clojure-var?` must be set.
+  (and (bref? x)
+       (zero? (b-level ^BindingRef x))
+       (zero? (bit-and (bit-or b-mutable b-def-var) (.flags ^BindingRef x)))))
+
+
+;; Note: A primitive function or a macro name can be used as the right
+;; hand side of a let binding.  Assign it *some* type, so that it is
+;; not treated as a void expression (aka statement).  But the compiler
+;; must ensure that all places where a proper expression is expected are
+;; guarded by `as-expression`.
+
+(definterface FnPrimitiveFn
+  (assemble ^Expr [form args tl-ctx]))
+
+(deftype PrimitiveFnRef [^:pass-to-super-constructor ^Object _form
+                         ^:pass-to-super-constructor ^Class type
+                         ^:pass-to-super-constructor ^IPersistentVector argv
+                         ^:pass-to-super-constructor ^Object const-value
+                         ^:pass-to-super-constructor ^String ns-str
+                         ^:pass-to-super-constructor ^int flags
+                         ^:pass-to-super-constructor ^ILdStInstr load-promise
+                         ^FnPrimitiveFn primitive-fn]
+  BindingRef)
+
+(defn primitive-fn-ref ^PrimitiveFnRef [^Symbol simple-nm ^String ns-str
+                                        ^FnPrimitiveFn pfn]
+  (PrimitiveFnRef. simple-nm jb/cl-compile-time-entity [] nil ns-str
+                   (mk-flags b-primitive b-def 0 0) cf/ld-st-primitive pfn))
+
+;;; ------------------------------------------------------------------------
+
+(deftype Binding [^:pass-to-super-constructor ^Object _form
+                  ^:pass-to-super-constructor ^Class type
+                  ^:pass-to-super-constructor ^IPersistentVector argv
+                  ^:pass-to-super-constructor ^Object const-value
+                  ^BindingRef bref]
+  Expr)
+
+(defn bref ^BindingRef [^Binding b]
+  (.bref b))
+
+(defn constant-value-attribute? ^boolean [^Expr init-x]
+  (let [c (.const-value init-x)]
+    (or (instance? Number c) (string? c))))
+
+
+;;; A LocalBinding marks the place of a parameter, let, or loop
+;;; binding.
+;;; 
+;;; The init value is nil for parameters.  The binding itself is
+;;; always a statement.
+(defn local-binding ^Binding [^BindingRef bref ^Expr init-value]
+  ;; binding a macro or primitive function to another name has no
+  ;; effect for runtime code
+  (Binding. (form bref) jb/void (when (some? init-value) [init-value])
+            (empty-when (not (b-value? bref))) bref))
+
+
+;;; A GlobalBinding marks the place of a def expression.  It cannot be
+;;; used inside a function, and translates to a static field or method
+;;; definition in a namespace's class file.
+;;; 
+;;; The init value is optional.  The binding is always a statement,
+;;; i.e. the case of a global def returning a Var instance is *not*
+;;; handled by the `Binding` itself.
+(defn global-binding ^Binding [^BindingRef bref ^Expr init-value]
+  (Binding. (form bref) jb/void (when (some? init-value) [init-value]) nil
+            bref))
+
+;;; ------------------------------------------------------------------------
+
+(deftype Arity
+    [paramv
+     ;; Vector of Binding.  This is the "internal" parameter list that
+     ;; is used to parse and compile the arity.  That is, for the
+     ;; variadic case the last/rest parameter is of type `ISeq`.
+                   
+     ^Class rtype
+     ;; The arity's return type.  In case of :auto-return-type, this
+     ;; is replaced with the arity body's result type.
+
+     ^int n
+     ;; Number of parameters.  Initialized from (count paramv).
+     
+     ^boolean varargs?
+     ;; JVM varargs method with an `Object...` parameter.  Mutually
+     ;; exclusive with `variadic?`.
+     
+     ^boolean variadic?
+     ;; Clojure variadic arity with an `ISeq` rest parameter.
+     ;; External view on the arity's method is a varargs `Object...`
+     ;; with a bridge method in between.  Mutually exclusive with
+     ;; `varargs?`.
+     
+     ^String method-name
+     ;; If the arity's signature is derived from an interface, then
+     ;; this field holds the matching method's name.
+     
+     ^Symbol this-name
+     ;; For an arity, the name of its function (or nil if the function
+     ;; lacks a name).  The virtual method's receiver if this is a
+     ;; `deftype*` or `reify*` method.  The corresponding BindingRef
+     ;; can be found in `ArityCode.this-bref`.
+
+     ^int level
+     ;; See BindingRef's `level`.
+     
+     ^ISeq aform
+     ;; A form ([...] ...), even if the original fn* used the
+     ;; abbreviated single arity variant.
+
+     ^objects !closes-over
+     ;; Map of [closed-over-binding-ref, local-alias-ref].  Copied to
+     ;; the Env member during compilation, and populated by
+     ;; `resolve-sym-local` with the bindings this arity closes over
+     ;; directly.  The closed over binding can be the name of a
+     ;; constant or an alias referring e.g. to a a global, in which
+     ;; case it should be replaced with a direct reference later.
+     ;; `prepare/collect-fn-info` extends the map with transitive
+     ;; dependencies.  Nil if the function is imported.
+     
+     ^int at-idx
+     ;; Index of arity in source code order.  `-1` if this instance
+     ;; represents a deftype* method.
+     ])
+
+(defn with-rtype ^Arity [^Arity at ^Class rtype]
+  (Arity. (.paramv at) rtype (.n at) (.varargs? at) (.variadic? at)
+          (.method-name at) (.this-name at) (.level at) (.aform at)
+          (.!closes-over at) (.at-idx at)))
+
+(defn with-method-name ^Arity [^Arity at ^Symbol nm ^Symbol this-name
+                               ^int at-idx]
+  (Arity. (.paramv at) (.rtype at) (.n at) (.varargs? at) (.variadic? at)
+          (name nm) this-name (.level at) (.aform at)
+          (.!closes-over at) at-idx))
+
+(defn at-n ^int [^Arity at]
+  (.n at))
+
+(defn at-nth ^Binding [^Arity at ^int n]
+  (nth (.paramv at) n))
+
+(defn at-parameter-type ^Class [^Arity at ^int i]
+  (type (.bref ^Binding (nth (.paramv at) i))))
+
+(defn at-parameter-types [^Arity at]
+  (for [^Binding b (.paramv at)] (-> b .bref (type))))
+
+(defn at-extern-varargs? ^boolean [^Arity at]
+  (or (.varargs? at) (.variadic? at)))
+
+(defn at-mtd
+  (^MethodTypeDesc [^Arity at]
+   (rt/mtd-of (.rtype at) (at-parameter-types at)))
+  (^MethodTypeDesc [^Arity at prefix-params]
+   (rt/mtd-of (.rtype at) (concat prefix-params (at-parameter-types at)))))
+
+
+;;; Function information that is the same across all its arities.
+(deftype ArityCode
+    [^Arity at
+     
+     ^BindingRef this-bref
+     ;; For an arity, the value of its function.  For a method, the
+     ;; implicit receiver parameter.  If it exists, the corresponding
+     ;; name is `(.this-name at)`.  Note: For functions its
+     ;; `to-fn-form´ member can only bake in the initial version of
+     ;; `fn-form`, without fixed arity return types.
+     
+     ^Expr body-expr
+
+     ;; The "external" method and the "implementation" method differ
+     ;; if there is a bridge method mapping vararg `Object...` to
+     ;; variadic `ISeq`.
+     ^DirectMethodHandleDesc load-mh-ext
+     ^DirectMethodHandleDesc load-mh-impl
+     
+     ^boolean body-node?])              ;false if method is elided
+
+(defn mk-arity-code ^ArityCode [^Arity at ^BindingRef this-bref ^Expr body-expr]
+  (ArityCode. at this-bref body-expr nil nil true))
+
+(defn with-arity-impl ^ArityCode [^ArityCode ac
+                                  ^DirectMethodHandleDesc load-mh-ext
+                                  ^DirectMethodHandleDesc load-mh-impl
+                                  ^boolean body-node?]
+  (ArityCode. (.at ac) (.this-bref ac) (.body-expr ac)
+              (if (nil? load-mh-ext) load-mh-impl load-mh-ext)
+              load-mh-impl body-node?))
+
+(defn ac-load-mh-ext ^ConstantInstruction [^ArityCode ac]
+  (.load-mh-ext ac))
+
+(defn aca-by-n ^"[Ltcljc.expr.ArityCode;" [^"[Ltcljc.expr.ArityCode;" aca]
+  (let [a (aclone aca)]
+    (sort-by #(at-n (.at ^ArityCode %)) a)
+    a))
+
+
+(definterface IProvidedValue
+  (apply ^ILdStInstr [^BindingRef origin-bref]))
+
+;;; The plan hatched by "prepare" to translate the function
+;;; definition.  `argv` of emit-fn-value is empty for regular fn*
+;;; instances, and holds the meta value of a reify* instance.
+(definterface IEmitPlan
+  (fn-value-const ^ConstantDesc [])
+  (fn-value-instr ^CodeBuilder [^CodeBuilder xb ^IProvidedValue bref-mapper])
+  (fn-patch-instr ^CodeBuilder [^CodeBuilder xb ^IProvidedValue bref-mapper
+                                ^BindingRef bref])
+  
+  (fn-methods ^ClassBuilder [^ClassBuilder cb])
+  (fn-class-hierarchy-info ^ClassHierarchyResolver$ClassHierarchyInfo [])
+  (fn-class ^bytes [^CHR dyn-chr])
+  
+  (invoke-arity-with-self? ^boolean [])
+  (arity-env ^IPersistentVector [^CodeBuilder xb ^IProvidedValue bref-mapper
+                                 ^Arity at]))
+
+;;; Mutable state attached to a FnForm instance, and connecting the
+;;; compilation, preparation, and emit stages of its translation.  Its
+;;; members are set during the preparation stage, and are stable
+;;; afterwards.
+(definterface IFnCode
+  ;; Set by prepare/collect-fn-info in the initial visit phase.
+  (seqnum ^int [])
+  (set-seqnum ^void [^int seqnum])
+  (used-as-value? ^boolean [])
+  (mark-used-as-value ^void [])
+
+  ;; Stable after the last phase of prepare/collect-fn-info.
+  (variable-environment? ^boolean [])
+  (mark-variable-environment ^void [])
+  
+  (ld-clx ^TypeDescriptor$OfField [])
+  (set-ld-clx ^void [^TypeDescriptor$OfField clx])
+  
+  (emit-plan ^IEmitPlan [])
+  (set-emit-plan ^void [^IEmitPlan emit-plan])
+
+  (arity-count ^int [])
+  (arity-code-array ^"[Ltcljc.expr.ArityCode;" [])
+  (arity-code ^ArityCode [^int i])
+  (set-arity-code ^void [^int i ^ArityCode ac]))
+
+(deftype FnCode
+    [^:volatile-mutable ^int _seqnum
+     ;; Within a top-level form, this is a unique id that follows the
+     ;; ordering of the source code's fn signatures.  It is used to
+     ;; detect forward references to letfn* siblings that are defined
+     ;; later in the source code.
+                 
+     ^:volatile-mutable ^boolean _used-as-value
+     ;; If true, then this function is materialized as a proper value.
+     ;; Otherwise its arities are invoked only, and can be translated
+     ;; into independent methods.  Initialized to false when compiling
+     ;; a function, and to (stable) true for imported functions.
+                 
+     ^:volatile-mutable ^boolean _variable-environment
+     ;; If true, then this function has a non-empty environment that
+     ;; must be provided either during construction or when invoking
+     ;; an arity.  Initialized to false when compiling or importing a
+     ;; function.  Changed to (stable) true if the function closes
+     ;; over a non-constant value.
+     
+     ^:volatile-mutable ^TypeDescriptor$OfField _ld-clx
+     ;; Type of this function instance.  Either a generic class if it
+     ;; is translated to static methods, or the owner class of the
+     ;; virtual methods if it closes over some state.  This member is
+     ;; set as soon as the translation pattern is known, and before
+     ;; any methods of the top-level form are generated.
+                 
+     ^:volatile-mutable ^IEmitPlan _emit-plan
+     ;; Translation pattern for fn.
+
+     ^:unsynchronized-mutable ^"[Ltcljc.expr.ArityCode;" _arity-code]
+  IFnCode
+  (seqnum [_]
+    _seqnum)
+  (set-seqnum [_ seqnum]               ;should be invoked exactly once
+    (set! _seqnum seqnum))
+  
+  (used-as-value? [_]
+    _used-as-value)
+  (mark-used-as-value [_]
+    (when-not _used-as-value
+      (set! _used-as-value true)))    ;write `true` value at most once
+  
+  (variable-environment? [_]
+    _variable-environment)
+  (mark-variable-environment [_]
+    (when-not _variable-environment
+      (set! _variable-environment true))) ;write `true` value at most once
+  
+  (ld-clx [_]
+    (assert (some? _ld-clx))
+    _ld-clx)
+  (set-ld-clx [_ ld-clx]
+    (set! _ld-clx ld-clx))
+  
+  (emit-plan [_]
+    (assert (some? _emit-plan))
+    _emit-plan)
+  (set-emit-plan [_ emit-plan]
+    (set! _emit-plan emit-plan))
+
+  (arity-count [_]
+    (alength _arity-code))
+  (arity-code-array [_]
+    _arity-code)
+  (arity-code [_ i]
+    (aget _arity-code i))
+  (set-arity-code [_ i ac]
+    (aset _arity-code i ac)))
+
+(defn mk-fn-code ^FnCode [^int n]
+  (let [arity-code (new "[Ltcljc.expr.ArityCode;" n)]
+    (FnCode. 0 false false nil nil arity-code)))
+
+
+;;; Function definition `(fn* ...)` (takes no arguments) or `(reify*
+;;; ...)` (takes one argument, the initial value for its meta).
+;;; 
+;;; Note: Contents of `!fnc` are non-nil only after the function's
+;;; translation pattern has been prepared.  This must happen *before*
+;;; the FnForm is emitted, and *before* any InvokeArity to this
+;;; function is compiled.
+;;;
+;;; Important: `reify*` expressions are also mapped to a variant of
+;;; FnForm.  Because reify* fully participates in closures it is
+;;; easier to handle it as a variant of fn*, notwithstanding all the
+;;; differences between the two forms.
+(deftype FnForm [^:pass-to-super-constructor ^Object _form
+                 ^:pass-to-super-constructor ^Class type
+                 ^:pass-to-super-constructor ^IPersistentVector argv
+                 ^:pass-to-super-constructor ^Object const-value
+                 ^int level
+                 
+                 ^String unique-mnm
+                 ;; Unique within namespace classes, and used either
+                 ;; as prefix of a method name or as a class name.
+                 ;; Should be deterministic even for multithreaded
+                 ;; compilation.
+                 
+                 ^DirectMethodHandleDesc super-mhd
+                 ^"[Ljava.lang.Class;" itf-tags
+                 ^IPersistentVector at-sigs ;vector of Arity
+                 ^Future body-fut           ;array of ArityCode or nil
+                 ^FnCode !fnc]
+  Expr
+  (safe-to-discard? [this]
+    (nil? (seq (argv this)))))
+
+(defn fn-reify? ^boolean [^FnForm fn-form]
+  (some? (seq (argv fn-form))))
+
+;;; Completes a letfn* function definition that closes over a function
+;;; value that is defined later in the same letfn*: this opcode fills
+;;; in any forward references.  Takes no arguments and return type is
+;;; void.
+(deftype FnPatch [^:pass-to-super-constructor ^Object _form
+                  ^:pass-to-super-constructor ^Class type
+                  ^:pass-to-super-constructor ^IPersistentVector argv
+                  ^:pass-to-super-constructor ^Object const-value
+                  ^FnForm fn-form
+                  ^BindingRef bref]
+  Expr)
+
+(defn with-at-sigs ^FnForm [^FnForm fn-form ^IPersistentVector at-sigs]
+  (FnForm. (form fn-form) (type fn-form) (argv fn-form) (.const-value fn-form)
+           (.level fn-form) (.unique-mnm fn-form)
+           (.super-mhd fn-form) (.itf-tags fn-form)
+           at-sigs (.body-fut fn-form) (.!fnc fn-form)))
+
+(defn with-body-fut ^FnForm [^FnForm fn-form ^Future body-fut]
+  (FnForm. (form fn-form) (type fn-form) (argv fn-form) (.const-value fn-form)
+           (.level fn-form) (.unique-mnm fn-form)
+           (.super-mhd fn-form) (.itf-tags fn-form)
+           (.at-sigs fn-form) body-fut (.!fnc fn-form)))
+
+(defn fn-form? ^boolean [^Expr x]
+  (instance? FnForm x))
+
+(defn fn-at ^Arity [^FnForm fn-form ^int n]
+  (letfn [(accepts? ^boolean [^Arity at ^int an]
+            (let [pn (at-n at)]
+              (or (= an pn)
+                  (and (at-extern-varargs? at) (>= an (dec pn))))))]
+    (let [atv (.at-sigs fn-form)]
+      (loop [i 0]
+        (when (< i (count atv))
+          (let [at ^Arity (nth atv i)]
+            (if (accepts? at n)
+              at
+              (recur (inc i)))))))))
+
+(defn fn-rest-param ^Arity [^FnForm fn-form]
+  (fn-at fn-form Integer/MAX_VALUE))
+
+
+;;; First argument is always a function expression that bottoms out in
+;;; `fn-form`.  Depending on the function's translation pattern, it
+;;; can be skipped when emitting this expression.
+(deftype InvokeArity [^:pass-to-super-constructor ^Object _form
+                      ^:pass-to-super-constructor ^Class type
+                      ^:pass-to-super-constructor ^IPersistentVector argv
+                      ^:pass-to-super-constructor ^Object const-value
+                      ^FnForm fn-form
+                      ^int at-idx]
+  Expr)
+
+(defn invoke-arity ^InvokeArity [^Class tp ^IPersistentVector argv
+                                 ^FnForm fn-form ^int at-idx]
+  (InvokeArity. nil tp argv nil fn-form at-idx))
+
+;;; Bridge gap between Clojure variadic function and JVM vararg method
+;;; by casting the argument that can unintentionally match the vararg
+;;; parameter.
+(defn fix-vararg-array
+  ([op+argv]                       ;generic `MethodHandle.invoke` call
+   (let [arg (peek op+argv)]
+     (if (and (some? arg) (jb/array? (type arg)))
+       ;; we don't know whether the array is passed to a vararg here
+       (conj (tinyclj.core/pop op+argv) (objectcast arg))
+       op+argv)))
+  ([op+argv at]                ;exact call with arity type information
+   (if (= (at-n at) (dec (count op+argv)))
+     (let [paramt (at-parameter-type at (dec (at-n at)))
+           arg (peek op+argv)]
+       (if (and (jb/array? (type arg))
+                (vararg-array-compatible? paramt arg))
+         (conj (tinyclj.core/pop op+argv) (objectcast arg))
+         op+argv))
+     op+argv)))
+
+;;; ------------------------------------------------------------------------
+
+(deftype ValueRef [^:pass-to-super-constructor ^Object _form
+                   ^:pass-to-super-constructor ^Class type
+                   ^:pass-to-super-constructor ^IPersistentVector argv
+                   ^:pass-to-super-constructor ^Object const-value
+                   ^:pass-to-super-constructor ^String ns-str
+                   ^:pass-to-super-constructor ^int flags
+                   ^:pass-to-super-constructor ^ILdStInstr load-promise
+                   ^FnForm to-fn-form]  ;otherwise nil
+  BindingRef)
+
+(defn root-fn-form ^FnForm [x]
+  (cond
+    (fn-form? x) x
+    (instance? ValueRef x) (.to-fn-form ^ValueRef x)
+    (instance? AliasRef x) (recur (.alias-for ^AliasRef x))
+    :else nil))
+
+(defn root-fn-const ^ConstantDesc [x]
+  (when-some [fn-form (root-fn-form x)]
+    (.fn-value-const (-> fn-form .!fnc .emit-plan))))
+
+(defn local-ref
+  (^ValueRef [^int level ^Symbol simple-nm ^Class tp ^int kind]
+   (local-ref level simple-nm tp kind expr-provided))
+  (^ValueRef [^int level ^Symbol simple-nm ^Class tp ^int kind
+              ^Expr init-with]
+   (let [f 0
+         let? (= kind b-let)
+         c (when let? (.const-value init-with))]
+     (ValueRef. simple-nm tp [] c
+                nil (mk-flags b-value kind f level) nil
+                (when (or let? (= kind b-this-object))
+                  (root-fn-form init-with))))))
+
+(defn global-ref ^ValueRef [^Symbol simple-nm ^String ns-str ^Class tp
+                            ^boolean redef? ^boolean clojure-var?
+                            ^Expr init-x]
+  (letfn [(propagated-const-value [^Class tp const]
+            ;; Rule of thumb: do not propagate constant value if the
+            ;; identity of the object may be important, or if the
+            ;; constant's description can be somewhat large.
+            (when-some [const (some-> init-x .const-value)]
+              (when (cf/constant-loads-as-ldc? tp)
+                const)))]
+    (let [f (cond-> 0 clojure-var? (bit-or b-def-var))
+          entity (if (meta-flag? simple-nm :macro) b-macro b-def)]
+      (if redef? 
+        (let [f (bit-or f b-mutable)]
+          (ValueRef. simple-nm tp [] nil
+                     ns-str (mk-flags b-value entity f 0) nil nil))
+        ;; also propagate fn-form if `init-x` is a let binding
+        (ValueRef. simple-nm tp []
+                   (propagated-const-value tp init-x)
+                   ns-str (mk-flags b-value entity f 0) nil
+                   (root-fn-form init-x))))))
+
+(defn field-ref ^ValueRef [^Symbol simple-nm ^Class tp ^boolean mutable?]
+  (let [f (cond-> 0 mutable? (bit-or b-mutable))]
+    (ValueRef. simple-nm tp [] nil
+               nil (mk-flags b-value b-field f lvl-environment) nil nil)))
+
+(defn with-macro-value ^ValueRef [^ValueRef bref ^Expr macro-v]
+  (ValueRef. (form bref) (type bref) (argv bref) macro-v (.ns-str bref)
+             (.flags bref) nil (.to-fn-form bref)))
+
+;;; Returns nil if `fn-form` is an unnamed function.
+(defn fn-this-name ^Symbol [^FnForm fn-form]
+  (if (fn-reify? fn-form)
+    'reify             ;reify* form has both a name and receiver names
+    (.this-name ^Arity (nth (.at-sigs fn-form) 0))))
+
+
+
+(definterface FnMacroFn
+  (expand ^Object [env form]))
+
+(deftype MacroRef [^:pass-to-super-constructor ^Object _form
+                   ^:pass-to-super-constructor ^Class type
+                   ^:pass-to-super-constructor ^IPersistentVector argv
+                   ^:pass-to-super-constructor ^Object const-value
+                   ^:pass-to-super-constructor ^String ns-str
+                   ^:pass-to-super-constructor ^int flags
+                   ^:pass-to-super-constructor ^ILdStInstr load-promise
+                   ^FnMacroFn macro-fn
+                   ^BindingRef macro-value ;nil means "no replacement value"
+                   ^ValueRef macro-impl]
+  BindingRef)
+
+(defn macro-ref ^MacroRef [^Symbol simple-nm ^String ns-str
+                           ^FnMacroFn mfn ^BindingRef mvalue ^ValueRef mimpl]
+  (MacroRef. simple-nm jb/cl-compile-time-entity [] nil ns-str
+             (mk-flags b-macro b-def 0 0) cf/ld-st-primitive mfn mvalue mimpl))
+
+(defn macro-ref? ^boolean [^Expr x]
+  (instance? MacroRef x))
+
+
+
+(deftype AssignDef [^:pass-to-super-constructor ^Object _form
+                    ^:pass-to-super-constructor ^Class type
+                    ^:pass-to-super-constructor ^IPersistentVector argv
+                    ^:pass-to-super-constructor ^Object const-value
+                    ^BindingRef bref]
+  Expr)
+
+(defn assign-def ^AssignDef [^Expr v ^BindingRef bref]
+  (AssignDef. nil jb/void [v] nil bref))
+
+
+;;; Loads the var instance underlying a :var definition.  It is
+;;; similar to `ValueRef`, but lacks the `derefVar` call.
+(deftype VarRef [^:pass-to-super-constructor ^Object _form
+                 ^:pass-to-super-constructor ^Class type
+                 ^:pass-to-super-constructor ^IPersistentVector argv
+                 ^:pass-to-super-constructor ^Object const-value]
+  Expr
+  (safe-to-discard? ^boolean [_]
+    true))
+
+(defn var-ref ^VarRef [^Class tp ^BindingRef v]
+  (VarRef. nil tp [v] nil))
+
+
+
+
+(defn at-extern-paramv ^IPersistentVector [^Arity at]
+  (if (.variadic? at)
+    (let [vap ^Binding (peek (.paramv at))
+          bref (.bref vap)
+          bref-objs (local-ref (b-level bref) (sname bref) jb/ObjectArray
+                               b-parameter)]
+      (conj (tinyclj.core/pop (.paramv at)) (local-binding bref-objs nil)))
+    (.paramv at)))
+
+;; Returns the "external" `Object...` varargs arity defnition for a
+;; variadic arity, and nil otherwise.
+(defn at-bridged-from ^Arity [^Arity at]
+  (when (.variadic? at)
+    (Arity. (at-extern-paramv at) (.rtype at) (.n at) true false
+            (.method-name at) (.this-name at) (.level at) nil
+            (.!closes-over at) (.at-idx at))))
+
+;;; ------------------------------------------------------------------------
+
+;;; All Expr instances derived from source code forms that somehow
+;;; produce a value for the JVM's operand stack must go through one
+;;; of the `ensure-runtime-*` functions.
+;;;
+;;; In practice this means that almost all calls to `compile-form` are
+;;; directly followed by either `ensure-runtime-outcome` or
+;;; `ensure-runtime-value`.  The only exception are places where the
+;;; value (including macros and primitive functions) can be processed
+;;; as a purely compile-time value.
+;;; 
+;;; The goal of this inconvenient construction is to a) have similar
+;;; code paths for non-value expressions, and b) reliably detect
+;;; function definitions that are never materialized as a function
+;;; value.  The latter is a necessary condition for translating a
+;;; function into a set of independent JVM methods, which is the
+;;; cheapest translation pattern possible in terms of bytecode.
+
+(defn- value-of-macro ^Expr [^Expr x]
+  (when (macro-ref? x)
+    (.macro-value ^MacroRef x)))
+
+;;; Ensure that form `x` produces some kind of outcome during runtime,
+;;; even if it is of type `void` or an exception.  Rejects macros or
+;;; primitive functions.
+(defn ensure-runtime-outcome ^Expr [^Expr x]
+  (if (jb/compile-time-entity? (type x))
+    (or (value-of-macro x)
+        (wrong "cannot take value of macro or primitive function" x))
+    x))
+
+;;; Ensure that form `x` produces some kind of value, even if it is of
+;;; type `void`.  Rejects macros or primitive functions, as well as
+;;; expressions that do not return (like `throw` or `recur`).
+(defn ensure-runtime-value ^Expr [^Expr x]
+  (let [tp (type x)]
+    (cond
+      (jb/compile-time-entity? tp)
+      (or (value-of-macro x)
+          (wrong "cannot take value of macro or primitive function" x))
+
+      (jb/returns? tp)
+      x
+
+      :else
+      (wrong "expression does not produce a value" x))))
+
+;;; pre: (jb/polymorphic? (type x))
+(defn with-monomorphic-result ^Expr [^Expr x ^Class tp]
+  (condp instance? x
+    InvokeDynamic (let [x ^InvokeDynamic x]
+                    (InvokeDynamic. (form x) tp (argv x) (.const-value x)
+                                    (.invocation-name x) (.bsm x) (.cexprs x)))
+    InvokePoly (let [x ^InvokePoly x]
+                 (InvokePoly. (form x) tp (argv x) (.const-value x)
+                              (.kind x) (.owner x) (.method-name x)))
+    #_else (throw (IllegalArgumentException. (str x)))))
+
+;;; ------------------------------------------------------------------------
+
+(deftype MethodDef [^Arity at
+                    ^int flags
+                    ^BindingRef this-bref
+                    ^Expr body-expr])
+(deftype DeftypeDef [^ClassDef cdef
+                     field-brefs        ;seq of BindingRef
+                     method-defs        ;seq of MethodDef
+                     ^IPersistentVector fn-specs ;of FnSpec
+                     ])
+
+(defn with-fn-specs ^DeftypeDef [^DeftypeDef dtdef ^IPersistentVector fn-specs]
+  (DeftypeDef. (.cdef dtdef) (.field-brefs dtdef) (.method-defs dtdef)
+    fn-specs))

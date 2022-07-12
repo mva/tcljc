@@ -1,0 +1,189 @@
+(ns tcljc.grammar
+  (:require [tcljc.wrong :as wrong]
+            [tcljc.synquote :as sq])
+  (:import (clojure.lang Symbol ISeq IPersistentVector IPersistentMap)))
+
+(def refer-clojure-map {:tag :require, :refer-clojure true,
+                        :ns-sym 'tinyclj.core, :as 'clojure.core})
+
+(def refer-clojure-all-map (assoc refer-clojure-map :refer-include :all))
+
+(defn massage-refer-clojure [[ns-sym & reqs]]
+  ;; Move :refer-clojure to front, so that the default globals map is
+  ;; a trivial merge of tinyclj.core with nil.  Only afterwards define
+  ;; the default class names from java.lang.
+  (if-some [rcs (seq (filter :refer-clojure reqs))]
+    (concat (remove #(identical? (:refer-clojure-mode %) :none) rcs)
+            (remove :refer-clojure reqs))
+    (concat [refer-clojure-all-map] reqs)))
+
+(defn- strip-quote [x]
+  (if (and (seq? x) (= sq/sym-quote (first x)) (nil? (nnext x)))
+    (second x)
+    x))
+
+(defn strip-quotes [xs]
+  (apply list (map strip-quote xs)))
+
+(defn require? ^boolean [dep]
+  (identical? :require (:tag dep)))
+
+(defn requires-into [to deps]
+  (into to (comp (comp (filter require?) (map :ns-sym))) deps))
+
+;;; ------------------------------------------------------------------------
+
+(defn ensure-list ^ISeq [form]
+  (if (seq? form)
+    form
+    (wrong/syntax "expect list" form)))
+
+(defn ensure-vector ^IPersistentVector [form]
+  (if (vector? form)
+    form
+    (wrong/syntax "expect vector" form)))
+
+(defn ensure-map ^IPersistentMap [form]
+  (if (map? form)
+    form
+    (wrong/syntax "expect map" form)))
+
+(defn ensure-first [^ISeq xs]
+  (if-some [s (seq xs)]
+    (first s)
+    (wrong/syntax "unexpected end of list")))
+
+(defn prefixed-symbol ^Symbol [form ^Symbol prefix]
+  (let [sym (wrong/ensure-simple-sym form)]
+    (if (some? prefix)
+      (symbol (str prefix "." (name sym)))
+      sym)))
+
+(defn import-clause [forms]
+  (letfn [(imported-classes [form]
+            (cond
+              (symbol? form)
+              [(wrong/ensure-simple-sym form)]
+
+              (seq? form)
+              (let [package (-> (ensure-first form) (wrong/ensure-simple-sym))]
+                (map #(prefixed-symbol % package) (rest form)))
+                 
+              :else
+              (wrong/syntax "expect symbol or list" form)))]
+    {:tag :import, :classes (vec (mapcat imported-classes forms))}))
+
+(defn parse-import-specs [specs]
+  (import-clause (strip-quotes specs)))
+
+(defn first-map-un-syms [^ISeq xs]
+  (let [m (-> (ensure-first xs) (ensure-map))]
+    (->> (mapcat identity m)
+         (mapv wrong/ensure-simple-sym))
+    m))
+
+(defn require-clauses
+  ([form]
+   (require-clauses nil form))
+  ([prefix form]
+   (letfn [(require-opts [acc [f & formr :as forms]]
+             (cond
+               (nil? forms)
+               acc
+                   
+               (identical? :as f)
+               (recur (assoc acc :as (-> (ensure-first formr)
+                                         (wrong/ensure-simple-sym)))
+                      (next formr))
+
+               (identical? :refer f)
+               (recur (assoc acc :refer-include
+                             (let [x (ensure-first formr)]
+                               (cond
+                                 (identical? :all x) :all
+                                 (vector? x) (mapv wrong/ensure-simple-sym x)
+                                 :else (wrong/syntax "expect vector or :all"))))
+                      (next formr))
+
+               (identical? :rename f)
+               (recur (assoc acc :rename (first-map-un-syms formr))
+                      (next formr))
+
+               :else (wrong/syntax "expect :as, :refer, or :rename" f)))]
+     
+     (cond
+       (symbol? form)
+       [{:tag :require, :ns-sym (prefixed-symbol form prefix)}]
+           
+       (vector? form)
+       (let [suffix (ensure-first (seq form))]
+         [(-> {:tag :require, :ns-sym (prefixed-symbol suffix prefix)}
+              (require-opts (next form)))])
+
+       (and (nil? prefix) (seq? form))
+       (let [prefix (-> (ensure-first form) (wrong/ensure-simple-sym))]
+         (mapcat #(require-clauses prefix %) (rest form)))
+           
+       :else
+       (wrong/syntax "expect symbol, vector, or list" form)))))
+
+(defn parse-require-specs [specs]
+  (->> (strip-quotes specs)
+       (mapcat require-clauses)))
+
+(defn refer-clojure-clause
+  ([forms]
+   (if (= forms '(:none))
+     (assoc refer-clojure-map :refer-clojure-mode :none)
+     (refer-clojure-clause refer-clojure-map forms)))
+  ([acc [f & formr :as forms]]
+   (letfn [(first-vector-un-syms [^ISeq xs]
+             (mapv wrong/ensure-simple-sym
+                   (-> (ensure-first xs) (ensure-vector))))]
+     (cond
+       (nil? forms)
+       acc
+       
+       (identical? :only f)
+       (recur (assoc acc :refer-include (first-vector-un-syms formr))
+              (next formr))
+       
+       (identical? :exclude f)
+       (recur (assoc acc :refer-exclude (first-vector-un-syms formr))
+              (next formr))
+
+       (identical? :rename f)
+       (recur (assoc acc :rename (first-map-un-syms formr))
+              (next formr))
+
+       :else (wrong/syntax "expect :include or :exclude" f)))))
+
+(defn ns-clauses [form]
+  (let [form (ensure-list form)
+        f (ensure-first form)]
+    (case f
+      :require (mapcat require-clauses (rest form))
+      :import [(import-clause (rest form))]
+      :refer-clojure [(refer-clojure-clause (rest form))]
+      #_else (wrong/syntax "expect :require, :import, or :refer-clojure" f))))
+
+(defn parse-ns-form
+  ([form]
+   (-> (ensure-list form) (ensure-first) (wrong/ensure-sym 'ns))
+   (let [ns-sym (wrong/ensure-simple-sym (second form))]
+     (->> form
+          (drop (if (string? (first (nthnext form 2)))
+                  3                     ;skip doc string
+                  2))
+          (into [ns-sym] (mapcat ns-clauses)))))
+  ([form ^String ns-str]
+   (let [[ns-sym :as deps] (parse-ns-form form)]
+     (if (= (str ns-sym) ns-str)
+       (cons ns-sym (massage-refer-clojure deps))
+       (wrong/other (str "ns name mismatch, expected " (wrong/q (symbol ns-str))
+                         " but got " (wrong/q ns-sym)))))))
+
+(defn required-ns-strs ^"[Ljava.lang.String;" [deps]
+  (->> (filter require? deps)
+       (map #(name (:ns-sym %)))
+       (into-array String)))

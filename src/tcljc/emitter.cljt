@@ -1,0 +1,568 @@
+(ns tcljc.emitter
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.classfile :as cf]
+   [tcljc.runtime :as rt]
+   [tcljc.wrong :as wrong]   
+   [tcljc.reader :as rd]
+   [tcljc.context :as ctx]
+   [tcljc.expr :as x]
+   [tcljc.emitter.beachhead :as beachhead]
+   [tcljc.emitter.namespace :as nmsp]
+   [tcljc.emitter.prepare :as prepare]
+   [tcljc.emitter.bytecode :as bytecode]
+   [tcljc.emitter.emitfn :as emitfn]
+   [tcljc.emitter.classes :as classes]
+   [tcljc.emitter.export :as export]
+   [tinyclj.string :as str])
+  (:import
+   (tcljc.classfile CHR ClassDef)
+   (tcljc.expr FnCode DeftypeDef MethodDef)
+   (tcljc.emitter.emitfn FnSpec)
+   (tcljc.emitter.prepare TlfSummary)
+   (tcljc.context FnRequireNamespace NamespaceCtx Msg EmitQueue)
+   (tcljc.expr Expr Binding BindingRef FnForm)
+   (clojure.lang ISeq IPersistentMap IPersistentVector)
+   (jdk.classfile Classfile ClassBuilder CodeBuilder TypeKind)
+   (java.nio.file Path)
+   (java.lang.constant ClassDesc MethodTypeDesc)
+   (java.lang.invoke MethodHandles$Lookup)
+   (java.util Map HashMap HashSet)
+   (java.util.concurrent Future CompletableFuture ConcurrentHashMap
+                         BlockingQueue ExecutorService)
+   (java.util.function Consumer)))
+
+(deftype BuildEnv
+    [^ClassLoader app-ld
+     ;; Source files are obtained from this loader via
+     ;; `.getResource`.  If the parent classloader is
+     ;; :system, then `app-ld` also provides ahead-of-time
+     ;; compiled class files.  It must never return classes
+     ;; from the destination directory, or compilation of
+     ;; modified classes will silently stop.
+
+     ^MethodHandles$Lookup rt-lookup
+     ;; Classes and methods from module tinyclj.rt are
+     ;; accessed via this lookup.
+
+     ^IPersistentMap builtin-ns
+     ;; Builtin namespaces that can be required directly from
+     ;; any namespace.
+
+     ^Path dest-dir
+     ;; When set, then class files are also written to this
+     ;; directory.
+              
+;;; Lifetime of single build run of "watch mode":
+     ^ClassLoader dyn-ld
+     ^CHR dyn-chr
+              
+;;; For unit tests:
+     injected-file-forms      ;forms used in lieu of reading from file
+     arender-to               ;maps class owner string to class data
+     ]
+  tcljc.emitter.namespace.IBuildEnv
+  (rt-lookup [_]
+    rt-lookup)
+  (resolve-rpath [_ rpath]
+    (if injected-file-forms
+      (cfg/path-url rpath)
+      (.getResource app-ld (str rpath))))
+  (forms-reader [_ rurl]
+    (if-some [xs (get injected-file-forms rurl)]
+      (rd/mk-seq-reader xs)
+      (rd/mk-reader (rd/tokenize rurl)))))
+
+(defn mk-build-env
+  (^BuildEnv [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld]
+   (mk-build-env app-ld dest-dir dyn-ld nil nil))
+  (^BuildEnv [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld
+              injected-file-forms arender-to]
+   (BuildEnv. app-ld (cfg/get-rt-lookup app-ld) {} dest-dir
+              dyn-ld (cf/mk-chr dyn-ld)
+              injected-file-forms arender-to)))
+
+(def first-segm-id 100)
+(def ns-class-name "__ns")
+
+(deftype SegmState [^BuildEnv env
+                    ^NamespaceCtx nmsp-ctx
+                    ^String sourcefile
+                    
+                    ^int segm-id
+                    ^ClassDesc segm-cld
+                    ^IPersistentVector summaryv ;of TlfSummary
+                    
+                    ^IPersistentVector bs+clv
+                    ^IPersistentMap nsd])
+
+(defn- segment-lookup ^MethodHandles$Lookup [^SegmState segm]
+  (-> segm .nmsp-ctx .lookup-in-pkg))
+(defn- segment-ns-str ^String [^SegmState segm]
+  (-> segm .nmsp-ctx .ns-str))
+(defn- segment-name ^String [^SegmState segm ^int id-delta]
+  (str (segment-ns-str segm) "." ns-class-name (+ (.segm-id segm) id-delta)))
+(defn- segment-cld ^ClassDesc [^SegmState segm ^int id-delta]
+  (if (zero? id-delta)
+    (.segm-cld segm)
+    (ClassDesc/of (segment-name segm id-delta))))
+(defn- segment-chr ^CHR [^SegmState segm]
+  (-> segm .env .dyn-chr))
+
+(defn with-summary ^SegmState [^SegmState segm ^TlfSummary summary]
+  (SegmState. (.env segm) (.nmsp-ctx segm) (.sourcefile segm)
+              (.segm-id segm) (.segm-cld segm) (conj (.summaryv segm) summary)
+              (.bs+clv segm) (.nsd segm)))
+(defn with-bs+cl ^SegmState [^SegmState segm
+                             ^int id-delta ^boolean clear-summaryv?
+                             ^bytes bs ^Class cl]
+  (SegmState. (.env segm) (.nmsp-ctx segm) (.sourcefile segm)
+              (+ (.segm-id segm) id-delta) (segment-cld segm id-delta)
+              (if clear-summaryv? [] (.summaryv segm))
+              (conj (.bs+clv segm) bs cl) (.nsd segm)))
+(defn with-nsd ^SegmState [^SegmState segm ^IPersistentMap nsd]
+  (SegmState. (.env segm) (.nmsp-ctx segm) (.sourcefile segm)
+              (.segm-id segm) (.segm-cld segm) (.summaryv segm)
+              (.bs+clv segm) nsd))
+
+(defn- capstone-cld ^ClassDesc [^SegmState segm]
+  (ClassDesc/of (-> segm .nmsp-ctx .ns-str) ns-class-name))
+
+(defn- build-segment ^bytes [^SegmState segm]
+  (let [clinit-xb (cf/with-xbh [xb]
+                    (let [ns-str (segment-ns-str segm)]
+                      (when (= (.segm-id segm) first-segm-id)
+                        (-> (.constantInstruction xb ns-str)
+                            (cf/invoke rt/mhd-createNamespace)))
+                      (doseq [^TlfSummary summary (.summaryv segm)]
+                        (bytecode/emit-into xb (.top-level-form summary)))
+                      (when (cfg/core-lib? ns-str)
+                        (-> (.constantInstruction xb (segment-name segm 0))
+                            (cf/invoke rt/mhd-markCoreInitialization))))
+                    (.return_ xb))
+        segm-cld (segment-cld segm 0)]
+    (cf/build
+     segm-cld
+     (cf/with-cbh [cb]
+       (when-not (= (.segm-id segm) first-segm-id)
+         (.withSuperclass cb (segment-cld segm -1)))
+       (doseq [^TlfSummary summary (.summaryv segm)]
+         ;; emit fields and methods of all global bindings, delivering
+         ;; their loads in order
+         (doseq [^Binding global-b (.global-bs summary)]
+           (bytecode/emit-global-b cb segm-cld global-b))
+         (doseq [^FnSpec fspec (.fn-specs summary)]
+           (.fn-methods (-> fspec .fn-form .!fnc .emit-plan) cb)))
+       (-> (.withFlags cb Classfile/ACC_PUBLIC)
+           (.withMethodBody cf/class-initializer-name rt/mtd-void-void
+                            (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
+                            clinit-xb)))
+     (segment-chr segm))))
+
+(defn with-main ^ClassBuilder [^ClassBuilder cb ^SegmState segm]
+  (letfn [(main-function ^BindingRef []
+            (let [globals (.get-globals (.nmsp-ctx segm))]
+              (when-some [bref (get globals "-main" nil)]
+                (when (some? (x/root-fn-form bref))
+                  bref))))]
+    (when-some [bref (main-function)]
+      (let [main-mtd (MethodTypeDesc/of rt/void (.arrayType rt/String))
+            flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
+                          Classfile/ACC_FINAL)
+            xbh (cf/with-xbh [xb]
+                  (let [mtd (MethodTypeDesc/of rt/object rt/IFn rt/object)]
+                    (-> (cf/ld-insn xb (x/deref-load bref))
+                        (.aload 0)
+                        (.invokestatic rt/RT "apply" mtd)
+                        (.pop)
+                        (.return_))))]
+        (.withMethodBody cb "main" main-mtd flags xbh)))))
+
+(defn- build-capstone ^bytes [^SegmState segm]
+  (let [force-xb (cf/with-xbh [xb]
+                   (.return_ xb))
+        requires-xb (cf/with-xbh [xb]
+                      (let [s (str/join "," (-> segm .nsd :req-strs (sort)))]
+                        (-> xb (.constantInstruction s) (.areturn))))]
+    (cf/build
+     (capstone-cld segm)
+     (cf/with-cbh [cb]
+       (-> (.withFlags cb Classfile/ACC_PUBLIC)
+           (.withSuperclass (segment-cld segm -1))
+           
+           ;; static method with zero parameters, cannot clash with a
+           ;; regular function's method name because of the suffix "~1";
+           ;; FIXME... drop this and use requires~1 instead?
+           (.withMethodBody rt/name-force-clinit rt/mtd-void-void
+                            (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
+                                    Classfile/ACC_FINAL)
+                            force-xb)
+
+           (.withMethodBody rt/name-requires rt/mtd-String-void
+                            (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
+                                    Classfile/ACC_FINAL)
+                            requires-xb)
+           (with-main segm)))
+     (segment-chr segm))))
+
+(defn- build-class ^bytes [^ClassDef cdef ^CHR dyn-chr]
+  (.register! dyn-chr (.ch-info cdef))
+  (cf/build
+   (-> cdef .ch-info .thisClass)
+   (cf/with-cbh [cb]
+     (.withFlags cb (.flags cdef))
+     (.withSuperclass cb (-> cdef .ch-info .superClass))
+     (.withInterfaceSymbols cb (.itfs cdef))
+     ;; FIXME... add sourcefile attribute
+     (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef)))
+   dyn-chr))
+
+(defn- build-deftype ^ClassDef [^DeftypeDef dtdef]
+  (letfn [(method-cbh [^MethodDef mdef]
+            (cf/with-cbh [cb]
+              (let [at (.at mdef)
+                    this-class (-> dtdef .cdef .ch-info .thisClass)
+                    ld-this (cf/ld-st-receiver this-class
+                                               (name (.this-name at)))
+                    xbh (cf/with-xbh [xb]
+                          (.deliver-load (.this-bref mdef) ld-this)
+                          (cf/st-insn xb ld-this true) ;emit LocalVariable entry
+                          (bytecode/emit-body xb ld-this at 0
+                                              (.body-expr mdef)))]
+                (.withMethodBody cb (.method-name at) (x/at-mtd at)
+                                 (.flags mdef) xbh))))]
+    (let [cdef (.cdef dtdef)]
+      (cf/with-methods cdef (map method-cbh (.method-defs dtdef))))))
+
+(defn- emit-segments
+  (^SegmState [^BuildEnv env ^NamespaceCtx nmsp-ctx]
+   (let [rurl (ctx/this-rurl nmsp-ctx)
+         sourcefile (when (and cfg/enable-line-numbers (some? rurl))
+                      (let [s (.getPath rurl)]
+                        (subs s (inc (.lastIndexOf s "/")))))
+         cld (ClassDesc/of (.ns-str nmsp-ctx)
+                           (str ns-class-name first-segm-id))]
+     (emit-segments (SegmState. env nmsp-ctx sourcefile first-segm-id cld
+                                [] [] nil))))
+  (^SegmState [^SegmState segm]
+   (letfn [(all-fn-code [^SegmState segm]
+             (->>  (.summaryv segm)
+                   (mapcat #(.fn-specs ^TlfSummary %))
+                   (map #(-> ^FnSpec % .fn-form .!fnc))))
+           (write-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
+             (if-some [bs (.fn-class (.emit-plan fnc) (segment-chr segm))]
+               (let [this ^ClassDesc (.ld-clx fnc)
+                     cl (cfg/write-and-define-class (-> segm .env .dest-dir)
+                                                    (segment-lookup segm)
+                                                    this bs)]
+                 (with-bs+cl segm 0 false bs cl))
+               segm))
+           (write-segment ^SegmState [^SegmState segm]
+             (let [segm ^SegmState (reduce write-fn-class
+                                           segm (all-fn-code segm))
+                   bs (build-segment segm)
+                   cl (cfg/write-and-define-class (-> segm .env .dest-dir)
+                                                  (segment-lookup segm)
+                                                  (segment-cld segm 0) bs)]
+               (with-bs+cl segm +1 true bs cl)))
+
+           (write-capstone ^SegmState [^SegmState segm]
+             (let [bs (build-capstone segm)
+                   cl (cfg/write-and-define-class
+                       (-> segm .env .dest-dir)
+                       (segment-lookup segm)
+                       (capstone-cld segm) bs)]
+               (with-bs+cl segm 0 true bs cl)))
+           
+           (try-load-bref ^Object [^SegmState segm ^BindingRef bref]
+             (when (.realized? bref)
+               (let [global-mh (try
+                                 (let [l (-> segm .nmsp-ctx .lookup-in-pkg)]
+                                   (.mh-if-global (x/deref-load bref) l))
+                                 (catch ClassNotFoundException _
+                                   nil))]
+                 (when (some? global-mh)
+                   (if (nil? (.apply-mh (.nmsp-ctx segm)))
+                     ;; compiler and application share runtime?
+                     ;; careful, this is a very brittle method type!
+                     ^tinyclj.lang.StaticFnMh (.invokeExact global-mh)
+                     (.invoke global-mh))))))
+
+           (write-and-define ^SegmState [^SegmState segm ^ClassDef cdef
+                                         ^CompletableFuture promise]
+             (let [bs (build-class cdef (segment-chr segm))
+                   this-class (-> cdef .ch-info .thisClass)
+                   cl (cfg/write-and-define-class (-> segm .env .dest-dir)
+                                                  (segment-lookup segm)
+                                                  this-class bs)]
+               (ctx/with-complete promise cl)
+               (with-bs+cl segm 0 false bs cl)))
+           (complete-req! ^SegmState [^SegmState segm ^int task x
+                                      ^CompletableFuture promise]
+             (condp = task
+               ctx/req-macro-value
+               ;; note: "flush class" requests are issued in arbitrary order
+               ;; by namespace threads
+               (let [bref ^BindingRef x]
+                 (if-some [f (try-load-bref segm bref)] ;first try
+                   (do (.complete promise f)
+                       segm)
+                   (let [segm (write-segment segm)] ;second and last try
+                     (.complete promise (try-load-bref segm bref))
+                     segm)))
+
+               ctx/msg-emit-tlf
+               (let [^TlfSummary summary x]
+                 (prepare/prepare-fns! (.segm-cld segm)
+                                       (.fn-specs summary))
+                 (prepare/prepare-globals! (.segm-cld segm)
+                                           (.global-bs summary))
+                 (let [segm (with-summary segm summary)
+                       dyn-chr (segment-chr segm)]
+                   (doseq [^FnCode fnc (all-fn-code segm)
+                           :let [ep (.emit-plan fnc)]]
+                     (when-some [ch-info (.fn-class-hierarchy-info ep)]
+                       (.register! dyn-chr ch-info)))
+                   segm))
+               
+               ctx/req-define-class
+               (if (instance? ClassDef x)
+                 (write-and-define segm ^ClassDef x promise)
+                 (let [dtdef ^DeftypeDef x
+                       summary (TlfSummary. (.fn-specs dtdef) nil x/expr-empty)]
+                   (prepare/prepare-fns! (.segm-cld segm) (.fn-specs dtdef))
+                   (-> (with-summary segm summary)
+                       (write-and-define (build-deftype dtdef) promise))))
+               
+               ctx/req-define-class-ephemeral
+               (let [cdef ^ClassDef x
+                     bs (build-class cdef (segment-chr segm))
+                     dyn-ld (-> (segment-lookup segm)
+                                .lookupClass
+                                (.getClassLoader))
+                     ;; use a one shot class loader derived from `dyn-ld`
+                     ld (cfg/class-loader-instance dyn-ld "tclj-eph" nil)
+                     m (.getDeclaredMethod (class ld) "ephemeralClass"
+                                           (.arrayType Byte/TYPE))]
+                 (ctx/with-complete promise
+                   (.invoke m ld (doto (new objects 1) (aset 0 bs))))
+                 segm)
+               
+               ctx/msg-fatal-error
+               (throw ^Throwable x)
+               
+               #_else (throw (IllegalStateException. (str task)))))
+           
+           ;; Complete all requests with an exception, so that the
+           ;; namespace thread does not run into a timeout.
+           (drain-queue ^void [^BlockingQueue q ^Throwable t ^Msg msg]
+             (when (ctx/needs-response? (.task msg))
+               (.completeExceptionally ^CompletableFuture (.promise msg) t))
+             (when-not (ctx/close-queue? msg)
+               (recur q t (.take q))))]
+
+     (let [msg ^Msg (-> segm .nmsp-ctx .emit .q (.take))
+           p (.promise msg)]
+       (if (= (.task msg) ctx/msg-close-queue)
+         (-> segm (with-nsd (.x msg)) (write-segment) (write-capstone))
+         (-> (try
+               (let [segm (complete-req! segm (.task msg) (.x msg) p)]
+                 (assert (or (nil? p) (.isDone p)))
+                 segm)
+               (catch Throwable t
+                 (drain-queue (-> segm .nmsp-ctx .emit .q) t msg)
+                 (throw t)))
+             (recur)))))))
+
+(defn- preparer-thread [^EmitQueue emit ^HashSet !private-names]
+  (letfn [(collect-fn-specs [acc ^MethodDef mdef]
+            (let [body (.body-expr mdef)
+                  summary (prepare/collect-fn-info !private-names body)]
+              (into acc (.fn-specs summary))))]
+    (let [msg ^Msg (.take (.s emit))]
+      (condp = (.task msg)
+        ctx/msg-emit-tlf
+        (let [summary (prepare/collect-fn-info !private-names (.x msg))]
+          (.put (.q emit) (Msg. (.task msg) summary (.promise msg))))
+
+        ctx/req-define-class
+        (condp instance? (.x msg)
+          ClassDef
+          (.put (.q emit) msg)
+          
+          DeftypeDef
+          (let [dtdef ^DeftypeDef (.x msg)
+                fn-specs (reduce collect-fn-specs [] (.method-defs dtdef))]
+            (.put (.q emit) (Msg. (.task msg)
+                                  (x/with-fn-specs dtdef fn-specs)
+                                  (.promise msg))))
+
+          #_else (throw (IllegalStateException.))) 
+        
+        ctx/req-flush-s-queue
+        (.complete (.promise msg) nil)
+        
+        #_else (.put (.q emit) msg))
+      
+      (when-not (ctx/close-queue? msg)
+        (recur emit !private-names)))))
+
+;; Note: Exceptions are reported in the order in which they occur in
+;; the emitter thread.  The "compile namespace" thread can fork of an
+;; arbitrary number of futures of its own, and the emitter retrieves
+;; their result/exception in emit order.
+(defn emit-thread ^SegmState [^BuildEnv env ^IPersistentMap provided-ns
+                              ^NamespaceCtx nmsp-ctx]
+  (cfg/delete-class-files (.dest-dir env) (ctx/this-ns nmsp-ctx))
+  (let [s-thread (when-not cfg/deterministic-namespace-compile?
+                   (ctx/start-solo-thread
+                    nmsp-ctx
+                    (try
+                      (preparer-thread (.emit nmsp-ctx) (HashSet.))
+                      (catch Throwable t ;no re-raise and wait for close-queue
+                        (ctx/send-msg* (-> nmsp-ctx .emit .q)
+                                       ctx/msg-fatal-error t))
+                      (finally        ;there is always a `close-queue`
+                        (ctx/send-msg* (-> nmsp-ctx .emit .q)
+                                       ctx/msg-close-queue nil)))))
+        c-thread (ctx/start-solo-thread
+                  nmsp-ctx
+                  (try
+                    (let [nsd (nmsp/compile-thread env provided-ns nmsp-ctx)]
+                      ;; regular completion: pass back result in first
+                      ;; `close-queue` message
+                      (ctx/send-msg (.emit nmsp-ctx) ctx/msg-close-queue nsd))
+                    (catch Throwable t ;no re-raise and wait for close-queue
+                      (ctx/send-msg (.emit nmsp-ctx) ctx/msg-fatal-error t))
+                    (finally          ;there is always a `close-queue`
+                      (ctx/send-msg (.emit nmsp-ctx) ctx/msg-close-queue nil))))
+        segm (emit-segments env nmsp-ctx)]
+    (.join c-thread 5000l)      ;does not pick up result or exceptions
+    (when-not cfg/deterministic-namespace-compile?
+      (.join s-thread 5000l))   ;does not pick up result or exceptions
+    segm))
+
+;;; ------------------------------------------------------------------------
+
+(defn mk-nmsp-ctx ^NamespaceCtx [^BuildEnv env
+                                 ^FnRequireNamespace require-namespace
+                                 
+                                 ^IPersistentMap known-ns
+                                 ^IPersistentMap initial-globals
+                                 ^String ns-str
+                                 
+                                 ^ExecutorService exc-method]
+  (let [rpath (cfg/nmsp-rpath ns-str)
+        rurl (or (.resolve-rpath env rpath)
+                 (wrong/file rpath))
+        ;; the namespace context needs a lookup into the package of
+        ;; the namespace
+        l (.rt-lookup env)
+        lookup-in-pkg (beachhead/mk-lookup-in-pkg l (.dyn-ld env) ns-str)
+        ;; FIXME... use non-nil as apply-mh when isolated runtime
+        apply-mh nil #_(.resolveConstantDesc rt/mhd-applyMacroMapped l)]
+    (ctx/mk-namespace known-ns initial-globals
+                      ns-str rpath rurl 
+                      lookup-in-pkg require-namespace apply-mh exc-method)))
+
+(def initial-globals {})
+
+(defn emit-namespaces-mt ^IPersistentMap [^BuildEnv env ns-strs]
+  (let [namespaces-q (java.util.concurrent.LinkedBlockingQueue.)
+        !futs (ConcurrentHashMap.)]     ;updated by this thread only
+    (ctx/with-executor namespaces-scope
+      (letfn [(^FnRequireNamespace require-fn [ns-str provided-ns]
+               (or
+                ;; First peek into the current namespace map, and
+                ;; return a known namespace immediately.
+                (.get !futs ns-str)
+                ;; For an unregistered namespace, delegate via message
+                ;; exchange/promise to the top-level thread's
+                ;; `namespace-loop`.
+                (let [cf (CompletableFuture.)]
+                  (.put namespaces-q [ns-str provided-ns cf])
+                  (ctx/wait-for-result 1 cf))))
+              
+              (fork-namespace ^Future [^String ns-str provided-ns]
+                (ctx/with-executor exc-method
+                  (let [tl-ctx (mk-nmsp-ctx env require-fn
+                                            provided-ns initial-globals ns-str
+                                            exc-method)]
+                    #_(prn :namespace-start ns-str)
+                    (ctx/with-fork+context namespaces-scope tl-ctx
+                      (try 
+                        (emit-thread env provided-ns tl-ctx)
+                        (finally    ;signal completion to namespace loop
+                          (.put namespaces-q [ns-str])))))))
+              
+              (fork-all! ^int [ns-strs] ;returns number of new namespaces
+                ;; this thread owns !futs and there are no concurrent
+                ;; updates; using size() is ok, and test followed by
+                ;; put as well
+                (let [n (.size !futs)]
+                  (doseq [ns-str ns-strs
+                          :when (not (.containsKey !futs ns-str))
+                          :let [fut (fork-namespace ns-str (.builtin-ns env))]]
+                    (.put !futs ns-str fut))
+                  (- (.size !futs) n)))]
+        
+        ;; In the first phase, force discovery of core library.  Only
+        ;; after it has completed handle all namespaces from `ns-strs`
+        ;; -- until the new namespaces have completed as well.
+        (loop [n (fork-all! [cfg/core-lib])] ;`n` counts in-progress tasks
+          (if (zero? n)              ;all pending tasks have completed
+            (let [d (fork-all! ns-strs)] ;(re-)add all top-level namespace tasks
+              (when (pos? d)     ;exit loop if no new tasks were added
+                (recur d)))
+            (let [[^String ns-str provided-ns ^CompletableFuture cf] (.take namespaces-q)]
+              (if (some? cf)
+                (if-some [fut (.get !futs ns-str)]
+                  (do (.complete cf fut)
+                      (recur n))
+                  (let [fut (fork-namespace ns-str provided-ns)]
+                    (.put !futs ns-str fut)
+                    (.complete cf fut)
+                    (recur (inc n))))
+                (do #_(prn :namespace-end ns-str)
+                    (recur (dec n)))))))))
+    
+    ;; If any namespace failed, then throw the first exception in
+    ;; depth-first traversal order.  This should be deterministic,
+    ;; even if there are errors in multiple namespaces and the
+    ;; original exceptions are reported in arbitrary order.  It should
+    ;; also report the same error in multi-threaded mode as in
+    ;; single-threaded mode.
+    (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
+      ;; loop over array to avoid stack frame spamming
+      (dotimes [i (alength a)]
+        (ctx/get-result-now (.get !futs (aget a i))))) ;forces exception
+    (into {} !futs)))
+
+(defn emit-namespaces-st ^IPersistentMap [^BuildEnv env ns-strs]
+  (let [!futs (java.util.HashMap.)]     ;single-threaded!
+    (letfn [(^FnRequireNamespace require-fn [ns-str provided-ns]
+             (or (.get !futs ns-str)
+                 (let [tl-ctx (mk-nmsp-ctx env require-fn
+                                           provided-ns initial-globals ns-str
+                                           nil)]
+                   (ctx/with-context tl-ctx
+                     (.put !futs ns-str nmsp/marker-depth-first-path)
+                     #_(prn :namespace-start ns-str)
+                     (let [x (emit-thread env provided-ns tl-ctx)]
+                       #_(prn :namespace-end ns-str)
+                       (.put !futs ns-str x)
+                       x)))))]
+      ;; first, force discovery of core library
+      (.schedule require-fn cfg/core-lib (.builtin-ns env))
+      ;; then handle all namespaces from `ns-strs`
+      (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
+        ;; loop over array to avoid stack frame spamming
+        (dotimes [i (alength a)]
+          (.schedule require-fn (aget a i) (.builtin-ns env))))
+      (into {} !futs))))
+
+(defn summary ^IPersistentMap [^IPersistentMap ns-futs]
+  (into {}
+        (map (fn [^java.util.Map$Entry e]
+               [(.getKey e) (ctx/get-result-now (.getValue e))]))
+        ns-futs))

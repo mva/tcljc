@@ -1,0 +1,74 @@
+(ns tcljc.run-tests
+  (:require
+   (tcljc reader-test #_synquote-test grammar-test
+
+          resolve-test bootstrap-test
+          
+          const-test conv-test dot-form-test new-test arith-test let-test
+          quote-test meta-test str-test bits-test switch-test cond-test
+          try-test array-test loop-test logic-test clone-test
+
+          namespace-test fn-test variadic-test macro-test deftype-test
+          set-test definterface-test closure-test line-test letfn-test
+          reify-test ;; require-test #_publics-test
+          )
+   
+   tcljc.core                      ;at least compile unused namespaces
+   tcljc.run-rtiow
+   
+   [tinyclj.alpha.ptest :refer [run-scoped-tests]]))
+
+(def all-namespaces
+  '[tcljc.reader-test
+    #_tcljc.synquote-test
+    tcljc.grammar-test
+
+    tcljc.resolve-test
+    tcljc.bootstrap-test
+    
+    tcljc.const-test
+    tcljc.conv-test
+    tcljc.dot-form-test
+    tcljc.new-test
+    tcljc.arith-test
+    tcljc.let-test
+    tcljc.quote-test
+    tcljc.meta-test
+    tcljc.str-test
+    tcljc.bits-test
+    tcljc.switch-test
+    tcljc.cond-test
+    tcljc.try-test
+    tcljc.array-test
+    tcljc.loop-test
+    tcljc.logic-test
+    tcljc.clone-test
+
+    tcljc.namespace-test
+    tcljc.fn-test
+    tcljc.variadic-test
+    tcljc.macro-test
+    tcljc.deftype-test
+    tcljc.set-test
+    tcljc.definterface-test
+    tcljc.closure-test
+    tcljc.line-test
+    tcljc.letfn-test
+    tcljc.reify-test
+    ;; #_tcljc.require-test
+    ;; #_tcljc.publics-test
+    ])
+
+(defn run []
+  (let [res (run-scoped-tests all-namespaces)]
+    (if (= res :success)
+      (tcljc.run-rtiow/run)
+      #_(time (dotimes [_ 1000]
+                (tcljc.run-rtiow/run)))
+      res)))
+
+(defn -main [& args]
+  (try
+    (apply run args)
+    (finally
+      (shutdown-agents))))     ;can only shut down when owning the JVM

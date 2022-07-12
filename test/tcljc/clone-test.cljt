@@ -1,0 +1,28 @@
+(ns tcljc.clone-test
+  (:require [tcljc.bootstrap :refer [asm-expr]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest clone-ints-test
+  (is (= '[["LOCAL 0: int[] x"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL "int[]" "clone" "()Ljava/lang/Object;")
+           (CHECKCAST "int[]")
+           (ARETURN)]
+         (asm-expr [^ints x] (.clone x)))))
+
+(deftest clone-strings-test
+  (is (= '[["LOCAL 0: String[] x"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL "String[]" "clone" "()Ljava/lang/Object;")
+           (CHECKCAST "String[]")
+           (ARETURN)]
+         (asm-expr [^"[Ljava.lang.String;" x] (.clone x)))))
+
+(deftest clone-multi-test
+  (is (= '[["LOCAL 0: int[][] x"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL "int[][]" "clone" "()Ljava/lang/Object;")
+           (CHECKCAST "int[][]")
+           (ARETURN)]
+         (asm-expr [^"[[I" x] (.clone x)))))
+

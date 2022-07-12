@@ -1,0 +1,281 @@
+(ns tcljc.compiler.conv
+  (:require
+   [tcljc.classfile :as cf]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.wrong :as wrong]
+   [tcljc.expr :as x]
+   [tcljc.compiler.resolve :as resolve]
+   [tcljc.exprfold :as xf])
+  (:import
+   (tcljc.expr Expr Progn)
+   (clojure.lang IPersistentVector)
+   (jdk.classfile Opcode)
+   (java.lang.reflect Executable)))
+
+(def ^:private show-class-loader false)
+
+(letfn [(class-loader-suffix [tp]
+          (when show-class-loader
+            (if (class? tp)
+              (if-some [ld (.getClassLoader ^Class tp)]
+                (or (.getName ld) "not-named")
+                nil #_"bootstrap")
+              "class-desc")))]
+  (defn type-str ^String [clx]
+    (if (jb/null? clx)
+      "nil"
+      (str (.displayName (rt/cd-of clx)) (class-loader-suffix clx)))))
+
+;;; ------------------------------------------------------------------------
+
+;;; All `to-xxx` type conversion functions assume that their argument
+;;; is numeric (which includes char, and excludes boolean), but *not*
+;;; of the desired type.  The exception is `to-int`, which is
+;;; idempotent for int values and also accepts a boolean argument.
+
+(defn- to-int ^Expr [^Expr arg]         ;idempotent if `arg` is int
+  (condp jb/same-class? (x/type arg)
+    Integer/TYPE arg
+    Long/TYPE (xf/conv jb/int arg Opcode/L2I)
+    Float/TYPE (xf/conv jb/int arg Opcode/F2I)
+    Double/TYPE (xf/conv jb/int arg Opcode/D2I)
+    Boolean/TYPE (x/invoke-xref jb/int [arg] (.const-value arg)
+                                rt/mhd-boolean-to-zero-one false)
+    #_else (x/identity jb/int arg)))
+
+(defn to-long ^Expr [^Expr arg]
+  (condp jb/same-class? (x/type arg)
+    Integer/TYPE (xf/conv jb/long arg Opcode/I2L)
+    Float/TYPE (xf/conv jb/long arg Opcode/F2L)
+    Double/TYPE (xf/conv jb/long arg Opcode/D2L)
+    (recur (to-int arg))))
+(defn to-float ^Expr [^Expr arg]
+  (condp jb/same-class? (x/type arg)
+    Integer/TYPE (xf/conv jb/float arg Opcode/I2F)
+    Long/TYPE (xf/conv jb/float arg Opcode/L2F)
+    Double/TYPE (xf/conv jb/float arg Opcode/D2F)
+    (recur (to-int arg))))
+(defn to-double ^Expr [^Expr arg]
+  (condp jb/same-class? (x/type arg)
+    Integer/TYPE (xf/conv jb/double arg Opcode/I2D)
+    Long/TYPE (xf/conv jb/double arg Opcode/L2D)
+    Float/TYPE (xf/conv jb/double arg Opcode/F2D)
+    (recur (to-int arg))))
+
+(defn- to-byte ^Expr [^Expr arg]
+  (xf/conv jb/byte (to-int arg) Opcode/I2B))
+(defn- to-short ^Expr [^Expr arg]
+  (xf/conv jb/short (to-int arg) Opcode/I2S))
+(defn- to-char ^Expr [^Expr arg]
+  (xf/conv jb/char (to-int arg) Opcode/I2C))
+
+(defn upper-numeric-tp ^Class [^Expr arg0 ^Expr arg1]
+  (if (resolve/numeric-assignable-to? (x/type arg1) (x/type arg0))
+    (x/type arg0)
+    (x/type arg1)))
+
+(def ^:private ^objects aopcd-conv-to
+  (into-array Object [to-int to-long to-float to-double
+                      nil to-byte to-char to-short]))
+
+(defn lookup-conv-to-fn* [^Class to-cl]
+  (aget aopcd-conv-to (cf/opcode-delta to-cl)))
+
+(defn conv-to ^Expr [^Class to-cl conv-to-fn ^Expr arg]
+  (cond
+    (x/type? to-cl arg) arg
+    (x/numeric? arg) (conv-to-fn arg)
+    
+    ;; accept type conversion like (int <boolean>) to better support
+    ;; certain patterns of branchless code
+    (or (x/character? arg) (x/boolean? arg))
+    (conv-to-fn arg)
+    
+    :else (x/wrong-type (str "cannot convert to " (type-str to-cl)) arg)))
+
+(defn widen-from ^Expr [^Class to-cl ^Expr from]
+  ;; pre: `from` is assignable to `to`
+  (conv-to to-cl (lookup-conv-to-fn* to-cl) from))
+
+(defn computational-int? ^boolean [^Expr x]
+  (let [cl (x/type x)]
+    (and (.isPrimitive cl)
+         (case (.charAt (.descriptorString cl) 0)
+           (\B \C \I \S \Z) true
+           #_else false))))
+
+(defn numeric-assignable-to-int? ^boolean [^Expr x]
+  (let [cl (x/type x)]
+    (and (.isPrimitive cl)
+         (case (.charAt (.descriptorString cl) 0)
+           (\B \I \S) true
+           #_else false))))
+
+(defn- to-computational-type ^Expr [^Expr from]
+  (if (numeric-assignable-to-int? from)
+    (widen-from jb/int from)
+    from))
+
+(defn ensure-numeric ^Expr [^Expr from]
+  (if (x/numeric? from)
+    (to-computational-type from)
+    (x/wrong-type "expect numeric expression" from)))
+
+;;; ------------------------------------------------------------------------
+
+(defn primitive-unbox-expr ^Expr [^Class to-tp ^Expr arg]
+  (let [box-tp (jb/logical->box to-tp)
+        typed-x (xf/checkcast arg box-tp)]
+    (x/invoke-xref to-tp [typed-x] (rt/logical->accessor-mhd to-tp))))
+
+(defn primitive-conv-from-object ^Expr [^Class to-tp ^Expr arg]
+  (if (x/type? (jb/logical->box to-tp) arg)
+    (primitive-unbox-expr to-tp arg)
+    (x/invoke-xref to-tp [arg] (rt/logical->conv-object-mhd to-tp))))
+
+(defn box-expr ^Expr [^Expr prim-expr] ;pre: `prim-expr` is of primitive type
+  (let [from-tp (x/type prim-expr)]
+    (x/invoke-xref (jb/logical->box from-tp) [prim-expr]
+                   (rt/logical->box-factory from-tp))))
+
+(defn box-any-expr ^Expr [^Expr x]
+  (cond
+    (x/type? jb/void x) x/expr-nil
+    (x/reference? x) (x/identity x)
+    :else (box-expr x)))
+
+(defn expr-default ^Expr [^Class tp]
+  (cond (jb/numeric? tp) (widen-from tp x/expr-zero-byte)
+        (jb/same-class? jb/boolean tp) x/expr-false
+        (jb/same-class? jb/char tp) x/expr-zero-char
+
+        ;; anything else that produces a value is currently a
+        ;; reference type
+        (jb/pushes-result? tp) (x/const tp nil)
+
+        :else x/expr-empty))  ;void or no-return (also mapped to void)
+
+;;; ------------------------------------------------------------------------
+
+(defn- jvm-adapt-to ^Expr [^Class to-tp ^Expr from] ;returns nil on failure
+  (cond
+    (or (x/type? to-tp from)      ;cheapest: type of `from` is `to-tp`
+        (not (x/returns? from))   ;"no return" is always compatible
+        (jb/polymorphic? to-tp))
+    from
+    
+    (resolve/numeric-assignable-to? (x/type from) to-tp)
+    (widen-from to-tp from)
+
+    (or (and (x/null-type? from) (jb/reference? to-tp))
+        (.isAssignableFrom to-tp (x/type from)))
+    (xf/coerce from to-tp)
+
+    (jb/statement? to-tp)
+    (xf/coerce-to-statm from)
+    
+    :else nil))
+
+;;; Keep in sync with `assignable-to?` below.
+(defn- adapt-for-assign ^Expr [^Expr from ^Class to-tp]
+  (let [from-cl (x/type from)
+        to-cl to-tp]
+    (or (jvm-adapt-to to-tp from)
+
+        (when (x/statement? from)
+          (xf/prog2-expr from (expr-default to-tp)))
+        
+        (when (jb/reference? to-tp)
+          (cond (or (jb/object? from-cl)
+                    (jb/jvm-assignable-to? from-cl to-cl))
+                (xf/coerce from to-tp)
+
+                (jb/same-class? Void/TYPE from-cl)
+                (xf/prog2-expr from (x/const to-tp nil))
+                
+                :else nil))
+
+        (x/wrong-type (str "cannot assign to " (wrong/q to-tp)) from))))
+
+(defn jvm-assignable-to? ^boolean [^Expr from ^Class to-tp]
+  (some? (jvm-adapt-to to-tp from)))
+
+;;; Must mirror logic of `adapt-for-assign` above.
+(defn assignable-to? ^boolean [^Expr from ^Class to-tp]
+  (or (jvm-assignable-to? from to-tp)
+      (x/statement? from)
+      (and (jb/reference? to-tp)
+           (or (jb/object? (x/type from))
+               (jb/jvm-assignable-to? (x/type from) to-tp)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- adapt-for-path ^Expr [^Expr from ^Class to-tp]
+  (or (jvm-adapt-to to-tp from)
+      (cond ;non-Java type conversions are possible for paths!
+        (x/statement? from) ;case "no return" is handled by jvm-adapt-to
+        (xf/prog2-expr from (expr-default to-tp))
+        
+        (and (jb/same-class? jb/boolean to-tp) (x/null-type? from))
+        (xf/prog2-expr from x/expr-false)
+        
+        :else
+        (throw (IllegalStateException. (str "to " to-tp " <- from "
+                                            (x/type from)))))))
+
+;; Return `to` if `from` can be widened to `to`, and nil otherwise.
+(defn- path-adaptable ^Expr [^Expr to ^Expr from]
+  (when (x/returns? to)
+    (when (or (not (x/pushes-result? from))
+              (resolve/numeric-assignable-to? (x/type from) (x/type to))
+              (and (x/null-type? from)
+                   (or (x/boolean? to) (x/reference? to))))
+      to)))
+
+(defn path-join
+  (^Expr [xs]
+   (reduce path-join (first xs) (rest xs)))
+  (^Expr [^Expr x0 ^Expr x1]
+   (or (when (x/same-type? x0 x1)
+         x0)
+       (path-adaptable x0 x1)
+       (path-adaptable x1 x0)
+       (when (and (x/reference? x0) (x/reference? x1))
+         x/expr-nil-object)
+       (wrong/other (str "incompatible path types " (wrong/str* (x/type x0))
+                         " and " (wrong/str* (x/type x1)))))))
+
+;;; ------------------------------------------------------------------------
+
+;;; Transform `x` into a type that can be represented as a non-void
+;;; type descriptor.  In particular, void and null_type produce an
+;;; expression that in the end pushes a nil operand of type Object.
+;;; 
+;;; pre: `x` is a runtime value & not polymorphic.
+(defn consume-poly ^Expr [^Expr x]
+  (let [x-tp (x/type x)]
+    (cond
+      (jb/statement? x-tp) (xf/prog2-expr x x/expr-nil-object)
+      (jb/null? x-tp) (xf/coerce x jb/Object)
+      :else x)))
+
+;;; Transform `x` into a type that is assignment compatible to type
+;;; `to-tp`.  If `to-tp` is jb/polymorphic?, this function delegates
+;;; to `comsume-poly`.
+;;; 
+;;; pre: `x` is a runtime value & not polymorphic.
+(defn consume ^Expr [^Expr x ^Class to-tp]
+  (if (jb/polymorphic? to-tp)
+    (consume-poly x)
+    (adapt-for-assign x to-tp)))
+
+;;; Special case of `consume` which passes on a statement `x` if
+;;; `to-tp` is polymorphic.
+(defn consume-body ^Expr [^Expr x ^Class to-tp]
+  (if (and (jb/polymorphic? to-tp) (x/statement? x))
+    x
+    (consume x to-tp)))
+
+(defn consume-paths ^IPersistentVector [^Class to-tp paths]
+  (mapv #(adapt-for-path % to-tp) paths))

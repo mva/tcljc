@@ -1,0 +1,69 @@
+(ns tcljc.str-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest concat-test
+  (is (= '[(LDC "one is 210000")
+           (ARETURN)]
+         (asm-expr (str "one is " 210000))))
+
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (INVOKESTATIC RT "nullToEmptyString" "(Ljava/lang/Object;)Ljava/lang/Object;")
+           (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)Ljava/lang/String;"
+                          :bsm-concat ["test if nil: \\u0001"])
+           (ARETURN)]
+         (asm-expr (str "test if nil: " java.lang.System/out)))))
+
+(deftest no-args-str-test
+  (is (= '[(LDC "")
+           (ARETURN)]
+         (asm-expr (str)))))
+
+(deftest unary-str-test
+  (is (= '[(LDC "123")
+           (ARETURN)]
+         (asm-expr (str 123)))))
+
+(deftest compile-time-const
+  (is (= '[(LDC "") (ARETURN)]
+         (asm-expr (str nil))))
+  (is (= '[(LDC "true") (ARETURN)]
+         (asm-expr (str true))))
+  (is (= '[(LDC "false") (ARETURN)]
+         (asm-expr (str false))))
+  (is (= '[(LDC "abc") (ARETURN)]
+         (asm-expr (str "abc"))))
+  (is (= '[(LDC "123") (ARETURN)]
+         (asm-expr (str 123))))
+  (is (= '[(LDC "1234.5") (ARETURN)]
+         (asm-expr (str 1234.5))))
+
+  (is (= '[(LDC "sym") (ARETURN)]
+         (asm-expr (str 'sym))))
+  (is (= '[(LDC ":kw") (ARETURN)]
+         (asm-expr (str :kw))))
+  (is (= '[(LDC "A") (ARETURN)]
+         (asm-expr (str \A))))
+  (is (= '[(LDC "foo") (ARETURN)]
+         (asm-expr (str #"foo"))))
+  (is (= '[(LDC "class java.lang.Object") (ARETURN)]
+         (asm-expr (str Object)))))
+
+;;; Constant collections are currently not expanded into compile time
+;;; strings.
+(deftest collection-const
+  #_(is (= '[(LDC "(1 2 3)") (ARETURN)]
+           (asm-expr (str '(1 2 3)))))
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/ISeq;" [1 2 3]])
+           (INVOKEDYNAMIC "_" "(Lclojure/lang/ISeq;)Ljava/lang/String;"
+                          :bsm-concat ["\\u0001"])
+           (ARETURN)]
+         (asm-expr (str '(1 2 3)))))
+  
+  #_(is (= '[(LDC "[1 2 3]") (ARETURN)]
+           (asm-expr (str [1 2 3]))))
+  (is (= '[(LDC [:bsm-quote "vector" "Lclojure/lang/IPersistentVector;" [1 2 3]])
+           (INVOKEDYNAMIC "_" "(Lclojure/lang/IPersistentVector;)Ljava/lang/String;"
+                          :bsm-concat ["\\u0001"])
+           (ARETURN)]
+         (asm-expr (str [1 2 3])))))

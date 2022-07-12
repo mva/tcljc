@@ -1,0 +1,248 @@
+(ns tcljc.bits-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest int-and-test
+  (is (= '[(ICONST_0) #_(ICONST_1) #_(ICONST_2) #_(IAND) (IRETURN)]
+         (asm-expr (bit-and 1 2))))
+  (is (= '[(ICONST_0) #_(ICONST_1) #_(ICONST_2) #_(IAND) #_(ICONST_3) #_(IAND) (IRETURN)]
+         (asm-expr (bit-and 1 2 3)))))
+
+(deftest bit-not-test
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (ICONST_M1) (IXOR) (IRETURN)]
+         (asm-expr [^int x] (bit-not x))))
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (LDC2_W -1) (LXOR) (LRETURN)]
+         (asm-expr [^long x] (bit-not x))))
+  
+  (is (= '[(BIPUSH -2) (IRETURN)]
+         (asm-expr (bit-not 1))))
+  (is (= '[(LDC2_W -2) (LRETURN)]
+         (asm-expr (bit-not (long 1))))))
+
+(deftest int-even-test
+  (is (= '[#_(ICONST_1)
+           #_(BIPUSH 123)
+           #_(ICONST_1)
+           #_(IAND)
+           #_(IFNE L:0)
+           #_(ICONST_1)
+           #_(IRETURN)
+           #_[L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr (even? 123)))))
+
+
+(deftest bit-shift-test
+  (is (= '[["LOCAL 0: int x"] ["LOCAL 1: int n"]
+           (ILOAD_0) (ILOAD_1) (ISHL) (IRETURN)]
+         (asm-expr ^int [^int x ^int n] (bit-shift-left x n))))
+  (is (= '[["LOCAL 0: long x"] ["LOCAL 2: int n"]
+           (LLOAD_0) (ILOAD_2) (LSHL) (LRETURN)]
+         (asm-expr ^long [^long x ^int n] (bit-shift-left x n))))
+  (is (= '[(BIPUSH 16) (IRETURN)]
+         (asm-expr (bit-shift-left 1 4))))
+  (is (= '[(LDC2_W 16) (LRETURN)]
+         (asm-expr (bit-shift-left (long 1) 4))))
+
+  (is (= '[["LOCAL 0: int x"] ["LOCAL 1: int n"]
+           (ILOAD_0) (ILOAD_1) (ISHR) (IRETURN)]
+         (asm-expr ^int [^int x ^int n] (bit-shift-right x n))))
+  (is (= '[["LOCAL 0: long x"] ["LOCAL 2: int n"]
+           (LLOAD_0) (ILOAD_2) (LSHR) (LRETURN)]
+         (asm-expr ^long [^long x ^int n] (bit-shift-right x n))))
+
+  (is (= '[["LOCAL 0: int x"] ["LOCAL 1: int n"]
+           (ILOAD_0) (ILOAD_1) (IUSHR) (IRETURN)]
+         (asm-expr ^int [^int x ^int n] (unsigned-bit-shift-right x n))))
+  (is (= '[["LOCAL 0: long x"] ["LOCAL 2: int n"]
+           (LLOAD_0) (ILOAD_2) (LUSHR) (LRETURN)]
+         (asm-expr ^long [^long x ^int n] (unsigned-bit-shift-right x n)))))
+
+
+(deftest zero-of-test
+  (is (= '[["LOCAL 0: int n"] (ICONST_0) (IRETURN)]
+         (asm-expr [^int n] (tinyclj.lang.primitive/xdefault n))))
+  (is (= '[["LOCAL 0: byte n"] (ICONST_0) (IRETURN)]
+         (asm-expr ^byte [^byte n] (tinyclj.lang.primitive/xdefault n))))
+  (is (= '[["LOCAL 0: char n"] (ICONST_0) (IRETURN)]
+         (asm-expr ^char [^char n] (tinyclj.lang.primitive/xdefault n)))))
+
+(deftest bit-and-not-test
+  (is (= '[["LOCAL 0: int a"]
+           ["LOCAL 1: int b"]
+           (ILOAD_0)
+           (ILOAD_1)
+           (ICONST_M1)
+           (IXOR)
+           (IAND)
+           (IRETURN)]
+         (asm-expr [^int a ^int b] (bit-and-not a b))))
+  (is (= '[["LOCAL 0: long a"]
+           ["LOCAL 2: long b"]
+           (LLOAD_0)
+           (LLOAD_2)
+           (LDC2_W -1)
+           (LXOR)
+           (LAND)
+           (LRETURN)]
+         (asm-expr [^long a ^long b] (bit-and-not a b))))
+
+  ;; promote argument first to target type, then do bit-not
+  (is (= '[["LOCAL 0: int a"]
+           ["LOCAL 1: long b"]
+           (ILOAD_0)
+           (I2L)
+           (LLOAD_1)
+           (LDC2_W -1)
+           (LXOR)
+           (LAND)
+           (LRETURN)]
+         (asm-expr [^int a ^long b] (bit-and-not a b))))
+  (is (= '[["LOCAL 0: long a"]
+           ["LOCAL 2: int b"]
+           (LLOAD_0)
+           (ILOAD_2)
+           (ICONST_M1)
+           (IXOR)
+           (I2L)
+           (LAND)
+           (LRETURN)]
+         (asm-expr [^long a ^int b] (bit-and-not a b)))))
+
+(deftest bit-clear-test
+  (is (= '[["LOCAL 0: int x"]
+           ["LOCAL 1: int n"]
+           (ILOAD_0)
+           (ICONST_1)
+           (ILOAD_1)
+           (ISHL)
+           (ICONST_M1)
+           (IXOR)
+           (IAND)
+           (IRETURN)]
+         (asm-expr ^int [^int x ^int n] (bit-clear x n))))
+  (is (= '[["LOCAL 0: long x"]
+           ["LOCAL 2: int n"]
+           (LLOAD_0)
+           (LCONST_1)
+           (ILOAD_2)
+           (LSHL)
+           (LDC2_W -1)
+           (LXOR)
+           (LAND)
+           (LRETURN)]
+         (asm-expr ^long [^long x ^int n] (bit-clear x n))))
+  
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (BIPUSH -17) (IAND) (IRETURN)]
+         (asm-expr ^int [^int x] (bit-clear x 4))))
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (LDC2_W -17) (LAND) (LRETURN)]
+         (asm-expr ^long [^long x] (bit-clear x 4)))))
+
+(deftest bit-set-test
+  (is (= '[["LOCAL 0: int x"]
+           ["LOCAL 1: int n"]
+           (ILOAD_0)
+           (ICONST_1)
+           (ILOAD_1)
+           (ISHL)
+           (IOR)
+           (IRETURN)]
+         (asm-expr ^int [^int x ^int n] (bit-set x n))))
+  (is (= '[["LOCAL 0: long x"]
+           ["LOCAL 2: int n"]
+           (LLOAD_0)
+           (LCONST_1)
+           (ILOAD_2)
+           (LSHL)
+           (LOR)
+           (LRETURN)]
+         (asm-expr ^long [^long x ^int n] (bit-set x n))))
+  
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (BIPUSH 16) (IOR) (IRETURN)]
+         (asm-expr ^int [^int x] (bit-set x 4))))
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (LDC2_W 16) (LOR) (LRETURN)]
+         (asm-expr ^long [^long x] (bit-set x 4)))))
+
+(deftest bit-flip-test
+  (is (= '[["LOCAL 0: int x"]
+           ["LOCAL 1: int n"]
+           (ILOAD_0)
+           (ICONST_1)
+           (ILOAD_1)
+           (ISHL)
+           (IXOR)
+           (IRETURN)]
+         (asm-expr ^int [^int x ^int n] (bit-flip x n))))
+  (is (= '[["LOCAL 0: long x"]
+           ["LOCAL 2: int n"]
+           (LLOAD_0)
+           (LCONST_1)
+           (ILOAD_2)
+           (LSHL)
+           (LXOR)
+           (LRETURN)]
+         (asm-expr ^long [^long x ^int n] (bit-flip x n))))
+  
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (BIPUSH 16) (IXOR) (IRETURN)]
+         (asm-expr ^int [^int x] (bit-flip x 4))))
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (LDC2_W 16) (LXOR) (LRETURN)]
+         (asm-expr ^long [^long x] (bit-flip x 4)))))
+
+(deftest bit-test-test
+  (is (= '[["LOCAL 0: int x"]
+           ["LOCAL 1: int n"]
+           (ILOAD_0)
+           (ICONST_1)
+           (ILOAD_1)
+           (ISHL)
+           (IAND)
+           (IFEQ L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^int x ^int n] (bit-test x n))))
+  (is (= '[["LOCAL 0: long x"]
+           ["LOCAL 2: int n"]
+           (LLOAD_0)
+           (LCONST_1)
+           (ILOAD_2)
+           (LSHL)
+           (LAND)
+           (LCONST_0)
+           (LCMP)
+           (IFEQ L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^long x ^int n] (bit-test x n))))
+  
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (BIPUSH 16)
+           (IAND)
+           (IFEQ L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^int x] (bit-test x 4))))
+  (is (= '[["LOCAL 0: long x"]
+           (LLOAD_0)
+           (LDC2_W 16)
+           (LAND)
+           (LCONST_0)
+           (LCMP)
+           (IFEQ L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^long x] (bit-test x 4)))))
+

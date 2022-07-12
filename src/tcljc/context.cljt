@@ -1,0 +1,488 @@
+(ns tcljc.context ;note: this namespace cannot be required by tcljc.expr
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.javabase :as jb]
+   [tcljc.wrong :as wrong]
+   [tcljc.runtime :as rt]
+   [tcljc.expr :as x]
+   [tinyclj.string :as str])
+  (:import
+   (tcljc.expr BindingRef FnForm)
+   (clojure.lang Symbol IPersistentVector IPersistentMap)
+   (java.nio.file Path)
+   (java.lang.constant ClassDesc ConstantDesc)
+   (java.lang.invoke MethodHandles$Lookup MethodHandle)
+   (java.util Map ArrayList)
+   (java.util.concurrent Future BlockingQueue ArrayBlockingQueue
+                         CompletableFuture TimeoutException TimeUnit
+                         ExecutorService Executors ConcurrentHashMap)))
+
+(defn cf? ^boolean [x]
+  (instance? CompletableFuture x))
+
+;;; Produces the value of `body` or throws an exception.  Whatever the
+;;; outcome, the provided CompletableFuture is completed afterwards:
+;;; either with the value or exceptionally.
+(defmacro with-complete [cf & body]
+  `(let [^CompletableFuture cf# ~cf]
+     (try
+       (let [res# (do ~@body)]
+         (.complete cf# res#)
+         res#)
+       (catch Throwable t#
+         (.completeExceptionally cf# t#)
+         (throw t#)))))
+
+;;; This is used to communicate completion without a particular value,
+;;; *or* exceptional completion.  Only the former would be covered by
+;;; a semaphore or a countdown latch.
+(defmacro with-complete-nil [cf & body]
+  `(let [^CompletableFuture cf# ~cf]
+     (try
+       (let [res# (do ~@body)]
+         (.complete cf# nil)
+         res#)
+       (catch Throwable t#
+         (.completeExceptionally cf# t#)
+         (throw t#)))))
+
+;;; See ptest/get-future: Do *NOT* call wait-for-result as part of a
+;;; map.
+(defn wait-for-result
+  ([x]
+   ;; Assumption: Nothing takes longer than this many seconds.  Right
+   ;; now, a timeout probably means a program error instead of a large
+   ;; program.
+   (wait-for-result 5 x)) 
+  ([^int seconds x]
+   (if (instance? Future x)
+     (try
+       (.get ^Future x seconds TimeUnit/SECONDS)
+       (catch java.util.concurrent.ExecutionException e ;unwrap
+         (throw (or (.getCause e) ^Throwable e))))
+     x)))
+
+(defn get-result-now [x]        ;pre: computation of `x` has completed
+  (wait-for-result 1 x))
+
+
+(defn wait-for-fn-body ^"[Ltcljc.expr.ArityCode;" [^FnForm fn-form]
+  (wait-for-result (.body-fut fn-form)))
+(defn fn-body-now ^"[Ltcljc.expr.ArityCode;" [^FnForm fn-form]
+  (.resultNow (.body-fut fn-form)))
+
+;;; ------------------------------------------------------------------------
+
+(definterface IEmitterContext
+  (ns-str ^String [])
+  
+  ;; If there is a def with the given name in this namespace, then
+  ;; return the expression that loads its value or nil.
+  (get-globals ^IPersistentMap [])
+
+  ;; Define global `nm` as `x`.  The new name is immediatly visible,
+  ;; but it can be shadowed by any local binding, even one that was
+  ;; established before the def.  For example, ```(let [] (def y 1)
+  ;; y)``` evaluates to `1`, while ```(let [x 2] (def x 1)
+  ;; x)```. evaluates to `2`.
+  (put-global ^void [^String nm ^BindingRef x])
+  
+  ;; Look up name, which can be an unqualified global of this
+  ;; namespace, or a namespace qualified name resolved via `known-ns`.
+  ;; If the namespace part refers to a known namespace, then the
+  ;; simple name must exist -- an error is signaled otherwise.  Nil is
+  ;; returned if a simple name is not found, or if the namespace part
+  ;; is unknown.
+  (lookup-global ^BindingRef [^IPersistentMap globals ^String ns ^String nm])
+
+  
+  (get-imports ^IPersistentMap [])
+  
+  (put-import ^void [^Symbol nm ^Class cl])
+  
+  (lookup-in-pkg ^MethodHandles$Lookup [])
+  
+  
+  ;; Handle for `tinyclj.lang.RT/applyMacroMapped`, or nil if
+  ;; application and compiler share their runtime classes.  In the
+  ;; latter case, the macro function's `applyTo` can be invoked
+  ;; directly.
+  (apply-mh ^MethodHandle [])
+  
+  ;; Return the executor for futures compiling an fn* arity (or reify*
+  ;; method, or deftype method).
+  (exc-method ^ExecutorService [])
+
+  ;; To carry *out* and *err* into threads.
+  (binding-frame ^Object []))
+
+
+(definterface FnRequireNamespace
+  ;; Schedule the namespace `ns-str` for compilation, starting from
+  ;; `provided-ns` as its map of known namespaces.  Returns a map
+  ;; {:rpaths :req-strs :publics} of `ns-str`, possible via a future.
+  (schedule [^String ns-str ^IPersistentMap provided-ns]))
+
+;;; ------------------------------------------------------------------------
+
+;;; Messages are processed by the namespace's emit thread in order.
+;;; This imposes some restrictions on the order in which messages are
+;;; added to the emit queue.
+;;;
+;;; Stipulation 1: All `req-macro-value` requests produced during
+;;; compilation of a `req-emit-tlf` expression must appear before this
+;;; `req-emit-ltf` in the queue.  (Otherwise the emit thread will
+;;; deadlock while waiting for the top-level form to complete
+;;; compilation, because compilation waits for a macro value that the
+;;; emitter won't process yet.)
+;;;
+;;; Stipulation 2: A `req-macro-value` request is only added to the
+;;; emit queue after all (in source code order) prior top-level forms
+;;; with macro definitions have been added.  (A macro's value can not
+;;; be produced before its containing form has been emitted.)
+
+(def msg-fatal-error -3)
+;;; Contains the exception that killed the sending thread.  The
+;;; receiving end should re-raise it.  This message is always followed
+;;; by a `msg-close-queue`.
+
+(def msg-close-queue -2)
+;;; Send when the compile thread is exiting.  Usually this means
+;;; compilation is done, but this message is also send after
+;;; exceptional completion.
+
+(def msg-emit-tlf -1)
+;;; Emit top-level form.  The `s` queue waits for the function bodies'
+;;; futures before passing this message on to the `q` queue.  That is,
+;;; once in `q` all compilation tasks of this top-level form have
+;;; completed.
+
+(def req-macro-value 0)
+;;; Request the application-side value of the given macro.  The
+;;; returnd value is cached in the compile thread.
+
+(def req-define-class 1)
+;;; Issued after compiling a `definterface*` or a `deftype*`.
+
+(def req-define-class-ephemeral 2)
+;;; Define class into a one-shot class loader of its own.
+;;; FIXME... enable compilation thread to define its own ephemerals,
+;;; because this request drains the pipeline when used by reify*
+
+(def req-flush-s-queue 3)
+;;; Returns when there are no outstanding messages in the `s` queue.
+
+
+(deftype Msg [^int task ^Object x ^CompletableFuture promise])
+
+(defn close-queue? ^boolean [^Msg msg]
+  (= (.task msg) msg-close-queue))
+(defn needs-response? ^boolean [^int task]
+  (>= task 0))
+
+;;; The queue connecting the compile to the emit thread has two parts.
+;;; Part `q` is consumed directly by the emit thread.  Part `s` is a
+;;; staging area that passes messages on in the order of arrival, but
+;;; ensures that all compilation threads working on a top-level form
+;;; have finished before sending it on to `q`.
+(deftype EmitQueue [^BlockingQueue q
+                    ^BlockingQueue s])
+
+(defn send-msg* ^Object [^BlockingQueue q ^int task ^Object x]
+  (if (needs-response? task)
+    (let [fut (CompletableFuture.)]
+      (.put q (Msg. task x fut))
+      (let [resp (wait-for-result fut)]
+        (if (instance? Throwable resp)
+          (throw ^Throwable resp)       ;receiving thread is in trouble
+          resp)))
+    (.put q (Msg. task x nil))))
+
+(defn send-msg ^Object [^EmitQueue emit ^int task ^Object x]
+  ;; deftype* and definterface* are synchronous operations and
+  ;; compilation does not progress beyond them until their class is
+  ;; defined.  For this reason ephemeral classes created during
+  ;; compilation of deftype* or reify* cannot refer to in-progress
+  ;; classes, and can (and must) go directly to `q`.
+  ;;
+  ;; FIXME... might be helpful (read: no stall the compiling reify*)
+  ;; to define ephemeral classes directly in the compilation thread
+  (send-msg* (if (or cfg/deterministic-namespace-compile?
+                     (= task req-macro-value)
+                     (= task req-define-class-ephemeral))
+               (.q emit)
+               (.s emit))
+             task x))
+
+;;; ------------------------------------------------------------------------
+
+(definterface ICompilerContext
+  (update-macro-count ^int [^int delta]))
+
+;;; The mutable `EmitNmsp` context is private to the namespace thread.
+;;; All updates and reads are confined to this single thread.
+(deftype NamespaceCtx
+    [^IPersistentMap known-ns
+     ^IPersistentMap ns-alias
+     ^:unsynchronized-mutable ^IPersistentMap _globals
+     ^:unsynchronized-mutable ^IPersistentMap _imports
+     
+     ^String ns-str
+     ^Path rpath
+     ^java.net.URL rurl
+     ^MethodHandles$Lookup lookup-in-pkg
+     ^FnRequireNamespace require-namespace
+
+     ^ConcurrentHashMap !private-names
+     ;; Helper structure to generate unique names for fn* and reify*
+     ;; instances within a given namespace.
+     
+     ^Object binding-frame
+     ^EmitQueue emit
+     ^MethodHandle apply-mh
+     ^ExecutorService exc-method
+
+     ^:unsynchronized-mutable ^int _macro-count]
+    IEmitterContext
+    (ns-str [_]
+      ns-str)
+    (get-globals [_]
+      _globals)
+    (put-global [_ nm x]
+      (set! _globals (assoc _globals nm x))
+      x)
+    (lookup-global [this globals ns nm]
+      ;; When called from a methods context, the immutable `globals`
+      ;; of the calling thread must be passed in.
+      (if (nil? ns)
+        (.valAt globals nm nil)
+        (let [resolved-ns-nm (.valAt ns-alias ns ns)]
+          (if (.equals ns-str resolved-ns-nm)
+            (or (.lookup-global this globals nil nm)
+                (wrong/unresolved resolved-ns-nm (symbol nm)))
+            (when-some [publics (.valAt known-ns resolved-ns-nm nil)]
+              (or (.valAt ^IPersistentMap publics nm nil)
+                  (wrong/unresolved resolved-ns-nm (symbol nm))))))))
+    
+    (get-imports [_]
+      _imports)
+    (put-import [_ nm x]
+      (set! _imports (assoc _imports nm x))
+      x)
+    (lookup-in-pkg [_]
+      lookup-in-pkg)
+    
+    (apply-mh [_]
+      apply-mh)
+    (exc-method [_]
+      exc-method)
+    (binding-frame [_]
+      binding-frame)
+
+    ICompilerContext
+    (update-macro-count ^int [_ ^int delta]
+      (set! _macro-count (+ _macro-count delta))))
+
+(defn mk-namespace ^NamespaceCtx [^IPersistentMap known-ns
+                                  ^IPersistentMap initial-globals
+                                  
+                                  ^String ns-str ^Path rpath ^java.net.URL rurl
+                                  
+                                  ^MethodHandles$Lookup lookup-in-pkg
+                                  ^FnRequireNamespace require-namespace
+                                  ^MethodHandle apply-mh
+                                  ^ExecutorService exc-method]
+  ;; pick up bindings for *out* and *err* at this point, so that
+  ;; output redirection established by ptest works for worker threads
+  (let [ns-alias {cfg/primitive-ns-str cfg/primitive-ns-str}
+        binding-frame (clojure.lang.Var/cloneThreadBindingFrame)
+        ;; FIXME... test with capacity of 1 to see if it deadlocks
+        capacity 32 ;for top-level forms, macro values, define class, ...
+        emit (EmitQueue. (ArrayBlockingQueue. capacity)
+                         (ArrayBlockingQueue. capacity))
+        private-names (ConcurrentHashMap.)]
+    (NamespaceCtx. known-ns ns-alias initial-globals jb/initial-imports
+                   ns-str rpath rurl lookup-in-pkg require-namespace
+                   private-names binding-frame emit apply-mh exc-method 0)))
+
+
+
+;;; Immutable context while compiling methods of fn*, reify*, or
+;;; deftype*.  It isolates its users from concurrent or reordered
+;;; updates in the namespace environment, effectively freezing the
+;;; environment to enable concurrent compilation.
+(deftype MethodsCtx [^IPersistentMap _globals
+                     ^IPersistentMap _imports
+                     ^MethodHandles$Lookup l
+                     ^NamespaceCtx nmsp-ctx]
+  IEmitterContext
+  (ns-str [_]
+    (.ns-str nmsp-ctx))
+  
+  (get-globals [_]
+    _globals)
+  (put-global [_ nm x]
+    (throw (UnsupportedOperationException.)))
+  (lookup-global [_ globals ns nm]
+    #_(assert (identical? _globals globals))
+    (.lookup-global nmsp-ctx globals ns nm))
+  
+  (get-imports [_]
+    _imports)
+  (put-import [_ nm cl]
+    (throw (UnsupportedOperationException.)))
+  (lookup-in-pkg [_]
+    l)
+  
+  (exc-method [_]
+    (.exc-method nmsp-ctx))
+  (binding-frame [_]
+    (.binding-frame nmsp-ctx)))
+
+(defn mk-methods
+  (^MethodsCtx [ctx]
+   (if (instance? MethodsCtx ctx)
+     ctx
+     (let [nmsp-ctx ^NamespaceCtx ctx]
+       (MethodsCtx. (.get-globals nmsp-ctx) (.get-imports nmsp-ctx)
+                    (.lookup-in-pkg nmsp-ctx) nmsp-ctx))))
+  (^MethodsCtx [^NamespaceCtx nmsp-ctx ^Class ephemeral-class]
+   (MethodsCtx. (.get-globals nmsp-ctx)
+                (-> (.get-imports nmsp-ctx)
+                    (assoc (jb/import-symbol-short ephemeral-class)
+                           ephemeral-class)
+                    #_(assoc (jb/import-symbol-long ephemeral-class)
+                             ephemeral-class))
+                (.in (.lookup-in-pkg nmsp-ctx) ephemeral-class)
+                nmsp-ctx)))
+
+
+;;; Not private because of the `with-context` macro.
+#_(def ^ThreadLocal ctx (ThreadLocal.))   ;FIXME... want ScopeLocal here
+(defn tl-ctx* ^IEmitterContext [tl-ctx] tl-ctx)
+(defn methods-ctx ^MethodsCtx [tl-ctx] tl-ctx)
+(defn namespace-ctx ^NamespaceCtx [tl-ctx] tl-ctx)
+
+(defn global? ^boolean [tl-ctx]
+  (instance? NamespaceCtx (tl-ctx* tl-ctx)))
+
+(defn this-ns ^String [tl-ctx]
+  (.ns-str (tl-ctx* tl-ctx)))
+
+(defn lookup-in-pkg ^MethodHandles$Lookup [tl-ctx]
+  (.lookup-in-pkg (tl-ctx* tl-ctx)))
+
+;; Given a simple symbol or a string in type tag syntax, return the
+;; imported class or the type instance from the dynamic class loader
+;; of the application under construction.  Return nil if the type does
+;; not exist.
+(defn lookup-type ^Class [tp tl-ctx]
+  (if (class? tp)
+    tp
+    (let [tl-ctx (tl-ctx* tl-ctx)]
+      (or (.valAt (.get-imports tl-ctx) tp) ;symbols only
+          (try
+            (.resolveConstantDesc (if (symbol? tp)
+                                    (ClassDesc/of (str tp))
+                                    (rt/str-to-cld tp))
+                                  (.lookup-in-pkg tl-ctx))
+            (catch ClassNotFoundException _
+              nil))))))
+
+(defn get-type ^Class [tp tl-ctx]
+  (or (lookup-type tp tl-ctx)
+      (wrong/class-not-found tp)))
+
+(defn lookup-global ^BindingRef [^Symbol nm tl-ctx]
+  (let [ctx (tl-ctx* tl-ctx)]
+    (.lookup-global ctx (.get-globals ctx) (namespace nm) (name nm))))
+
+(defn put-global ^BindingRef [^String nm ^BindingRef x tl-ctx]
+  (.put-global (tl-ctx* tl-ctx) nm x))
+
+
+(defn this-rpath ^Path [tl-ctx]
+  (.rpath (namespace-ctx tl-ctx)))
+(defn this-rurl ^java.net.URL [tl-ctx]
+  (.rurl (namespace-ctx tl-ctx)))
+
+(defn private-name-map ^ConcurrentHashMap [tl-ctx]
+  (if (instance? NamespaceCtx tl-ctx)
+    (.!private-names ^NamespaceCtx tl-ctx)
+    (recur (.nmsp-ctx ^MethodsCtx tl-ctx))))
+
+
+(letfn [(resolve-mh ^MethodHandle [^MethodHandles$Lookup l ^ConstantDesc cd]
+          ^MethodHandle (.resolveConstantDesc cd l))]
+  (defn push-nmsp-context ^void [^NamespaceCtx nmsp-ctx]
+    (let [ns-str (.ns-str nmsp-ctx)
+          mh (resolve-mh (.lookup-in-pkg nmsp-ctx) rt/mhd-pushFileContext)]
+      ^void (.invokeExact mh ns-str)))
+  (defn pop-nmsp-context ^void [^NamespaceCtx nmsp-ctx]
+    (let [mh (resolve-mh (lookup-in-pkg nmsp-ctx) rt/mhd-popFileContext)]
+      ^void (.invokeExact mh))))
+
+(defn exc-method ^ExecutorService [tl-ctx]
+  (.exc-method (tl-ctx* tl-ctx)))
+
+;;; ------------------------------------------------------------------------
+
+(defmacro with-executor [exc & body]
+  (assert (symbol? exc))
+  `(let [~exc (Executors/newVirtualThreadPerTaskExecutor)]
+     (try
+       ~@body
+       (finally
+         (.shutdown ~exc)
+         (when-not (.awaitTermination ~exc 5 TimeUnit/MINUTES)
+           (throw (TimeoutException.)))))))
+
+(defmacro with-context [local-ctx other-thread? & body]
+  ;; FIXME... currently this is just a no-op with regard to actually
+  ;; setting the context
+  `(do
+     (when ~other-thread?
+       ;; compiler code running in unit tests should use the *out*
+       ;; and *err* bound by ptest:
+       (clojure.lang.Var/resetThreadBindingFrame
+        (.binding-frame (tl-ctx* ~local-ctx))))
+     
+     ~@body)
+  #_
+  `(let [prev-ctx# (.get ctx)]
+     (try
+       (.set ctx ~local-ctx)
+       ~@body
+       (finally
+         (.set ctx prev-ctx#)))))
+
+(defmacro with-fork-or-on-thread [exc other-thread? & body]
+  `(let [task# (fn ^Callable task [] ~@body)]
+     (if ~other-thread?
+       (.submit ~exc task#)
+       ^Future (CompletableFuture/completedFuture (.call task#)))))
+
+;; (defmacro with-fork [exc & body]
+;;   ;; force context computation in outside thread
+;;   `(let [exc# ~exc
+;;          other-thread?# (some? exc#)]
+;;      (with-fork-or-on-thread exc# other-thread?#
+;;        ~@body)))
+
+(defmacro with-fork+context [exc local-ctx & body]
+  ;; force context computation in outside thread
+  `(let [local-ctx# ~local-ctx
+         exc# ~exc
+         other-thread?# (some? exc#)]
+     (with-fork-or-on-thread exc#  other-thread?#
+       (with-context local-ctx# other-thread?# ~@body))))
+
+
+(defmacro start-solo-thread [tl-ctx & body]
+  `(let [frame# (.binding-frame (namespace-ctx ~tl-ctx))]
+     (-> (fn ^Runnable task-with-nmsp-ctx []
+           ;; compiler code running in unit tests should use the *out*
+           ;; and *err* bound by ptest:
+           (clojure.lang.Var/resetThreadBindingFrame frame#)
+           ~@body)
+         (Thread/startVirtualThread))))

@@ -1,0 +1,488 @@
+(ns tcljc.try-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr nmsp]]
+            [tinyclj.alpha.ptest :refer :all])
+  (:import (clojure.lang ExceptionInfo)))
+
+(deftest try-finally
+  (is (= '[[L:0]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (EXCEPTION_CATCH L:0 L:1 L:2 any)
+           [L:1]
+           
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (GOTO L:3)
+           
+           [L:2]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ATHROW)
+
+           [L:3]
+           (RETURN)]
+         (asm-expr (try
+                     (.println System/out "Hello World")
+                     (finally
+                       (.println System/out "Finally...")))))))
+
+(deftest try-catch
+  (is (= '[[L:0]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (RETURN)
+           (EXCEPTION_CATCH L:0 L:1 L:1 Exception)
+           [L:1]
+           (ASTORE_0)
+           ["LOCAL 0: Exception e"]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Catch...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (RETURN)]
+         (asm-expr (try
+                     (.println System/out "Hello World")
+                     (catch Exception e
+                       (.println System/out "Catch...")))))))
+
+(deftest try-catch-finally
+  (is (= '[[L:0]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (EXCEPTION_CATCH L:0 L:1 L:2 Exception)
+           (EXCEPTION_CATCH L:0 L:1 L:4 any)
+           [L:1]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (GOTO L:5)
+                            
+           [L:2]
+           (ASTORE_0)
+           ["LOCAL 0: Exception e"]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Catch...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (EXCEPTION_CATCH L:2 L:3 L:4 any)
+           [L:3]
+           
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (GOTO L:5)
+           
+           [L:4]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ATHROW)
+           
+           [L:5]
+           (RETURN)]
+         (asm-expr (try
+                     (.println System/out "Hello World")
+                     (catch Exception e
+                       (.println System/out "Catch..."))
+                     (finally
+                       (.println System/out "Finally...")))))))
+
+(deftest try-no-return
+  (is (= '[[L:0]
+           (NEW Exception) (DUP)
+           (INVOKESPECIAL Exception "<init>" "()V")
+           (ATHROW)
+           (EXCEPTION_CATCH L:0 L:1 L:1 Exception)
+           [L:1]
+           
+           (ASTORE_0)
+           ["LOCAL 0: Exception e"]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Catch...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (RETURN)]
+         (asm-expr (try
+                     (throw (Exception.))
+                     (catch Exception e
+                       (.println System/out "Catch...")))))))
+
+(deftest try-finally-nested
+  (is (= '[[L:0]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (EXCEPTION_CATCH L:0 L:1 L:2 any)
+           [L:1]
+           
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally 1...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (GOTO L:3)
+           
+           [L:2]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally 1...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ATHROW)
+           
+           (EXCEPTION_CATCH L:0 L:3 L:4 any)
+           [L:3]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally 2...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (GOTO L:5)
+           
+           [L:4]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally 2...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ATHROW)
+
+           [L:5]
+           (RETURN)]
+         (asm-expr (try
+                     (try
+                       (.println System/out "Hello World")
+                       (finally
+                         (.println System/out "Finally 1...")))
+                     (finally
+                       (.println System/out "Finally 2...")))))))
+
+(deftest try-expression-opnd
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "asm-expr~2"
+                     "(DI)Ljava/lang/String;")
+             ["LOCAL 0: double a"]
+             ["LOCAL 2: int b"]
+             (DLOAD_0)
+             (ILOAD_2)
+             (ILOAD_2)
+             (INVOKESTATIC . "asm-expr$try~0" "(I)I")
+             (INVOKEDYNAMIC "_" "(DII)Ljava/lang/String;"
+                            :bsm-concat ["\\u0001\\u0001\\u0001"])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "asm-expr$try~0" "(I)I")
+             ["LOCAL 0: int b"]
+             [L:0]
+             (ILOAD_0)
+             (ICONST_1)
+             (IADD)
+             (EXCEPTION_CATCH L:0 L:1 L:2 any)
+             [L:1]
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (LDC "Finally...")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (GOTO L:3)
+             
+             [L:2]
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (LDC "Finally...")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (ATHROW)
+             [L:3]
+             (IRETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (fn* asm-expr ^String [^double a ^int b]
+                      (str a b (try
+                                 (+ b 1)
+                                 (finally
+                                   (.println System/out "Finally...")))))]))))
+
+(deftest try-expression-statm
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "asm-expr~2"
+                     "(DI)Ljava/lang/String;")
+             ["LOCAL 0: double a"]
+             ["LOCAL 2: int b"]
+             (DLOAD_0)
+             (ILOAD_2)
+             (ILOAD_2)
+             (INVOKESTATIC . "asm-expr$try~0" "(I)F")
+             (POP)
+             (ICONST_3)
+             (INVOKEDYNAMIC "_" "(DII)Ljava/lang/String;" :bsm-concat ["\\u0001\\u0001\\u0001"])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "asm-expr$try~0" "(I)F")
+             ["LOCAL 0: int b"]
+             [L:0]
+             (ILOAD_0)
+             (I2F)
+             (FCONST_1)
+             (FDIV)
+             (EXCEPTION_CATCH L:0 L:1 L:2 any)
+             [L:1]
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (LDC "Finally...")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (GOTO L:3)
+             [L:2]
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (LDC "Finally...")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (ATHROW)
+             [L:3]
+             (FRETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (fn* asm-expr ^String [^double a ^int b]
+                      (str a b (do (try
+                                     (/ b 1)
+                                     (finally
+                                       (.println System/out "Finally...")))
+                                   3)))]))))
+
+;; Note: Not all constructs are reduced to "the" empty expression.  If
+;; an exception handler covers an empty bytecode region after bytecode
+;; emit like (EXCEPTION_CATCH L:0 L:0 L:2 any), then this handler must
+;; be omitted from the class file.
+(deftest try-empty-body
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (LDC "abc")
+           (ARETURN)]
+         (asm-expr ^String []
+                   (do (try
+                         (finally
+                           (.println System/out "Hello World")))
+                       "abc"))))
+  
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           ;; Try body turns out empty and the EXCEPTION_CATCH is
+           ;; elided, causing the "any" handler to become unreachable.
+           ;; This in turns means that it is NOP-ed out.
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (LDC "abc")
+           (ARETURN)]
+         (asm-expr ^String []
+                   (do (try
+                         nil
+                         nil
+                         (finally
+                           (.println System/out "Hello World")))
+                       "abc")))))
+
+(deftest try-empty-handler
+  (is (= '[[L:0]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (EXCEPTION_CATCH L:0 L:1 L:2 Exception)
+           [L:1]
+           (GOTO L:3)
+
+           [L:2]
+           (ASTORE_0)
+           ["LOCAL 0: Exception _"]
+           (GOTO L:3)
+
+           [L:3]
+           (LDC "abc")
+           (ARETURN)]
+         (asm-expr ^String []
+                   (do (try
+                         (.println System/out "Hello World")
+                         (catch Exception _
+                           nil))
+                       "abc")))))
+
+(deftest try-without-handlers
+  (is (= '[(BIPUSH 123)
+           (IRETURN)]
+         (asm-expr (try 123)))))
+
+(deftest throw-in-expr-position
+  (is (thrown-with-msg? ExceptionInfo
+                        #"expression does not produce a value"
+                        (asm-expr (let* [a (throw (Exception. "boom"))])))))
+
+(deftest try-catch-throw-finally
+  (is (= '[[L:0]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (EXCEPTION_CATCH L:0 L:1 L:2 Exception)
+           (EXCEPTION_CATCH L:0 L:1 L:3 any)
+           [L:1]
+
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (GOTO L:4)
+           [L:2]
+           
+           (ASTORE_0)
+           ["LOCAL 0: Exception e"]
+           (ALOAD_0)
+           (ATHROW)
+           (EXCEPTION_CATCH L:2 L:3 L:3 any)
+           [L:3]
+           
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ATHROW)
+           [L:4]
+           (RETURN)]
+         (asm-expr (try
+                     (.println System/out "Hello World")
+                     (catch Exception e
+                       (throw e))
+                     (finally
+                       (.println System/out "Finally...")))))))
+
+(deftest finally-duplicates-local-1
+  (is (= '[(ICONST_2)
+           (ANEWARRAY Object)
+           (ASTORE_0)
+           ["LOCAL 0: Object[] aframe"]
+           
+           [L:0]
+           (ACONST_NULL)
+           (EXCEPTION_CATCH L:0 L:1 L:2 any)
+           [L:1]
+           (ALOAD_0)
+           (INVOKESTATIC RT "seq" "(Ljava/lang/Object;)Lclojure/lang/ISeq;")
+           (ASTORE_1)
+           ["LOCAL 1: ISeq seq_126"]
+           #_["POP 1: seq_126"]
+           (GOTO L:3)
+
+           [L:2]
+           (ALOAD_0)
+           (INVOKESTATIC RT "seq" "(Ljava/lang/Object;)Lclojure/lang/ISeq;")
+           (ASTORE_1)
+           ["LOCAL 1: ISeq seq_126"]
+           #_["POP 1: seq_126"]
+           (ATHROW)
+           [L:3]
+           (ARETURN)
+           #_["POP 0: aframe"]]
+         (asm-expr (let* [aframe (new objects 2)]
+                     (try
+                       nil
+                       (finally
+                         (loop* [seq_126 (clojure.lang.RT/seq aframe)]
+                                nil))))))))
+
+(deftest finally-duplicates-local-2
+  (is (= '[[L:0]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (EXCEPTION_CATCH L:0 L:1 L:2 any)
+           [L:1]
+
+           (LDC "foo")
+           (INVOKESTATIC System "getenv" "(Ljava/lang/String;)Ljava/lang/String;")
+           (ASTORE_0)
+           ["LOCAL 0: String s"]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (ALOAD_0)
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (GOTO L:3)
+
+           [L:2]
+           (LDC "foo")
+           (INVOKESTATIC System "getenv" "(Ljava/lang/String;)Ljava/lang/String;")
+           (ASTORE_0)
+           ["LOCAL 0: String s"]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (ALOAD_0)
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ATHROW)
+           [L:3]
+           (RETURN)]
+         (asm-expr (try
+                     (.println System/out "Hello World")
+                     (finally
+                       (let* [s (System/getenv "foo")]
+                         ;; definition of local `s` appears twice in
+                         ;; the output code
+                         (.println System/out s))))))))
+
+(deftest finally-duplicates-function
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object s"]
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (ALOAD_0)
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/Object;)V")
+             (ACONST_NULL)
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             [L:0]
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (LDC "Hello World")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (EXCEPTION_CATCH L:0 L:1 L:2 Throwable)
+             (EXCEPTION_CATCH L:0 L:1 L:4 any)
+             [L:1]
+             (LDC "finally")
+             (INVOKESTATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (POP)
+             (GOTO L:5)
+             
+             [L:2]
+             (ASTORE_0)
+             ["LOCAL 0: Throwable _"]
+             (EXCEPTION_CATCH L:2 L:3 L:4 any)
+             [L:3]
+             (LDC "finally")
+             (INVOKESTATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (POP)
+             (GOTO L:5)
+             
+             [L:4]
+             (LDC "finally")
+             (INVOKESTATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (POP)
+             (ATHROW)
+             
+             [L:5]
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (try
+                   (.println System/out "Hello World")
+                   (catch Throwable _
+                     nil)
+                   (finally
+                     ((fn f [s] (.println System/out s)) "finally")))]))))

@@ -1,0 +1,147 @@
+(ns tcljc.new-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr is-error]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest new-object-test
+  (is (= '[(NEW Object) (DUP)
+           (INVOKESPECIAL Object "<init>" "()V")
+           (ARETURN)]
+         (asm-expr (new Object))))
+  (is (instance? Object (call-expr (new Object)))))
+
+(deftest new-object-statement-test
+  ;; in theory, a no-arg new's node in statement position could
+  ;; probably drop the DUP, but this kind of non-standard NEW sequence
+  ;; would not be a valuable feature
+  (is (= '[(NEW Object) (DUP)
+           (INVOKESPECIAL Object "<init>" "()V")
+           (POP)
+           (ACONST_NULL)
+           (ARETURN)]
+         (asm-expr (do (new Object) nil)))))
+
+(deftest new-string-test
+  (is (= '[(NEW String) (DUP)
+           (LDC "abc")
+           (INVOKESPECIAL String "<init>" "(Ljava/lang/String;)V")
+           (ARETURN)]
+         (asm-expr (new String "abc"))))
+  (is (= "abc" (call-expr (new String "abc")))))
+
+(deftest new-array-test
+  ;; array of primitives
+  (let [exp-asm '[(BIPUSH 123) (NEWARRAY int) (ARETURN)]]
+    (is (= exp-asm (asm-expr (new ints 123))))
+    (is (= exp-asm (asm-expr (new "[I" 123))))
+    (is (= (.arrayType Integer/TYPE)
+           (.getClass (call-expr (new ints 123))))))
+  (let [exp-asm '[(BIPUSH 123) (NEWARRAY double) (ARETURN)]]
+    (is (= exp-asm (asm-expr (new doubles 123))))
+    (is (= exp-asm (asm-expr (new "[D" 123))))
+    (is (= (.arrayType Double/TYPE)
+           (.getClass (call-expr (new doubles 123))))))
+  
+  ;; array of objects
+  (let [exp-asm '[(BIPUSH 123) (ANEWARRAY Object) (ARETURN)]]
+    (is (= exp-asm (asm-expr (new objects 123))))
+    (is (= exp-asm (asm-expr (new "[Ljava.lang.Object;" 123))))
+    (is (= (.arrayType Object)
+           (.getClass (call-expr (new objects 123))))))
+  
+  ;; 2d array of objects
+  (is (= '[(BIPUSH 11) (BIPUSH 22)
+           (MULTIANEWARRAY "Object[][]" 2)
+           (ARETURN)]
+         (asm-expr (new "[[Ljava.lang.Object;" 11 22))))
+  (is (= (-> Object .arrayType .arrayType)
+         (.getClass (call-expr (new "[[Ljava.lang.Object;" 11 22)))))
+  
+  ;; 3d array of objects
+  (is (= '[(BIPUSH 11) (BIPUSH 22)
+           (MULTIANEWARRAY "Object[][][]" 2)
+           (ARETURN)]
+         (asm-expr (new "[[[Ljava.lang.Object;" 11 22))))
+  (is (= (-> Object .arrayType .arrayType .arrayType)
+         (.getClass (call-expr (new "[[[Ljava.lang.Object;" 11 22)))))  
+  (is (= '[(BIPUSH 11) (BIPUSH 22) (BIPUSH 33)
+           (MULTIANEWARRAY "Object[][][]" 3)
+           (ARETURN)]
+         (asm-expr (new "[[[Ljava.lang.Object;" 11 22 33))))
+  (is (= (-> Object .arrayType .arrayType .arrayType)
+         (.getClass (call-expr (new "[[[Ljava.lang.Object;" 11 22 33))))))
+
+(deftest new-array-errors-test
+  (is-error (new Object 123) #"no constructor matching")
+  (is-error (new int) #"no constructor matching")
+
+  (is-error (new objects) #"expect one dimension length")
+  (is-error (new objects 11 22) #"expect one dimension length")
+  (is-error (new "[[Ljava.lang.Object;" 11 22 33)
+            #"expect 1 to 2 dimension lengths")
+  
+  (is-error (new nil) #"classname must be symbol or string \(got: .*nil.*\)")
+  (is-error (new 123) #"cannot assign to .*java\.lang\.Class.* \(got: int\)"))
+
+
+(deftest stack-frame-with-uninitialized
+  (is (= '[["LOCAL 0: boolean sigs"]
+           (ILOAD_0)
+           (IFEQ L:2)
+           (NEW IllegalArgumentException) (DUP)
+           (ILOAD_0)
+           (IFEQ L:0)
+           (LDC "foo")
+           (GOTO L:1)
+           [L:0]
+           (ACONST_NULL)
+           [L:1]
+           (INVOKESPECIAL IllegalArgumentException "<init>"
+                          "(Ljava/lang/String;)V")
+           (ARETURN)
+           [L:2]
+           (ACONST_NULL)
+           (ARETURN)]
+         (asm-expr [^boolean sigs]
+                   (if sigs
+                     (IllegalArgumentException. 
+                             (if sigs "foo")))))))
+
+(deftest instanceof-symbol
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INSTANCEOF String)
+           (IRETURN)]
+         (asm-expr ^boolean [^Object x]
+                   (instanceof* String x)))))
+
+(deftest instanceof-string
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INSTANCEOF String)
+           (IRETURN)]
+         (asm-expr ^boolean [^Object x]
+                   (instanceof* "java.lang.String" x)))))
+
+(deftest instanceof-expr
+  (is (= '[["LOCAL 0: Object x"]
+           ["LOCAL 1: Class cl"]
+           (ALOAD_1)
+           (ALOAD_0)
+           (INVOKEVIRTUAL Class "isInstance" "(Ljava/lang/Object;)Z")
+           (IRETURN)]
+         (asm-expr ^boolean [^Object x ^Class cl]
+                   (instanceof* cl x)))))
+
+(deftest instanceof-null
+  (is (= '[(ACONST_NULL)
+           (INSTANCEOF String)
+           (IRETURN)]
+         (asm-expr ^boolean []
+                   (instanceof* String nil))))
+  (is (= '[["LOCAL 0: Class cl"]
+           (ALOAD_0 )
+           (ACONST_NULL)
+           (INVOKEVIRTUAL Class "isInstance" "(Ljava/lang/Object;)Z")
+           (IRETURN)]
+         (asm-expr ^boolean [^Class cl]
+                   (instanceof* cl nil)))))

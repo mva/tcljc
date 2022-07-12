@@ -1,0 +1,182 @@
+(ns tcljc.meta-test
+  (:require [tcljc.bootstrap :refer [asm-expr data-expr nmsp]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(defmacro is-meta [exp form]
+  (with-meta `(is (= ~exp (meta (data-expr ~form))))
+    (meta &form)))
+  
+(deftest meta-literal-test
+  (is-meta {:foo true} ^:foo [1 2 3])
+  (is-meta {:foo true} ^:foo [])
+  (is-meta {:foo true} ^:foo {1 2})
+  (is-meta {:foo true} ^:foo {})
+  (is-meta {:foo true} ^:foo #{1 2 3})
+  (is-meta {:foo true} ^:foo #{})
+  (is-meta {:foo true} ^:foo ())
+  
+  (is-meta {:foo true} '^:foo bar)
+  )
+
+(defmacro is-meta-first [exp form]
+  (with-meta `(is (= ~exp (meta (first (data-expr ~form)))))
+    (meta &form)))
+
+(deftest meta-in-quote-test
+  (is-meta-first {:foo true} '[^:foo [1 2 3]])
+  (is-meta-first {:foo true} '[^:foo []])
+  (is-meta-first {:foo true} '[^:foo {1 2}])
+  (is-meta-first {:foo true} '[^:foo {}])
+  (is-meta-first {:foo true} '[^:foo #{1 2 3}])
+  (is-meta-first {:foo true} '[^:foo #{}])
+  (is-meta-first {:foo true} '[^:foo (1 2 3)]) ;quote strips :line and :column
+  (is-meta-first {:foo true} '[^:foo ()])
+  
+  (is-meta-first {:foo true} '[^:foo bar]))
+
+(deftest meta-evaluation-test
+  (is (= '[(LDC [:bsm-quote "with-meta" "Lclojure/lang/IPersistentVector;"
+                 [[:bsm-quote "vector" "Lclojure/lang/IPersistentVector;" [1 2 3]]
+                  [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
+                   [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["foo"]]
+                    [:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["bar"]]]]]])
+           (ARETURN)]
+         (asm-expr ^{:foo 'bar} [1 2 3])))
+  (is (= '{:foo bar}
+         (meta (data-expr ^{:foo 'bar} [1 2 3])))))
+
+(deftest nested-symbol
+  (is (= '[(LDC [:bsm-quote "vector" "Lclojure/lang/IPersistentVector;"
+                 [[:bsm-quote "with-meta" "Lclojure/lang/Symbol;"
+                   [[:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["n"]]
+                    [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
+                     [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["tag"]]
+                      [:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["int"]]]]]]]])
+           (ARETURN)]
+         (asm-expr '[^int n]))))
+
+(deftest fn-with-meta
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "sfn" "Lclojure/lang/IPersistentMap;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "cfn" "Lclojure/lang/IPersistentMap;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "add2" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "add2~2" "(II)I"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "add2~2" "(II)I")
+             ["LOCAL 0: int a"]
+             ["LOCAL 1: int b"]
+             (ILOAD_0)
+             (ILOAD_1)
+             (IADD)
+             (IRETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "mk-add1" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "mk-add1~1" "(I)Ltinyclj/lang/AFnMh;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "mk-add1~1" "(I)Ltinyclj/lang/AFnMh;")
+             ["LOCAL 0: int a"]
+             (ILOAD_0)
+             (INVOKESTATIC mk-add1$add1 "__create" "(I)Lpkg/ns0/mk-add1$add1;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (INVOKESTATIC . "add2" "()Ltinyclj/lang/StaticFnMh;")
+             (ACONST_NULL)
+             (INVOKEVIRTUAL AFnMh "withMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/IObj;")
+             (INVOKEINTERFACE IObj "meta" "()Lclojure/lang/IPersistentMap;" :itf)
+             (PUTSTATIC . "sfn" "Lclojure/lang/IPersistentMap;")
+             
+             (ICONST_1)
+             (INVOKESTATIC . "mk-add1~1" "(I)Ltinyclj/lang/AFnMh;")
+             (ACONST_NULL)
+             (INVOKEVIRTUAL AFnMh "withMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/IObj;")
+             (INVOKEINTERFACE IObj "meta" "()Lclojure/lang/IPersistentMap;" :itf)
+             (PUTSTATIC . "cfn" "Lclojure/lang/IPersistentMap;")
+
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/mk-add1$add1" nil "tinyclj/lang/AFnMh")
+            [(FIELD [PRIVATE FINAL] "a" "I")]
+            
+            [(METHOD [PUBLIC FINAL] "fn1" "(I)I")
+             ["LOCAL 0: mk-add1$add1 add1"]
+             ["LOCAL 1: int b"]
+             (ALOAD_0)
+             (GETFIELD . "a" "I")
+             (ILOAD_1)
+             (IADD)
+             (IRETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
+             #_["LOCAL 0: mk-add1$add1 __this"]
+             #_["LOCAL 1: int n"]
+             (ILOAD_1)
+             (ICONST_1)
+             (IF_ICMPNE L:0)
+             (LDC [VIRTUAL . "fn1" "(I)I"])
+             (ARETURN)
+             [L:0]
+             (ACONST_NULL)
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
+             #_["LOCAL 0: mk-add1$add1 __this"]
+             (LDC [VIRTUAL . "fn1" "(I)I"])
+             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
+             (ARETURN)]
+            
+            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;I)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: IPersistentMap __meta"]
+             #_["LOCAL 2: int a"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (ALOAD_0)
+             (ILOAD_2)
+             (PUTFIELD . "a" "I")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "__create" "(I)Lpkg/ns0/mk-add1$add1;")
+             #_["LOCAL 0: int a"]
+             (NEW mk-add1$add1) (DUP)
+             (ACONST_NULL)
+             (ILOAD_0)
+             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;I)V")
+             (ARETURN)]
+            
+            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/mk-add1$add1;")
+             #_["LOCAL 0: mk-add1$add1 __this"]
+             #_["LOCAL 1: IPersistentMap __meta"]
+             (NEW mk-add1$add1) (DUP)
+             (ALOAD_1)
+             (ALOAD_0)
+             (GETFIELD . "a" "I")
+             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;I)V")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def add2 (fn* add2 ^int [^int a ^int b]
+                                (+ a b)))
+                 (def mk-add1 (fn* mk-add1 ^:auto-return-type [^int a]
+                                   (fn* add1 ^int [^int b]
+                                        (+ a b))))
+                 ;; meta on StaticFnMh
+                 (def sfn (.meta (.withMeta add2 nil)))
+                 ;; meta on capturing fn
+                 (def cfn (.meta (.withMeta (mk-add1 1) nil)))]))))
+

@@ -1,0 +1,408 @@
+(ns tcljc.loop-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr nmsp]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest counting-loop-int-test
+  ;; 3.2 Use of Constants, Local Variables, and Control Constructs
+  ;; [JVMS8, page 40] method spin()
+
+  ;; Differences: The Java for loop's test is placed at the end of the
+  ;; code, with a goto jumping over body to the initial test.  The
+  ;; Clojure loop produces a nil value on the if's exit path, which is
+  ;; returned.
+  (is (= '[(ICONST_0) (ISTORE_0) ["LOCAL 0: int i"]
+           
+           [L:0]
+           (ILOAD_0)
+           (BIPUSH 100)
+           (IF_ICMPGE L:1)
+           (IINC 0 1)
+           (GOTO L:0)
+           [L:1]
+           (RETURN)]
+         (asm-expr (loop* [i 0]
+                          (if (< i 100)
+                            (recur (+ i 1)))))))
+  ;; should be equivalent: (+ i 1) and (inc i)
+  (is (= (asm-expr (loop* [i 0]
+                          (if (< i 100)
+                            (recur (+ i 1)))))
+         (asm-expr (loop* [i 0]
+                          (if (< i 100)
+                            (recur (inc i)))))))
+  
+  ;; this variant should use a "IINC 1 -1" decrement
+  (is (= '[(BIPUSH 99) (ISTORE_0) ["LOCAL 0: int i"]
+               
+           [L:0]
+           (ILOAD_0)
+           (IFLT L:1)
+           (IINC 0 -1)
+           (GOTO L:0)
+           [L:1]
+           (RETURN)]
+         (asm-expr (loop* [i 99]
+                          (if (>= i 0)
+                            (recur (- i 1)))))))
+  
+  ;; should be equivalent: (- i 1) and (dec i), (- i 1) and (+ i -1)
+  (is (= (asm-expr (loop* [i 99]
+                          (if (>= i 0)
+                            (recur (- i 1)))))
+         (asm-expr (loop* [i 99]
+                          (if (>= i 0)
+                            (recur (dec i)))))))
+  (is (= (asm-expr (loop* [i 99]
+                          (if (>= i 0)
+                            (recur (- i 1)))))
+         (asm-expr (loop* [i 99]
+                          (if (>= i 0)
+                            (recur (+ i -1))))))))
+
+(deftest counting-loop-double-test
+  ;; 3.2 Use of Constants, Local Variables, and Control Constructs
+  ;; [JVMS8, page 42] method dspin()
+  ;; Differences: as above.
+  (is (= '[(DCONST_0) (DSTORE_0) ["LOCAL 0: double i"]
+
+           [L:0]
+           (DLOAD_0)
+           (LDC2_W 100.0)
+           (DCMPG)
+           (IFGE L:1)
+           (DLOAD_0)
+           (DCONST_1)
+           (DADD)
+           (DSTORE_0)
+           (GOTO L:0)
+
+           [L:1]
+           (RETURN)]
+         (asm-expr (loop* [i 0.0]
+                          (if (< i 100.0)
+                            (recur (+ i 1.0))))))))
+
+(deftest non-tail-recur-test
+  (is (thrown-with-msg? Exception #"cannot recur from this position"
+                        (asm-expr (loop* [] (recur) true))))
+  ;; Body of loop* is always in tail position with respect to the
+  ;; loop.  The NOP puts distance between the implicit stack frame at
+  ;; the method beginning and the one that is emitted for the
+  ;; beginning of the loop.  It is optional here, but as long as such
+  ;; "on top of each other" stack frames are not suppressed the NOP is
+  ;; required for some loop-in-loop and loop-after-conditional
+  ;; scenarios.
+  (is (= '[[L:0] (GOTO L:0)]
+         (asm-expr (do (loop* [] (recur)) "foo")))))
+
+(deftest gcd-test
+  (is (= '[["LOCAL 0: int x"]
+           ["LOCAL 1: int y"]
+           (ILOAD_0) (ISTORE_2) ["LOCAL 2: int a"]
+           (ILOAD_1) (ISTORE_3) ["LOCAL 3: int b"]
+           
+           [L:0]
+           (ILOAD_3)
+           (IFNE L:1)
+           
+           (ILOAD_2)
+           (IRETURN)
+           
+           [L:1]
+           (ILOAD_3)
+           (ILOAD_2)
+           (ILOAD_3)
+           (INVOKESTATIC Math "floorMod" "(II)I")
+           (ISTORE_3)
+           (ISTORE_2)
+           (GOTO L:0)]
+         (asm-expr [^int x ^int y]
+                   (loop* [a x, b y]
+                          (if (zero? b)
+                            a
+                            (recur b (mod a b)))))))
+  (is (= '[["LOCAL 0: long x"]
+           ["LOCAL 2: long y"]
+           (LLOAD_0) (LSTORE 4) ["LOCAL 4: long a"]
+           (LLOAD_2) (LSTORE 6) ["LOCAL 6: long b"]
+
+           [L:0]
+           (LLOAD 6)
+           (LCONST_0)
+           (LCMP)
+           (IFNE L:1)
+           
+           (LLOAD 4)
+           (LRETURN)
+
+           [L:1]
+           (LLOAD 6)
+           (LLOAD 4)
+           (LLOAD 6)
+           (INVOKESTATIC Math "floorMod" "(JJ)J")
+           (LSTORE 6)
+           (LSTORE 4)
+           (GOTO L:0)]
+         (asm-expr [^long x ^long y]
+                   (loop* [a x, b y]
+                          (if (zero? b)
+                            a
+                            (recur b (mod a b))))))))
+
+(deftest recur-with-same-value
+  (is (= '[["LOCAL 0: int x"]
+           ["LOCAL 1: int y"]
+           (ILOAD_0) (ISTORE_2) ["LOCAL 2: int a"]
+           (ILOAD_1) (ISTORE_3) ["LOCAL 3: int b"]
+
+           [L:0]
+           (ILOAD_2)
+           (ILOAD_3)
+           (IF_ICMPNE L:1)
+           (ILOAD_2)                    ;(= a b)
+           (IRETURN)                    ;return a
+           [L:1]                   ;(not (= a b))
+           (ILOAD_2)
+           (ILOAD_3)
+           (IF_ICMPGE L:2)
+           (ILOAD_3)                    ;(< a b)
+           (ILOAD_2)
+           (ISUB)
+           (ISTORE_3)                   ;(- b a) -> b, a unchanged
+           (GOTO L:0)
+           [L:2]                   ;(>= a b)
+           (ILOAD_2)
+           (ILOAD_3)
+           (ISUB)
+           (ISTORE_2)                   ;(- a b) -> a, b unchanged
+           (GOTO L:0)]
+         (asm-expr [^int x ^int y]
+                   (loop* [a x, b y]
+                          (if (= a b)
+                            a
+                            (if (< a b)
+                              (recur a (- b a))
+                              (recur (- a b) b))))))))
+
+(deftest rebind-recur
+  (is (= '[["LOCAL 0: Object arg"]
+           (ACONST_NULL) (ASTORE_1) ["LOCAL 1: Object x"]
+
+           [L:0]
+           (ALOAD_0)
+           (ASTORE_1)
+           (GOTO L:0)]
+         (asm-expr [arg]
+                   (loop* [^Object x nil]
+                          (let* [x arg]
+                            (recur x)))))))
+
+(deftest rebind-recur-alias
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~0" "()Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~0" "()Ljava/lang/Object;")
+             (ACONST_NULL)
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "g~0" "()Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "g~0" "()Ljava/lang/Object;")
+             (ACONST_NULL)
+             (ASTORE_0)
+             ["LOCAL 0: Object x"]
+             [L:0]
+             (INVOKESTATIC . "f" "()Ltinyclj/lang/StaticFnMh;")
+             (ASTORE_0)
+             (GOTO L:0)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f []
+                             nil))
+                 (def g (fn* g []
+                             (loop* [^Object x nil]
+                                    (let* [x f]
+                                      (recur x)))))]))))
+
+(deftest iinc-range
+  ;; anything in range [-32768..32767] is ok
+  (is (= '[(ICONST_0) (ISTORE_0) ["LOCAL 0: int i"]
+           [L:0] (IINC_W 0 -32768) (GOTO L:0)]
+         (asm-expr (loop* [i 0] (recur (- i 32768))))))
+  (is (= '[(ICONST_0) (ISTORE_0) ["LOCAL 0: int i"]
+           [L:0] (IINC_W 0 32767) (GOTO L:0)]
+         (asm-expr (loop* [i 0] (recur (+ i 32767))))))
+  
+  ;; outside the "2-byte signed value" range, the original expression
+  ;; and an explicit STORE is used
+  (is (= '[(ICONST_0) (ISTORE_0) ["LOCAL 0: int i"]
+           [L:0] (ILOAD_0) (LDC 32769) (ISUB) (ISTORE_0) (GOTO L:0)]
+         (asm-expr (loop* [i 0] (recur (- i 32769))))))
+  (is (= '[(ICONST_0) (ISTORE_0) ["LOCAL 0: int i"]
+           [L:0] (ILOAD_0) (LDC 32768) (IADD) (ISTORE_0) (GOTO L:0)]
+         (asm-expr (loop* [i 0] (recur (+ i 32768))))))
+  
+  ;; all variants of "increment by 0" or "keep current value" are
+  ;; mapped to an empty instruction sequence
+  (is (= '[(ICONST_0) (ISTORE_0) ["LOCAL 0: int i"]
+           [L:0] (GOTO L:0)]
+         (asm-expr (loop* [i 0] (recur i)))))
+  (is (= '[(ICONST_0) (ISTORE_0) ["LOCAL 0: int i"]
+           [L:0] (GOTO L:0)]
+         (asm-expr (loop* [i 0] (recur (+ i 0))))))
+  (is (= '[(ICONST_0) (ISTORE_0) ["LOCAL 0: int i"]
+           [L:0] (GOTO L:0)]
+         (asm-expr (loop* [i 0] (recur (- i 0)))))))
+
+(deftest recur-type-match-test
+  (is (= '[(ACONST_NULL) (ASTORE_0) ["LOCAL 0: Object a"]
+           (ICONST_0) (ISTORE_1) ["LOCAL 1: int b"]
+           [L:0]
+           (ACONST_NULL)
+           (ICONST_0)
+           (ISTORE_1)
+           (ASTORE_0)
+           (GOTO L:0)]
+         (asm-expr (loop* [a nil, b 0]
+                          (recur nil 0))))))
+
+(deftest statm-loop-with-nested-ifs-test
+  (is (= '[(ACONST_NULL) (ASTORE_0) ["LOCAL 0: Object s"]
+           (ICONST_0) (ISTORE_1) ["LOCAL 1: int i"]
+
+           [L:0]
+           (ILOAD_1)
+           (BIPUSH 32)
+           (IF_ICMPGE L:1)
+           (IINC 1 1)
+           (GOTO L:0)
+           [L:1]
+           (ALOAD_0)
+           (INVOKESTATIC RT "seq" "(Ljava/lang/Object;)Lclojure/lang/ISeq;")
+           (IFNULL L:2)
+           (ALOAD_0)
+           (INVOKESTATIC RT "next" "(Ljava/lang/Object;)Lclojure/lang/ISeq;")
+           (ICONST_0)
+           (ISTORE_1)
+           (ASTORE_0)
+           (GOTO L:0)
+           [L:2]
+           (LDC "foo")
+           (ARETURN)]
+         (asm-expr (do (loop* [s nil, i 0]
+                         (if (< i 32)
+                           (recur s (inc i))
+                           (if (clojure.lang.RT/seq s)
+                             (recur (clojure.lang.RT/next s) 0))))
+                       "foo")))))
+
+(deftest cons-into-list
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL]
+                     "list" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "fn~1" "([Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL VARARGS]
+                     "fn~1" "([Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object[] items"]
+             (ALOAD_0)
+             (ARRAYLENGTH)
+             (ICONST_1)
+             (ISUB)
+             (ISTORE_1)
+             ["LOCAL 1: int i"]
+             (LDC [:bsm-quote "list" "Lclojure/lang/ISeq;" []])
+             (ASTORE_2)
+             ["LOCAL 2: ISeq ret"]
+             [L:0]
+             (ILOAD_1)
+             (IFLT L:1)
+             (ALOAD_2)
+             (ALOAD_0)
+             (ILOAD_1)
+             (AALOAD)
+             (INVOKEINTERFACE ISeq "cons"
+                              "(Ljava/lang/Object;)Lclojure/lang/ISeq;" :itf)
+             (ASTORE_2)
+             (IINC 1 -1)
+             (GOTO L:0)
+             [L:1]
+             (ALOAD_2)
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def list
+                   (fn* [& ^objects items]
+                        (loop* [i (- (alength items) 1), ret ()]
+                               (if (>= i 0)
+                                 (recur (- i 1) (.cons ret (aget items i)))
+                                 ret))))]))))
+
+(deftest join-vector-with-null-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "lift-ns" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;" [[STATIC . "lift-ns~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "lift-ns~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object m"]
+             [L:0]
+             (ALOAD_0)
+             (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+             (IFEQ L:2)
+             (ALOAD_0)
+             (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+             (IFEQ L:1)
+             (GOTO L:0)
+             [L:1]
+             (ACONST_NULL)
+             (ARETURN)
+             [L:2]
+             (LDC [:bsm-quote "vector" "Lclojure/lang/IPersistentVector;" []])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def lift-ns
+                   (fn* lift-ns [m]
+                        (loop* []
+                               (if m
+                                 (if m
+                                   (recur)
+                                   nil)
+                                 []))))]))))

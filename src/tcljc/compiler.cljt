@@ -1,0 +1,1641 @@
+(ns tcljc.compiler
+  (:require
+   [tcljc.classfile :as cf]
+   [tcljc.util :as util]
+   [tcljc.config :as cfg]
+   [tcljc.synquote :as sq]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.wrong :as wrong]
+   [tcljc.grammar :as grammar]
+   [tcljc.macro :as macro]
+   [tcljc.context :as ctx]
+   [tcljc.expr :as x]
+   [tcljc.exprfold :as xf]
+   [tcljc.compiler.sigfn :as sig]
+   [tcljc.compiler.sigclass :as sigclass]
+   [tcljc.compiler.conv :as conv]
+   [tcljc.compiler.resolve :as resolve]
+   [tcljc.compiler.branch :as branch]
+   [tinyclj.string :as str])
+  (:import
+   (tcljc.context NamespaceCtx EmitQueue)
+   (tcljc.classfile ClassDef)
+   (tcljc.expr Expr InvokeXref Const Branch Guard TryHandler
+               Binding BindingRef ValueRef MacroRef
+               FnForm Arity ArityCode FnPatch
+               PrimitiveFnRef FnPrimitiveFn FnMacroFn
+               DeftypeDef MethodDef)
+   (clojure.lang Symbol Var ISeq IPersistentVector IPersistentMap IMeta IObj
+                 ExceptionInfo)
+   (jdk.classfile Classfile Opcode)
+   (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
+                       DynamicConstantDesc)
+   (java.lang.invoke MethodHandle MethodHandles$Lookup)
+   (java.lang.reflect Constructor Method Field Executable)
+   (java.util.concurrent Future BlockingQueue)
+   (java.util.function Consumer)
+   (java.util.regex Pattern))
+  (:refer-clojure :exclude [type]))
+
+(defn wrong-unresolved
+  (^Expr [^Symbol sym]
+   (wrong/unresolved "undefined symbol " sym sym))
+  (^Expr [^Symbol sym ^Symbol context]
+   (wrong/unresolved "undefined symbol " sym context)))
+
+(defn wrong-unresolved-nmsp ^Expr [^String ns-part ^Symbol context]
+  (wrong-unresolved (symbol ns-part "...") context))
+
+
+(defn- assoc-fndef+args ^ExceptionInfo [^ExceptionInfo e fndef [op & args]]
+  (let [data (-> (ex-data e)
+                 (assoc :invoke/fndef fndef)
+                 (assoc :invoke/arg-types (map x/type args)))]
+    (ex-info (ex-message e) data (ex-cause e))))
+(defmacro ^:private with-call-fn-def-context [fn-form op+argv & body]
+  (assert (symbol? fn-form))
+  (assert (symbol? op+argv))
+  `(try
+     ~@body
+     (catch clojure.lang.ExceptionInfo e#
+       (throw (assoc-fndef+args e# ~fn-form ~op+argv))
+       nil)))
+(defn- wrong-no-arity [^FnForm fn-form [^Expr op & args]]
+  (throw (wrong/mk-e (str "function " (wrong/q (.form op)) " has no arity "
+                          (count args))
+                     {} (.form ^Expr op))))
+
+
+(defn ensure-int ^Expr [^Expr from]
+  (if (resolve/numeric-assignable-to? (x/type from) jb/int)
+    (conv/widen-from jb/int from)
+    (x/wrong-type "expect int expression" from)))
+
+(defn- take-member ^String [x]
+  (if (symbol? x)
+    (name x)
+    (wrong/syntax "expect member name instead of" x)))
+
+(defn- ensure-classname ^Class [^Expr x]
+  (if-some [tp (x/classname-type x)]
+    tp
+    (x/wrong-type "expect class name" x))) ;wrong type or not constant
+
+(defn- implements-ifn? ^boolean [^Expr x tl-ctx]
+  (.isAssignableFrom (ctx/get-type rt/clnm-ifn tl-ctx) (x/type x)))
+(defn- check-callable ^void [^Expr op-x tl-ctx]
+  (let [op-tp (x/type op-x)]
+    (when-not (or (jb/same-class? jb/Object op-tp)
+                  (jb/interface? op-tp)
+                  (implements-ifn? op-x tl-ctx))
+      (x/wrong-type "called function's type does not implement `IFn`" op-x))))
+
+(defn- resolve-class-name ^Class [^String nm tl-ctx]
+  (when (cf/valid-java-class-name? nm) ;reject class names like "/"
+    (ctx/get-type nm (ctx/tl-ctx* tl-ctx))))
+
+(defn classname-expr ^Const [ssym-or-str tl-ctx]
+  (when-some [tp (if (symbol? ssym-or-str)
+                   (ctx/lookup-type ssym-or-str tl-ctx)
+                   (resolve-class-name ssym-or-str tl-ctx))]
+    (x/const jb/Class tp)))
+
+(defn add-imports ^Expr [import-map tl-ctx]
+  (assert (identical? :import (:tag import-map)))
+  (let [nmsp-ctx (ctx/namespace-ctx tl-ctx)]
+    (reduce (fn [res cl-nm]
+              (if-some [x (classname-expr cl-nm nmsp-ctx)]
+                (let [cl (x/classname-type x)]
+                  (.put-import nmsp-ctx (jb/import-symbol-short cl) cl)
+                  x)
+               (sig/wrong-class cl-nm)))
+            x/expr-empty (:classes import-map))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- compile-named ^Expr [^clojure.lang.Named nm ^String tp-clnm tl-ctx]
+  (x/const (ctx/get-type tp-clnm tl-ctx) nm))
+
+(defn- compile-constant-nometa ^Expr [form tl-ctx]
+  (letfn [(const-desc-tp ^Class [form]
+            (condp instance? form
+              Integer jb/int
+              Long jb/long
+              Float jb/float
+              Double jb/double
+              String String
+              #_else (throw (IllegalArgumentException.))))
+          (number-tp ^Class [form]      ;pre: form is not ConstantDesc
+            (condp instance? form
+              Byte jb/byte
+              Short jb/short
+              #_else (throw (IllegalArgumentException.))))]
+    (cond
+      (nil? form) x/expr-nil
+      (instance? ConstantDesc form) (x/const (const-desc-tp form) form)
+      (keyword? form) (compile-named form rt/clnm-keyword tl-ctx)
+      (boolean? form) (x/expr-boolean ^boolean form) ;enforce singletons
+      (char? form) (x/const jb/char (object (int ^char form)))
+      (number? form) (x/const (number-tp form) (object (.intValue ^Number form)))
+      :else (x/const (class form) form)))) ;Class and Pattern
+
+(defn- with-meta-literal ^Expr [^Expr x ^Expr m]
+  (let [mhd rt/mhd-with-meta
+        tp (x/type x)
+        argv [x m]
+        c (when (and (x/const-value? x) (x/const-value? m))
+            (let [nm (str/replace (.methodName mhd) "_" "-")]
+              (DynamicConstantDesc/ofNamed rt/bsm-quote nm (rt/cd-of tp)
+                                           (x/constant-desc-array argv))))]
+    (x/invoke-xref tp argv c mhd false)))
+
+(defn- coll-literal ^Expr [^String tp-clnm elems ^DirectMethodHandleDesc mhd
+                           tl-ctx]
+  (let [tp (ctx/get-type tp-clnm tl-ctx)
+        c (when (every? x/const-value? elems)
+            (let [nm (str/replace (.methodName mhd) "_" "-")]
+              (DynamicConstantDesc/ofNamed
+               rt/bsm-quote nm (ClassDesc/of tp-clnm)
+               (x/constant-desc-array elems))))]
+    (x/mh-invoke-inexact tp (cons (x/const jb/MethodHandle mhd) elems) c)))
+
+(defn- compile-quote ^Expr [form tl-ctx]
+  (letfn [(quote-coll ^Expr [^String tp-clnm ^DirectMethodHandleDesc mhd forms]
+            (let [elems (mapv #(compile-quote % tl-ctx) forms)]
+              (coll-literal tp-clnm elems mhd tl-ctx)))]
+    (if (instance? IMeta form)          ;also covers seq
+      (let [x (cond
+                (symbol? form)
+                (compile-named form rt/clnm-symbol tl-ctx)
+                
+                (seq? form)
+                (if (sq/syntax-quote? form)
+                  (compile-quote (sq/syntax-quote form) tl-ctx)
+                  (quote-coll rt/clnm-list rt/mhd-list form))
+                
+                (vector? form)
+                (quote-coll rt/clnm-vector rt/mhd-vector (seq form))
+                
+                (map? form)
+                (quote-coll rt/clnm-map rt/mhd-map (mapcat identity form))
+                
+                (set? form)
+                (quote-coll rt/clnm-set rt/mhd-set (seq form))
+
+                :else (throw (IllegalArgumentException. (str (class form)))))]
+        (if-some [m (sq/source-meta form)]
+          (with-meta-literal x (compile-quote m tl-ctx))
+          x))
+      (compile-constant-nometa form tl-ctx))))
+
+
+(defn var-type ^Class [tl-ctx]
+  (ctx/get-type rt/clnm-Var tl-ctx))
+
+(defn- create-clj-var [^String nm-str ^Expr meta-x ^Expr init-x
+                       ^boolean dynamic? tl-ctx]
+  (let [tp-Var (var-type tl-ctx)]
+    (letfn [(create-var ^Expr [^String nm-str ^Expr init-expr]
+              (let [ldc-ns (x/const jb/String (ctx/this-ns tl-ctx))
+                    ldc-nm (x/const jb/String nm-str)]
+                (if (some? init-expr)
+                  (x/invoke-xref tp-Var [ldc-ns ldc-nm init-expr] rt/mhd-var-3)
+                  (x/invoke-xref tp-Var [ldc-ns ldc-nm] rt/mhd-var-2))))
+            (set-meta ^Expr [^Expr clj-var ^Expr meta]
+              (x/invoke-xref tp-Var [clj-var meta] rt/mhd-Var-setMeta))
+            (set-dynamic ^Expr [^Expr clj-var]
+              (x/invoke-xref tp-Var [clj-var] rt/mhd-Var-setDynamic))]
+      (cond-> (create-var nm-str init-x)
+        (some? meta-x) (set-meta meta-x)
+        dynamic? (set-dynamic)))))
+
+(deftype DelayedMacroFn [^MethodHandle apply-mh
+                         ^EmitQueue emit
+                         ^BindingRef macro-def
+                         ^:unsynchronized-mutable ^Object f]
+  FnMacroFn
+  (expand [_ env form]
+    (let [x (or f (set! f (ctx/send-msg emit ctx/req-macro-value macro-def)))]
+      ;; pass nil as `env` for now
+      (macro/apply-macro apply-mh f form nil))))
+
+(defn def-form ^Expr [[_ nm :as form] ^Expr v ^BindingRef macro-v tl-ctx]
+  (letfn [(prior-def ^BindingRef [^Symbol nm]
+            (some-> (ctx/lookup-global nm tl-ctx) (x/root-bref)))
+
+          (put-value-or-macro ^Binding [^String ns-str ^Symbol nm
+                                        ^ValueRef bref ^Expr v]
+            ;; For macros, there is a split view.  There is the
+            ;; regular global binding that emits the bytecode for the
+            ;; function, and the macro specific view on this binding
+            ;; added to the symbol table.  Both include optional
+            ;; "macro is used as a value" data, the former so that it
+            ;; can be added to the bytecode as well, and the latter so
+            ;; that it can be swapped in when the macro appears in
+            ;; value position.
+            (if (x/meta-flag? nm :macro)
+              (let [bref (x/with-macro-value bref macro-v) ;then baked into mfn
+                    nmsp-ctx (ctx/namespace-ctx tl-ctx)
+                    mfn (DelayedMacroFn. (.apply-mh nmsp-ctx) (.emit nmsp-ctx)
+                                         bref nil)
+                    mref (x/macro-ref nm ns-str mfn macro-v bref)]
+                (.update-macro-count nmsp-ctx +1)
+                (ctx/put-global (name nm) mref tl-ctx)
+                (x/global-binding bref v))
+              (do
+                (ctx/put-global (name nm) bref tl-ctx)
+                (x/global-binding bref v))))
+          (member-def-fresh ^Binding [^Symbol nm ^boolean redef?]
+            ;; pre: non-var & non-alias & new member
+            (let [dest-tag (sig/tag-of nm false jb/cl-polymorphic-type tl-ctx)
+                  v (conv/consume v dest-tag)
+                  ns-str (ctx/this-ns tl-ctx)
+                  bref (x/global-ref nm ns-str (x/type v) redef? false v)]
+              (put-value-or-macro ns-str nm bref v)))
+          (assign-member-def-form ^Expr [^BindingRef bref nm]
+            (when-not (x/b-mutable? bref)
+              (wrong/other "prior definition is final"))
+            (let [v (conv/consume v (x/type bref))]
+              (x/assign-def v bref)))
+          (member-def-alias ^Expr [^Symbol nm ^BindingRef bref]
+            (let [nm* (with-meta (x/qname bref) (meta nm))
+                  aref (x/alias-ref 0 nm (ctx/this-ns tl-ctx) bref x/b-def)]
+              ;; global alias is just a new name for the old
+              ;; BindingRef, without any additional work
+              (ctx/put-global (name nm) aref tl-ctx)
+              ;; install a dummy field definition that allows to
+              ;; reconstruct this alias when importing the namespace
+              ;; from its class files
+              (x/global-binding aref bref)))
+          (member-def-noinit ^Expr [^Symbol nm]
+            (let [redef? true           ;no init implies non-final
+                  tp (sig/tag-of nm false jb/Object tl-ctx)
+                  bref (x/global-ref nm (ctx/this-ns tl-ctx) tp redef? false nil)]
+              (ctx/put-global (name nm) bref tl-ctx)
+              (x/global-binding bref nil)))
+          (assign-var-def-form ^Expr [^BindingRef bref nm]
+            (let [x (conv/consume v (x/type bref))
+                  tp-Var (var-type tl-ctx)
+                  load-var (x/var-ref tp-Var bref)]
+              (x/invoke-xref jb/void [load-var v] rt/mhd-Var-bindRoot)))
+          (var-def-fresh ^Binding [nm form] ;new Clojure var
+            (when (x/meta-flag? nm :macro)
+              (wrong/other ":macro and :var are mutually exclusive"))
+            (when (x/meta-flag? nm :redef)
+              (wrong/other "FIXME ... :redef with :var"))
+            (let [tp (sig/tag-of nm false jb/Object tl-ctx)
+                  x (create-clj-var (name nm)
+                                    (when-some [meta (sq/source-meta nm)]
+                                      (compile-quote meta tl-ctx))
+                                    (when (some? v)
+                                      (conv/consume v tp))
+                                    (x/meta-flag? nm :dynamic)
+                                    tl-ctx)
+                  bref (x/global-ref nm (ctx/this-ns tl-ctx) tp false true x)]
+              (ctx/put-global (name nm) bref tl-ctx)
+              (x/global-binding bref x)))
+          (var-binding-then-get ^Expr [^Binding x]
+            (let [tp-Var (var-type tl-ctx)]
+              (xf/prog2-expr x (x/var-ref tp-Var (.bref x)))))]
+    
+    (when-not (ctx/global? tl-ctx)
+      ;; prevent def in a function, a deftype* method, or a reify*
+      ;; method
+      (wrong/other "cannot def in this position" form))
+    (wrong/check-argc 1 2 form)
+    (when (or (not (symbol? nm)) (some? (namespace nm)))
+      (wrong/syntax "var name must be an unqualified symbol" nm))
+    (if-some [d (prior-def nm)]
+      (do (assert (not (x/meta-flag? d :macro)))
+          (when-not (some? v)
+            (wrong/other "redefinition must provide a value"))
+          (if (x/meta-flag? d :var)
+            (assign-var-def-form d nm)
+            (assign-member-def-form d nm)))
+      (if (x/meta-flag? nm :var)
+        (-> (var-def-fresh nm form)
+            (var-binding-then-get))
+        (do
+          (when (x/meta-flag? nm :dynamic)
+            (wrong/other "flag :dynamic requires flag :var" nm))
+          (if (some? v)
+            (let [redef? (x/meta-flag? nm :redef)]
+              (if (and (not redef?)
+                       (x/pure-global-ref? v)
+                       (not (x/b-private? ^BindingRef v)))
+                (member-def-alias nm ^BindingRef v)
+                (member-def-fresh nm redef?)))
+            (member-def-noinit nm)))))))
+
+(defn- consume-args
+  (^IPersistentVector [^IPersistentVector acc
+                       ^IPersistentVector argv
+                       ^Executable e]
+   (let [ptypes (.getParameterTypes e)]
+     (if (.isVarArgs e)
+       ;; For a varargs method, skip adapting of arguments starting with
+       ;; the position of the vararg parameter.  FIXME... After
+       ;; Valhalla, revise this to check type of vararg arguments as
+       ;; well?
+       (consume-args acc argv ptypes
+                     (dec (alength ptypes)) jb/cl-polymorphic-type)
+       (consume-args acc argv ptypes
+                     Integer/MAX_VALUE jb/cl-null))))
+  (^IPersistentVector [^IPersistentVector acc
+                       ^IPersistentVector argv
+                       ^"[Ljava.lang.Class;" ptypes
+                       ^int start ^Class other-tp]
+   (loop [acc acc, i 0]
+     (if (= i (count argv))
+       acc
+       (let [ptype (if (>= i start) other-tp (aget ptypes i))]
+         (recur (conj acc (conv/consume (nth argv i) ptype))
+                (inc i)))))))
+
+;;; ------------------------------------------------------------------------
+
+(def ^:private flag-recur 0x1)    ;can recur from this position
+(def ^:private flag-tcf 0x2)      ;can emit try block at this positoin
+
+(def ^:private ctx-tlf flag-tcf)
+(def ^:private ctx-method-body (bit-or flag-recur flag-tcf))
+(def ^:private ctx-expr 0)            ;no recur, no inlined t/c/f
+(def ^:private ctx-finally 0)         ;no recur, no inlined t/c/f
+
+(defn- with-recur ^int [^int form-ctx]
+  (bit-or form-ctx flag-recur))
+(defn- without-recur ^int [^int form-ctx]
+  (bit-and form-ctx (bit-not flag-recur)))
+(defn- recur-pos? ^boolean [^int form-ctx]
+  (= (bit-and flag-recur form-ctx) flag-recur))
+(defn- tcf-pos? ^boolean [^int form-ctx]
+  (= (bit-and flag-tcf form-ctx) flag-tcf))
+
+(deftype Env
+    [^int level
+     ;; Level assigned to bindings created in this environment.
+     
+     ^String mnm-path
+     ;; Unique path string for this environment.  Nil if outside of
+     ;; any fn* or reify*.
+     
+     ^IPersistentMap locals
+     ;; Maps String to BindingRef.
+     
+     ^objects !closes-over
+     ;; Small mutable hash table recording the bindings that this
+     ;; function closes over.  Will usually hold at most a handful of
+     ;; entries, and is empty for most functions.  Entries can be
+     ;; traversed in insertion order.
+     
+     recur-fn
+     ;; Nil if no recur possible.
+     ])
+
+(defn- with-locals ^Env [^Env env locals]
+  (Env. (.level env) (.mnm-path env) locals (.!closes-over env)
+        (.recur-fn env)))
+(defn- with-recur-fn ^Env [^Env env recur-fn]
+  (Env. (.level env) (.mnm-path env) (.locals env) (.!closes-over env)
+        recur-fn))
+
+(letfn [(assoc-bref ^IPersistentMap [^IPersistentMap acc ^BindingRef bref]
+          #_(prn :assoc-bref (x/sname (bref)))
+          (assoc acc (name (x/sname bref)) bref))
+        (assoc-b ^IPersistentMap [^IPersistentMap acc ^Binding b]
+          (assoc-bref acc (.bref b)))]
+  (defn add-local ^Env [^Env env ^Binding b]
+    (with-locals env (assoc-b (.locals env) b)))
+  (defn add-locals ^Env [^Env env bs]
+    (with-locals env (reduce assoc-b (.locals env) bs)))
+  (defn add-fields ^Env [^Env env brefs]
+    (with-locals env (reduce assoc-bref (.locals env) brefs)))
+  (defn- level-fn-form ^int [^Env env]
+    (inc (.level env)))
+  (defn- enter-fn-arity ^Env [^Env env ^String unique-mnm ^Arity at
+                              ^ValueRef this-bref]
+    (Env. (level-fn-form env) unique-mnm
+          (cond-> (.locals env)
+            (and (some? (.this-name at)) (some? this-bref))
+            (assoc-bref this-bref))
+          (.!closes-over at) nil)))
+
+(defn mk-recur-fn [bv]
+  (fn recur-fn ^Expr [^Env env form args]
+    (wrong/check-argc (count bv) form)
+    (let [values (mapv (fn ^Expr [^Binding b ^Expr arg]
+                         (conv/consume arg (x/type (.bref b))))
+                       bv args)]
+      (x/insn-recur jb/no-return values bv))))
+
+(defn- resolve-sym-local ^BindingRef [^Env env ^Symbol sym]
+  (when (nil? (namespace sym))
+    (when-some [x ^BindingRef (get (.locals env) (name sym))]
+      (if (< x/lvl-global (x/b-level x) (.level env))
+        (or (util/sim-get (.!closes-over env) x)
+            (util/sim-put-absent! (.!closes-over env) x
+                                  (x/closure-alias (.level env) sym x)))
+        x))))
+
+(defn- resolve-sym-global ^Expr [^Symbol sym tl-ctx]
+  (if-some [x (ctx/lookup-global sym tl-ctx)]
+    x
+    (when (nil? (namespace sym))
+      (classname-expr sym tl-ctx))))
+
+(defn- expand-macro [^MacroRef x ^Env env form]
+  ;; Note: Macro in an isolated runtime setup is much more expansive
+  ;; than in the shared setup, where the compiler can call directly
+  ;; into the macro function.
+  (let [ex (.expand (.macro-fn x) env form)]
+    #_(prn :ex ex)
+    ex))
+
+(let [tag-sep "^"                       ;alternative infix [`,;^"]
+      tag-width 4
+      tag-pad ^String (apply str (repeat (dec tag-width) "0"))
+      format-tag (fn ^String [^int n]
+                   (let [s (.concat tag-pad (Integer/toHexString n))]
+                     (subs s (- (count s) tag-width))))]
+  
+  (defn- pick-unique-mnm ^String [^Env env ^Symbol dflt-nm form tl-ctx]
+    (let [pn-map (ctx/private-name-map tl-ctx)
+          mnm (str (.mnm-path env)
+                   (when (some? (.mnm-path env)) "$")
+                   (let [x (second form)]
+                     (cfg/munge-name (if (symbol? x) x dflt-nm))))
+          s (if (.containsKey pn-map mnm)
+              (loop [n (hash (cons mnm form))]
+                (let [s* (str mnm tag-sep (format-tag n))]
+                  (if (.containsKey pn-map s*)
+                    (recur (inc n))     ;linear probing
+                    s*)))
+              mnm)]
+      (.put pn-map s Boolean/TRUE)
+      s)))
+
+;;; Note: This function can produce a non-returning expression,
+;;; including a reference to a macro or to a primitive function, but
+;;; not an expression of type `jb/polymorphic?`.
+(defn- compile-form ^Expr [^Env env ^int form-ctx form tl-ctx]
+  (letfn
+      [(expr-form ^Expr [form]    ;pre: `form` is not in tail position
+         (-> (compile-form env ctx-expr form tl-ctx)
+             (x/ensure-runtime-value)
+             (conv/consume-poly)))
+       (expr-forms ^IPersistentVector [forms] ;returns vector of Expr
+         ;; not a mapv to keep stacktrace shallow & avoid closures;
+         ;; most calls of e.g. core lib pass in a seq of length 1
+         (if-some [s (seq forms)]
+           (loop [acc (vector (expr-form (first s))), s (next s)]
+             (if (nil? s)
+               acc
+               (recur (conj acc (expr-form (first s))) (next s))))
+           []))
+
+       (tail-form ^Expr [form]
+         (-> (compile-form env form-ctx form tl-ctx)
+             (x/ensure-runtime-outcome)))
+       (tail-forms ^Expr [^Env env ^int form-ctx forms tl-ctx]
+         ;; Not a mapv to keep stacktrace shallow & avoid closures.
+         ;; An empty `forms` is compiled to x/expr-empty.
+         (if-some [forms (seq forms)]
+           (loop [acc [], forms forms]
+             (if-some [nxt (next forms)]
+               (let [x (-> (compile-form env (without-recur form-ctx)
+                                         (first forms) tl-ctx)
+                           (x/ensure-runtime-outcome))]
+                 (recur (conj acc x) nxt))
+               (let [tail (-> (compile-form env form-ctx (first forms) tl-ctx)
+                              (x/ensure-runtime-outcome))]
+                 (xf/progn-expr acc tail))))
+           x/expr-empty))
+       
+       (compile-body ^Expr [^Env env ^Arity at tl-ctx]
+         (-> (with-recur-fn env (mk-recur-fn (.paramv at)))
+             (tail-forms ctx-method-body (rest (.aform at)) tl-ctx)
+             (conv/consume-body (.rtype at))
+             (x/with-innermost-form (.aform at))
+             (x/loop-body)))
+       (auto-rtype? ^boolean [^Arity at]
+         (jb/polymorphic? (.rtype at)))
+       (parse-arity-bodies ^FnForm [^FnForm fn-form ^Env env]
+         ;; Parse all function arities in one future.  While the
+         ;; smallest unit of work a single arity's body, there is
+         ;; little use in moving each arity into a future of its own.
+         (let [tl-ctx' (ctx/mk-methods tl-ctx)
+               body-fut (ctx/with-fork+context (ctx/exc-method tl-ctx) tl-ctx'
+                          (let [n (count (.at-sigs fn-form))
+                                aca (new "[Ltcljc.expr.ArityCode;" n)]
+                            (dotimes [i n]
+                              (let [at ^Arity (nth (.at-sigs fn-form) i)
+                                    this-bref (x/local-ref
+                                               (.level fn-form) (.this-name at)
+                                               (x/type fn-form) x/b-this-object
+                                               fn-form)
+                                    unique-mnm (.unique-mnm fn-form)
+                                    body (wrong/with-list-context (.aform at)
+                                           (-> (enter-fn-arity env unique-mnm
+                                                               at this-bref)
+                                               (add-locals (.paramv at))
+                                               (compile-body at tl-ctx')))
+                                    at' (cond-> at
+                                          (auto-rtype? at)
+                                          (x/with-rtype (x/type body)))]
+                                (aset aca i (x/mk-arity-code at' this-bref body))))
+                            aca))
+               fn-form (if (some auto-rtype? (.at-sigs fn-form))
+                         ;; Must force future early to pick up the
+                         ;; replacement type from the arity body.
+                         (->> ^"[Ltcljc.expr.ArityCode;"
+                              (ctx/wait-for-result body-fut)
+                              (mapv #(.at ^ArityCode %))
+                              (x/with-at-sigs fn-form))
+                         fn-form)]
+           (x/with-body-fut fn-form body-fut)))
+
+       (ensure-bindingv [x]
+         (when-not (vector? x)
+           (wrong/syntax "bindings must be a vector" x)))
+       (take-binding-sym [[x :as xs]]
+         (when (some? xs)
+           (when-not (symbol? x)
+             (wrong/syntax "expect binding name" x))
+           (when (= (count xs) 1)
+             (wrong/syntax "binding vector has odd number of elements"))
+           x))
+       (value-binding ^Binding [^Expr v ^int kind ^Symbol nm]
+         (-> (x/local-ref (.level env) nm (x/type v) kind v)
+             (x/local-binding v)))
+       (bindings [^Env env bindings-vec ^int kind]
+         (ensure-bindingv bindings-vec)
+         (loop [env env
+                bexprs []
+                bs (seq bindings-vec)]
+           (if-some [^Symbol nm (take-binding-sym bs)]
+             (let [dest-tag (sig/tag-of nm false jb/cl-polymorphic-type tl-ctx)
+                   v (compile-form env (without-recur form-ctx)
+                                   (second bs) tl-ctx)
+                   b (if (and (not= kind x/b-loop)
+                              (x/bref? v)
+                              (jb/polymorphic? dest-tag))
+                       ;; there is no type tag on `nm` and `v` could
+                       ;; be a macro or primitive function
+                       (let [v ^BindingRef v]
+                         (-> (x/alias-ref (.level env) nm nil v x/b-let)
+                             (x/local-binding v)))
+                       (-> (x/ensure-runtime-value v)
+                           (conv/consume dest-tag)
+                           (value-binding kind nm)))]
+               (recur (add-local env b) (conj bexprs b) (nnext bs)))
+             [env bexprs])))
+       (loop*-form ^Expr [[_ bindings-vec & body :as form]]
+         (let [[env bexprs] (bindings env bindings-vec x/b-loop)
+               body (-> (with-recur-fn env (mk-recur-fn bexprs))
+                        (tail-forms (with-recur form-ctx) body tl-ctx))]
+           (x/block bexprs (x/loop-body body))))
+       
+       (recur-form ^Expr [form]
+         (if (recur-pos? form-ctx)
+           ((.recur-fn env) env form (expr-forms (rest form)))
+           (wrong/syntax "cannot recur from this position")))
+       
+       (if-form [[_ test if-true if-false :as form]]
+         (wrong/check-argc 2 3 form)
+         (let [expr-test (expr-form test)
+               expr-true (tail-form if-true)
+               expr-false (if (and (nil? if-false) (= (count form) 3))
+                            (conv/expr-default (x/type expr-true))
+                            (tail-form if-false))]
+           (branch/if-expr expr-test expr-true expr-false)))
+
+       (throw-no-match [^Expr e]
+         (let [exc (x/invoke-xref jb/Exception [(conv/box-any-expr e)]
+                                  rt/mhd-no-matching-clause)]
+           (x/insn* jb/no-return [exc]
+                    (jdk.classfile.instruction.ThrowInstruction/of))))
+       (parse-case-clauses ^IPersistentVector [^Expr test clauses]
+         (loop [guardv []
+                path-idx 0
+                [g r :as clauses] (seq clauses)]
+           (cond
+             (nil? clauses)             ;case* has no default
+             [guardv (throw-no-match test)]
+             
+             (nil? (next clauses))      ;case* ends with default
+             [guardv (tail-form g)]
+
+             :else
+             (let [path-expr (tail-form r)]
+               (recur (into
+                       guardv
+                       (map #(do (-> (compile-quote % tl-ctx)
+                                     (conv/consume (x/type test)))
+                                 (x/mk-guard path-idx path-expr %)))
+                       (if (seq? g)
+                         (do (when-not (seq g)
+                               (wrong/other "empty list of test constants"))
+                             g)
+                         [g]))
+                      (inc path-idx)
+                      (nnext clauses))))))
+       (consume-case-paths [[^IPersistentVector guardv ^Expr dflt-path]]
+         (let [all-paths (conj (x/guard-paths guardv) dflt-path)
+               to-tp (x/type (conv/path-join all-paths))
+               pathv (conv/consume-paths to-tp all-paths)]
+           [to-tp
+            (mapv (fn ^Guard [^Guard g]
+                    (x/with-path-expr g (nth pathv (.path-idx g))))
+                  guardv)
+            (peek pathv)]))
+       (guard-path-idx ^int [^Guard g]
+         (.path-idx g))
+       (clause-code-segment [gs]
+         (let [xs (map (fn [^Guard g] (.gvalue g)) gs)]
+           (-> (if (= (count xs) 1) (first xs) xs)
+               (compile-quote tl-ctx))))
+       (clause-code-expr ^Expr [^Expr e guardv]
+         (let [cexprv (->> (partition-by guard-path-idx guardv)
+                           (mapv clause-code-segment))]
+           (x/invoke-dynamic jb/int [(-> (conv/box-any-expr e)
+                                         (x/objectcast))]
+                             rt/bsm-clause-code cexprv)))
+       (case*-form [[_ expr & clauses :as form]]
+         ;; Note: The test expression is evaluated again if a
+         ;; synthetic throw is added as default path.  That means that
+         ;; the wrapping macro should pass in a let binding as `expr`.
+         (wrong/check-argc-min 1 form)
+         (let [test (expr-form expr)
+               [to-tp guardv dflt-path] (-> (parse-case-clauses test clauses)
+                                            (consume-case-paths))]
+           ;; check for duplicate values in guards
+           (->> (map #(.gvalue ^Guard %) guardv)
+                (reduce (fn [seen x]
+                          (when (contains? seen x)
+                            (wrong/other (str "duplicate test constant: "
+                                              (wrong/q x))))
+                          (conj seen x))
+                        #{}))
+           (if (conv/computational-int? test) ;switch over int
+             (->> (mapv x/with-guard-int-value guardv)
+                  (x/switch to-tp test dflt-path))
+             ;; else: hashmap lookup followed by switch over encoder index
+             (->> (partition-by guard-path-idx guardv)
+                  (mapv #(x/with-guard-path-idx (first %)))
+                  (x/switch to-tp (clause-code-expr test guardv) dflt-path)))))
+       
+       (let*-form ^Expr [[_ bindings-vec & body :as form]]
+         (let [[env bexprs] (bindings env bindings-vec x/b-let)]
+           (x/block bexprs (tail-forms env form-ctx body tl-ctx))))
+       
+       (ensure-distinct-fn-names [fnv]
+         (doseq [x fnv]
+           (when-not (seq? x)
+             (wrong/syntax "function binding must be a list" x))
+           (wrong/ensure-simple-sym (first x)))
+         (when-not (apply distinct? nil (map first fnv))
+           (wrong/other (str "duplicate names in letfn bindings: "
+                             (->> (map first fnv)
+                                  (frequencies)
+                                  (remove #(= (val %) (object 1)))
+                                  (map (comp str key))
+                                  (str/join " "))))))
+       (macroexpand-fnvec [fnv]
+         (letfn [(prefix-with-fn [x]    ;prefix, discarding inner meta
+                   (cons 'fn (with-meta x nil)))
+                 (expand-once [[op-sym :as form]] ;pre: `form` is `seq?`
+                   ;; internal error if `op-sym` in not a symbol referring to
+                   ;; a macro; this code follows the logic of `compile-list`
+                   (let [x (or (resolve-sym-global op-sym tl-ctx)
+                               (wrong-unresolved op-sym))
+                         m ^MacroRef (x/root-bref ^BindingRef x)]
+                     (expand-macro m env form)))
+                 (expand-fn [form]
+                   (let [ex (expand-once form)]
+                     (if (and (seq? ex) (= (first ex) 'fn*))
+                       ex
+                       (do (assert (not (identical? form ex))
+                                   "cyclic macro expansion in letfn*")
+                           (recur ex)))))
+                 (destructure-to-fn* [form]
+                   (with-meta (expand-fn (prefix-with-fn form))
+                     (meta form)))]
+           (ensure-bindingv fnv)
+           (ensure-distinct-fn-names fnv)
+           (into [] (map destructure-to-fn*) fnv)))
+       (invoke-patch-fn ^Expr [^Binding b]
+         (FnPatch. nil jb/void [] nil ^FnForm (x/nth-arg b 0) (.bref b)))
+       (letfn*-form [[_ fnv & body :as form]]
+         (let [fn-formv (mapv (fn ^FnForm [form]
+                                (let [level (level-fn-form env)
+                                      mnm (pick-unique-mnm env 'fn form tl-ctx)]
+                                  (sig/destructure-fn*-form form level mnm tl-ctx)))
+                              (macroexpand-fnvec fnv))
+               bexprv (mapv (fn [^FnForm fn-form]
+                              (value-binding fn-form x/b-let
+                                             (x/fn-this-name fn-form)))
+                            fn-formv)
+               env (add-locals env bexprv)
+               bexprv (mapv (fn ^Binding [^Binding b]
+                              (let [fn-form ^FnForm (x/nth-arg b 0)
+                                    fn-form' (parse-arity-bodies fn-form env)]
+                                (x/local-binding (.bref b) fn-form')))
+                            bexprv)
+               body (xf/progn-expr (mapv invoke-patch-fn bexprv)
+                                   (tail-forms env form-ctx body tl-ctx))]
+           (x/block bexprv body)))
+       
+       (do-form ^Expr [[_ & exprs :as form]]
+         (tail-forms env form-ctx (rest form) tl-ctx))
+
+       (fn*-form ^FnForm [form]
+         (let [level (level-fn-form env)
+               unique-mnm (pick-unique-mnm env 'fn form tl-ctx)
+               fn-form (sig/destructure-fn*-form form level unique-mnm tl-ctx)]
+           (parse-arity-bodies fn-form env)))
+       
+       (quote-form ^Expr [form]
+         (wrong/check-argc 1 form)
+         (compile-quote (second form) tl-ctx))
+
+       (var-form [[_ arg :as form]]
+         (wrong/check-argc 1 form)
+         (let [v ^BindingRef (or (resolve-sym-global (wrong/ensure-sym arg) tl-ctx)
+                                 (wrong-unresolved arg))]
+           (when (not (x/b-def-var? v))
+             (wrong/other "not a ^:var def" arg))
+           (x/var-ref (var-type tl-ctx) v)))
+       
+       (import*-form ^Expr [form] ;returns the value of the last class
+         (let [import-map (grammar/parse-import-specs (rest form))]
+           (add-imports import-map tl-ctx)))
+
+       (argument-types ^"[Ljava.lang.Class;" [^IPersistentVector xv]
+         (let [a (new "[Ljava.lang.Class;" (count xv))]
+           (dotimes [i (alength a)]
+             (aset a i (x/type (nth xv i))))
+           a))
+       (pick-member [members ^String member-label ^Class owner ^String nm
+                     ^"[Ljava.lang.Class;" atypes]
+         (letfn [(invoke-ex-data []
+                   {:invoke/name nm
+                    :invoke/owner owner
+                    :invoke/arg-types atypes})]
+           (if-some [ms (seq members)]
+             (if (nil? (next ms))
+               (first ms)
+               (-> (str "multiple " member-label "s matching ")
+                   (wrong/unresolved-interop (symbol nm) (invoke-ex-data))))
+             (-> (str "no " member-label " matching ")
+                 (wrong/unresolved-interop (symbol nm) (invoke-ex-data))))))
+       (dot-form* ^Expr [^Expr cl-or-inst ^String nm arg-forms]
+         (let [argv (expr-forms arg-forms)
+               atypes (argument-types argv)
+               fields-only? (.startsWith nm "-")
+               nm (cond-> nm fields-only? (.substring 1))]
+           (if-some [owner (x/classname-type cl-or-inst)]
+             (let [member-label (cond
+                                  fields-only? "static field"
+                                  (pos? (alength atypes)) "static method"
+                                  :else "static member")]
+               (if-some [ms (when-not fields-only?
+                              (seq (resolve/static-methods owner nm atypes)))]
+                 (let [m ^Method (pick-member ms member-label owner nm atypes)
+                       argv (consume-args [] argv m)]
+                   (resolve/invoke-static owner m argv))
+                 (let [f (-> (resolve/static-fields owner nm atypes)
+                             ^Field (pick-member member-label owner nm atypes))]
+                   (resolve/load-static owner f []))))
+             (let [owner (x/type cl-or-inst)
+                   member-label (cond
+                                  fields-only? "virtual field"
+                                  (pos? (alength atypes)) "virtual method"
+                                  :else "virtual member")]
+               (if-some [ms (when-not fields-only?
+                              (seq (resolve/virtual-methods owner nm atypes)))]
+                 (let [m ^Method (pick-member ms member-label owner nm atypes)
+                       argv (consume-args [cl-or-inst] argv m)]
+                   (resolve/invoke-virtual owner m argv))
+                 (if (and (not fields-only?)
+                          (resolve/array-clone? owner nm atypes))
+                   (-> (resolve/invoke-array-clone owner cl-or-inst)
+                       (xf/checkcast owner))
+                   (let [f (-> (resolve/virtual-fields owner nm atypes)
+                               ^Field (pick-member member-label owner nm atypes))]
+                     (resolve/load-virtual owner f [cl-or-inst]))))))))
+       (dot-form ^Expr [[_ owner member-or-list & xr :as form]]
+         (wrong/check-argc-min 2 form)
+         (let [cl-or-inst (expr-form owner)]
+           (if (seq? member-or-list)
+             (wrong/with-list-context member-or-list
+               (wrong/check-argc 2 form)
+               (dot-form* cl-or-inst (take-member (first member-or-list))
+                          (next member-or-list)))
+             (dot-form* cl-or-inst (take-member member-or-list) xr))))
+
+       (settable-deftype-field? ^boolean [^Expr x]
+         (if (x/bref? x)
+           (let [bref ^BindingRef x]
+             (and (x/b-mutable? bref) (= (x/b-level bref) x/lvl-environment)))
+           false))
+       (settable-var? ^boolean [^Expr x]
+         (and (x/bref? x) (x/b-def-var? ^BindingRef x)))
+       (set!-form [[_ v x :as form]]
+         (wrong/check-argc 2 form)
+         (let [v-expr (expr-form v)
+               tp (x/type v-expr)
+               x-expr (conv/consume (expr-form x) tp)]
+           (cond
+             (or (x/settable-getter? v-expr) (settable-deftype-field? v-expr))
+             (x/setter tp v-expr x-expr (x/invoke-xref-static? v-expr))
+             
+             (settable-var? v-expr)
+             (let [v-expr (x/var-ref (var-type tl-ctx) ^BindingRef v-expr)]
+               (-> (x/invoke-xref jb/Object [v-expr x-expr] rt/mhd-Var-set)
+                   (xf/checkcast tp)))
+             
+             :else
+             (wrong/other (str "not a settable variable: " (wrong/q v)) v))))
+
+       (parse-method ^ArityCode [^Env env ^Arity at ^Class etp tl-ctx]
+         ;; based on `arity-body` above
+         (wrong/with-list-context form
+           (let [receiver-b (sig/mk-receiver (.level at) (.this-name at) etp)
+                 env (add-locals env (cons receiver-b (.paramv at)))]
+             (x/mk-arity-code at (.bref receiver-b)
+                              (compile-body env at tl-ctx)))))
+       (method-def ^MethodDef [^Env env form ^Class etp tl-ctx]
+         (let [at (sigclass/method-arity-type etp form x/lvl-environment
+                                              -1 tl-ctx)
+               ac (parse-method env at etp tl-ctx)]
+           (MethodDef. (.at ac) Classfile/ACC_PUBLIC
+                       (.this-bref ac) (.body-expr ac))))
+       (dtp-class-def ^DeftypeDef [^Env env short-sym fq-sym binary-sym
+                                   field-sig opts methods]
+         (let [this-class (ClassDesc/of (name binary-sym))
+               cdef (sigclass/eph-dtp-class-def this-class field-sig opts
+                                                tl-ctx)
+               
+               nmsp-ctx (ctx/namespace-ctx tl-ctx)
+               ;; Construct ephemeral type instance that is only valid
+               ;; inside this deftype* and derive the deftype's
+               ;; compilation context from it.
+               etp (ctx/send-msg (.emit nmsp-ctx) ctx/req-define-class-ephemeral
+                                 cdef)
+               method-ctx (ctx/mk-methods nmsp-ctx etp)]
+           
+           ;; Moving method compilation to other threads does not help
+           ;; much, because compilation can only progress once this
+           ;; class has been defined.
+           (ctx/with-context method-ctx false
+             (let [field-brefs (sigclass/dtp-field-brefs this-class field-sig
+                                                         method-ctx)
+                   env (add-fields env field-brefs)
+                   mdefs (mapv #(method-def env % etp method-ctx) methods)]
+               (DeftypeDef. cdef field-brefs mdefs nil)))))
+       (deftype*-form ^Expr [[_ fq-sym binary-sym field-sig & opts+specs]]
+         ;; only do rudimentary error messages because this form is
+         ;; produced by a macro
+         (assert (vector? field-sig))
+
+         (let [short-sym (symbol (name fq-sym))
+               [opts methods] (loop [acc {}, [x :as xs] opts+specs]
+                                (if (keyword? x)
+                                  (recur (assoc acc x (second xs)) (nnext xs))
+                                  [acc xs]))
+               cdef (dtp-class-def env short-sym fq-sym binary-sym
+                                   field-sig opts methods)
+               cl (ctx/send-msg (.emit (ctx/namespace-ctx tl-ctx))
+                                ctx/req-define-class cdef)]
+           x/expr-empty))
+
+       (reify*-form ^Expr [[_ itf-vector & methods :as form]]
+         (when-not (vector? itf-vector)
+           (wrong/syntax "expect vector of interface classes" itf-vector))
+
+         ;; reify* shares the general "closing over values" mechanism
+         ;; with functions.  For this reason, it is implemented as
+         ;; part of the function framework.  There are a number of
+         ;; differences, though.  Super type of reify* is Object
+         ;; (instead of AFnMh).  A reify* instance cannot be invoked
+         ;; like a function.  reify* always implements IObj, on top of
+         ;; the interfaces given in its definition.  A reify* instance
+         ;; is never translated into a constant (the assumption being
+         ;; that it always closes over some non-trivial value).
+         ;; reify* stores its own meta, and its value is passed to its
+         ;; static factory method (while functions always start with a
+         ;; meta of `nil`).
+         (let [unique-mnm (pick-unique-mnm env 'reify form tl-ctx)
+               this-class (ClassDesc/of (ctx/this-ns tl-ctx) unique-mnm)
+               eph-cdef (sigclass/eph-reify-class-def this-class itf-vector tl-ctx)
+               
+               ;; nmsp-ctx (ctx/namespace-ctx tl-ctx)
+               ;; FIXME... replace the nmsp-ctx hack with something sane?
+               nmsp-ctx (if (instance? tcljc.context.MethodsCtx tl-ctx)
+                          (.nmsp-ctx (ctx/methods-ctx tl-ctx))
+                          (ctx/namespace-ctx tl-ctx))
+               etp ^Class (ctx/send-msg (.emit nmsp-ctx)
+                                        ctx/req-define-class-ephemeral eph-cdef)
+               
+               atv (reduce (fn [acc form]
+                             (let [at-idx (count acc)
+                                   level (level-fn-form env)
+                                   at (sigclass/method-arity-type
+                                       etp form level at-idx tl-ctx)]
+                               (conj acc at)))
+                           [] methods)
+               fnc (x/mk-fn-code (count atv))
+               m (compile-meta (sq/source-meta form))
+
+               ;; A reify's ephemeral type is leaked into expression
+               ;; trees.  It becomes visible for example when invoking
+               ;; a method on the receiver.
+               tl-ctx' (ctx/mk-methods tl-ctx)
+               body-fut (ctx/with-fork+context (ctx/exc-method tl-ctx) tl-ctx'
+                          (let [n (count atv)
+                                aca (new "[Ltcljc.expr.ArityCode;" n)]
+                            (dotimes [i n]
+                              (let [at ^Arity (nth atv i)]
+                                (aset aca i (-> (enter-fn-arity env unique-mnm
+                                                                at nil)
+                                                (parse-method at etp tl-ctx')))))
+                            aca))]
+           (FnForm. form etp [m] nil (level-fn-form env) unique-mnm
+                    (.super-mhd eph-cdef) (.getInterfaces etp)
+                    atv body-fut fnc)))
+       
+       (definterface*-form [form]
+         (let [cdef (sigclass/itf-class-def (ctx/this-ns tl-ctx)
+                                            (.get-imports (ctx/tl-ctx* tl-ctx))
+                                            form)
+               cl (ctx/send-msg (.emit (ctx/namespace-ctx tl-ctx))
+                                ctx/req-define-class cdef)]
+           x/expr-empty))
+
+       (catch-form? ^boolean [x]
+         (and (seq? x) (= (first x) 'catch)))
+       (finally-form? ^boolean [x]
+         (and (seq? x) (= (first x) 'finally)))
+       (body-form? ^boolean [x]
+         (not (or (catch-form? x) (finally-form? x))))
+       (split-body-catches-finally [xs]
+         (let [[body xs] (split-with body-form? xs)
+               [cs xs] (split-with catch-form? xs)
+               [fs xs] (split-with finally-form? xs)]
+           (when-not (<= (count fs) 1)
+             (wrong/syntax "multiple finally clauses in try form"))
+           (when (seq xs)
+             (wrong/syntax "junk at end of try form"))
+           [body cs (first fs)]))
+       (catch-form [^Env env [_ class-expr nm & body :as form]]
+         (let [class-x (expr-form class-expr)
+               tp (ensure-classname class-x)
+               _ (when-not (symbol? nm)
+                   (wrong/syntax "expect binding name" nm))
+               _ (when-not (jb/throwable? tp)
+                   (x/wrong-type "expect subclass of Throwable" class-x tp))
+               ;; the exception instance is similar to a parameter
+               ;; (externally provided and not locally computed) but
+               ;; must be taken from the stack first; the binding's
+               ;; init expression is expr-provided representing the
+               ;; "out of thin air" character
+               bref (x/local-ref (.level env) nm tp x/b-let)
+               b (x/local-binding bref x/expr-provided)]
+           [tp (-> (x/block [b] (-> (add-local env b)
+                                    (tail-forms (without-recur form-ctx)
+                                                body tl-ctx)))
+                   (x/with-innermost-form form))]))
+       (try-form* ^Expr [[_ & forms :as form]]
+         (let [[body cs f] (split-body-catches-finally forms)
+               body-expr (-> (tail-forms env (without-recur form-ctx)
+                                         body tl-ctx)
+                             (x/with-innermost-form form))
+               ecs (mapv #(catch-form env %) cs) ;eager
+               finally-statm (-> (tail-forms env ctx-finally (rest f) tl-ctx)
+                                 (xf/coerce-to-statm)
+                                 (x/with-innermost-form f))
+               finally? (not (x/expr-empty? finally-statm))]
+           (if (or (some? (seq ecs)) finally?)
+             ;; have either a catch or finally             
+             (let [all-paths (cons body-expr (map second ecs))
+                   to-tp (x/type (conv/path-join all-paths))
+                   pathv (conv/consume-paths to-tp all-paths)]
+               (x/try-catch-finally
+                to-tp (nth pathv 0)
+                (cond-> (mapv (fn [[catch-ex _] catch-body]
+                                (x/try-handler catch-ex catch-body))
+                              ecs (rest pathv))
+                  finally? (conj (x/try-handler nil (x/throw x/expr-empty))))
+                finally-statm))
+             body-expr)))
+       (try-form ^Expr [form]
+         (if (tcf-pos? form-ctx)
+           (try-form* form)
+           (expr-form (list (list 'fn* 'try ^:auto-return-type [] form)))))
+
+       (throw-form ^Expr [[_ arg :as form]]
+         (wrong/check-argc 1 form)
+         (let [arg (expr-form arg)]
+           (when-not (jb/throwable? (x/type arg))
+             (x/wrong-type "expect instance of Throwable" arg))
+           (x/throw arg)))
+       
+       (monitor-form ^Expr [^Opcode opc [_ arg :as form]]
+         (wrong/check-argc 1 form)
+         (let [lockee (expr-form arg)]
+           (when-not (x/reference? lockee)
+             (x/wrong-type "monitor operation requires a reference" lockee))
+           (x/insn* jb/void [lockee]
+                    (jdk.classfile.instruction.MonitorInstruction/of opc))))
+
+       (class-const-or-expr ^Expr [form]
+         (-> (cond
+               (symbol? form)
+               (or (when (nil? (namespace form))
+                     (classname-expr form tl-ctx))
+                   (expr-form form))
+               (string? form)
+               (or (classname-expr form tl-ctx)
+                   (wrong/unresolved "unresolved type " form form))
+               :else (expr-form form))
+             (conv/consume jb/Class)))
+       (array-dims ^int [^int n ^Class cl]
+         (if (.isArray cl)
+           (recur (inc n) (.componentType cl))
+           n))
+       (new-form ^Expr [[_ cl-arg & args :as form]]
+         (wrong/check-argc-min 1 form)
+         (let [cn-expr (class-const-or-expr cl-arg)
+               args (expr-forms args)
+               tp (x/classname-type cn-expr)]
+           (cond
+             (nil? tp)                  ;implied by `cn-expr` of nil
+             (wrong/syntax "classname must be symbol or string" cl-arg)
+             
+             (jb/array? tp)
+             (let [lengthv (mapv ensure-int args)
+                   an (array-dims 0 tp)]
+               (if (<= 1 (count lengthv) an)
+                 (x/new-array tp lengthv)
+                 (wrong/other (str (if (= an 1)
+                                     "expect one dimension length"
+                                     (str "expect 1 to " an " dimension lengths"))
+                                   (wrong/got-int (count args))))))
+             :else
+             (let [owner tp
+                   nm cf/object-initializer-name
+                   member-label "constructor"
+                   atypes (argument-types args)
+                   c (-> (resolve/constructors owner atypes)
+                         ^Constructor (pick-member member-label owner nm atypes))
+                   argv (consume-args [] args c)]
+               (resolve/invoke-constr owner c argv)))))
+       
+       (instanceof*-form ^Expr [[_ cl-arg arg :as form]]
+         (wrong/check-argc 2 form)
+         (let [cn-expr (class-const-or-expr cl-arg)
+               arg (expr-form arg)]
+           (if-some [tp (x/classname-type cn-expr)]
+             (do
+               (when (jb/primitive? tp)
+                 (x/wrong-type (str "expect class, array, or interface type")
+                               cl-arg tp))
+               (when (jb/primitive? (x/type arg))
+                 (x/wrong-type "expect argument of reference type" arg))
+               (x/type-check arg Opcode/INSTANCEOF tp))
+             (do
+               (when (jb/primitive? (x/type arg))
+                 (x/wrong-type "expect argument of reference type" arg))
+               (x/invoke-xref jb/boolean [cn-expr arg] rt/mhd-isInstance)))))
+
+       
+       (adapt-args [op+argv ^Arity at ^int vararg-idx]
+         (loop [acc op+argv, i 1]
+           (if (< i (count op+argv))
+             (let [arg (nth op+argv i)]
+               (recur
+                (if (>= i vararg-idx)
+                  ;; FIXME... After Valhalla, revise this to adapt
+                  ;; vararg arguments to parameter type as well?
+                  (assoc acc (object i) (conv/consume-poly arg))
+                  (let [param-tp (x/at-parameter-type at (dec i))]
+                    (cond ;assume that acc isn't modified most of the time
+                      (jb/same-class? param-tp (x/type arg)) acc
+                      (and (jb/object? param-tp) (x/reference? arg)) acc
+                      :else (assoc acc (object i)
+                                   (conv/consume arg param-tp)))))
+                (inc i)))
+             acc)))
+       (call-fn-def ^Expr [^FnForm fn-form op+argv]
+         (with-call-fn-def-context fn-form op+argv
+           (let [n (dec (count op+argv))
+                 at (x/fn-at fn-form n)]
+             (when (nil? at)
+               (wrong-no-arity fn-form op+argv))
+             (let [rt (.rtype at)]
+               (when (jb/compile-time-entity? rt)
+                 (wrong/other "calling function arity with unknown result type"))
+               (let [argv (if (x/at-extern-varargs? at)
+                            (-> (adapt-args op+argv at (x/at-n at))
+                                (x/fix-vararg-array at))
+                            (adapt-args op+argv at Integer/MAX_VALUE))]
+                 (x/invoke-arity rt argv fn-form (.at-idx at)))))))
+       (call-fn-expr ^Expr [^Expr op-x form]
+         (let [op+argv (into [(x/ensure-runtime-value op-x)]
+                             (expr-forms (rest form)))]
+           (if-some [fn-form (x/root-fn-form op-x)]
+             (call-fn-def fn-form op+argv)
+             (do (check-callable op-x tl-ctx)
+                 (x/invoke-fn jb/cl-polymorphic-type
+                              (-> (mapv conv/consume-poly op+argv)
+                                  (x/fix-vararg-array)))))))
+       
+       (compile-meta ^Expr [m]
+         (if (nil? m)
+           x/expr-nil
+           ;; Problem: Cannot evaluate the `foo` in a meta map like
+           ;; {:tag foo}.  E.g. `int` would refer to a primitive
+           ;; function and does not have a value, while `objects` only
+           ;; exists as a class shortcut and not as a global var.
+           ;; Solution: Quote the value of the :tag map entry to
+           ;; retain its Symbol (or String) value.
+           (compile-atom (if-some [[k v] (find m :tag)]
+                           (assoc m k (list sq/sym-quote v))
+                           m))))
+       (collection-form ^Expr [^String tp-nm elems ^DirectMethodHandleDesc mhd]
+         (coll-literal tp-nm (map conv/consume-poly (expr-forms elems))
+                       mhd tl-ctx))
+       (resolve-static-member ^Expr [^Symbol sym]
+         (when-some [ns-part (namespace sym)]
+           (if-some [tp (ctx/get-type (symbol ns-part) tl-ctx)]
+             (dot-form* (x/const jb/Class tp) (name sym) ())
+             (wrong-unresolved-nmsp ns-part sym))))
+       (compile-atom ^Expr [form]
+         (if (instance? IMeta form)
+           (-> (cond
+                 (symbol? form) ;close to 90% hit rate for "is a symbol"
+                 (or (resolve-sym-local env form)
+                     (resolve-sym-global form tl-ctx)
+                     (resolve-static-member form)
+                     (wrong-unresolved form))
+                 
+                 (var? form) ;can come out of macro expansion, like Class
+                 (compile-list (list 'var (.toSymbol ^Var form)))
+                 
+                 :else
+                 (let [x (cond
+                           (vector? form)
+                           (collection-form rt/clnm-vector (seq form)
+                                            rt/mhd-vector)
+                           (map? form)
+                           (collection-form rt/clnm-map (mapcat identity form)
+                                            rt/mhd-map)
+                           (set? form)
+                           (collection-form rt/clnm-set (seq form)
+                                            rt/mhd-set)
+                           (seq? form)
+                           (collection-form rt/clnm-list form
+                                            rt/mhd-list)
+                           :else
+                           (throw (IllegalStateException. (str (class form)))))]
+                   (if-some [m (sq/source-meta form)]
+                     (with-meta-literal x (compile-meta m))
+                     x)))
+               (maybe-type-hint form))
+           (compile-constant-nometa form tl-ctx)))
+
+       (compile-macro-value ^BindingRef [nm]
+         (when (symbol? nm)
+           (when (x/meta-flag? nm :macro)
+             (when-some [mv-form (get (meta nm) :macro-value)]
+               (-> (or (resolve-sym-global (wrong/ensure-sym mv-form) tl-ctx)
+                       (wrong-unresolved mv-form))
+                   ^BindingRef (x/ensure-runtime-value))))))
+       (init-value-of-def ^Expr [form]  ;nil if init is not specified
+         (when-some [xs (nthnext form 2)]
+           ;; accepts anything, including macros or primitive functions
+           (compile-form env (without-recur form-ctx) (first xs) tl-ctx)))
+       (compile-list-special ^Expr [^Symbol op-form form] ;nil if regular
+         (when (nil? (namespace op-form))
+           (case op-form
+             def (let [v (init-value-of-def form)
+                       macro-v (compile-macro-value (second form))]
+                   (def-form form v macro-v tl-ctx))
+             loop* (loop*-form form)
+             recur (recur-form form)
+             if (if-form form)
+             case* (case*-form form)
+             let* (let*-form form)
+             letfn* (letfn*-form form)
+             do (do-form form)
+             fn* (fn*-form form)
+             quote (quote-form form)
+             var (var-form form)
+             import* (import*-form form)
+             . (dot-form form)
+             set! (set!-form form)
+             deftype* (deftype*-form form)
+             reify* (reify*-form form)
+             try (try-form form) ;note: finally & catch are not specials
+             throw (throw-form form)
+             monitor-enter (monitor-form Opcode/MONITORENTER form)
+             monitor-exit (monitor-form Opcode/MONITOREXIT form)
+             ;; catch is only special within `try-form`
+             ;; finally is only special within `try-form`
+             new (new-form form)
+             ;; & is only special within arity signature
+
+             ;; special forms that are not special in Clojure:
+             definterface* (definterface*-form form)
+             instanceof* (instanceof*-form form)
+             nil)))
+       (starts-with-dot? ^boolean [^String s]
+         (and (= (.charAt s 0) \.) (> (.length s) 1)))
+       (ends-with-dot? ^boolean [^String s]
+         (let [len (.length s)]
+           (and (= (.charAt s (- len 1)) \.)
+                (>= len 2) (not (= (.charAt s (- len 2)) \.)))))
+       (compile-dotted-symbol ^Expr [^Symbol x [_ inst & formr :as form]]
+         ;; Returns nil on mismatch.  FIXME... Clojure 1.8.0 (and
+         ;; probably later ones as well) produces a ClassCastException
+         ;; for "(let [Integer 123] (.toString Integer))" as well as
+         ;; "java.lang.integer" -- while a lower-case "integer" works
+         ;; fine.
+         (let [nm (name x)]
+           (cond
+             (starts-with-dot? nm)
+             (if (= nm "..")
+               (do (wrong/check-argc-min 2 form)
+                   (dot-form (reduce (fn [form member]
+                                       (list '. form member))
+                                     inst formr)))
+               (do (wrong/check-argc-min 1 form)
+                   (dot-form* (x/identity (expr-form inst)) ;force instance
+                              (subs nm 1) formr)))
+             
+             (and (nil? (namespace x)) (ends-with-dot? nm))
+             (new-form (list* 'new (symbol (subs nm 0 (dec (count nm))))
+                              (rest form)))
+
+             :else nil)))
+       (compile-static-dot-form ^Expr [^Symbol op-form form]
+         ;; pre: called when local & global resolve of op-form failed
+         ;; post: never returns nil
+         (if-some [ns-part (namespace op-form)]
+           (if-some [x (classname-expr (symbol ns-part) tl-ctx)]
+             (dot-form (list* '. (.const-value x) (symbol (name op-form))
+                              (rest form)))
+             (wrong-unresolved-nmsp ns-part op-form))
+           (wrong-unresolved op-form)))
+       (compile-list ^Expr [^ISeq form]
+         (let [op-form (first form)]
+           (if (symbol? op-form)
+             (or (compile-list-special op-form form)
+                 (compile-dotted-symbol op-form form)
+                 (let [x (or (resolve-sym-local env op-form)
+                             (resolve-sym-global op-form tl-ctx)
+                             (compile-static-dot-form op-form form))]
+                   (cond
+                     (or (x/invoke-xref? x) (x/invoke-poly? x))
+                     x                  ;dot form (Foo/bar ...)
+                     
+                     (x/b-primitive? x)
+                     (let [p ^PrimitiveFnRef (x/root-bref x)]
+                       (.assemble (.primitive-fn p) form
+                                  (expr-forms (rest form)) tl-ctx))
+                     
+                     (x/b-macro? x)
+                     (let [m ^MacroRef (x/root-bref x)]
+                       ;; note: recursive `compile-form` picks up error context
+                       (compile-form env form-ctx (expand-macro m env form)
+                                     tl-ctx))
+                     
+                     :else
+                     (call-fn-expr x form))))
+
+             (if (seq form)             ;guard against empty list
+               (-> (compile-form env (without-recur form-ctx) op-form tl-ctx)
+                   (call-fn-expr form))
+               (compile-atom form))))) ;empty list (), possibly with meta
+       
+       (maybe-type-hint ^Expr [^Expr x ^IMeta form]
+         (let [tag (sig/tag-of form true nil tl-ctx)]
+           (cond
+             (jb/polymorphic? (x/type x))
+             (-> (x/ensure-runtime-value x)
+                 (x/with-monomorphic-result (or tag jb/Object)))
+
+             (some? tag)
+             (let [x (x/ensure-runtime-value x)]
+               (cond
+                 (x/type? tag x) x
+                 
+                 (jb/statement? tag) (xf/coerce-to-statm x)
+                 
+                 (jb/primitive? tag)
+                 (if (x/reference? x)
+                   (conv/primitive-unbox-expr tag x)
+                   (x/wrong-type (str "cannot cast to " (wrong/q tag)) x))
+
+                 (x/primitive? x)
+                 (x/wrong-type (str "cannot cast to " (wrong/q tag)) x)
+                 
+                 :else (xf/coerce x tag)))
+
+             :else x)))]             ;`x` can be a compile-time entity
+    
+      #_(binding [*print-meta* #_false true] (prn :compile-form form))
+      (-> (if (seq? form)
+            (wrong/with-list-context form
+              (maybe-type-hint (compile-list form) form))
+            (compile-atom form))
+          (x/with-innermost-form form))))
+
+(def ^:private empty-global-env (Env. x/lvl-environment nil {} nil nil))
+(defn top-level-form ^void [form ^NamespaceCtx nmsp-ctx]
+  (let [mc-pre (.update-macro-count nmsp-ctx 0)
+        x (-> (compile-form empty-global-env ctx-tlf form nmsp-ctx)
+              (x/ensure-runtime-outcome)
+              (conv/consume jb/void))
+        mc-post (.update-macro-count nmsp-ctx 0)]
+    (ctx/send-msg (.emit nmsp-ctx) ctx/msg-emit-tlf x)
+    (when (and (not cfg/deterministic-namespace-compile?) (not= mc-pre mc-post))
+      ;; After a macro, delay further compilation until the macro's
+      ;; top-level form has made it into the emit queue.  This means
+      ;; that its effect's are visible to all future `req-macro-value`
+      ;; requests.
+      (ctx/send-msg (.emit nmsp-ctx) ctx/req-flush-s-queue nil))))
+
+;;; ------------------------------------------------------------------------
+
+(defn primitive-conv-to ^FnPrimitiveFn [^Class to-tp]
+  (let [conv-to-fn (conv/lookup-conv-to-fn* to-tp)]
+    
+    (fn ^FnPrimitiveFn conv-fn [form argv tl-ctx]
+      (wrong/check-argc 1 form)
+      (let [arg ^Expr (nth argv 0)]
+        (if (x/reference? arg)
+          (conv/primitive-conv-from-object to-tp arg)
+          (conv/conv-to to-tp conv-to-fn arg))))))
+
+(defn ^FnPrimitiveFn identity-primitive [form argv tl-ctx]
+  (wrong/check-argc 1 form)
+  (x/identity (nth argv 0)))
+
+(defn ^FnPrimitiveFn boolean-primitive [form argv tl-ctx]
+  (wrong/check-argc 1 form)
+  (branch/conv-to-boolean (nth argv 0)))
+
+(defn ^FnPrimitiveFn object-primitive [form argv tl-ctx]
+  (wrong/check-argc 1 form)
+  (let [arg ^Expr (nth argv 0)]
+    (cond
+      (x/statement? arg) x/expr-nil
+      (x/reference? arg) (x/identity arg)
+      :else (conv/box-expr arg))))
+
+(defn ^FnPrimitiveFn list-primitive [form argv tl-ctx]
+  ;; mirrors `collection-form`, with `args` being Exprs already
+  (coll-literal rt/clnm-list argv rt/mhd-list tl-ctx))
+
+(defn ^FnPrimitiveFn not-primitive [form argv tl-ctx]
+  (-> (boolean-primitive form argv tl-ctx) ;also checks argc
+      (xf/icmp x/expr-false cf/eq)))
+
+;;; FIXME... for a single argument of reference type, this can be
+;;; reduced to (Objects/toString arg "") -- which may also be a good
+;;; alternative to null-to-empty-string
+(defn ^FnPrimitiveFn concat-primitive [form argv tl-ctx] ;aka `str`
+  (letfn [(string-or-expr [^Expr x]
+            (cond
+              (x/const-value? x)
+              (let [c (.const-value x)]
+                (cond
+                  (.equals c jb/jvm-null)
+                  ""
+                  
+                  (x/primitive? x)
+                  (str (rt/recover-primitive c (x/type x)))
+
+                  (or (string? c) (symbol? c) (keyword? c) (class? c))
+                  (str c)
+
+                  (instance? Pattern c)
+                  (.pattern ^Pattern c)
+                  
+                  :else x))             ;non-null reference
+              
+              (x/reference? x)
+              (x/invoke-xref jb/Object [x] rt/mhd-null-string)
+              
+              :else x))]                ;is some non-null constant
+    (let [args (map string-or-expr argv)
+          rstr (apply str (map #(if (string? %) % "\u0001") args))
+          recipe (x/const jb/String rstr)]
+      (if-some [nc-args (seq (remove string? args))]
+        (x/invoke-dynamic jb/String (vec nc-args) rt/bsm-concat [recipe])
+        recipe))))
+
+
+(defn- typed-opcode
+  (^int [^Class tp]
+   (condp jb/same-class? tp
+     jb/long 1                          ;ladd
+     jb/float 2                         ;fadd
+     jb/double 3                        ;dadd
+     #_else 0))                         ;iadd
+  (^Opcode [^Opcode base-opcode ^Class tp]
+   (cf/bc2opc base-opcode (typed-opcode tp))))
+
+(defn arith-2 ^FnPrimitiveFn [^Opcode int-opc]
+  (fn ^FnPrimitiveFn arith-2-form [form args tl-ctx]
+    (when (some? form)
+      (wrong/check-argc 2 form))        ;unless called by nary-numeric
+    (let [arg0 (conv/ensure-numeric (nth args 0))
+          arg1 (conv/ensure-numeric (nth args 1))
+          to-tp (conv/upper-numeric-tp arg0 arg1)]
+      (xf/arith-2 to-tp (conv/widen-from to-tp arg0)
+                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
+
+(defn ^FnPrimitiveFn arith-2-xdiv-int [form args tl-ctx]
+  (let [x ((arith-2 Opcode/IDIV) form args tl-ctx)]
+    ;; FIXME... this does not work if the result is out of range of
+    ;; long; maybe better: truncate with something along the line of
+    ;; `(if (neg? x) (Math/ceil x) (Math/floor x))` (or put this into
+    ;; a static method that first checks if the division result is in
+    ;; range for long, and only falls back to the ceil/floor variant
+    ;; if out of range)
+    (condp x/type? x
+      jb/float (-> (conv/to-long x) (conv/to-float))
+      jb/double (-> (conv/to-long x) (conv/to-double))
+      #_else x)))
+
+(defn- ensure-float ^Expr [^Expr from] ;returns float or double expression
+  (if (x/numeric? from)
+    (if (resolve/numeric-assignable-to? (x/type from) jb/float)
+      (conv/widen-from jb/float from)
+      from)                             ;from is double
+    (x/wrong-type "expect float or double expression" from)))
+
+(defn arith-2-float ^FnPrimitiveFn [^Opcode int-opc]
+  (fn ^FnPrimitiveFn arith-2-float-form [form args tl-ctx]
+    (when (some? form)
+      (wrong/check-argc 2 form))        ;unless called by nary-numeric
+    (let [arg0 (ensure-float (nth args 0))
+          arg1 (ensure-float (nth args 1))
+          to-tp (conv/upper-numeric-tp arg0 arg1)]
+      (xf/arith-2 to-tp (conv/widen-from to-tp arg0)
+                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
+
+(defn- ensure-integral ^Expr [^Expr from]
+  (if (resolve/numeric-assignable-to? (x/type from) jb/long)
+    (conv/ensure-numeric from)
+    (x/wrong-type "expect integral expression" from)))
+
+(defn bits-2 ^FnPrimitiveFn [^Opcode int-opc]
+  (fn ^FnPrimitiveFn bits-2-form [form args tl-ctx]
+    (when (some? form)
+      (wrong/check-argc 2 form))        ;unless called by nary-numeric
+    (let [arg0 (ensure-integral (nth args 0))
+          arg1 (ensure-integral (nth args 1))
+          to-tp (conv/upper-numeric-tp arg0 arg1)]
+      (xf/bits-2 to-tp (conv/widen-from to-tp arg0)
+                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
+
+(defn shift-2 ^FnPrimitiveFn [^Opcode int-opc]
+  (fn ^FnPrimitiveFn shift-2-form [form args tl-ctx]
+    (wrong/check-argc 2 form)
+    (let [arg0 (ensure-integral (nth args 0))
+          arg1 (ensure-int (nth args 1))
+          to-tp (x/type arg0)]
+      (xf/bits-2 to-tp arg0 arg1 (typed-opcode int-opc to-tp)))))
+
+
+(defn nary-numeric ^FnPrimitiveFn [^int min-argc ^Expr id ^FnPrimitiveFn pfn]
+  (fn ^FnPrimitiveFn nary-numeric-fn [form args tl-ctx]
+    (wrong/check-argc-min min-argc form)
+    (case (bounded-count 3 args)
+      0 id
+      1 (pfn nil (list id (first args)) tl-ctx)
+      2 (pfn form args tl-ctx)
+      (reduce #(pfn nil (list %1 %2) tl-ctx) (first args) (rest args)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn ^FnPrimitiveFn xdefault [form [arg0] tl-ctx] ;discards argument!
+  (wrong/check-argc 1 form)
+  (conv/expr-default (x/type arg0)))
+
+;;; ------------------------------------------------------------------------
+
+;; FIXME... handling of NaN values is incomplete here (see "3.5 More
+;; Control Examples" of JVMS, fcmpl/fcmpg and dcmpl/dcmpg).  In
+;; particular, check whether "if (f1 != f2) ..." is equivalent to "if
+;; (!(f1 == f2)) ...".  Probably not, but Clojure has no !=.  Add NaN
+;; & negative zero test cases to ieee754-test.
+(defn binary-cmp ^FnPrimitiveFn [^int cmp-opcd]
+  (fn ^FnPrimitiveFn binary-cmp-fn [form [arg0 arg1] tl-ctx]
+    (when form
+      (wrong/check-argc 2 form))       ;unless called by nary-cmp
+    (branch/xcmp cmp-opcd arg0 arg1)))
+
+(defn- ensure-reference ^Expr [^Expr from]
+  (if (x/reference? from)
+    from
+    (x/wrong-type "expect reference expression" from)))
+
+(defn binary-cmp-ref ^FnPrimitiveFn [^int cmp-opcd]
+  (fn ^FnPrimitiveFn binary-cmp-ref-fn [form [arg0 arg1] tl-ctx]
+    (wrong/check-argc 2 form)
+    (xf/acmp (ensure-reference arg0) (ensure-reference arg1) cmp-opcd)))
+
+(defn- as-anonymous-bindings [args]
+  ;; note: simplified version of logic from fn bindings above
+  (loop [bexprs []
+         brefs []
+         [init-with & argr] args]
+    (if (nil? init-with)
+      [bexprs brefs]
+      (if (x/pure-let-initialization? init-with)
+        (recur bexprs (conj brefs init-with) argr)
+        (let [nm '__temp
+              bref (x/local-ref -1 nm (x/type init-with) x/b-let init-with)
+              b (x/local-binding bref init-with)]
+          (recur (conj bexprs b) (conj brefs bref) argr))))))
+
+(defn nary-cmp ^FnPrimitiveFn [^FnPrimitiveFn binary-pfn]
+  (fn ^FnPrimitiveFn nary-cmp-fn [form args tl-ctx]
+    (wrong/check-argc-min 1 form)
+    (case (bounded-count 3 args)
+      1 (xf/prog2-expr (nth args 0) x/expr-true)
+      2 (binary-pfn form args tl-ctx)
+      ;; Compute all arguments beforehand, otherwise the short circuit
+      ;; logic of `if` may skip their exceptions.  Expand as primitive
+      ;; instead of macro, because a macro would depend on gensym.
+      (let [[bexprs brefs] (as-anonymous-bindings args)
+            res (reduce (fn [cont [ref1 ref2]]
+                          (let [test (binary-pfn nil [ref1 ref2] tl-ctx)]
+                            (branch/if-expr test cont x/expr-false)))
+                        x/expr-true
+                        (reverse (partition 2 1 brefs)))]
+        (x/block bexprs res)))))
+
+;;; Note: Clojure's equiv does not follow Java's equals with regard to
+;;; e.g. negative zero -- (= -0.0 0.0) is true like Util/equiv, at
+;;; least with Clojure 1.11.1.  To match this, both (hash -0.0) and
+;;; (hash 0.0) map to zero.  This means that `=` can be lowered to
+;;; `==` for floating point types as well.
+(defn ^FnPrimitiveFn equiv [form [arg0 arg1] tl-ctx]
+  (letfn [(equiv-if-identical? ^boolean [^Expr x]
+            (let [tp (x/type x)]
+              (jb/same-classname? rt/clnm-keyword tp)))]
+    (wrong/check-argc 2 form)
+    (cond
+      (and (conv/computational-int? arg0)
+           (x/same-type? arg0 arg1)) ;includes boolean/boolean & char/char
+      (xf/icmp arg0 arg1 cf/eq)
+      
+      (or (x/primitive? arg0) (x/primitive? arg1))
+      (branch/xcmp cf/eq arg0 arg1)
+
+      (or (equiv-if-identical? arg0) (equiv-if-identical? arg1))
+      (xf/acmp arg0 arg1 cf/eq)
+      
+      :else
+      (x/invoke-xref jb/boolean [arg0 arg1] rt/mhd-equiv))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- ensure-array ^Expr [^Expr x]
+  (if (jb/array? (x/type x))
+    x
+    (x/wrong-type "expect array expression" x)))
+
+(defn ^FnPrimitiveFn alength-form [form args tl-ctx]
+  (wrong/check-argc 1 form)
+  (let [a (ensure-array (nth args 0))
+        instr (jdk.classfile.instruction.OperatorInstruction/of Opcode/ARRAYLENGTH)]
+    (x/insn* jb/int [a] instr)))
+
+(defn ^FnPrimitiveFn xaload-form [form args tl-ctx]
+  (wrong/check-argc 2 form)
+  (let [a (ensure-array (nth args 0))
+        i (ensure-int (nth args 1))
+        ccl (.componentType (x/type a))
+        opc (cf/bc2opc Opcode/IALOAD (cf/opcode-delta ccl))]
+    (x/insn* ccl [a i]
+             (jdk.classfile.instruction.ArrayLoadInstruction/of opc))))
+
+(defn ^FnPrimitiveFn xastore-form [form args tl-ctx]
+  ;; Unlike the xASTORE bytecode, this primitive returns the stored
+  ;; value.  If passed to `as-statement`, the final "DUP*" argument
+  ;; can be dropped in favour of doing the matching "POP*".
+  (wrong/check-argc 3 form)
+  (let [a (ensure-array (nth args 0))
+        i (ensure-int (nth args 1))
+        ccl (.componentType (x/type a))
+        v (conv/consume (nth args 2) ccl)
+        opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ccl))]
+    (x/insn* ccl [a i v (x/dup-x2 ccl)]
+             (jdk.classfile.instruction.ArrayStoreInstruction/of opc))))

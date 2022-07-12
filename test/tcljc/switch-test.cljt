@@ -1,0 +1,656 @@
+(ns tcljc.switch-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr]]
+            [tcljc.reader-test :as rdt :refer [deterministic-gensyms]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest int-cmp-test
+  (is (= '[#_(ICONST_1)
+           #_(ICONST_2)
+           #_(IF_ICMPGE L:0)
+           (ICONST_1)
+           (IRETURN)
+           #_[L:0]
+           #_(ICONST_0)
+           #_(IRETURN)]
+         (asm-expr (< 1 2))))
+
+  (is (= '[(ICONST_1)
+           (IRETURN)]
+         (asm-expr (< 2))))
+  (is (= ' [["LOCAL 0: int c"]
+            (ILOAD_0)
+            (I2F)
+            (FCONST_1)
+            (FDIV)
+            (POP)
+            (ICONST_1)
+            (IRETURN)]
+           (asm-expr [^int c] (< (/ c 1)))))
+
+  (is (= '[#_(ICONST_1)
+           #_(ICONST_2)
+           #_(IF_ICMPGE L:1)
+           #_(ICONST_2)
+           #_(ICONST_3)
+           #_(IF_ICMPGE L:0)
+           (ICONST_1)
+           (IRETURN)
+           #_[L:0]
+           #_(ICONST_0)
+           #_(IRETURN)
+           #_[L:1]
+           #_(ICONST_0)
+           #_(IRETURN)]
+         (asm-expr (< 1 2 3))))
+  (is (= '[["LOCAL 0: int i"]
+           (ILOAD_0)
+           (ICONST_1)
+           (IADD)
+           (ISTORE_1)
+           ["LOCAL 1: int __temp"]
+           (ILOAD_0)
+           (ICONST_2)
+           (IADD)
+           (ISTORE_2)
+           ["LOCAL 2: int __temp"]
+           (ILOAD_0)
+           (ICONST_3)
+           (IADD)
+           (ISTORE_3)
+           ["LOCAL 3: int __temp"]
+           
+           (ILOAD_1)
+           (ILOAD_2)
+           (IF_ICMPGE L:1)
+           (ILOAD_2)
+           (ILOAD_3)
+           (IF_ICMPGE L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)
+           [L:1]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^int i] (< (+ i 1) (+ i 2) (+ i 3)))))
+
+  (is (= '[#_(BIPUSH 99)
+           #_(IFLE L:0)
+           (ICONST_1)
+           (IRETURN)
+           #_[L:0]
+           #_(ICONST_0)
+           #_(IRETURN)]
+         (asm-expr (< 0 99)))))
+
+(deftest identical-test
+  (is (= '[["LOCAL 0: Object x"]
+           ["LOCAL 1: Object y"]
+           (ALOAD_0)
+           (ALOAD_1)
+           (IF_ACMPNE L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x y] (identical? x y))))
+  (is (= '[["LOCAL 0: Object x"]
+           ["LOCAL 1: Object y"]
+           (ALOAD_0)
+           (ALOAD_1)
+           (IF_ACMPEQ L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x y] (not (identical? x y)))))
+  
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (IFNONNULL L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x] (identical? x nil))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (IFNULL L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x] (not (identical? x nil)))))
+  
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (IFNONNULL L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x] (identical? nil x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (IFNULL L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x] (not (identical? nil x)))))
+
+  ;; NYI identical? involving primitive values incl. void
+  ;; (is (= [] (run-i "(identical? 1 nil)")))
+  ;; (is (= [] (run-i "(identical? true nil)")))
+  ;; (is (= [] (run-i "(identical? false nil)")))
+  )
+
+(deftest nil-test
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (IFNONNULL L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x] (nil? x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (IFNULL L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x] (not (nil? x))))))
+
+(deftest some-test
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (IFNULL L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x] (some? x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (IFNONNULL L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x] (not (some? x))))))
+
+(deftest equals-test
+  (let [exp-icmp '[#_(ICONST_1)
+                   #_(ICONST_2)
+                   #_(IF_ICMPNE L:0)
+                   #_(ICONST_1)
+                   #_(IRETURN)
+                   #_[L:0]
+                   (ICONST_0)
+                   (IRETURN)]]
+    (is (= exp-icmp
+           (asm-expr (== 1 2))))
+    (is (= exp-icmp
+           (asm-expr (= 1 2)))))
+
+  (is (= '[(LDC "1")
+           (LDC "2")
+           (INVOKESTATIC Util "equiv" "(Ljava/lang/Object;Ljava/lang/Object;)Z")
+           (IRETURN)]
+         (asm-expr (= "1" "2")))))
+
+(deftest zero-test
+  (is (= '[#_(ICONST_0)
+           #_(ICONST_1)
+           #_(ICONST_2)
+           #_(IAND)
+           #_(IFEQ L:0)
+           #_(ICONST_1)
+           #_(IRETURN)
+           #_[L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr (not (zero? (bit-and 1 2)))))))
+
+
+(deftest other-cmp-test
+  ;; non-int comparison first goes through a binary xcmp instruction,
+  ;; whose result is then compared (via int comparison) to zero
+  (is (= '[#_(LCONST_1)
+           #_(LDC2_W 2)
+           #_(LCMP)
+           #_(IFGE L:0)
+           (ICONST_1)
+           (IRETURN)
+           #_[L:0]
+           #_(ICONST_0)
+           #_(IRETURN)]
+         (asm-expr (< (long 1) (long 2)))))
+  (is (= '[#_(FCONST_1)
+           #_(FCONST_2)
+           #_(FCMPG)
+           #_(IFGE L:0)
+           (ICONST_1)
+           (IRETURN)
+           #_[L:0]
+           #_(ICONST_0)
+           #_(IRETURN)]
+         (asm-expr (< (float 1) (float 2)))))
+  (is (= '[#_(DCONST_1)
+           #_(LDC2_W 2.0)
+           #_(DCMPG)
+           #_(IFGE L:0)
+           (ICONST_1)
+           (IRETURN)
+           #_[L:0]
+           #_(ICONST_0)
+           #_(IRETURN)]
+         (asm-expr (< 1.0 2.0)))))
+
+(deftest other-equals-test
+  (is (= '[#_(LCONST_1)
+           #_(LDC2_W 2)
+           #_(LCMP)
+           #_(IFNE L:0)
+           #_(ICONST_1)
+           #_(IRETURN)
+           #_[L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr (== (long 1) (long 2)))))
+  (is (= '[#_(FCONST_1)
+           #_(FCONST_2)
+           #_(FCMPG)
+           #_(IFNE L:0)
+           #_(ICONST_1)
+           #_(IRETURN)
+           #_[L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr (== (float 1) (float 2)))))
+  (is (= '[#_(DCONST_1)
+           #_(LDC2_W 2.0)
+           #_(DCMPG)
+           #_(IFNE L:0)
+           #_(ICONST_1)
+           #_(IRETURN)
+           #_[L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr (== 1.0 2.0))))
+
+  ;; for primitive numbers, = is equivalent to ==
+  (is (= (asm-expr (== 1 2))
+         (asm-expr (= 1 2))))
+  (is (= (asm-expr (== (long 1) (long 2)))
+         (asm-expr (= (long 1) (long 2)))))
+  (is (= (asm-expr (== (float 1) (float 2)))
+         (asm-expr (= (float 1) (float 2)))))
+  (is (= (asm-expr (== 1.0 2.0))
+         (asm-expr (= 1.0 2.0))))
+
+  ;; addtionally, = can compare primitive booleans & characters
+  (is (= '[#_(ICONST_1)
+           #_(IFNE L:0)
+           #_(ICONST_1)
+           #_(IRETURN)
+           #_[L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr (= true false))))
+  (is (= '[#_(BIPUSH 97)
+           #_(BIPUSH 98)
+           #_(IF_ICMPNE L:0)
+           #_(ICONST_1)
+           #_(IRETURN)
+           #_[L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr (= \a \b)))))
+
+;;; ------------------------------------------------------------------------
+
+(deftest switch-ints-with-default
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (TABLESWITCH 0 3 L:2 [L:0 L:1 L:1 L:1])
+           [L:0] (ICONST_M1) (IRETURN)
+           [L:1] (BIPUSH 123) (IRETURN)
+           [L:2] (SIPUSH 1000) (IRETURN)]
+         (asm-expr ^int [^int x]
+                   (case* x
+                          0 -1
+                          (1 2 3) 123
+                          1000))))
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (LOOKUPSWITCH L:3 [0 1 2 3 999] [L:0 L:1 L:1 L:1 L:2])
+           [L:0] (ICONST_M1) (IRETURN)
+           [L:1] (BIPUSH 123) (IRETURN)
+           [L:2] (SIPUSH 999) (IRETURN)
+           [L:3] (SIPUSH 1000) (IRETURN)]
+         (asm-expr ^int [^int x]
+                   (case* x
+                          0 -1
+                          (1 2 3) 123
+                          999 999
+                          1000)))))
+
+(deftest switch-ints-without-default
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (TABLESWITCH 0 3 L:2 [L:0 L:1 L:1 L:1])
+           [L:0] (ICONST_M1) (IRETURN)
+           [L:1] (BIPUSH 123) (IRETURN)
+           [L:2]
+           (ILOAD_0)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (INVOKESTATIC RT "noMatchingClause" "(Ljava/lang/Object;)Ljava/lang/Exception;")
+           (ATHROW)]
+         (asm-expr ^int [^int x]
+                   (case* x
+                          0 -1
+                          (1 2 3) 123))))
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (LOOKUPSWITCH L:3 [0 1 2 3 999] [L:0 L:1 L:1 L:1 L:2])
+           [L:0] (ICONST_M1) (IRETURN)
+           [L:1] (BIPUSH 123) (IRETURN)
+           [L:2] (SIPUSH 999) (IRETURN)
+           [L:3]
+           (ILOAD_0)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (INVOKESTATIC RT "noMatchingClause" "(Ljava/lang/Object;)Ljava/lang/Exception;")
+           (ATHROW)]
+         (asm-expr ^int [^int x]
+                   (case* x
+                          0 -1
+                          (1 2 3) 123
+                          999 999)))))
+
+(deftest switch-keywords-with-default
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)I" :bsm-clause-code
+                          [[:bsm-quote "list" "Lclojure/lang/ISeq;"
+                            [[:bsm-quote "keyword" "Lclojure/lang/Keyword;"
+                              ["a"]]
+                             [:bsm-quote "keyword" "Lclojure/lang/Keyword;"
+                              ["A"]]]]
+                           [:bsm-quote "list" "Lclojure/lang/ISeq;"
+                            [[:bsm-quote "keyword" "Lclojure/lang/Keyword;"
+                              ["b"]]
+                             [:bsm-quote "keyword" "Lclojure/lang/Keyword;"
+                              ["B"]]]]])
+           (LOOKUPSWITCH L:2 [0 1] [L:0 L:1])
+           [L:0] (BIPUSH 10) (IRETURN)
+           [L:1] (BIPUSH 11) (IRETURN)
+           [L:2] (BIPUSH 9) (IRETURN)]
+         (asm-expr ^int [x]
+                   (case* x
+                          (:a :A) 10
+                          (:b :B) 11
+                          9)))))
+
+(deftest switch-doubles-with-default
+  (is (= '[["LOCAL 0: double x"]
+           (DLOAD_0)
+           (INVOKESTATIC Double "valueOf" "(D)Ljava/lang/Double;")
+           (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)I" :bsm-clause-code
+                          [[:bsm-quote "list" "Lclojure/lang/ISeq;" [1.0 10.0]]
+                           [:bsm-quote "list" "Lclojure/lang/ISeq;" [-1.0 -10.0]]])
+           (LOOKUPSWITCH L:2 [0 1] [L:0 L:1])
+           [L:0] (ICONST_1) (IRETURN)
+           [L:1] (ICONST_M1) (IRETURN)
+           [L:2] (ICONST_0) (IRETURN)]
+         (asm-expr ^int [^double x]
+                   (case* x
+                          (1.0 10.0) +1
+                          (-1.0 -10.0) -1
+                          0)))))
+
+(deftest switch-char-with-default
+  (is (= '[["LOCAL 0: char x"]
+           (ILOAD_0)
+           (LOOKUPSWITCH L:2 [65 66 97 98] [L:0 L:1 L:0 L:1])
+           [L:0] (ICONST_1) (IRETURN)
+           [L:1] (ICONST_M1) (IRETURN)
+           [L:2] (ICONST_0) (IRETURN)]
+         (asm-expr ^int [^char x]
+                   (case* x
+                          (\a \A) +1
+                          (\b \B) -1
+                          0)))))
+
+(deftest switch-no-guarded-statms
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)I" :bsm-clause-code [])
+           (POP)
+           (BIPUSH 9)
+           (IRETURN)]
+         (asm-expr ^int [x]
+                   (case* x
+                          9)))))
+
+;;; Note: case* of constant expression is no longer reduced.
+(deftest switch-constant-match
+  (is (= '[(LDC [:bsm-quote
+                 "keyword"
+                 "Lclojure/lang/Keyword;"
+                 ["a"]])
+           (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)I" :bsm-clause-code
+                          [[:bsm-quote "keyword" "Lclojure/lang/Keyword;"
+                            ["a"]]])
+           (IFNE L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_2)
+           (IRETURN)]
+         (asm-expr ^int []
+                   (case* :a
+                          :a 1
+                          2)))))
+
+;;; Note: case* of constant expression is no longer reduced.
+(deftest switch-constant-default
+  (is (= '[(LDC [:bsm-quote
+                 "keyword"
+                 "Lclojure/lang/Keyword;"
+                 ["b"]])
+           (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)I" :bsm-clause-code
+                          [[:bsm-quote "keyword" "Lclojure/lang/Keyword;"
+                            ["a"]]])
+           (IFNE L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_2)
+           (IRETURN)]
+         (asm-expr ^int []
+                   (case* :b
+                          :a 1
+                          2)))))
+
+(deftest switch-single-guarded-statm
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)I" :bsm-clause-code
+                          [[:bsm-quote "keyword" "Lclojure/lang/Keyword;"
+                            ["a"]]])
+           (IFNE L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_2)
+           (IRETURN)]
+         (asm-expr ^int [x]
+                   (case* x
+                          :a 1
+                          2)))))
+
+;;; Note: case* with boolean expression is no longer reduced.
+(deftest switch-boolean-covering
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (LOOKUPSWITCH L:2 [0 1] [L:1 L:0])
+           [L:0]
+           (ICONST_1)
+           (IRETURN)
+           [L:1]
+           (ICONST_2)
+           (IRETURN)
+           [L:2]
+           (ILOAD_0)
+           (INVOKESTATIC Boolean "valueOf"
+                         "(Z)Ljava/lang/Boolean;")
+           (INVOKESTATIC RT "noMatchingClause"
+                         "(Ljava/lang/Object;)Ljava/lang/Exception;")
+           (ATHROW)]
+         (asm-expr ^int [^boolean x]
+                   (case* x
+                          true 1
+                          false 2)))))
+
+;;; Note: case* with boolean expression is no longer reduced.
+(deftest switch-boolean-collapsing
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (LOOKUPSWITCH L:1 [0 1] [L:0 L:0])
+           [L:0]
+           (ICONST_1)
+           (IRETURN)
+           [L:1]
+           (ICONST_2)
+           (IRETURN)]
+         (asm-expr ^int [^boolean x]
+                   (case* x
+                          (true false) 1
+                          2)))))
+
+(deftest switch-int-long-or-error
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (LOOKUPSWITCH L:2 [0 1] [L:0 L:1])
+           [L:0]
+           (LCONST_0) (LRETURN)
+           
+           [L:1]
+           (LCONST_0) (LRETURN)
+           
+           [L:2]
+           (ILOAD_0)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (INVOKESTATIC RT "noMatchingClause" "(Ljava/lang/Object;)Ljava/lang/Exception;")
+           (ATHROW)]
+         (asm-expr [^int x]
+                   (case* x
+                          0 (int 0)
+                          1 (long 0))))))
+
+(deftest adjacent-jump-targets
+  (is (= '[["LOCAL 0: Object a"] ["LOCAL 1: Object b"]
+           (ALOAD_0) (IFNULL L:4)
+           
+           (ALOAD_1) (IFNULL L:0)
+           (ICONST_1) (GOTO L:1)
+           [L:0] (ICONST_0)
+           [L:1] (ISTORE_2) ["LOCAL 2: boolean t"]
+
+           (ILOAD_2) (IFEQ L:2)
+           (ICONST_1) (GOTO L:3)
+           [L:2] (ICONST_2)
+           [L:3] (GOTO L:5)
+
+           [L:4] (ICONST_M1)
+           [L:5] (ICONST_5)
+           (IADD) (IRETURN)]
+         (asm-expr ^int [a b]
+                   (+ (if (some? a)
+                        (let* [t (some? b)]
+                          (if t
+                            1
+                            2))
+                        -1)
+                      5))))
+  
+  (is (= '[["LOCAL 0: Object a"] ["LOCAL 1: Object b"]
+           (ALOAD_0) (IFNULL L:0)
+
+           (ICONST_M1) (GOTO L:4)
+
+           [L:0] (ALOAD_1) (IFNULL L:1)
+           (ICONST_1) (GOTO L:2)
+           [L:1] (ICONST_0)
+           [L:2] (ISTORE_2) ["LOCAL 2: boolean t"]
+
+           (ILOAD_2) (IFEQ L:3)
+           (ICONST_1) (GOTO L:4)
+           [L:3] (ICONST_2)
+
+           [L:4] (ICONST_5)
+           (IADD) (IRETURN)]
+         (asm-expr ^int [a b]
+                   (+ (if (some? a)
+                        -1                        
+                        (let* [t (some? b)]
+                          (if t
+                            1
+                            2)))
+                      5))))
+
+  (is (= '[(NEW Agent) (DUP)
+           (ACONST_NULL)
+           (INVOKESPECIAL Agent "<init>" "(Ljava/lang/Object;)V")
+           (ASTORE_0) ["LOCAL 0: Agent a"]
+
+           (ALOAD_0)
+           (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["error-mode"]])
+           (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;" []])
+           (INVOKEDYNAMIC "_" "(Lclojure/lang/Keyword;Lclojure/lang/IPersistentMap;)Ljava/lang/Object;" :bsm-invoke-fn [])
+           (ASTORE_1) ["LOCAL 1: Object or$1$"]
+
+           (ALOAD_1)
+           (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+           (IFEQ L:0)
+           (ALOAD_1)
+           (CHECKCAST Keyword)
+           (GOTO L:2)
+           [L:0]
+           (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["error-handler"]])
+           (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;" []])
+           (INVOKEDYNAMIC "_" "(Lclojure/lang/Keyword;Lclojure/lang/IPersistentMap;)Ljava/lang/Object;" :bsm-invoke-fn [])
+           (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+           (IFEQ L:1)
+           (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["continue"]])
+           (GOTO L:2)
+           [L:1]
+           (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["fail"]])
+           [L:2]
+           (INVOKEVIRTUAL Agent "setErrorMode" "(Lclojure/lang/Keyword;)V")
+           (RETURN)]
+         (-> (asm-expr (let* [a (new clojure.lang.Agent nil)
+                              opts {}]
+                         ;; note: second arg is manually expanded `or`
+                         (.setErrorMode a
+                                        (let* [or123 (:error-mode opts)]
+                                          (if or123
+                                            or123
+                                            (if (:error-handler opts)
+                                              :continue
+                                              :fail))))))
+             (deterministic-gensyms)))))

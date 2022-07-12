@@ -1,0 +1,146 @@
+(ns tcljc.emitter.namespace
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.wrong :as wrong]
+   [tcljc.grammar :as grammar]
+   [tcljc.reader :as rd]
+   [tcljc.context :as ctx]
+   [tcljc.compiler :as compiler]
+   [tinyclj.string :as str])
+  (:import
+   (tcljc.reader IReader)
+   (tcljc.context NamespaceCtx)
+   (clojure.lang Symbol ISeq IPersistentMap ExceptionInfo)
+   (java.lang.invoke MethodHandles$Lookup)
+   (java.net URL)
+   (java.nio.file Path)
+   (java.util.concurrent Future TimeoutException)))
+
+(definterface IBuildEnv
+  (rt-lookup ^MethodHandles$Lookup [])
+  (resolve-rpath ^URL [^Path rpath]) ;returns nil on failure
+  (forms-reader ^IReader [^URL rurl]))
+
+
+(defn- mk-nmsp-deps []
+  {:rpaths #{}, :req-strs #{}})
+(def ^:private compile-namespace-in-progress (mk-nmsp-deps))
+(defn- nsd-add-rpath [nsd ^Path rpath]
+  (update nsd :rpaths conj rpath))
+(defn- nsd-add-require [nsd ^String ns-str]
+  (update nsd :req-strs conj ns-str))
+
+(defn- file-rpath ^Path [^Path parent-rpath ^String path-str]
+  (let [s (str path-str cfg/source-suffix)]
+    (if (str/starts-with? path-str "/")
+      (cfg/path-of s)
+      (.resolve (.getParent parent-rpath) s))))
+
+(def marker-depth-first-path (Object.)) ;FIXME... (Object/identityObject)
+
+(defn nmsp-state [^String ns-str x] 
+  (cond
+    (identical? marker-depth-first-path x)
+    (wrong/other (str "cyclic require via " (wrong/q (symbol ns-str))
+                      " and this namespace"))
+    
+    (instance? Future x)
+    (let [fut ^Future x]
+      (try
+        (.get fut cfg/wait-cyclic-ms java.util.concurrent.TimeUnit/MILLISECONDS)
+        (catch java.util.concurrent.ExecutionException e ;unwrap
+          (throw (or (.getCause e) ^Throwable e)))
+        (catch TimeoutException e       ;may not be repeatable!
+          (wrong/mk-e (str "Wait for require " (wrong/q (symbol ns-str))
+                           " timed out.  Maybe a cyclic import?  "
+                           "Use --deterministic for better feedback.")))))
+
+    :else x))
+
+(defn compile-thread [^IBuildEnv env ^IPersistentMap provided-ns
+                      ^NamespaceCtx nmsp-ctx]
+  (letfn [(core-provided-ns ^IPersistentMap []
+            (if (cfg/core-lib? (.ns-str nmsp-ctx))
+              ;; FIXME... flush namespace classes and provide actual
+              ;; globals
+              (assoc provided-ns cfg/core-lib {})
+              provided-ns))
+          (add-require-deps [nsd deps]
+            (let [req-strs (grammar/required-ns-strs deps)
+                  n (alength req-strs)
+                  a (new objects n)
+                  ansd (new "[Lclojure.lang.IPersistentMap;" n)]
+              ;; schedule namespaces in parallel
+              (dotimes [i (alength req-strs)]
+                (let [req-str (aget req-strs i)]
+                  (aset a i (or (get provided-ns req-str)
+                                (-> (.require-namespace nmsp-ctx)
+                                    (.schedule req-str (core-provided-ns)))))))
+              ;; wait for and pick up namespace outcomes
+              (dotimes [i n]            ;avoid stack frame spamming
+                (aset ansd i (nmsp-state (aget req-strs i) (aget a i))))
+              #_(dotimes [i n]
+                  (prn i (aget req-strs i) (keys (aget ansd i))))
+              (reduce (fn [nsd ^String req-str]
+                        (nsd-add-require nsd req-str))
+                      nsd req-strs)))
+          (top-level-list-form [nsd ^Path rpath ^ISeq form]
+            (let [op (first form)]
+              (case op
+                ns
+                (let [ns-str (.ns-str nmsp-ctx)
+                      [ns-sym & deps] (grammar/parse-ns-form form ns-str)]
+                  (add-require-deps nsd deps))
+
+                require
+                (let [deps (grammar/parse-require-specs (rest form))]
+                  (add-require-deps nsd deps))
+           
+                load
+                ;; (cond-> ns
+                ;;   (and (core-lib? ns) (= (fnext form) "core_print"))
+                ;;   ;; hack for dependency chain core_print.cljt
+                ;;   ;; -> MultiFn.java -> tinyclj.core fns
+                ;;   (flush-namespace-segment))
+                (reduce
+                 (fn [nsd path-str]
+                   (let [rpath (file-rpath rpath path-str)]
+                     (if-some [rurl (.resolve-rpath env rpath)]
+                       (top-level-file nsd rpath rurl)
+                       (wrong/file rpath))))
+                 nsd (next form))
+           
+                in-ns
+                (let [[arg & argr] (grammar/strip-quotes (rest form))
+                      ns-sym (symbol (.ns-str nmsp-ctx))]
+                  (if (and (nil? argr) (= arg ns-sym))
+                    nsd
+                    (wrong/other (str "in-ns argument does not match current "
+                                      "namespace " (wrong/q ns-sym)))))
+           
+                #_else
+                (do (compiler/top-level-form form nmsp-ctx)
+                    nsd))))
+          (top-level-file [nsd ^Path rpath ^URL rurl]
+            ;; FIXME... use proper ns-alias map later
+            (let [rdr (.forms-reader env rurl)
+                  ns-alias {rd/this-namespace-key (.ns-str nmsp-ctx)}]
+              (try
+                (loop [nsd (nsd-add-rpath nsd rpath)]
+                  (let [form (.read-1 rdr ns-alias ::eof)]
+                    (cond
+                      (identical? ::eof form) nsd
+                      (seq? form) (recur
+                                   (wrong/with-list-context form
+                                     (top-level-list-form nsd rpath form)))
+                      :else (do (compiler/top-level-form form nmsp-ctx)
+                                (recur nsd)))))
+                (catch ExceptionInfo e
+                  (throw (wrong/assoc-if-new e :file/resource-url rurl))))))]
+    
+    (ctx/push-nmsp-context nmsp-ctx)
+    (try
+      (-> (mk-nmsp-deps)
+          (top-level-file (ctx/this-rpath nmsp-ctx) (ctx/this-rurl nmsp-ctx)))
+      (finally
+        (ctx/pop-nmsp-context nmsp-ctx)))))

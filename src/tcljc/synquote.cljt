@@ -1,0 +1,72 @@
+(ns tcljc.synquote
+  (:require [tcljc.config :as cfg]
+            [tinyclj.string :as str])
+  (:import (clojure.lang Symbol)))
+
+;;; note: a copy of this lives in tinyclj.core/specials
+(def specials '#{def loop* recur if case* let* letfn*
+                 do fn* quote var import* . set! deftype* reify* try throw
+                 monitor-enter monitor-exit catch finally new &
+                 ;; special forms that are not special in Clojure:
+                 definterface* instanceof*})
+
+(def sym-quote 'quote)
+(def ^:private sq-namespace "`")
+;;; FIXME... switch to unreadable symbols for these three?
+(def sym-syntax-quote (symbol cfg/core-lib "syntax-quote"))
+(def sym-unquote (symbol cfg/core-lib "unquote"))
+(def sym-unquote-splicing (symbol cfg/core-lib "unquote-splicing"))
+
+(defn syntax-quote? ^boolean [form]
+  (and (seq? form) (= sym-syntax-quote (first form))))
+(defn unquote? ^boolean [form]
+  (and (seq? form) (= sym-unquote (first form))))
+(defn unquote-splicing? ^boolean [form]
+  (and (seq? form) (= sym-unquote-splicing (first form))))
+
+(defn mk-gensym-map []
+  (atom {}))
+
+;;; Return the source code meta information of `x`.  For non-empty
+;;; list `x`, first strip :line/:column information added by the
+;;; reader.
+(defn source-meta [x]
+  (let [m (meta x)]
+    (if (and (some? m) (seq? x) (some? (seq x)))
+      (let [m' (dissoc m :line)]
+        (when (pos? (count m'))
+          m'))
+      m)))
+
+(defn- replacement-symbol [current-replacement to-be-replaced-sym]
+  (or current-replacement ;keep entry that has been added concurrently
+      (let [nm (name to-be-replaced-sym)]
+        (-> (.substring nm 0 (dec (.length nm)))
+            (str  "__" (clojure.lang.RT/nextID) "__auto__")
+            (symbol)))))
+
+;;; Assume the compiler's `clojure.lang.RT/nextID` can be used here,
+;;; instead of the application's one.  Most of the time the two are
+;;; identical -- unless the `:platform` class loader is used, aka the
+;;; bootstrap scenario.  If they are distinct, the generated name
+;;; cannot conflict with an application `gensym`, because the latter
+;;; currently does not support a `suffix-string` like the "__auto__"
+;;; above.  Note: There is the option to use per-input atomic counters
+;;; starting at a defined value, but this would still leave make macro
+;;; use of `gensym` non-deterministic.
+(defn wrap-synquote-name ^Symbol [^Symbol sym agensym-map]
+  (if (some? (namespace sym))
+    sym
+    (if (str/ends-with? (name sym) "#")
+      (or (get @agensym-map sym)
+          (get (swap! agensym-map update sym replacement-symbol sym) sym))
+      ;; mark symbol for further processing in the compiler
+      ;; FIXME... exclude specials like try, finally, etc.
+      (symbol sq-namespace (name sym)))))
+
+(defn syntax-quote [form]               ;pre: (syntax-quote? form)
+  (assert false)
+  #_
+  (-> (mk-syntax-quote-state (symbol (.ns-str ns)) ns)
+      (encode (second form))
+      (copy-meta form)))

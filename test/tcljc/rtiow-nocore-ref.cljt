@@ -1,0 +1,334 @@
+;; Tinyclj implementation of the first eight chapters of "Ray Tracing
+;; in One Weekend" by Peter Shirley.
+(ns tcljc.rtiow-nocore-ref
+  (:refer-clojure :none))
+
+;;; Note: Cannot use syntax-quote because it expands to
+;;; `tinyclj.core/seq` and such like.
+
+(def list tinyclj.lang.primitive/list)
+
+(def cons (fn* cons ^clojure.lang.ISeq [x seq]
+               (clojure.lang.RT/cons x seq)))
+
+(def ^:macro let (fn* let [&form &env & decl]
+                      (cons 'let* decl)))
+
+(def ^:macro loop (fn* loop [&form &env & decl]
+                       (cons 'loop* decl)))
+
+(def ^:macro instance? (fn* instance? [&form &env & args]
+                            (cons 'instanceof* args)))
+
+(def with-meta (fn* with-meta [^clojure.lang.IObj x m]
+                    (.withMeta x m)))
+
+(def string? (fn* string? ^boolean [x]
+                  (instance? String x)))
+
+(def vector? (fn* vector? ^boolean [x]
+                  (instance? clojure.lang.IPersistentVector x)))
+
+(def vec (fn* vec [coll]
+              (if (vector? coll)
+                (if (instance? clojure.lang.IObj coll)
+                  (with-meta coll nil)
+                  (clojure.lang.LazilyPersistentVector/create coll))
+                (clojure.lang.LazilyPersistentVector/create coll))))
+
+(def ^:macro fn
+  (fn* fn [&form &env & decl]
+       (.withMeta ^clojure.lang.IObj (cons 'fn* decl)
+                  (.meta ^clojure.lang.IMeta &form))))
+
+(def first (fn first [coll]
+             (clojure.lang.RT/first coll)))
+
+(def next (fn next ^clojure.lang.ISeq [x]
+            (clojure.lang.RT/next x)))
+
+(def rest (fn rest ^clojure.lang.ISeq [x]
+            (clojure.lang.RT/more x)))
+
+(def seq (fn* seq ^clojure.lang.ISeq [coll]
+              (clojure.lang.RT/seq coll)))
+
+(def ^:macro defn
+  (fn* defn [&form &env name & fdecl]
+       (list 'def name (cons 'fn (cons name fdecl)))))
+
+(defn ^:private macro-sig [args]
+  (vec (cons '&form (cons '&env args))))
+
+(defn ^:private macro-sigs [adecls]
+  (if adecls
+    (let* [adecl (first adecls)]
+      (cons (cons (macro-sig (first adecl)) (rest adecl))
+            (macro-sigs (next adecls))))
+    nil))
+
+(def ^:macro defmacro
+  (fn defmacro [&form &env name args & body]
+    (let [mdecl (if (vector? args)
+                  (cons (macro-sig args) body)
+                  (macro-sigs (cons args body)))]
+      (cons 'tcljc.rtiow-nocore-ref/defn
+            (cons (with-meta name '{:macro true}) mdecl)))))
+
+(def object tinyclj.lang.primitive/object)
+(def boolean tinyclj.lang.primitive/boolean)
+(def byte tinyclj.lang.primitive/byte)
+(def short tinyclj.lang.primitive/short)
+(def char tinyclj.lang.primitive/char)
+(def int tinyclj.lang.primitive/int)
+(def float tinyclj.lang.primitive/float)
+(def long tinyclj.lang.primitive/long)
+(def double tinyclj.lang.primitive/double)
+
+(defmacro when [test & body]
+  (list 'if test (cons 'do body)))
+
+(defmacro some? [arg]
+  (list 'tinyclj.lang.primitive/acmpne arg nil))
+
+(def str tinyclj.lang.primitive/str)
+
+(defn symbol? ^boolean [x]
+  (instance? clojure.lang.Symbol x))
+
+(defn symbol
+  (^clojure.lang.Symbol [name]
+   (if (symbol? name)
+     ^clojure.lang.Symbol name
+     (clojure.lang.Symbol/intern name)))
+  (^clojure.lang.Symbol [ns name]
+   (clojure.lang.Symbol/intern ns name)))
+
+(defn gensym
+  #_([]
+     (gensym "G__"))
+  ([prefix-string]
+   (clojure.lang.Symbol/intern (str prefix-string (clojure.lang.RT/nextID)))))
+
+(defmacro and
+  ([] (object true))    ;reader representation of special symbol 'true
+  ([x] x)
+  ([x & next]
+   (let [fsym (gensym "and")]
+     (list 'tcljc.rtiow-nocore-ref/let [fsym x]
+           (list 'if fsym (cons 'tcljc.rtiow-nocore-ref/and next) fsym)))))
+
+(defmacro or
+  ([] nil)
+  ([x] x)
+  ([x & next]
+   (let [fsym (gensym "or")]
+     (list 'tcljc.rtiow-nocore-ref/let [fsym x]
+           (list 'if fsym fsym (cons 'tcljc.rtiow-nocore-ref/or next))))))
+
+(defn name ^String [x]
+  (if (string? x)
+    x
+    (.getName ^clojure.lang.Named x)))
+
+(defn find-ns ^clojure.lang.Namespace [sym]
+  (clojure.lang.Namespace/find sym))
+
+(defn the-ns ^clojure.lang.Namespace [x]
+  (if (instance? clojure.lang.Namespace x)
+    x
+    (or (find-ns x) (throw (Exception. (str "No namespace: " x " found"))))))
+
+(defn ns-name [ns]
+  (.getName (the-ns ns)))
+
+(defmacro deftype [tagname fields & opts+specs]
+  (let [interfaces '[clojure.lang.IType]
+        class-name (symbol (str *ns* "." tagname))
+        factory-name (symbol (str "->" tagname))]
+    (list 'do
+          (list 'deftype* (symbol (name (ns-name *ns*)) (name tagname))
+                class-name 
+                fields :implements interfaces)
+          (list 'import* class-name)
+          (list 'tcljc.rtiow-nocore-ref/defn factory-name
+                (with-meta fields {:tag class-name})
+                (cons 'new (cons class-name fields))))))
+
+(defmacro definterface [name & sigs]
+  (let [class-name (symbol (str *ns* "." name))]
+    (list 'do
+          (cons 'definterface* (cons name sigs))
+          (list 'import* class-name))))
+
+(def + tinyclj.lang.primitive/xadd-nary)
+(def - tinyclj.lang.primitive/xsub-nary)
+(def * tinyclj.lang.primitive/xmul-nary)
+(def / tinyclj.lang.primitive/xdiv-float-nary)
+(defmacro inc [arg]
+  (list 'tinyclj.lang.primitive/xadd arg 1))
+(defmacro dec [arg]
+  (list 'tinyclj.lang.primitive/xsub arg 1))
+
+(def = tinyclj.lang.primitive/equiv-nary)
+(def == tinyclj.lang.primitive/eq-nary)
+(def < tinyclj.lang.primitive/lt-nary)
+(def >= tinyclj.lang.primitive/ge-nary)
+(def > tinyclj.lang.primitive/gt-nary)
+(def <= tinyclj.lang.primitive/le-nary)
+
+;;; FIXME... single dimension getters/setters only
+(def alength tinyclj.lang.primitive/alength)
+(defmacro aget [& args] (cons 'tinyclj.lang.primitive/xaload args))
+(defmacro aset [& args] (cons 'tinyclj.lang.primitive/xastore args))
+
+;;; ------------------------------------------------------------------------
+
+(deftype Vec3 [^float x ^float y ^float z])
+(def v3 ->Vec3)
+
+(defn v3-add
+  (^Vec3 [^Vec3 v1 ^Vec3 v2]
+   (v3 (+ (.x v1) (.x v2)) (+ (.y v1) (.y v2)) (+ (.z v1) (.z v2))))
+  (^Vec3 [^Vec3 v1 ^Vec3 v2 ^Vec3 v3]
+     (v3-add (v3-add v1 v2) v3)))
+
+(defn v3-sub ^Vec3 [^Vec3 v1 ^Vec3 v2]
+  (v3 (- (.x v1) (.x v2)) (- (.y v1) (.y v2)) (- (.z v1) (.z v2))))
+
+(defn v3-smul ^Vec3 [^float t ^Vec3 v]
+  (v3 (* t (.x v)) (* t (.y v)) (* t (.z v))))
+
+(defn v3-dot ^float [^Vec3 v1 ^Vec3 v2]
+  (+ (* (.x v1) (.x v2)) (* (.y v1) (.y v2)) (* (.z v1) (.z v2))))
+
+(defn v3-squared-length ^float [^Vec3 v]
+  (v3-dot v v))
+
+(defn v3-length ^float [^Vec3 v]
+  (float (Math/sqrt (v3-squared-length v))))
+
+(defn v3-unit-vector ^Vec3 [^Vec3 v]
+  (v3-smul (/ (v3-length v)) v))
+
+;;; ------------------------------------------------------------------------
+
+(def rnd (new java.util.Random))
+(def sphere2-center (v3 1 1, 1))
+
+(defn random-in-unit-sphere ^Vec3 []
+  (loop []
+    (let [p (v3 (.nextFloat rnd) (.nextFloat rnd) (.nextFloat rnd))
+          p (v3-sub (v3-smul 2 p) sphere2-center)]
+      (if (>= (v3-squared-length p) 1) (recur) p))))
+
+;;; ------------------------------------------------------------------------
+
+(deftype Ray [^Vec3 origin ^Vec3 direction])
+(def ray ->Ray)
+
+(defn point-at-parameter ^Vec3 [^Ray r ^float t]
+  (v3-add (.origin r) (v3-smul t (.direction r))))
+
+(defn get-ray ^Ray [^float u ^float v]
+  (let [lower-left-corner (v3 -2 -1 -1)
+        horizontal (v3 4 0 0)
+        vertical (v3 0 2 0)
+        origin (v3 0 0 0)]
+    (ray origin (v3-add lower-left-corner
+                        (v3-smul u horizontal) (v3-smul v vertical)))))
+
+;;; ------------------------------------------------------------------------
+
+(deftype HitRecord [^float t ^Vec3 p ^Vec3 normal])
+(def hit-record ->HitRecord)
+
+(definterface FnHitable
+  (hit ^HitRecord [^Ray r ^float t-min ^float t-max]))
+
+(defn mk-sphere ^FnHitable [^Vec3 center ^float radius]
+  (fn ^FnHitable sphere [r t-min t-max]
+    (let [oc (v3-sub (.origin r) center)
+          a (v3-squared-length (.direction r))
+          b (v3-dot oc (.direction r))
+          c (- (v3-squared-length oc) (* radius radius))
+          discriminant (- (* b b) (* a c))]
+      (when (> discriminant 0)
+        (let [temp (/ (- (- b) (float (Math/sqrt discriminant))) a)]
+          (if (and (< temp t-max) (> temp t-min))
+            (let [p (point-at-parameter r temp)]
+              (hit-record temp p (v3-smul (/ radius) (v3-sub p center))))
+            (let [temp (/ (+ (- b) (float (Math/sqrt discriminant))) a)]
+              (when (and (< temp t-max) (> temp t-min))
+                (let [p (point-at-parameter r temp)]
+                  (hit-record temp p (v3-smul (/ radius) (v3-sub p center))))))))))))
+
+(defn mk-hlist ^FnHitable [& ^"[Ltcljc.rtiow-nocore-ref.FnHitable;" hs]
+  (fn ^FnHitable hlist [r t-min t-max]
+    (loop [i 0
+           closest-so-far t-max
+           hit-anything nil]
+      (if (< i (alength hs))
+        (let [rec (.hit (aget hs i) r t-min closest-so-far)]
+          (if (some? rec)
+            (recur (inc i) (.t rec) rec)
+            (recur (inc i) closest-so-far hit-anything)))
+        hit-anything))))
+
+(defn mk-world ^FnHitable []
+  (mk-hlist (mk-sphere (v3 0 0 -1) (float 0.5))
+            (mk-sphere (v3 0 (float -100.5) -1) 100)))
+
+(def ones (v3 1 1 1))
+(def white ones)
+(def blue (v3 (float 0.5) (float 0.7) (float 1.0)))
+
+(defn color ^Vec3 [^Ray r ^FnHitable world]
+  (let [rec (.hit world r (float 0.001) Float/MAX_VALUE)]
+    (if (some? rec)
+      (let [target (v3-add (.p rec) (.normal rec) (random-in-unit-sphere))
+            r1 (ray (.p rec) (v3-sub target (.p rec)))]
+        (v3-smul (float 0.5) (color r1 world)))
+      (let [unit-direction (v3-unit-vector (.direction r))
+            t (* (float 0.5) (+ (.y unit-direction) 1))]
+        (v3-add (v3-smul (- 1 t) white) (v3-smul t blue))))))
+
+(defn gamma-correct ^Vec3 [^Vec3 col]   ;assume gamma=2
+  (v3 (float (Math/sqrt (.x col)))
+      (float (Math/sqrt (.y col)))
+      (float (Math/sqrt (.z col)))))
+
+(defn env-int ^int [^String nm ^int or-else]
+  (let [s (System/getenv nm)]
+    (if (some? s)
+      (Integer/parseInt s)
+      or-else)))
+
+(def nx (env-int "NX" 200))
+(def ny (env-int "NY" 100))
+(def ns (env-int "NS" 100))             ;number of random samples
+(def world (mk-world))
+
+(defn -main [& args]
+  (.setSeed rnd -3958032860745263531)
+  (let [w (java.io.StringWriter. (int (* 13.15 nx ny)))]
+    (.append w (str "P3\n" nx " " ny "\n255\n"))
+    (loop [j (dec ny)]
+      (when (>= j 0)
+        (loop [i 0]
+          (when (< i nx)
+            (let [col (loop [s 0, col (v3 0 0 0)]
+                        (if (< s ns)
+                          (let [u (/ (+ i (.nextFloat rnd)) (float nx))
+                                v (/ (+ j (.nextFloat rnd)) (float ny))
+                                r (get-ray u v)]
+                            (recur (inc s) (v3-add col (color r world))))
+                          (v3-smul (/ (float ns)) col)))
+                  col (v3-smul (float 255.99) (gamma-correct col))
+                  ir (int (.x col))
+                  ig (int (.y col))
+                  ib (int (.z col))]
+              (.append w (str ir " " ig " " ib "\n")))
+            (recur (inc i))))
+        (recur (dec j))))
+    (.print System/out w)))

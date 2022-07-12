@@ -1,0 +1,670 @@
+(ns tcljc.emitter.bytecode
+  (:require
+   [tcljc.classfile :as cf]
+   [tcljc.util :as util]
+   [tcljc.config :as cfg]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.expr :as x]
+   [tcljc.context :as ctx]
+   [tcljc.exprfold :as xf]
+   [tcljc.compiler.branch :as branch])
+  (:import
+   (tcljc.classfile ILdStInstr LdStMember)
+   (tcljc.expr Expr Const Insn NewArray Identity
+               InvokeXref InvokeDynamic InvokePoly
+               InvokeArity Setter Progn Block Branch SplitJoin Guard Switch
+               TryHandler TryCatchFinally LoopBody Recur
+               Binding BindingRef AliasRef AssignDef VarRef
+               FnForm ArityCode Arity FnPatch IEmitPlan IProvidedValue)
+   (clojure.lang Symbol IPersistentVector IMeta)
+   (jdk.classfile Classfile ClassBuilder CodeBuilder FieldBuilder
+                  ClassfileBuilder Opcode Label
+                  Annotation AnnotationElement AnnotationValue Signature)
+   (jdk.classfile.instruction SwitchCase)
+   (jdk.classfile.attribute ConstantValueAttribute SignatureAttribute
+                            RuntimeVisibleAnnotationsAttribute)
+   (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc$Kind
+                       DirectMethodHandleDesc Constable DynamicCallSiteDesc)
+   (java.lang.invoke TypeDescriptor$OfField)))
+
+(def acc-static (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC Classfile/ACC_FINAL))
+(def acc-virtual (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL))
+
+
+(deftype ReadCounts [^int local ^int incr ^boolean other?])
+(def ^:private rc-local (ReadCounts. 1 0 false))
+(def ^:private rc-other (ReadCounts. 0 0 true))
+
+(defn rc-iinc? ^boolean [^ReadCounts a]
+  (and (not (.other? a)) (= (.local a) 1) (jb/in-short? (.incr a))))
+
+(defn- rc-incr ^ReadCounts [^int n]
+  (ReadCounts. 0 n false))
+(defn- rc-add ^ReadCounts [^ReadCounts a ^ReadCounts b]
+  (ReadCounts. (+ (.local a) (.local b)) (+ (.incr a) (.incr b))
+               (or (.other? a) (.other? b))))
+(defn- rc-neg ^ReadCounts [^ReadCounts a]
+  (ReadCounts. (- (.local a)) (- (.incr a)) (.other? a)))
+
+(defn- int-expr-counts ^ReadCounts [^BindingRef local ^Expr x]
+  (cond
+    (x/const-value? x)
+    (let [c (.const-value x)]
+      (if (instance? Integer c)
+        (rc-incr ^int c)
+        rc-other))
+    
+    (x/insn? x)
+    (let [[^Expr a ^Expr b] (x/argv x)]
+      (condp = (-> ^Insn x .instr .opcode)
+        Opcode/IADD (rc-add (int-expr-counts local a)
+                            (int-expr-counts local b))
+        Opcode/ISUB (rc-add (int-expr-counts local a)
+                            (rc-neg (int-expr-counts local b)))
+        Opcode/INEG (rc-neg (int-expr-counts local a))
+        #_else rc-other))
+    
+    (x/bref? x)
+    (if (identical? local x) rc-local rc-other)
+
+    :else rc-other))
+
+;;; ------------------------------------------------------------------------
+
+(deftype EmitState [^int arity-level
+                    ^objects arity-closes-over
+                    ^ILdStInstr ld-this
+                    ^Label recur-target]
+  IProvidedValue
+  (apply [_ origin-bref]
+    (if (= (x/b-level origin-bref) arity-level)
+      (x/deref-load origin-bref)
+      (if-some [bref (util/sim-get arity-closes-over origin-bref)]
+        (do (assert (= (x/b-level bref) arity-level))
+            (x/deref-load bref))
+        ;; If the binding is not provided by this function and not
+        ;; something this function closes over itself, then it must be
+        ;; the external name of this function and can be emitted as
+        ;; its local "this" value.
+        ld-this))))
+
+(defn- with-recur-target ^EmitState [^EmitState es ^Label recur-target]
+  (EmitState. (.arity-level es) (.arity-closes-over es)
+              (.ld-this es) recur-target))
+
+;;; FIXME... pull out line numbers during compile and store the int in
+;;; Expr, with zero meaning "no line"?
+(defn- line-number ^void [^EmitState es ^CodeBuilder xb ^Expr x]
+  (when cfg/enable-line-numbers
+    (let [form (x/form x)]
+      (when (instance? IMeta form)
+        (when-some [m (.meta ^IMeta form)]
+          (when-some [line (.valAt m :line nil)]
+            (.lineNumber xb ^int line)))))))
+
+;;; CAUTION: This function must be free of side effects, because the
+;;; Classfile API can and will call the handlers that invoke `expr-insns`
+;;; multiple times.
+(defn- expr-insns ^CodeBuilder [^CodeBuilder xb ^EmitState es ^Expr x]
+  (letfn [(exprv-insns ^CodeBuilder [^CodeBuilder xb ^IPersistentVector exprv]
+            (dotimes [i (count exprv)]
+              (expr-insns xb es (nth exprv i)))
+            xb)
+          (argv-insns ^CodeBuilder [^CodeBuilder xb]
+            (exprv-insns xb (x/argv x)))
+          (expr-handler ^java.util.function.Consumer [^Expr x]
+            (cf/with-xbh [xb] (expr-insns xb es x)))
+          (exprv-handler ^java.util.function.Consumer [^IPersistentVector exprv]
+            (cf/with-xbh [xb] (exprv-insns xb exprv)))
+          
+          (deref-var ^CodeBuilder [^CodeBuilder xb ^Class tp]
+            (cond-> (cf/invoke xb rt/mhd-Var-deref)
+              (not (jb/object? tp))
+              (.typeCheckInstruction Opcode/CHECKCAST (rt/cd-of tp))))
+          (binding-ref ^CodeBuilder [^CodeBuilder xb ^BindingRef bref]
+            ;; argument list of a binding can refer to a macro or
+            ;; primitive function
+            (if (x/b-value? bref)
+              (cond-> (cf/ld-insn xb (x/deref-load bref))
+                (x/b-def-var? bref) (deref-var (x/type x)))
+              xb))
+          
+          (bind-local-insn
+            (^CodeBuilder [^CodeBuilder xb ^Binding b ^Expr v]
+             (bind-local-insn xb b v (x/type (.bref b))))
+            (^CodeBuilder [^CodeBuilder xb ^Binding b ^Expr v
+                           ^TypeDescriptor$OfField tp]
+             (let [bref (.bref b)
+                   tk (cf/type-kind tp)
+                   slot (.allocateLocal xb tk)
+                   ld-st (cf/ld-st-local tp (x/mnm bref) slot)]
+               (.deliver-load bref ld-st)
+               (-> xb (expr-insns es v) (cf/st-insn ld-st true)))))
+          (mk-replay ^ILdStInstr [^Expr x]
+            (reify ILdStInstr
+              (emit-load [_ xb]
+                (expr-insns xb es x))
+              (emit-store [_ xb binding?]
+                (throw (UnsupportedOperationException.)))
+              (emit-iinc [_ xb iinc-delta]
+                (throw (UnsupportedOperationException.)))
+              (mh-if-global [_ l]
+                (throw (UnsupportedOperationException.)))))
+          (binding-insn ^CodeBuilder [^CodeBuilder xb ^Binding b]
+            ;; Note: Several variants of binding may translate to an
+            ;; empty instruction sequence, but `b` itself cannot be
+            ;; treated as a regular empty instruction.
+            (let [bref (.bref b)
+                  init-x (x/nth-arg x 0 nil)]
+              (case (x/b-kind bref)
+                #_b-def 2r00000
+                (when-not (x/alias-ref? bref)
+                  (let [ld-st (x/deref-load (.bref b))]
+                    (when (and (some? init-x)
+                               (cf/ld-st-field? ld-st)
+                               (not (x/constant-value-attribute? init-x)))
+                      (-> (expr-insns xb es init-x)
+                          (cf/st-insn ld-st true)))))
+                
+                #_b-let 2r01000
+                (if (or (x/const-value? init-x)
+                        (x/pure-let-initialization? init-x))
+                  (.deliver-load bref (mk-replay init-x))
+                  
+                  (if-some [fn-form (x/root-fn-form init-x)]
+                    (if-some [const (x/root-fn-const fn-form)]
+                      (.deliver-load bref (cf/ld-st-constant const))
+                      (let [tp (-> fn-form .!fnc .ld-clx)]
+                        (bind-local-insn xb b init-x tp)))
+                    (bind-local-insn xb b init-x)))
+
+                #_b-loop 2r01100
+                (bind-local-insn xb b init-x)))
+            xb)
+
+          (invoke-xref ^CodeBuilder [^CodeBuilder xb ^InvokeXref x]
+            (-> (cond-> xb
+                  (= (.kind x) rt/mhk-constructor)
+                  (-> (.new_ (.owner x)) (.dup)))
+                (exprv-insns (x/argv x))
+                (cf/invoke (.kind x) (.owner x) (.method-name x)
+                           (.lookup-descriptor x) (.owner-interface? x))))
+          (invoke-dynamic ^CodeBuilder [^CodeBuilder xb ^InvokeDynamic x]
+            (let [mtd (rt/mtd-of (x/type x) (map x/type (x/argv x)))]
+              (->> (DynamicCallSiteDesc/of (.bsm x) (.invocation-name x) mtd
+                                           (x/constant-desc-array (.cexprs x)))
+                   (.invokedynamic xb))))
+          (invoke-poly ^CodeBuilder [^CodeBuilder xb ^InvokePoly x]
+            (let [argv (x/argv x)
+                  mtd (rt/mtd-of (x/type x) (map x/type (rest argv)))] ;virtual
+              (-> (exprv-insns xb argv)
+                  (cf/invoke-instr (.kind x) (.owner x) (.method-name x) mtd))))
+          (invoke-arity-fa ^void [^CodeBuilder xb ^InvokeArity x ^IEmitPlan ep
+                                  ^Arity at ^DirectMethodHandleDesc mhd]
+            (if (.invoke-arity-with-self? ep)
+              (exprv-insns xb (x/argv x)) ;no additional env parameters
+              (do (.arity-env ep xb es at)
+                  (exprv-insns xb (subvec (x/argv x) 1))))
+            (cf/invoke xb mhd))
+          (invoke-arity-va ^void [^CodeBuilder xb ^InvokeArity x ^IEmitPlan ep
+                                  ^Arity at ^DirectMethodHandleDesc mhd]
+            ;; FIXME... is it possible to obtain the polymorphic mtd
+            ;; by combining the invocation type of mhd with the type
+            ;; from the suffix of argv?  in this case .arity-env()
+            ;; does not have to return any types
+            (.constantInstruction xb mhd)
+            (let [atypes (if (.invoke-arity-with-self? ep)
+                           (do (exprv-insns xb (x/argv x))
+                               (map x/type (x/argv x)))
+                           (let [tpv (.arity-env ep xb es at)
+                                 argv (subvec (x/argv x) 1)]
+                             (exprv-insns xb argv)
+                             (into tpv (map x/type argv))))]
+              (.invokevirtual xb rt/MethodHandle "invoke"
+                              (rt/mtd-of (.rtype at) atypes))))
+          (invoke-arity ^CodeBuilder [^CodeBuilder xb ^InvokeArity x]
+            (let [fnc (-> x .fn-form .!fnc)
+                  ac (.arity-code fnc (.at-idx x))
+                  ep (.emit-plan fnc)]
+              (if (x/at-extern-varargs? (.at ac))
+                (invoke-arity-va xb x ep (.at ac) (.load-mh-ext ac))
+                (invoke-arity-fa xb x ep (.at ac) (.load-mh-ext ac)))
+              xb))
+
+          (invoke-setter ^CodeBuilder [^CodeBuilder xb ^InvokeXref x]
+            (let [k (if (= (.kind x) rt/mhk-getter)
+                      rt/mhk-setter
+                      rt/mhk-static-getter)]
+              (cf/invoke xb k (.owner x) (.method-name x)
+                         (.lookup-descriptor x) (.owner-interface? x))))
+          (setter ^CodeBuilder [^CodeBuilder xb ^Setter x]
+            (let [v (x/nth-arg x 0)]
+              (cond
+                (x/invoke-xref? v)
+                (-> (exprv-insns xb (x/argv v)) ;getter argument, if any
+                    (exprv-insns (subvec (x/argv x) 1)) ;value and maybe DUP*
+                    (invoke-setter ^InvokeXref v))
+                
+                (x/bref? v)
+                (let [bref ^BindingRef v]
+                  (when (= x/b-field (x/b-kind bref)) (.aload xb 0))
+                  (exprv-insns xb (subvec (x/argv x) 1)) ;value and maybe DUP*
+                  (cf/st-insn xb (x/deref-load bref) false))
+                
+                :else (throw (IllegalStateException.)))
+              xb))
+          
+          (branch-opcode! ^Opcode [^CodeBuilder xb ^Branch branch-to-true]
+            (let [opc (.opcode branch-to-true)]
+              (loop [opcd (.opcd branch-to-true)
+                     left (x/nth-arg branch-to-true 0)
+                     right (x/nth-arg branch-to-true 1)]
+                ;; loop body is executed at most twice
+                (cond
+                  (x/const-value? right jb/jvm-int-zero)
+                  (do (expr-insns xb es left)
+                      (cf/bc2opc opc (- opcd 6))) ;slide if_icmpeq to ifeq
+                  
+                  (x/const-value? left jb/jvm-int-zero)
+                  (recur (cf/swap-cmp opcd) right left)
+                  
+                  (x/const-value? right jb/jvm-null)
+                  (do (expr-insns xb es left)
+                      (cf/bc2opc opc (+ opcd 33))) ;slide if_acmpeq to ifnull
+                  
+                  (x/const-value? left jb/jvm-null)
+                  (recur (cf/swap-cmp opcd) right left)
+                  
+                  :else
+                  (do (-> xb (expr-insns es left) (expr-insns es right))
+                      (cf/bc2opc opc opcd))))))
+          (if-then-else ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
+                                      ^Expr if-true ^Expr if-false]
+            (let [start-false (.newLabel xb), end-false (.newLabel xb)
+                  opc (branch-opcode! xb (x/with-negate-cmp branch-to-true))]
+              (-> (.branchInstruction xb opc start-false)
+                  (expr-insns es if-true)
+                  (cond-> #_xb
+                    (x/returns? if-true)
+                    (.branchInstruction Opcode/GOTO end-false))
+                  (.labelBinding start-false)
+                  (expr-insns es if-false)
+                  (.labelBinding end-false))))
+          (if-then ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
+                                 ^Expr if-true]
+            (let [end-true (.newLabel xb)
+                  opc (branch-opcode! xb (x/with-negate-cmp branch-to-true))]
+              (-> (.branchInstruction xb opc end-true)
+                  (expr-insns es if-true)
+                  (.labelBinding end-true))))
+          (split-join-insn* ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
+                                          ^Expr if-true ^Expr if-false]
+            (cond
+              (x/const-value-true? branch-to-true)
+              (expr-insns xb es if-true)
+              (x/const-value-false? branch-to-true)
+              (expr-insns xb es if-false)
+
+              (x/expr-empty? if-false)
+              (if (x/expr-empty? if-true)
+                (let [argv (x/argv branch-to-true)] ;avoid Branch recursion
+                  (-> xb 
+                      (expr-insns es (xf/coerce-to-statm (nth argv 0)))
+                      (expr-insns es (xf/coerce-to-statm (nth argv 1)))))
+                (if-then xb branch-to-true if-true)
+                #_(.ifThen xb (branch-opcode! xb branch-to-true)
+                           (expr-handler if-true)))
+              (x/expr-empty? if-true)
+              (if-then xb (x/with-negate-cmp branch-to-true) if-false)
+              #_(.ifThen xb (branch-opcode! xb (x/with-negate-cmp branch-to-true))
+                         (expr-handler if-false))
+              
+              :else
+              (if-then-else xb  branch-to-true if-true if-false)
+              #_(.ifThenElse xb (branch-opcode! xb branch-to-true)
+                             (expr-handler if-true) (expr-handler if-false))))
+          (boolean-identities* ^Branch [^Branch b ^Expr left ^Expr right]
+            ;; Folds boolean not, so that `not-primitive` can retain
+            ;; the source code's operation.  Covers both identity and
+            ;; not of boolean constant, independent of argument order.
+            (cond
+              (x/const-value? right)
+              (if (x/branch? left)
+                (-> (if (= (= cf/eq (.opcd b)) (x/const-value-false? right))
+                      ;; either (== left false) or (not= left true)
+                      (x/with-negate-cmp ^Branch left)
+                      ;; either (not= left false) or (== left true)
+                      ^Branch left)
+                    (boolean-identities))
+                b)
+
+              (x/const-value? left)
+              (recur b right left) ;no need to change `opcd`: it's eq or ne
+
+              :else b))
+          (boolean-identities ^Branch [^Branch b]
+            (boolean-identities* b (x/nth-arg b 0) (x/nth-arg b 1)))
+          (split-join-insn ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
+                                         ^Expr if-true ^Expr if-false]
+            (let [btt (if (x/boolean? (x/nth-arg branch-to-true 0))
+                        (boolean-identities branch-to-true)
+                        branch-to-true)]
+              (split-join-insn* xb btt if-true if-false)))
+          (table-insn ^CodeBuilder [^CodeBuilder xb ^Switch x]
+            (let [argv (x/argv x) ;first: switch expression; peek: default path
+                  labelv (vec (repeatedly (dec (count argv)) #(.newLabel xb)))
+                  sc-list (map (fn ^SwitchCase [^Guard g]
+                                 (SwitchCase/of (.gint g)
+                                                (nth labelv (.path-idx g))))
+                               (.guardv x))]
+              (loop [lo Integer/MAX_VALUE, hi Integer/MIN_VALUE
+                     [^SwitchCase sc :as scs] (seq sc-list)]
+                (if (nil? scs)
+                  (let [dtarget (peek labelv)]
+                    (expr-insns xb es (x/nth-arg x 0))
+                    (if (cf/table-switch? lo hi (count sc-list))
+                      (.tableSwitchInstruction xb lo hi dtarget sc-list)
+                      (.lookupSwitchInstruction xb dtarget sc-list))
+                    (dotimes [i (count labelv)]
+                      (.labelBinding xb (nth labelv i))
+                      (expr-insns xb es (nth argv (inc i))))
+                    xb)
+                  (recur (min lo (.caseValue sc)) (max hi (.caseValue sc))
+                         (next scs))))))
+          (switch-insn ^CodeBuilder [^CodeBuilder xb ^Switch x]
+            (let [argv (x/argv x), guardv (.guardv x)]
+              (case (count guardv)
+                0                    ;switch expression + default path
+                (expr-insns xb es (xf/prog2-expr (nth argv 0) (nth argv 1)))
+                
+                1 ;switch expression + single guard value + default path
+                (let [case-value (object (.gint ^Guard (nth guardv 0)))
+                      test (xf/icmp (nth argv 0) (x/const jb/int case-value)
+                                    cf/eq)
+                      if-x (branch/if-expr test (nth argv 1) (nth argv 2))]
+                  (expr-insns xb es if-x))
+
+                #_else (table-insn xb x))))
+          
+          (try-catch-finally ^CodeBuilder [^CodeBuilder xb ^TryCatchFinally x]
+            (let [handlerv (.handlerv x)
+                  n (count handlerv)
+                  argv (x/argv x)
+                  body-expr ^Expr (nth argv 0)
+                  finally-statm ^Expr (peek argv)
+                  finally? (not (x/expr-empty? finally-statm))
+
+                  start-body (.newLabel xb)
+                  end-body (.newLabel xb)]
+              ;; first emit body and its finally; emit handlers only
+              ;; if body-expr is not empty, because EXCEPTION_CATCH
+              ;; requires a non-empty bci region
+              (assert (= (count argv) (+ n 2)))
+              (-> (.labelBinding xb start-body)
+                  (expr-insns es body-expr)
+                  (.labelBinding end-body))
+              (when (x/returns? body-expr)
+                (expr-insns xb es finally-statm))
+              
+              (when-not (or (x/expr-empty? body-expr)
+                            (cf/empty-bci-range? xb start-body end-body))
+                (let [end-try (.newLabel xb)
+                      start-handler (vec (repeatedly n #(.newLabel xb)))]
+                  (dotimes [i n]
+                    (let [handler ^TryHandler (nth handlerv i)
+                          start ^Label (nth start-handler i)]
+                      (if-some [ex (.exception handler)]
+                        (.exceptionCatch xb start-body end-body start
+                                         (rt/cd-of ex))
+                        (.exceptionCatchAll xb start-body end-body start))))
+                  (when (and (x/returns? body-expr) (x/returns? finally-statm))
+                    (.branchInstruction xb Opcode/GOTO end-try))
+                  
+                  (dotimes [i n]
+                    (let [handler ^TryHandler (nth handlerv i)
+                          catch-expr (nth argv (inc i))
+                          start (nth start-handler i)]
+                      (.labelBinding xb start)
+                      (if (some? (.exception handler))
+                        (let [end (.newLabel xb)]
+                          (-> (expr-insns xb es catch-expr)
+                              (.labelBinding end))
+                          ;; not empty: stores exception in local
+                          (when finally?
+                            (.exceptionCatchAll xb start end
+                                                (peek start-handler)))
+                          (when (x/returns? catch-expr)
+                            (expr-insns xb es finally-statm)
+                            (when (x/returns? finally-statm)
+                              (.branchInstruction xb Opcode/GOTO end-try))))
+                        (do
+                          (expr-insns xb es finally-statm)
+                          (when (x/returns? finally-statm)
+                            (expr-insns xb es catch-expr))))))
+                  (.labelBinding xb end-try)))
+              xb))
+          
+          (loop-body-insn ^CodeBuilder [^CodeBuilder xb ^LoopBody x]
+            (let [es' (with-recur-target es (.newLabel xb))]
+              (-> (.labelBinding xb (.recur-target es'))
+                  (expr-insns es' (x/nth-arg x 0)))))
+          (recur-store-insns ^CodeBuilder [^CodeBuilder xb bv argv]
+            (letfn [(recur-store [^Binding b ^Expr x]
+                      (let [rc (int-expr-counts (.bref b) x)]
+                        (if (rc-iinc? rc)
+                          (object (.incr rc)) ;zero means identity store
+                          x)))
+                    (store-insn ^void [^Binding b store]
+                      (let [ld-st (x/deref-load (.bref b))]
+                        (if (instance? Integer store)
+                          (cf/st-iinc xb ld-st ^int store)
+                          (cf/st-insn xb ld-st false))))]
+              (let [stores (mapv recur-store bv argv)]
+                ;; push all values that are not folded into an IINC
+                ;; onto the operand stack, from left to right
+                (exprv-insns xb (into [] (filter x/expr?) stores))
+                ;; execute stores, from right to left
+                (mapv store-insn (rseq bv) (reverse stores))
+                xb)))
+          
+          (fn-create-insn ^CodeBuilder [^CodeBuilder xb ^FnForm fn-form]
+            (.fn-value-instr (-> fn-form .!fnc .emit-plan) xb es)
+            xb)
+          (fn-patch-insn ^CodeBuilder [^CodeBuilder xb ^FnPatch fn-patch]
+            (.fn-patch-instr (-> fn-patch .fn-form .!fnc .emit-plan)
+                             xb es (.bref fn-patch))
+            xb)
+          
+          (simple-insn ^CodeBuilder [^CodeBuilder xb ^Insn insn]
+            (-> xb (exprv-insns (x/argv insn)) (.with (.instr insn))))
+          (new-array-insn ^CodeBuilder [^CodeBuilder xb ^NewArray insn]
+            (let [tp (x/type insn)
+                  ln (count (x/argv insn))]
+              (exprv-insns xb (x/argv insn))
+              (if (= ln 1)
+                (let [ctp (.componentType tp)]
+                  (if (.isPrimitive ctp)
+                    (.newarray xb (cf/type-kind ctp))
+                    (.anewarray xb (rt/cd-of ctp))))
+                (.multianewarray xb (rt/cd-of tp) ln))))]
+
+    ;; At this point all translation decisions have already been made.
+    ;; In particular, it is known how functions are emitted as methods
+    ;; and how their arities are invoked.
+    #_(prn :expr-insns (class x))
+
+    ;; FIXME... this is only an approximation, the instruction is
+    ;; actually emitted at the end and should be decorated with this
+    ;; line number as well -- and especially if it is an invoke
+    (line-number es xb x)
+    
+    (if-some [c (.const-value x)]
+      (cond-> xb
+        (not (x/expr-empty? x))
+        (.constantInstruction (rt/describe-const-expr c)))
+      (condp instance? x
+        Insn
+        (simple-insn xb ^Insn x)
+        NewArray
+        (new-array-insn xb ^NewArray x)
+        
+        Identity
+        (expr-insns xb es (x/nth-arg x 0))
+        
+        InvokeXref
+        (invoke-xref xb ^InvokeXref x)
+        InvokeDynamic
+        (-> xb (argv-insns) (invoke-dynamic ^InvokeDynamic x))
+        InvokePoly
+        (invoke-poly xb ^InvokePoly x)
+        InvokeArity
+        (invoke-arity xb ^InvokeArity x)
+        
+        Progn
+        (exprv-insns xb (subvec (x/argv x) 0 (inc (.result-idx ^Progn x))))
+        Block
+        (.block xb (exprv-handler (x/argv x)))
+        
+        Branch
+        (split-join-insn xb ^Branch x x/expr-true x/expr-false)
+        SplitJoin
+        (split-join-insn xb ^Branch (x/nth-arg x 0) (x/nth-arg x 1) (x/nth-arg x 2))
+        Switch
+        (switch-insn xb ^Switch x)
+        TryCatchFinally
+        (try-catch-finally xb ^TryCatchFinally x)
+        
+        BindingRef
+        (binding-ref xb ^BindingRef x)
+        Binding
+        (binding-insn xb ^Binding x)
+        AssignDef
+        (-> (expr-insns xb es (x/nth-arg x 0))
+            (cf/st-insn (-> ^AssignDef x .bref (x/deref-load)) false))
+        VarRef
+        (cf/ld-insn xb (x/deref-load ^BindingRef (x/nth-arg x 0)))
+        Setter
+        (setter xb ^Setter x)
+
+        LoopBody
+        (loop-body-insn xb ^LoopBody x)
+        Recur
+        (-> (recur-store-insns xb (.bv ^Recur x) (x/argv x))
+            (.branchInstruction Opcode/GOTO (.recur-target es)))
+
+        FnForm
+        (-> xb (argv-insns) (fn-create-insn ^FnForm x))
+        FnPatch
+        (-> xb (argv-insns) (fn-patch-insn ^FnPatch x))
+        
+        #_else (throw (IllegalArgumentException. (str (class x))))))))
+
+(defn emit-body ^void [^CodeBuilder xb ^ILdStInstr ld-this ^Arity at
+                       ^int first-param-no ^Expr body-expr]
+  (loop [i 0]
+    (when-not (= i (count (.paramv at)))
+      (let [bref (.bref ^Binding (nth (.paramv at) i))
+            ld-st (cf/ld-st-parameter (x/type bref) (x/mnm bref)
+                                      (+ i first-param-no))]
+        (cf/st-insn xb ld-st true)      ;register variable name
+        (.deliver-load bref ld-st))
+      (recur (inc i))))
+  (let [es (EmitState. (.level at) (.!closes-over at) ld-this nil)]
+    (line-number es xb body-expr)
+    (expr-insns xb es (xf/rewrite-returning x/return body-expr jb/no-return))))
+
+(defn emit-global-b ^void [^ClassBuilder cb ^ClassDesc segm-cld ^Binding b]
+  ;; To be able to do INVOKEVIRTUAL calls on global function defs, the
+  ;; field/method return type must be the exact type of the function
+  ;; instance.  It does not work if it's the abstract base type that
+  ;; is used by the parser for function values.
+  (letfn [(macro-annotation ^void [^ClassfileBuilder b ^BindingRef bref]
+            (when (x/b-macro? bref)
+              (let [ae (if-some [macro-v ^BindingRef (.const-value bref)]
+                         (doto (new "[Ljdk.classfile.AnnotationElement;" 1)
+                           (aset 0 (AnnotationElement/ofString
+                                    "macroValue" (str (x/qname macro-v)))))
+                         (new "[Ljdk.classfile.AnnotationElement;" 0))
+                    ann (doto (new "[Ljdk.classfile.Annotation;" 1)
+                          (aset 0 (Annotation/of rt/Macro ae)))]
+                (.with b (RuntimeVisibleAnnotationsAttribute/of ann)))))
+          (field-flags ^int [^BindingRef bref ^Expr init-x]
+            (letfn [(init-with-const? ^boolean []
+                      (or (some? (x/root-fn-const init-x))
+                          (and (some? init-x) (x/const-value? init-x))
+                          (x/alias-ref? bref)))]
+              (bit-or (if (x/b-private? bref)
+                        Classfile/ACC_STATIC
+                        (bit-or Classfile/ACC_STATIC Classfile/ACC_PUBLIC))
+                      (cond
+                        (x/b-mutable? bref) Classfile/ACC_VOLATILE
+                        (init-with-const?) Classfile/ACC_FINAL
+                        :else (bit-or Classfile/ACC_FINAL
+                                      Classfile/ACC_TRANSIENT)))))
+          (static-field! ^void [^BindingRef bref ^Expr init-x]
+            (let [member-tp (cf/member-tp ^LdStMember (x/deref-load bref))
+                  mnm (x/mnm bref)
+                  fbh (cf/with-fbh [fb]
+                        (macro-annotation fb bref)
+                        (cond-> (.withFlags fb (field-flags bref init-x))
+                          (x/b-def-var? bref)
+                          ^FieldBuilder
+                          (.with (-> (str "Lclojure/lang/Var<"
+                                          (.descriptorString (x/type bref))
+                                          ">;")
+                                     (Signature/parseFrom)
+                                     (SignatureAttribute/of)))
+                          
+                          (and (some? init-x)
+                               (x/constant-value-attribute? init-x))
+                          ^FieldBuilder
+                          (.with (ConstantValueAttribute/of
+                                  ^ConstantDesc (.const-value init-x)))))]
+              (.withField cb mnm member-tp fbh)))
+          (alias-annotation ^"[Ljdk.classfile.Annotation;" [^AliasRef bref]
+            (let [qnm (-> (.alias-for bref) (x/qname) (str))
+                  ae (doto (new "[Ljdk.classfile.AnnotationElement;" 1)
+                       (aset 0 (AnnotationElement/ofString "of" qnm)))]
+              (doto (new "[Ljdk.classfile.Annotation;" 1)
+                (aset 0 (Annotation/of rt/Alias ae)))))
+          (alias-field! ^void [^AliasRef bref]
+            (let [member-tp rt/object
+                  mnm (x/mnm bref)
+                  fbh (cf/with-fbh [fb]
+                        (-> fb
+                            (.withFlags (bit-or Classfile/ACC_PUBLIC
+                                                Classfile/ACC_STATIC
+                                                Classfile/ACC_VOLATILE))
+                            (.with (RuntimeVisibleAnnotationsAttribute/of
+                                    (alias-annotation bref)))))]
+              (.withField cb mnm member-tp fbh)))
+          (lazy-const! ^void [^BindingRef bref ^TypeDescriptor$OfField member-tp
+                              const]
+            (let [mnm (x/mnm bref)
+                  mtd (rt/mtd-of member-tp [])
+                  xbh (cf/with-xbh [xb]
+                        (-> (.constantInstruction xb ^ConstantDesc const)
+                            (.areturn)))
+                  mbh (cf/with-mbh [mb]
+                        (macro-annotation mb bref)
+                        (.withCode mb xbh))]
+              (.withMethod cb mnm mtd acc-static mbh)))]
+
+    (let [init-x (x/nth-arg b 0 nil)
+          bref (.bref b)]
+      (if (x/alias-ref? bref)
+        (alias-field! ^AliasRef bref)
+        
+        (let [ld-st (x/deref-load bref)]
+          (if (cf/ld-st-field? ld-st)
+            (static-field! bref init-x)
+            
+            (let [tpd (cf/member-tp ^LdStMember ld-st)
+                  const (or (x/root-fn-const init-x)
+                            (rt/describe-const-expr (.const-value init-x)))]
+              (lazy-const! bref tpd const))))))))
+
+(defn emit-into ^void [^CodeBuilder xb ^Expr body-expr]
+  (let [es (EmitState. x/lvl-environment nil nil nil)]
+    (expr-insns xb es body-expr)))

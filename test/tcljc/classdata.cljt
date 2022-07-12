@@ -1,0 +1,409 @@
+(ns tcljc.classdata
+  (:require
+   [tcljc.runtime :as rt]
+   [tinyclj.string :as str])
+  (:import
+   (clojure.lang Symbol IPersistentVector)
+   (jdk.classfile Classfile ClassModel MethodModel CodeModel FieldModel
+                  CodeElement Attribute Instruction PseudoInstruction Label
+                  AccessFlags)
+   (jdk.classfile.constantpool ClassEntry)
+   (jdk.classfile.instruction LocalVariable BranchInstruction SwitchCase
+                              TableSwitchInstruction LookupSwitchInstruction
+                              ExceptionCatch LabelTarget)
+   (jdk.classfile.attribute RuntimeVisibleAnnotationsAttribute)
+   (java.lang.constant ConstantDesc ConstantDescs ClassDesc)
+   (java.lang.reflect AccessFlag)
+   (java.util HashMap LinkedList)))
+
+(defn- but-defaults [xs ds]
+  (loop [[x :as xs] (reverse xs), [d :as ds] (seq (reverse ds))]
+    (if (or (nil? ds) (not= x d))
+      (reverse xs)
+      (recur (rest xs) (next ds)))))
+
+(def ^:private named-mhd
+  {rt/bsm-null :bsm-null
+   rt/bsm-invoke :bsm-invoke
+   rt/bsm-quote :bsm-quote
+   rt/bsm-concat :bsm-concat 
+   rt/bsm-static-fn :bsm-static-fn
+   rt/bsm-invoke-fn :bsm-invoke-fn
+   rt/bsm-clause-code :bsm-clause-code
+      
+   ;; rt/mhd-byteCast :mhd-byte-int
+   ;; rt/mhd-shortCast :mhd-short-int
+   ;; rt/mhd-charCast :mhd-char-int
+      
+   ConstantDescs/BSM_EXPLICIT_CAST :bsm-explicit-cast
+   ConstantDescs/BSM_GET_STATIC_FINAL :bsm-get-static-final})
+
+(defmacro switch-on-type [e & tp-expr-seq]
+  (assert (symbol? e))
+  (assert (even? (count tp-expr-seq)))
+  `(cond
+     ~@(->> (partition 2 tp-expr-seq)
+            (mapcat (fn [[tp expr]]
+                      (assert (symbol? tp))
+                      [`(instance? ~tp ~e)
+                       `(let* [~e ~(with-meta e {:tag tp})] ~expr)])))
+     :else (str ~e)))
+
+(defn- constant-desc [const ^ClassDesc owner-cld]
+  (letfn [(const-desc [const]
+            (constant-desc const owner-cld))
+          (owner-name ^Symbol [^ClassDesc cld]
+            (if (= cld owner-cld)
+              '.
+              (let [s (.displayName cld)]
+                (symbol s))))
+          (escape-char ^String [^String c]
+            (String/format "\\u%04x" (object (int (.charAt c 0)))))]
+    (switch-on-type
+     const
+
+     ClassDesc
+     (owner-name const)
+             
+     Number
+     const
+
+     String
+     (str/replace const #"[\u0000-\u001f]" escape-char)
+             
+     java.lang.constant.DirectMethodHandleDesc
+     (or (get named-mhd const nil)
+         [(-> const .kind .name (symbol))
+          (owner-name (.owner const))
+          (const-desc (.methodName const))
+          (const-desc (.lookupDescriptor const))])
+             
+     java.lang.constant.DynamicConstantDesc
+     [(const-desc (.bootstrapMethod const))
+      (const-desc (.constantName const))
+      (.descriptorString (.constantType const))
+      (mapv const-desc (.bootstrapArgsList const))]
+             
+     jdk.classfile.constantpool.LoadableConstantEntry
+     (recur (.constantValue const) owner-cld))))
+
+(defn- type-name [^ClassEntry type]     ;returns symbol or string
+  (let [cd (.asSymbol type)]
+    (cond-> (.displayName cd)
+      (not (.isArray cd)) (symbol))))
+
+(defn- instruction-data [insn ^ClassDesc owner-cld ^HashMap label-names]
+  (letfn [(opcode ^Symbol [^CodeElement insn]
+            (-> insn .opcode .name (symbol)))
+          (owner-name [^ClassEntry owner] ;returns symbol or string
+            (if (= owner-cld (.asSymbol owner))
+              '.
+              (type-name owner)))
+          (label-name ^Symbol [target]
+            (cond
+              (instance? Label target)
+              (.get label-names ^Label target) ;nil unless targeted
+              
+              (instance? SwitchCase target)
+              (recur (.target ^SwitchCase target))
+
+              :else (throw (IllegalArgumentException. (str (class target))))))
+          
+          (simple-insn
+            ([^Instruction insn]
+             (list (opcode insn)))
+            ([^Instruction insn opt-arg]
+             (if (= (.sizeInBytes insn) 1)
+               (simple-insn insn)
+               (list (opcode insn) opt-arg))))]
+    (switch-on-type
+     insn
+     
+     jdk.classfile.instruction.OperatorInstruction
+     (simple-insn insn)
+
+     jdk.classfile.instruction.ConvertInstruction
+     (simple-insn insn)
+
+     jdk.classfile.instruction.TypeCheckInstruction
+     (list (opcode insn) (type-name (.type insn)))
+     
+     jdk.classfile.instruction.ConstantInstruction
+     (simple-insn insn (constant-desc (.constantValue insn) owner-cld))
+     
+     jdk.classfile.instruction.StackInstruction
+     (simple-insn insn)
+
+     jdk.classfile.instruction.NewObjectInstruction
+     (simple-insn insn (type-name (.className insn)))
+     jdk.classfile.instruction.NewReferenceArrayInstruction
+     (simple-insn insn (type-name (.componentType insn)))
+     jdk.classfile.instruction.NewPrimitiveArrayInstruction
+     (simple-insn insn (-> insn .typeKind .typeName (symbol)))
+     jdk.classfile.instruction.NewMultiArrayInstruction
+     (list (opcode insn) (type-name (.arrayType insn)) (.dimensions insn))
+     
+     jdk.classfile.instruction.LoadInstruction
+     (simple-insn insn (object (.slot insn)))
+     jdk.classfile.instruction.StoreInstruction
+     (simple-insn insn (object (.slot insn)))
+     jdk.classfile.instruction.IncrementInstruction
+     (list (opcode insn) (.slot insn) (.constant insn))
+     jdk.classfile.instruction.ArrayLoadInstruction
+     (simple-insn insn)
+     jdk.classfile.instruction.ArrayStoreInstruction
+     (simple-insn insn)
+     
+     jdk.classfile.instruction.FieldInstruction
+     (list (opcode insn) (owner-name (.owner insn))
+           (.stringValue (.name insn)) (.stringValue (.type insn)))
+     jdk.classfile.instruction.InvokeInstruction
+     (list* (opcode insn) (owner-name (.owner insn))
+            (.stringValue (.name insn)) (.stringValue (.type insn))
+            (when (.isInterface insn) [:itf]))
+     jdk.classfile.instruction.InvokeDynamicInstruction
+     (list (opcode insn)
+           (.stringValue (.name insn)) (.stringValue (.type insn))
+           (constant-desc (.bootstrapMethod insn) owner-cld)
+           (mapv #(constant-desc % owner-cld) (.bootstrapArgs insn)))
+     
+     jdk.classfile.instruction.ReturnInstruction
+     (simple-insn insn)
+     jdk.classfile.instruction.ThrowInstruction
+     (simple-insn insn)
+     
+     jdk.classfile.instruction.LabelTarget
+     (when-some [nm (label-name (.label insn))] [nm])
+     jdk.classfile.instruction.BranchInstruction
+     (simple-insn insn (label-name (.target insn)))
+     jdk.classfile.instruction.TableSwitchInstruction
+     (let [lv (mapv label-name (.cases insn))] ;assign names before default
+       (list (opcode insn) (.lowValue insn) (.highValue insn)
+             (label-name (.defaultTarget insn)) lv))
+     jdk.classfile.instruction.LookupSwitchInstruction
+     (let [lv (mapv label-name (.cases insn))] ;assign names before default
+       (list (opcode insn) (label-name (.defaultTarget insn))
+             (mapv #(.caseValue ^SwitchCase %) (.cases insn)) lv))
+     
+     jdk.classfile.instruction.LocalVariable
+     [(str "LOCAL " (.slot insn) ": "
+           (.displayName (.typeSymbol insn)) " "
+           (.stringValue (.name insn))
+           ;; " [startBci=" (.labelToBci xm (.startScope insn))
+           ;; ", endBci=" (.labelToBci xm (.endScope insn)) "]"
+           )]
+     jdk.classfile.instruction.ExceptionCatch
+     (list (opcode insn)
+           (label-name (.tryStart insn)) (label-name (.tryEnd insn))
+           (label-name (.handler insn)) (if (.isEmpty (.catchType insn))
+                                          'any
+                                          (type-name (.get (.catchType insn)))))
+     
+     jdk.classfile.instruction.NopInstruction
+     (simple-insn insn))))
+
+(defn- instructions-into [acc ^CodeModel xm ^ClassDesc owner-cld
+                          ^java.util.List elements]
+  (let [label-names (HashMap.)
+        local-variables (LinkedList.)
+        exception-catches (LinkedList.)]
+    (letfn [(register-target! ^void [target]
+              (cond (instance? Label target)
+                    (.put label-names target nil)
+
+                    (instance? SwitchCase target)
+                    (register-target! (.target ^SwitchCase target))
+
+                    :else
+                    (throw (IllegalArgumentException. (str (class target))))))
+            (targeted-label ^Label [elem]
+              (when (instance? LabelTarget elem)
+                (let [label (.label ^LabelTarget elem)]
+                  (when (.containsKey label-names label)
+                    label))))
+
+            (pseudo-instruction? ^boolean [elem]
+              (instance? PseudoInstruction elem))
+            (out-of-band? ^boolean [elem]
+              (or (instance? LocalVariable elem)
+                  (instance? ExceptionCatch elem)))
+            (local-variable? ^boolean [^int bci ^int lv-i]
+              (and (< lv-i (.size local-variables))
+                   (let [lv ^LocalVariable (.get local-variables lv-i)]
+                     (<= (.labelToBci xm (.startScope lv)) bci))))
+            (exception-catch? ^boolean [^int bci ^int ec-i]
+              (and (< ec-i (.size exception-catches))
+                   (let [ec ^ExceptionCatch (.get exception-catches ec-i)]
+                     (<= (.labelToBci xm (.tryEnd ec)) bci))))
+            (rearrange [elements]
+              ((fn step [^int bci ^int ec-i ^int lv-i elems]
+                 (lazy-seq
+                  (cond
+                    (local-variable? bci lv-i)
+                    (cons (.get local-variables lv-i)
+                          (step bci ec-i (inc lv-i) elems))
+                    
+                    (exception-catch? bci ec-i)
+                    (cons (.get exception-catches ec-i)
+                          (step bci (inc ec-i) lv-i elems))
+
+                    (some? elems)
+                    (let [ce ^CodeElement (first elems)
+                          bci' (+ bci (.sizeInBytes ce))]
+                      (cons ce (step bci' ec-i lv-i (next elems))))
+
+                    :else nil)))
+               0 0 0 (seq (remove out-of-band? elements))))]
+
+      ;; collect labels used by instructions into `label-names`,
+      ;; intially with a value of nil
+      (doseq [elem elements]
+        (cond
+          (instance? BranchInstruction elem)
+          (register-target! (.target ^BranchInstruction elem))
+
+          (instance? TableSwitchInstruction elem)
+          (do (register-target! (.defaultTarget ^TableSwitchInstruction elem))
+              (run! register-target! (.cases ^TableSwitchInstruction elem)))
+          
+          (instance? LookupSwitchInstruction elem)
+          (do (register-target! (.defaultTarget ^LookupSwitchInstruction elem))
+              (run! register-target! (.cases ^LookupSwitchInstruction elem)))
+
+          (instance? ExceptionCatch elem)
+          (let [ec ^ExceptionCatch elem]
+            (register-target! (.handler ec))
+            (register-target! (.tryStart ec))
+            (register-target! (.tryEnd ec)))))
+
+      ;; assign label names in order of target instructions
+      (loop [cnt 0, [elem :as elems] (seq elements)]
+        (when (some? elems)
+          (recur (if-some [label (targeted-label elem)]
+                   (do (.put label-names label (symbol (str "L:" cnt)))
+                       (inc cnt))
+                   cnt)
+                 (next elems))))
+
+      ;; extract out-of-band pseudo intructions clumped at the
+      ;; beginning of the element stream
+      (run! (fn ^void [elem]
+              (cond (instance? LocalVariable elem)
+                    (.add local-variables elem)
+                    (instance? ExceptionCatch elem)
+                    (.add exception-catches elem)))
+            (take-while pseudo-instruction? elements))
+      
+      ;; loop over rearranged instructions
+      (into acc
+            (keep #(instruction-data % owner-cld label-names))
+            (rearrange elements)))))
+
+(letfn [(annotation-value [^jdk.classfile.AnnotationValue av]
+          (switch-on-type
+           av
+
+           jdk.classfile.AnnotationValue$OfString
+           (.stringValue av)))
+        (annotation-element [^jdk.classfile.AnnotationElement ae]
+          (vector (constant-desc (.name ae) nil)
+                  (annotation-value (.value ae))))
+        (annotation [^jdk.classfile.Annotation ann]
+          (list* (constant-desc (.classSymbol ann) nil)
+                 (map annotation-element (.elements ann))))
+        
+        (class-access [^AccessFlags fs]
+          (reduce (fn [acc ^AccessFlag fl]
+                    (cond-> acc (.has fs fl) (conj (symbol (.name fl)))))
+                  []
+                  [AccessFlag/PUBLIC AccessFlag/FINAL AccessFlag/INTERFACE
+                   AccessFlag/ABSTRACT AccessFlag/SYNTHETIC
+                   AccessFlag/ANNOTATION AccessFlag/ENUM]))
+        (class-name ^String [^ClassEntry cle]
+          (.asInternalName cle))
+        (class-header [^ClassModel cm]
+          (let [itfs (.interfaces cm)]
+            (but-defaults (list 'CLASS 'Vx (class-access (.flags cm))
+                                (class-name (.thisClass cm))
+                                nil
+                                (when-some [cle (.orElse (.superclass cm) nil)]
+                                  (class-name cle))
+                                (when-not (.isEmpty itfs)
+                                  (mapv type-name itfs)))
+                          '(nil "java/lang/Object" nil))))
+
+        (rt-vis-annotations [^RuntimeVisibleAnnotationsAttribute attr]
+          (list* (symbol (.attributeName attr))
+                 (map annotation (.annotations attr))))
+        (method-element [elem]
+          (switch-on-type
+           elem
+
+           AccessFlags
+           nil
+           
+           RuntimeVisibleAnnotationsAttribute
+           (rt-vis-annotations elem)))
+        (method-access [^AccessFlags fs]
+          (reduce (fn [acc ^AccessFlag fl]
+                    (cond-> acc (.has fs fl) (conj (symbol (.name fl)))))
+                  []
+                  [AccessFlag/PUBLIC AccessFlag/PRIVATE AccessFlag/PROTECTED
+                   AccessFlag/STATIC AccessFlag/FINAL AccessFlag/SYNCHRONIZED
+                   AccessFlag/BRIDGE AccessFlag/VARARGS AccessFlag/NATIVE
+                   AccessFlag/ABSTRACT AccessFlag/STRICT AccessFlag/SYNTHETIC]))
+        (method-header [^MethodModel mm]
+          (list 'METHOD (method-access (.flags mm))
+                (-> mm .methodName .stringValue)
+                (-> mm .methodType .stringValue)))
+        (method-data [^MethodModel mm]
+          (reduce (fn [acc elem]
+                    (if (instance? CodeModel elem)
+                      (let [xm ^CodeModel elem
+                            owner-cld (-> mm .parent ^ClassModel (.get)
+                                          .thisClass .asSymbol)]
+                        (instructions-into acc xm owner-cld (.elements xm)))
+                      (if-some [x (method-element elem)]
+                        (conj acc x)
+                        acc)))
+                  [(method-header mm)]
+                  (.elements mm)))
+
+        (field-element [elem]
+          (switch-on-type
+           elem
+
+           AccessFlags
+           nil
+           
+           jdk.classfile.attribute.ConstantValueAttribute
+           (list (symbol (.attributeName elem))
+                 (constant-desc (.constant elem) nil))
+
+           jdk.classfile.attribute.SignatureAttribute
+           (list (symbol (.attributeName elem))
+                 (.stringValue (.signature elem)))
+
+           RuntimeVisibleAnnotationsAttribute
+           (rt-vis-annotations elem)))
+        (field-access [^AccessFlags fs]
+          (reduce (fn [acc ^AccessFlag fl]
+                    (cond-> acc (.has fs fl) (conj (symbol (.name fl)))))
+                  []
+                  [AccessFlag/PUBLIC AccessFlag/PRIVATE AccessFlag/PROTECTED
+                   AccessFlag/STATIC AccessFlag/FINAL AccessFlag/VOLATILE
+                   AccessFlag/TRANSIENT AccessFlag/SYNTHETIC AccessFlag/ENUM]))
+        (field-header [^FieldModel fm]
+          (list 'FIELD (field-access (.flags fm))
+                (-> fm .fieldName .stringValue)
+                (-> fm .fieldType .stringValue)))
+        (field-data [^FieldModel fm]
+          (into [(field-header fm)] (keep field-element) (.elements fm)))]
+  (defn extract [^bytes bs]
+    (let [cm (Classfile/parse bs)]
+      (-> [(class-header cm)]
+          (into (map field-data) (.fields cm))
+          (into (map method-data) (.methods cm))))))
+
+(defn class-name [^IPersistentVector class-data]
+  (nth (nth class-data 0) 3))

@@ -1,0 +1,388 @@
+(ns tcljc.runtime      ;symbolic descriptors for stuff from tinyclj.rt
+  (:require
+   [tcljc.javabase :as jb]
+   [tinyclj.string :as str])
+  (:import
+   (clojure.lang Named)
+   (java.lang.constant ClassDesc ConstantDescs ConstantDesc Constable
+                       DirectMethodHandleDesc DirectMethodHandleDesc$Kind
+                       MethodTypeDesc MethodHandleDesc DynamicConstantDesc)
+   (java.lang.invoke MethodHandles$Lookup MethodHandle TypeDescriptor$OfField)
+   (java.lang.reflect Member Method Constructor)
+   (java.util.regex Pattern))
+  (:refer-clojure
+   :exclude [symbol keyword vector map set seq list object objects
+             int long float double boolean char byte short void]))
+
+;;; https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/lang/invoke/MethodHandleInfo.html
+(def mhk-static DirectMethodHandleDesc$Kind/STATIC)               ;6
+(def mhk-virtual DirectMethodHandleDesc$Kind/VIRTUAL)             ;5
+(def mhk-special DirectMethodHandleDesc$Kind/SPECIAL)             ;7 super.m()
+(def mhk-constructor DirectMethodHandleDesc$Kind/CONSTRUCTOR)     ;8 new C()
+(def mhk-getter DirectMethodHandleDesc$Kind/GETTER)               ;1
+(def mhk-setter DirectMethodHandleDesc$Kind/SETTER)               ;3
+(def mhk-static-getter DirectMethodHandleDesc$Kind/STATIC_GETTER) ;2
+(def mhk-static-setter DirectMethodHandleDesc$Kind/STATIC_SETTER) ;4
+(def mhk-interface-virtual DirectMethodHandleDesc$Kind/INTERFACE_VIRTUAL) ;9
+(def mhk-interface-static DirectMethodHandleDesc$Kind/INTERFACE_STATIC) ;6
+(def mhk-interface-special DirectMethodHandleDesc$Kind/INTERFACE_SPECIAL) ;7
+
+(def dcd-default-name ConstantDescs/DEFAULT_NAME)
+
+(defn unreflect ^MethodHandle [^MethodHandles$Lookup lookup x]
+  (cond (instance? Method x) (.unreflect lookup x)
+        (instance? Constructor x) (.unreflectConstructor lookup x)
+        :else (.unreflectGetter lookup x)))
+
+(defn describe-constable ^ConstantDesc [^Constable x]
+  (if (nil? x)
+    jb/jvm-null
+    (.get (.describeConstable x))))
+(defn describe-class ^ClassDesc [^Class tp]
+  ^ClassDesc (.get (.describeConstable tp)))
+
+(defn str-to-cld ^ClassDesc [^String s]
+  (if (or (.startsWith s "[") (.endsWith s ";"))
+    ;; array type or "L...;" or maybe even "Q...;"
+    (ClassDesc/ofDescriptor (str/replace s "." "/")) 
+    (ClassDesc/of s)))
+
+
+(defn null-value-pred ^Boolean [const-value]
+  ;; This function assumes that any `const-value` is produced by
+  ;; compiler code, and that all non-NULL values (including
+  ;; DynamicConstantDesc= always describe some literal and known to be
+  ;; non-null value.
+  (cond
+    (nil? const-value) nil                            ;may be null
+    (identical? jb/jvm-null const-value) Boolean/TRUE ;is always null
+    :else Boolean/FALSE))                             ;is never null
+
+
+;;; Return the class descriptor to which classes, field types,
+;;; parameter types, and return types `x` are mapped on the JVM level.
+;;; Accepts ClassDesc, Class, descriptor string.
+(defn cd-of ^ClassDesc [cdx]
+  (cond
+    (instance? ClassDesc cdx) cdx
+    (instance? Class cdx) (if (jb/null? cdx)
+                            ConstantDescs/CD_Object ;FIXME... drop this?
+                            (describe-class cdx))
+    ;; (string? cdx)
+    ;; (if (or (.startsWith ^String cdx "[") (.endsWith ^String cdx ";"))
+    ;;   (ClassDesc/ofDescriptor (str/replace cdx "." "/")) ;array type or "L...;"
+    ;;   (ClassDesc/of cdx))
+    :else (throw (IllegalArgumentException. (str (class cdx))))))
+
+(defn cd-array-of ^"[Ljava.lang.constant.ClassDesc;" [cdxs]
+  (into-array ClassDesc (tinyclj.core/map cd-of cdxs)))
+
+(def no-param-types (cd-array-of nil))
+
+(defn mtd-of ^MethodTypeDesc [return-type parameter-types]
+  (MethodTypeDesc/of (cd-of return-type) (cd-array-of parameter-types)))
+
+
+(defn no-args-constructor ^DirectMethodHandleDesc [clx]
+  (MethodHandleDesc/ofConstructor (cd-of clx) no-param-types))
+(defn fixed-args-constructor ^DirectMethodHandleDesc [clx cdxs]
+  (MethodHandleDesc/ofConstructor (cd-of clx) (cd-array-of cdxs)))
+
+;;; ------------------------------------------------------------------------
+
+(def clnm-symbol "clojure.lang.Symbol")
+(def clnm-keyword "clojure.lang.Keyword")
+(def clnm-vector "clojure.lang.IPersistentVector")
+(def clnm-map "clojure.lang.IPersistentMap")
+(def clnm-set "clojure.lang.IPersistentSet")
+(def clnm-seq "clojure.lang.ISeq")
+(def clnm-list clnm-seq)
+(def clnm-obj "clojure.lang.IObj")
+
+(def symbol (ClassDesc/of clnm-symbol))
+(def keyword (ClassDesc/of clnm-keyword))
+(def ^:private vector (ClassDesc/of clnm-vector))
+(def map (ClassDesc/of clnm-map))
+(def ^:private set (ClassDesc/of clnm-set))
+(def ^:private seq (ClassDesc/of clnm-seq))
+(def ^:private list seq)
+(def pattern (ClassDesc/of "java.util.regex.Pattern"))
+(def obj (ClassDesc/of clnm-obj))
+
+(defn keyword? ^boolean [^Class cl]     ;`cl` is usually an application class
+  ;; FIXME... identifying the application class is cheaper during
+  ;; emit; is it worthwhile to move the logic relying on this
+  ;; predicate there?
+  (= clnm-keyword (.getName cl)))
+
+(def ^:private int ConstantDescs/CD_int)
+(def ^:private long ConstantDescs/CD_long)
+(def ^:private float ConstantDescs/CD_float)
+(def ^:private double ConstantDescs/CD_double)
+(def ^:private boolean ConstantDescs/CD_boolean)
+(def ^:private char ConstantDescs/CD_char)
+(def ^:private byte ConstantDescs/CD_byte)
+(def ^:private short ConstantDescs/CD_short)
+(def void ConstantDescs/CD_void)
+
+(def ^:private Integer ConstantDescs/CD_Integer)
+(def ^:private Long ConstantDescs/CD_Long)
+(def ^:private Float ConstantDescs/CD_Float)
+(def ^:private Double ConstantDescs/CD_Double)
+(def ^:private Boolean ConstantDescs/CD_Boolean)
+(def ^:private Character ConstantDescs/CD_Character)
+(def ^:private Byte ConstantDescs/CD_Byte)
+(def ^:private Short ConstantDescs/CD_Short)
+(def ^:private Void ConstantDescs/CD_Void)
+
+(def object ConstantDescs/CD_Object)
+(def ^:private objects (.arrayType object))
+
+(def MethodHandle ConstantDescs/CD_MethodHandle)
+(def MethodHandleArray (.arrayType MethodHandle))
+(def ^:private Lookup ConstantDescs/CD_MethodHandles_Lookup)
+(def ^:private MethodType ConstantDescs/CD_MethodType)
+(def ^:private CallSite ConstantDescs/CD_CallSite)
+
+(def ^:private Object object)
+(def ^:private ObjectArray (.arrayType Object))
+(def ^:private Class ConstantDescs/CD_Class)
+(def String (ClassDesc/of "java.lang.String"))
+(def ^:private Exception (ClassDesc/of "java.lang.Exception"))
+(def ^:private Function (ClassDesc/of "java.util.function.Function"))
+
+(def Alias (ClassDesc/of "tinyclj.lang.Alias"))
+(def Macro (ClassDesc/of "tinyclj.lang.Macro"))
+(def RT (ClassDesc/of "tinyclj.lang.RT"))
+(def ^:private Literal (ClassDesc/of "tinyclj.lang.Literal"))
+(def ^:private BootstrapMethod (ClassDesc/of "tinyclj.lang.BootstrapMethod"))
+
+(def clnm-Var "clojure.lang.Var")
+
+(def ClojureRT (ClassDesc/of "clojure.lang.RT"))
+(def ^:private ClojureUtil (ClassDesc/of "clojure.lang.Util"))
+(def Var (ClassDesc/of clnm-Var))
+(def ^:private ArraySeq (ClassDesc/of "clojure.lang.ArraySeq"))
+
+(def clnm-ifn "clojure.lang.IFn")
+(def clnm-abstract-fn "tinyclj.lang.AFnMh")
+(def clnm-static-fn "tinyclj.lang.StaticFnMh")
+
+(def IFn (ClassDesc/of clnm-ifn))
+(def AFn (ClassDesc/of clnm-abstract-fn))
+(def StaticFnMh (ClassDesc/of clnm-static-fn))
+
+
+(defn array? ^boolean [^ClassDesc tpd]
+  (.isArray tpd))
+
+
+
+(def name-force-clinit "forceClinit~1")
+(def name-requires "requires~1")
+
+(defmacro aclass-desc [ptypev]
+  (assert (vector? ptypev))
+  `(doto (new "[Ljava.lang.constant.ClassDesc;" ~(count ptypev))
+     ~@(map-indexed #(tinyclj.core/list 'aset %1 %2) ptypev)))
+
+(defmacro mtd [rtype ptypev]
+  `(MethodTypeDesc/of ~rtype (aclass-desc ~ptypev)))
+
+
+;;; methods generated by "virtuals" fn translation pattern:
+(def name-arity-method "__arityOrNull")
+(def mtd-arity-method (mtd MethodHandle [int]))
+(def name-dmh-method "__directMethodHandles")
+(def mtd-dmh-method (mtd MethodHandleArray []))
+(def name-factory-method "__create")
+(def name-patch-method "__patch")
+(def name-with-meta-impl "__withMetaImpl")
+(def name-meta-method "meta")
+
+
+(defmacro mhd-static [[owner name] rtype ptypev]
+  `(MethodHandleDesc/ofMethod mhk-static ~owner ~name (mtd ~rtype ~ptypev)))
+(defmacro mhd-virtual [[owner name] rtype ptypev]
+  `(MethodHandleDesc/ofMethod mhk-virtual ~owner ~name (mtd ~rtype ~ptypev)))
+(defmacro mhd-constr [[owner] ptypev]
+  `(MethodHandleDesc/ofConstructor ~owner (aclass-desc ~ptypev)))
+(defmacro mhd-itf-virtual [[owner name] rtype ptypev]
+  `(MethodHandleDesc/ofMethod mhk-interface-virtual ~owner ~name
+                              (mtd ~rtype ~ptypev)))
+
+;;; useful building blocks for descriptors:
+(def mtd-void-void (mtd void []))
+(def mtd-object-object (mtd Object [Object]))
+(def mtd-object-object-object (mtd Object [Object Object]))
+(def mtd-map-object (mtd map [Object]))
+;; (def mt-void-String (mt (MethodTypeDesc/ofDescriptor "(Ljava/lang/String;)V")))
+(def mtd-String-void (mtd String []))
+;; (def mt-StaticFnMh-void (mt (MethodTypeDesc/of d/cd-StaticFnMh (aclds))))
+
+;;; used for coll-literal implementation (e.g. as part of compile-quote):
+(def mhd-with-meta (mhd-static [Literal "with_meta"] object [object map]))
+(def mhd-vector (mhd-static [Literal "vector"] vector [objects]))
+(def mhd-map (mhd-static [Literal "map"] map [objects]))
+(def mhd-set (mhd-static [Literal "set"] set [objects]))
+(def mhd-list (mhd-static [Literal "list"] seq [objects]))
+
+;;; compilation/runtime interaction:
+(def mhd-applyMacroMapped
+  (mhd-static [RT "applyMacroMapped"]
+              object [Function Function AFn object object]))
+(def mhd-pushFileContext (mhd-static [RT "pushFileContext"] void [String]))
+(def mhd-popFileContext (mhd-static [RT "popFileContext"] void []))
+(def mhd-markCoreInitialization (mhd-static [RT "markCoreInitialization"]
+                                            void [String]))
+
+;;; namespace boilerplate:
+(def mhd-createNamespace (mhd-static [RT "createNamespace"] void [String]))
+(def mhd-var-2 (mhd-static [ClojureRT "var"] Var [String String]))
+(def mhd-var-3 (mhd-static [ClojureRT "var"] Var [String String Object]))
+(def mhd-Var-deref (mhd-virtual [Var "deref"] Object []))
+(def mhd-Var-set (mhd-virtual [Var "set"] Object [Object]))
+(def mhd-Var-setMeta (mhd-virtual [Var "setMeta"] Var [map]))
+(def mhd-Var-setDynamic (mhd-virtual [Var "setDynamic"] Var []))
+(def mhd-Var-bindRoot (mhd-virtual [Var "bindRoot"] void [Object]))
+
+;;; bytecode/instruction support:
+(def mhd-isInstance (mhd-virtual [Class "isInstance"] boolean [Object]))
+(def mhd-equiv (mhd-static [ClojureUtil "equiv"] boolean [Object Object]))
+(def mhd-no-matching-clause (mhd-static [RT "noMatchingClause"]
+                                        Exception [Object]))
+(def mhd-methodHandleArray1 (mhd-static [RT "methodHandleArray"]
+                                        MethodHandleArray [MethodHandle]))
+(def mhd-methodHandleArray* (mhd-static [RT "methodHandleArray"]
+                                        MethodHandleArray [MethodHandleArray]))
+(def mhd-array-to-iseq (mhd-static [ArraySeq "create"] ArraySeq [ObjectArray]))
+
+;;; records:
+(def mhd-IPersistentMap-valAt (mhd-itf-virtual [map "valAt"]
+                                               Object [Object Object]))
+(def mhd-IPersistentMap-without (mhd-itf-virtual [map "without"] map [Object]))
+(def mhd-RT-seqOrElse (mhd-static [ClojureRT "seqOrElse"] Object [Object]))
+
+;;; class dependencies:
+(def mhd-Object (mhd-constr [Object] []))
+(def mhd-AFn (mhd-constr [AFn] [map]))
+
+;;; type conversion:
+(def mhd-truthy-reference (mhd-static [RT "truthyReference"] boolean [Object]))
+(def mhd-null-string (mhd-static [RT "nullToEmptyString"] Object [Object]))
+(def mhd-boolean-to-zero-one (mhd-static [RT "booleanToZeroOne"] int [boolean]))
+
+;;; converting object to primitive value (currently "checked" variant):
+(def ^:private primitive-conv-method
+  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 12)
+    (aset 0 (mhd-static [RT "intCast"] int [object]))
+    (aset 1 (mhd-static [RT "longCast"] long [object]))
+    (aset 2 (mhd-static [RT "floatCast"] float [object]))
+    (aset 3 (mhd-static [RT "doubleCast"] double [object]))
+    (aset 4 nil)
+    (aset 5 nil)
+    (aset 6 nil)
+    (aset 7 (mhd-static [RT "booleanCast"] boolean [object]))
+    (aset 8 (mhd-static [RT "charCast"] char [object]))
+    (aset 9 (mhd-static [RT "byteCast"] byte [object]))
+    (aset 10 (mhd-static [RT "shortCast"] short [object]))
+    (aset 11 nil)))
+
+(defn logical->conv-object-mhd ^DirectMethodHandleDesc [^Class tp]
+  ;; pre: `cl` is a non-void primitive type
+  (aget primitive-conv-method (jb/aidx jb/logical-types tp)))
+
+;;; boxing:
+(def ^:private box-factory
+  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 12)
+    (aset 0 (mhd-static [Integer "valueOf"] Integer [int]))
+    (aset 1 (mhd-static [Long "valueOf"] Long [long]))
+    (aset 2 (mhd-static [Float "valueOf"] Float [float]))
+    (aset 3 (mhd-static [Double "valueOf"] Double [double]))
+    (aset 4 nil)
+    (aset 5 nil)
+    (aset 6 nil)
+    (aset 7 (mhd-static [Boolean "valueOf"] Boolean [boolean]))
+    (aset 8 (mhd-static [Character "valueOf"] Character [char]))
+    (aset 9 (mhd-static [Byte "valueOf"] Byte [byte]))
+    (aset 10 (mhd-static [Short "valueOf"] Short [short]))
+    (aset 11 nil)))
+
+(defn logical->box-factory ^DirectMethodHandleDesc [^Class tp]
+  ;; pre: `cl` is a non-void primitive type
+  (aget box-factory (jb/aidx jb/logical-types tp)))
+
+;;; unboxing:
+(def ^:private primitive-accessor
+  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 12)
+    (aset 0 (mhd-virtual [Integer "intValue"] int []))
+    (aset 1 (mhd-virtual [Long "longValue"] long []))
+    (aset 2 (mhd-virtual [Float "floatValue"] float []))
+    (aset 3 (mhd-virtual [Double "doubleValue"] double []))
+    (aset 4 nil)
+    (aset 5 nil)
+    (aset 6 nil)
+    (aset 7 (mhd-virtual [Boolean "booleanValue"] boolean []))
+    (aset 8 (mhd-virtual [Character "charValue"] char []))
+    (aset 9 (mhd-virtual [Byte "byteValue"] byte []))
+    (aset 10 (mhd-virtual [Short "shortValue"] short []))
+    (aset 11 nil)))
+
+(defn logical->accessor-mhd ^DirectMethodHandleDesc [^Class tp]
+  ;; pre: `cl` is a non-void primitive type
+  (aget primitive-accessor (jb/aidx jb/logical-types tp)))
+
+;;; polymorphic MethodHandle invokes:
+(def mhd-MethodHandle-invoke (mhd-virtual [MethodHandle "invoke"]
+                                          Object [ObjectArray]))
+(def mhd-MethodHandle-invokeExact (mhd-virtual [MethodHandle "invokeExact"]
+                                               Object [ObjectArray]))
+
+;;; bootstrap methods:
+(def bsm-null ConstantDescs/BSM_NULL_CONSTANT)
+(def bsm-invoke ConstantDescs/BSM_INVOKE)
+(def bsm-concat
+  (mhd-static [(ClassDesc/of "java.lang.invoke.StringConcatFactory")
+               "makeConcatWithConstants"]
+              CallSite [Lookup String MethodType String ObjectArray]))
+(def bsm-quote (mhd-static [BootstrapMethod "quote"] Object
+                           [Lookup String Class ObjectArray]))
+(def bsm-clause-code
+  (mhd-static [BootstrapMethod "bsmCaseClauseCode"]
+              CallSite [Lookup String MethodType ObjectArray]))
+(def bsm-static-fn (mhd-static [BootstrapMethod "createStaticFn"] StaticFnMh
+                               [Lookup String Class MethodHandleArray]))
+;;; FIXME... rename BootstrapMethod::invokeN to ::invokeFn?
+(def bsm-invoke-fn (mhd-static [BootstrapMethod "invokeN"]
+                               CallSite [Lookup String MethodType]))
+
+;;; ------------------------------------------------------------------------
+
+(defn boolean-desc ^Integer [^boolean x]
+  (if x jb/jvm-int-one jb/jvm-int-zero))
+
+(defn recover-primitive [^Object c ^Class tp]
+  (if (instance? Integer c)
+    (condp jb/same-class? tp
+      jb/int c
+      jb/boolean (tinyclj.core/object (not (zero? ^int c)))
+      jb/byte (tinyclj.core/object (tinyclj.core/byte ^int c))
+      jb/short (tinyclj.core/object (tinyclj.core/short ^int c))
+      jb/char (tinyclj.core/object (tinyclj.core/char ^int c))
+      #_else (throw (IllegalArgumentException.)))
+    c))
+
+(letfn [(dcd-named ^ConstantDesc [^String dcd-nm ^ClassDesc dcd-tp ^Named nm]
+          (if-some [nmsp (namespace nm)]
+            (DynamicConstantDesc/ofNamed bsm-quote dcd-nm dcd-tp nmsp (name nm))
+            (DynamicConstantDesc/ofNamed bsm-quote dcd-nm dcd-tp (name nm))))
+        (dcd-pattern ^ConstantDesc [^Pattern p]
+          (DynamicConstantDesc/ofNamed bsm-quote "re-pattern" pattern (.pattern p)))]
+  (defn describe-const-expr ^ConstantDesc [^Object c]
+    (cond
+      (instance? ConstantDesc c) c
+      (tinyclj.core/keyword? c) (dcd-named "keyword" keyword c)
+      (tinyclj.core/symbol? c) (dcd-named "symbol" symbol c)
+      (instance? Constable c) (describe-constable c)
+      (instance? Pattern c) (dcd-pattern c)
+      :else (throw (IllegalArgumentException. (str (class c)))))))

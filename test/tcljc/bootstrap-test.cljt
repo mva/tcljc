@@ -1,0 +1,157 @@
+(ns tcljc.bootstrap-test
+  (:require [tcljc.bootstrap :refer [nmsp asm-expr call-expr]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest empty-namespace-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)]))))
+
+(deftest static-init-test-dot
+  (is (= '[[(CLASS Vx [PUBLIC] "tinyclj/core/__ns" nil "tinyclj/core/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "")
+             (ARETURN)]]
+
+           [(CLASS Vx [PUBLIC] "tinyclj/core/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "tinyclj.core")
+             (INVOKESTATIC RT "createNamespace"
+                           "(Ljava/lang/String;)V")
+             
+             (INVOKESTATIC MethodHandles "lookup"
+                           "()Ljava/lang/invoke/MethodHandles$Lookup;")
+             (INVOKESTATIC RT "setCoreLookup"
+                           "(Ljava/lang/invoke/MethodHandles$Lookup;)V")
+
+             (LDC "tinyclj.core.__ns100")
+             (INVOKESTATIC RT "markCoreInitialization" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns tinyclj.core (:refer-clojure :none))
+                 (. tinyclj.lang.RT (setCoreLookup (. java.lang.invoke.MethodHandles (lookup))))]))))
+
+(deftest static-init-test-sugar
+  (is (= '[[(CLASS Vx [PUBLIC] "tinyclj/core/__ns" nil "tinyclj/core/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "")
+             (ARETURN)]]
+
+           [(CLASS Vx [PUBLIC] "tinyclj/core/__ns100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "tinyclj.core")
+             (INVOKESTATIC RT "createNamespace"
+                           "(Ljava/lang/String;)V")
+             
+             (INVOKESTATIC MethodHandles "lookup"
+                           "()Ljava/lang/invoke/MethodHandles$Lookup;")
+             (INVOKESTATIC RT "setCoreLookup"
+                           "(Ljava/lang/invoke/MethodHandles$Lookup;)V")
+             
+             (LDC "tinyclj.core.__ns100")
+             (INVOKESTATIC RT "markCoreInitialization" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns tinyclj.core (:refer-clojure :none))
+                 (tinyclj.lang.RT/setCoreLookup (java.lang.invoke.MethodHandles/lookup))]))))
+
+(deftest static-method-wrapper
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "rcons~2"
+                     "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "rcons~2"
+                     "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;")
+             ["LOCAL 0: Object seq"]
+             ["LOCAL 1: Object x"]
+             (ALOAD_1)
+             (ALOAD_0)
+             (INVOKESTATIC RT "cons" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+
+         (nmsp '[(ns pkg.ns0)
+                 (def cons (fn* rcons ^clojure.lang.ISeq [seq x]
+                                (clojure.lang.RT/cons x seq)))]))))
+
+(deftest static-method-wrapper-elided
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            
+            [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC RT "cons"
+                     "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;"]]])
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+
+         (nmsp '[(ns pkg.ns0)
+                 (def cons (fn* cons ^clojure.lang.ISeq [x seq]
+                                (clojure.lang.RT/cons x seq)))]))))
+
+
+(deftest asm-expr-no-args
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (ARETURN)]
+         (asm-expr (identity (. java.lang.System out))))))
+
+(deftest asm-expr-ref-arg-without-rtype
+  (is (= '[["LOCAL 0: String x"]
+           (ALOAD_0)
+           (ARETURN)]
+         (asm-expr [^java.lang.String x] x))))
+
+(deftest asm-expr-int-arg-without-rtype
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (IRETURN)]
+         (asm-expr [^int x] x))))
+
+(deftest asm-expr-with-rtype-ref-arg
+  (is (= '[["LOCAL 0: String x"]
+           (ALOAD_0)
+           (ARETURN)]
+         (asm-expr ^java.lang.Object [^java.lang.String x] x))))
+
+
+;;; Note: Without the identity wrapper, the function arity with the
+;;; static get is turned into direct delegation.  That is, the arity
+;;; has no dedicated method implementing it, and all invocations are
+;;; redirected to the static getter instead.
+(deftest call-expr-auto
+  (is (= System/out (call-expr (identity (. java.lang.System out))))))

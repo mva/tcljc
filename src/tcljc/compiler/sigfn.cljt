@@ -1,0 +1,236 @@
+(ns tcljc.compiler.sigfn
+  (:require
+   [tcljc.util :as util]
+   [tcljc.config :as cfg]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.wrong :as wrong]
+   [tcljc.expr :as x]
+   [tcljc.context :as ctx]
+   [tcljc.compiler.resolve :as resolve])
+  (:import
+   (tcljc.expr FnForm Arity Binding)
+   (clojure.lang Symbol)
+   (java.lang.reflect Method)))
+
+(defn wrong-class [x]
+  (if (instance? NoClassDefFoundError x)
+    (wrong-class (ex-message ^NoClassDefFoundError x))
+    (let [sym (symbol x)]               ;idempotent
+      (wrong/unresolved "class not found " sym sym))))
+
+(defn ensure-interface ^Class [^Class tp]
+  (if (jb/interface? tp)
+    tp
+    (wrong/type-expr "not an interface class" tp)))
+
+
+(defn get-tag [form]
+  (-> form (meta) :tag))
+
+(defn tag-of ^Class [form ^boolean void? ^Class no-hint tl-ctx]
+  (if-some [tag (get-tag form)]
+    (if-some [tp (ctx/get-type tag tl-ctx)]
+      (if (and (jb/statement? tp) (not void?))
+        (wrong/syntax "`void` tag not applicable in this context")
+        tp)
+      (wrong-class tag))
+    no-hint))
+
+;;; ------------------------------------------------------------------------
+
+(defn ensure-parameter [x]
+  (if (symbol? x)
+    (if (namespace x)
+      (wrong/syntax "parameter name must not have a namespace" x)
+      x)
+    (wrong/syntax "parameter name must be symbol" x)))
+
+(defn ensure-accept-tag [^boolean accept-tags? form]
+  (when-not accept-tags?
+    (when-some [t (get-tag form)]
+      (wrong/syntax "cannot type tag parameter in this context" t))))
+
+(defn- with-paramv
+  (^Arity [^Arity tmpl paramv ^Class rtype ^String method-name]
+   (Arity. paramv rtype (count paramv) (.varargs? tmpl) false
+           method-name (.this-name tmpl) (.level tmpl) (.aform tmpl)
+           (.!closes-over tmpl) (.at-idx tmpl)))
+  (^Arity [^Arity tmpl paramv ^Class rtype
+           ^boolean varargs? ^boolean variadic? ^int idx]
+   (Arity. paramv rtype (count paramv) varargs? variadic?
+           (.method-name tmpl) (.this-name tmpl) (.level tmpl) (.aform tmpl)
+           (.!closes-over tmpl) idx)))
+
+(defn mk-param ^Binding [^int level ^Symbol nm ^Class tp]
+  (-> (x/local-ref level nm tp x/b-parameter)
+      (x/local-binding nil)))
+
+(defn mk-receiver ^Binding [^int level ^Symbol nm ^Class tp]
+  (-> (x/local-ref level nm tp x/b-this-object)
+      (x/local-binding nil)))
+
+(defn- arity-sig ^Arity [^Arity tmpl ^Class unset-tp ^Class rtype params tl-ctx]
+  (loop [acc []
+         [p :as params] (seq params)]
+    (cond
+      (nil? params)
+      (with-paramv tmpl acc rtype false false (.at-idx tmpl))
+      
+      (= p '&)
+      (let [p (ensure-parameter (second params))
+            tp (tag-of p false nil tl-ctx)
+            vap-tp (if (nil? tp)
+                     (cond (some? unset-tp)
+                           unset-tp
+                           (some? (.method-name tmpl))
+                           (wrong/syntax "method cannot have rest parameter")
+                           :else (ctx/get-type rt/clnm-seq tl-ctx))
+                     (if (jb/array? tp)
+                       tp
+                       (wrong/type-expr "type of rest parameter must be array" tp)))]
+        (when (nnext params)
+          (wrong/syntax "additional parameters after rest parameter"))
+        (let [param (mk-param (.level tmpl) p vap-tp)]
+          (with-paramv tmpl
+            (conj acc param) rtype (some? tp) (nil? tp) (.at-idx tmpl))))
+
+      :else
+      (let [tp (tag-of p false (or unset-tp jb/Object) tl-ctx)
+            param (mk-param (.level tmpl) (ensure-parameter p) tp)]
+        (recur (conj acc param) (next params))))))
+
+;;; If `unset-tp` is not nil, then this type is used for an entity
+;;; without an explicit type tag: return type, parameter type, or
+;;; varargs type.
+(defn parse-arity-sigs [^int level ^Class unset-tp ^Symbol this-name aforms
+                        tl-ctx]
+  (letfn [(arity ^Arity [aform ^int at-idx]
+            (if (and (seq? aform) (vector? (first aform)))
+              (let [v (first aform)
+                    rtype (or (tag-of v true unset-tp tl-ctx)
+                              (if (-> v (meta) :auto-return-type)
+                                jb/cl-polymorphic-type
+                                jb/Object))
+                    accept-tags? true #_(nil? itf-tp)
+                    tmpl (Arity. nil nil -1 false false nil this-name
+                                 level aform (util/mk-shm) at-idx)]
+                (ensure-accept-tag accept-tags? v)
+                (doseq [p v]
+                  (ensure-accept-tag accept-tags? p))
+                (arity-sig tmpl unset-tp rtype (seq v) tl-ctx))
+              (wrong/syntax "expect function arity ([...] ...)")))
+          (arity-seq [acc seen-ns [aform :as aforms]]
+            (if (some? aforms)
+              (let [at (arity aform (count acc)), n (.n at)]
+                (when (contains? seen-ns (object n))
+                  (wrong/other (str "function arity " n " already defined")))
+                (when (and (.varargs? at)
+                           (->> acc
+                                (filter #(> (.n ^Arity %) n))
+                                (seq)
+                                (boolean)))
+                  (wrong/other "only maximum arity can be variadic"))
+                (recur (conj acc at) (conj seen-ns (object n)) (next aforms)))
+              (if (seq acc)
+                acc
+                (wrong/syntax "function must have at least one arity"))))]
+    (arity-seq [] #{} (seq aforms))))
+
+(defn- with-method-ptype ^Binding [^Binding b ^Class tp]
+  (let [bref (.bref b)]
+    (-> (x/local-ref (x/b-level bref) (x/form bref) tp x/b-parameter)
+        (x/local-binding (first (x/argv b))))))
+
+(defn- fixup-arity-sig ^Arity [^Arity at ^Method m]
+  (let [rtype (if (or (jb/polymorphic? (.rtype at))
+                      (jb/same-class? (.rtype at) (.getReturnType m)))
+                (.getReturnType m)
+                (wrong/other (str "interface and function result disagree on "
+                                  "type: method says "
+                                  (wrong/q (.getReturnType m))
+                                  ", but result is " (wrong/q (.rtype at)))))
+        pclasses (.getParameterTypes m)
+        paramv (loop [acc []
+                      i 0]
+                 (if (= i (.n at))
+                   acc
+                   (let [d (x/at-nth at i)
+                         dclass (x/type (.bref d))
+                         pclass (aget pclasses i)]
+                     (cond
+                       (= dclass pclass)
+                       (recur acc (inc i))
+
+                       (not (jb/polymorphic? dclass))
+                       (wrong/other (str "interface and function parameter "
+                                         (wrong/q (.form d)) " disagree on type: "
+                                         "method says " (wrong/q pclass) ", but "
+                                         "parameter is " (wrong/q dclass)))
+
+                       :else
+                       (recur (conj acc (with-method-ptype d pclass))
+                              (inc i))))))]
+    (when-not (= (.varargs? at) (.isVarArgs m))
+      (wrong/other "interface and function disagree on varargs status"))
+    (with-paramv at paramv rtype (.getName m))))
+
+(defn- fixup-arity-sigs-from-itf [asigs ^Class itf]
+  (let [method-n #(.getParameterCount ^Method %)
+        av (vec (sort-by x/at-n asigs))
+        mv (vec (sort-by method-n (resolve/itf-methods itf)))]
+    (loop [acc []
+           ai 0
+           mi 0]
+      (if (= ai (count av))
+        acc
+        (let [at (nth av ai)
+              an (x/at-n at)]
+          (if (= mi (count mv))
+            (wrong/other (str "interface " (wrong/q itf)
+                              " has no method of arity " an))
+            (let [m (nth mv mi)
+                  mn (method-n m)]
+              (cond
+                (> mn an)
+                (recur acc ai (count mv)) ;no matching method
+                (< mn an)
+                (recur acc ai (inc mi))
+                :else
+                (recur (conj acc (fixup-arity-sig at m))
+                       (inc ai) (inc mi))))))))))
+
+(defn- fn*-arity-sigs [itf-tag this-name aforms ^int level tl-ctx]
+  (if (some? itf-tag)
+    (-> (parse-arity-sigs level jb/cl-polymorphic-type this-name aforms tl-ctx)
+        (fixup-arity-sigs-from-itf itf-tag))
+    (parse-arity-sigs level nil this-name aforms tl-ctx)))
+
+;;; `level` is the level that is assigned to names defined in this
+;;; function.
+(defn destructure-fn*-form ^FnForm [form ^int level ^String unique-mnm tl-ctx]
+  (letfn [(arity-forms [xs]
+            (if (vector? (first xs))
+              (list (with-meta xs (meta form)))
+              xs))
+          (fn*-itf-tag ^Class [fn-name]
+            (when-some [tp (tag-of fn-name false nil tl-ctx)]
+              (ensure-interface tp)))
+          (mk-fn-form [^Symbol this-name ^Class itf-tag aforms]
+            (let [tp (ctx/get-type rt/clnm-abstract-fn tl-ctx)
+                  itf-tags (if (some? itf-tag)
+                             (doto (new "[Ljava.lang.Class;" 1)
+                               (aset 0 itf-tag))
+                             (new "[Ljava.lang.Class;" 0))
+                  
+                  at-sigs (fn*-arity-sigs itf-tag this-name aforms level tl-ctx)
+                  fnc (x/mk-fn-code (count at-sigs))]
+              ;; Set form early, so that its available in the forked
+              ;; of thread that compiles the function body.
+              (FnForm. form (or itf-tag tp) [] nil level unique-mnm
+                       rt/mhd-AFn itf-tags at-sigs nil fnc)))]
+    
+    (let [nm (second form)]
+      (if (symbol? nm)
+        (mk-fn-form nm (fn*-itf-tag nm) (arity-forms (nnext form)))
+        (mk-fn-form nil nil (arity-forms (next form)))))))

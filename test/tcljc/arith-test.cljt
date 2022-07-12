@@ -1,0 +1,128 @@
+(ns tcljc.arith-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr fn-call-method
+                                     is-class]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest int-add-test
+  ;; everything starts with a constant literal
+  (is (= '[(ICONST_1) (IRETURN)]
+         (asm-expr 1)))
+  ;; an auspicious beginning
+  (is (= '[(ICONST_3) (IRETURN)]
+         (asm-expr (+ 1 2))))
+  ;; but in the Lisp tradition, we can take a step back
+  (is (= '[(ICONST_1) (IRETURN)]
+         (asm-expr (+ 1))))
+  ;; and another one
+  (is (= '[(ICONST_0) (IRETURN)]
+         (asm-expr (+))))
+  ;; that being settled, we can go in the other direction
+  (is (= '[(BIPUSH 6) (IRETURN)]
+         (asm-expr (+ 1 2 3)))))
+
+(deftest int-sub-test
+  (is (= '[(ICONST_M1) (IRETURN)]
+         (asm-expr (- 1 2))))
+  (is (= '[(ICONST_M1) (IRETURN)]
+         (asm-expr (- 1))))
+  #_(is (= '[(ICONST_0) (IRETURN)]
+           (asm-expr (-))))             ;error in Clojure
+  (is (= '[(BIPUSH -4) (IRETURN)]
+         (asm-expr (- 1 2 3)))))
+
+;; Note: primitive results are boxed.
+(deftest result-type-literals-test
+  (is-class 1 Integer)
+  (is-class (byte 1) Byte)
+  (is-class 1.0 Double)
+  (is-class (float 1.0) Float))
+
+(deftest result-type-binary-int-test
+  (is-class (+ 1 1) Integer)
+  (is-class (+ (byte 1) (byte 1)) Integer)
+  (is-class (quot 3 2) Integer)
+  (is-class (quot (byte 3) (byte 2)) Integer))
+
+(deftest result-type-unary-int-test
+  (is-class (+ 1) Integer)
+  (is-class (+ (byte 1)) Integer)
+  (is-class (- 1) Integer)
+  (is-class (- (byte 1)) Integer)
+  (is-class (* 1) Integer)
+  (is-class (* (byte 1)) Integer)
+  (is-class (/ 1) Float)
+  (is-class (/ (byte 1)) Float))
+
+(deftest result-type-nonary-int-test
+  (is-class (+) Integer)
+  (is-class (*) Integer)
+  #_(is-class (-) Integer)              ;error in Clojure
+  #_(is-class (/) Float))               ;error in Clojure
+
+(deftest result-type-binary-float-test
+  (is-class (+ 1.0 1.0) Double)
+  (is-class (+ (float 1.0) 1.0) Double)
+  (is-class (+ 1.0 (float 1.0)) Double)
+  (is-class (+ (float 1.0) (float 1.0)) Float)
+  (is-class (/ 3.0 2.0) Double)
+  (is-class (/ (float 3.0) 2.0) Double)
+  (is-class (/ 3.0 (float 2.0)) Double)
+  (is-class (+ (float 3.0) (float 2.0)) Float))
+
+(deftest result-type-unary-float-test
+  (is-class (+ 1.0) Double)
+  (is-class (+ (float 1.0)) Float)
+  (is-class (* 1.0) Double)
+  (is-class (* (float 1.0)) Float)
+  (is-class (/ 1.0) Double)
+  (is-class (/ (float 1.0)) Float))
+
+(deftest negate-test
+  (is (= '[["LOCAL 0: int a"] (ILOAD_0) (INEG) (IRETURN)]
+         (asm-expr ^int [^int a] (- a))))
+  (is (= '[["LOCAL 0: long a"] (LLOAD_0) (LNEG) (LRETURN)]
+         (asm-expr ^long [^long a] (- a))))
+  (is (= '[["LOCAL 0: float a"] (FLOAD_0) (FNEG) (FRETURN)]
+         (asm-expr ^float [^float a] (- a))))
+  (is (= '[["LOCAL 0: double a"] (DLOAD_0) (DNEG) (DRETURN)]
+         (asm-expr ^double [^double a] (- a)))))
+
+;; note: Clojure `/` with integer arguments returns a rational
+(deftest division-with-negative
+  ;; integer division with quot & rem
+  (is (= '[["LOCAL 0: int p"]
+           ["LOCAL 1: int q"]
+           (ILOAD_0)
+           (ILOAD_1)
+           (IDIV)
+           (IRETURN)]
+         (asm-expr ^int [^int p ^int q] (quot p q))))
+  (is (= '[["LOCAL 0: int p"]
+           ["LOCAL 1: int q"]
+           (ILOAD_0)
+           (ILOAD_1)
+           (IREM)
+           (IRETURN)]
+         (asm-expr ^int [^int p ^int q] (rem p q))))
+  (is (= '[(ICONST_M1) (IRETURN)] (asm-expr (quot -3 2))))
+  (is (= '[(ICONST_M1) (IRETURN)] (asm-expr (rem -3 2))))
+  
+  ;; double division with quot & rem
+  (is (= '[["LOCAL 0: double p"]
+           ["LOCAL 2: double q"]
+           (DLOAD_0)
+           (DLOAD_2)
+           (DDIV)
+           (D2L)
+           (L2D) 
+           (DRETURN)]
+         (asm-expr ^double [^double p ^double q] (quot p q))))
+  (is (= '[["LOCAL 0: double p"]
+           ["LOCAL 2: double q"]
+           (DLOAD_0)
+           (DLOAD_2)
+           (DREM)
+           (DRETURN)]
+         (asm-expr ^double [^double p ^double q] (rem p q))))
+  (is (= '[(LDC2_W -1.0) (DRETURN)] (asm-expr (quot -3.0 2.0))))
+  (is (= '[(LDC2_W -1.0) (DRETURN)] (asm-expr (rem -3.0 2.0)))))

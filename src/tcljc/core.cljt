@@ -1,0 +1,217 @@
+(ns tcljc.core
+  (:require [tcljc.config :as cfg]
+            [tcljc.reader :as rd]
+            [tcljc.emitter :as em]
+            tcljc.reader-test
+            #_tinyclj.frontend.reader)
+  (:import (tcljc.reader Tokens)
+           (java.nio.file Path Files)
+           (java.util.concurrent Executors)))
+
+(defn align-meta [m]
+  ;; (dissoc m :line :column) is variadic and called via MethodHandle
+  (dissoc m :column))
+
+(defn count-recursive ^int [x]
+  (+ (if-some [m (when (instance? clojure.lang.IMeta x)
+                   (meta x))]
+       (count-recursive (align-meta m))
+       0)
+     (if (seqable? x)
+       (loop [acc 1, xs (seq x)]
+         (if (nil? xs)
+           acc
+           (recur (+ acc (count-recursive (first xs))) (next xs))))
+       1)))
+
+(defn count-parallel ^int [x]
+  (let [acnt (java.util.concurrent.atomic.AtomicInteger. 0)]
+    ;; FIXME... shutdown on error
+    (with-open [scope (Executors/newVirtualThreadPerTaskExecutor)]
+      (letfn [(count-rec ^int [x]
+                (+ (if-some [m (when (instance? clojure.lang.IMeta x)
+                                 (meta x))]
+                     (count-rec (align-meta m))
+                     0)
+                   (if (seqable? x)
+                     (let [s (seq x)]
+                       (if (instance? clojure.lang.LazySeq (rest s))
+                         (do
+                           (.submit scope (fn ^Callable task []
+                                            (.addAndGet acnt (count-all 1 s))
+                                            nil))
+                           0)
+                         (count-all 1 s)))
+                     1)))
+              (count-all ^int [^int acc ^clojure.lang.ISeq xs]
+                (if (nil? xs)
+                  acc
+                  (recur (+ acc (count-rec (first xs))) (next xs))))]
+        (let [partial-cnt (count-rec x)]
+          (.close scope)   ;wait for all to complete and add to `acnt`
+          (+ partial-cnt (.get acnt)))))))
+
+
+(defn slurp+read+doall-tclj [^Path path]
+  (let [rurl (-> path (.toUri) (.toURL))]
+    (assert false)
+    #_(->> (tinyclj.frontend.reader/form-seq rurl)
+           (doall))))           ;force top-level seq, rest is eager
+
+(defn slurp+read+count-tclj ^int [^Path path]
+  (let [rurl (-> path (.toUri) (.toURL))]
+    (assert false)
+    #_(->> (tinyclj.frontend.reader/form-seq rurl)
+           (count-recursive))))
+
+
+
+(defn load+tokenize-tcljc ^Tokens [^Path path]
+  (-> (Files/readString path)
+      (rd/tokenize)))
+
+(defn read-lazy-tcljc [^Tokens t ^String ns-str]
+  #_(run! prn (tcljc.parser-test/token-seq t))
+  (->> (rd/read-all (rd/mk-reader t) {rd/this-namespace-key ns-str})
+       (doall))) ;force top-level seq containing unrealized lazy seqs
+
+(defn load+read+doall-tcljc [^Path path ^String ns-str]
+  (-> (load+tokenize-tcljc path)
+      (read-lazy-tcljc ns-str)))
+
+(defn load+read+count-tcljc ^int [^Path path ^String ns-str]
+  (let [txt (Files/readString path)
+        t (rd/tokenize txt)]
+    (->> (read-lazy-tcljc t ns-str)
+         (count-recursive))))
+
+(defn load+read+pcount-tcljc ^int [^Path path ^String ns-str]
+  (let [txt (Files/readString path)
+        t (rd/tokenize txt)]
+    (->> (read-lazy-tcljc t ns-str)
+         (count-parallel))))
+
+(defn run-reader []
+  #_
+  (let [ns-str "tinyclj.core"
+        src "tinyclj/core.cljt"
+        path (Path/of "../jvm-stuff/tclj-in-tclj/src/tinyclj.core" src)
+        n 1000]
+    (time
+     (dotimes [_ n]
+       #_(Files/readString path)
+       #_(load+tokenize-tcljc path)
+       #_(load+read+doall-tcljc path ns-str)
+       (load+read+pcount-tcljc path ns-str)
+       #_(load+read+count-tcljc path ns-str))))
+
+  (let [ns-str "tinyclj.core"
+        src "tinyclj/core.cljt"
+        path (Path/of "../jvm-stuff/tclj-in-tclj/src/tinyclj.core" src)
+        ;; rurl (-> path (.toUri) (.toURL))
+        txt (Files/readString path)     ;preload text
+        n 1000]
+    (let [t (rd/tokenize txt)]
+      (prn :chars (dec (.length (.cs t))))
+      (prn :tokens (alength (.tokens t)))
+      (prn :deltas (.size (.deltas t))))
+
+    #_
+    (let [xs1 (slurp+read+doall-tclj path)
+          xs2 (load+read+doall-tcljc path ns-str)]
+      (doseq [[x1 x2 :as p] (map vector (flatten xs1) (flatten xs2))]
+        (prn p)
+        (when (and (instance? clojure.lang.IMeta x1)
+                   (instance? clojure.lang.IMeta x2))
+          (let [m1 (dissoc (meta x1) :line :column)
+                m2 (dissoc (meta x2) :line :column)]
+            (when-not (= (count m1) (count m2)) ;contain auto-stuff
+              (prn :meta1 (meta x1))
+              (prn :meta2 (meta x2))
+              (throw (Exception. "mismatch: meta without :line/:column")))))
+        (cond
+          (and (map? x1) (map? x2)) ;problem: not flattened and have auto-stuff
+          (when-not (= (count x1) (count x2))
+            (throw (Exception. "mismatch: map count")))
+          
+          (and (keyword? x1) (keyword? x2))
+          (when-not (= (name x1) (name x2)) ;problem: auto-resolved keywords
+            (throw (Exception. "mismatch: keyword name")))
+
+          (and (symbol? x1) (symbol? x2)) ;problem: auto-gensym symbols
+          nil                             ;ignore
+          
+          :else (when-not (= x1 x2)
+                  (throw (Exception. "mismatch: value"))))))
+    
+    (println "\n### tclj reader (eager)")
+    (do
+      (println)
+      (println "timing" n "slurp/read/doall of" src)
+      (time (dotimes [_ n] (slurp+read+doall-tclj path))))
+
+    (do
+      (println)
+      (println "timing" n "slurp/read/count of" src
+               " -- count =" (slurp+read+count-tclj path))
+      (time (dotimes [_ n] (slurp+read+count-tclj path))))
+
+    (println "\n### tcljc reader (lazy)")
+    (println "### (higher count because %-uses in #(...) retain type tag and ???)")
+    #_
+    (do
+      (println)
+      (println "timing" n "parses of" src)
+      (time (dotimes [_ n] (rd/tokenize txt))))
+
+    (do
+      (println)
+      (println "timing" n "load/read/doall of" src)
+      (time (dotimes [_ n] (load+read+doall-tcljc path ns-str))))
+    
+    (let [n 10000
+          t (rd/tokenize txt)]
+      (println)
+      (println "timing" n "read/doall of" src)
+      (time (dotimes [_ n] (read-lazy-tcljc t ns-str))))
+    
+    (do
+      (println)
+      (println "timing" n "load/read/count of" src
+               " -- count =" (load+read+count-tcljc path ns-str))
+      (time (dotimes [_ n] (load+read+count-tcljc path ns-str))))
+
+    (do
+      (println)
+      (println "timing" n "load/read/pcount of" src
+               " -- count =" (load+read+pcount-tcljc path ns-str))
+      (time (dotimes [_ n] (load+read+pcount-tcljc path ns-str))))))
+
+(defn run []
+  (let [tclj-path "../jvm-stuff/tclj-in-tclj"
+        sourcev [#_(cfg/path-of tclj-path "src/tinyclj.rt")
+                 (cfg/path-of tclj-path "src/tinyclj.core")
+                 (cfg/path-of tclj-path "src/tinyclj.compiler")
+                 (cfg/path-of tclj-path "test/tinyclj.compiler")]
+        app-ld (cfg/app-class-loader :platform sourcev)
+        dest-dir (cfg/dest-dir "tcljc.out")
+        load-from-dest-dir? false
+        
+        all-nmsps ["tinyclj.build.run-tests"]]
+    (println :dest-dir (str dest-dir))
+    (println)
+    (time
+     (dotimes [_ 1 #_1000]
+       (let [dyn-ld (cfg/dyn-class-loader app-ld (if load-from-dest-dir?
+                                                   [dest-dir]
+                                                   []))
+             env (em/mk-build-env app-ld dest-dir dyn-ld)]
+         (-> (if cfg/deterministic-namespace-compile?
+               (em/emit-namespaces-mt env all-nmsps)
+               (em/emit-namespaces-st env all-nmsps))
+             #_(time)
+             (em/summary)
+             #_(prn)))))))
+
+(defn -main [& args]
+  (run))

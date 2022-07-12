@@ -1,0 +1,660 @@
+(ns tcljc.cond-test      ;types in conditional expressions (if & case)
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr nmsp]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+;;; This kind of `if` statement happens when expanding `cond`.  If `x`
+;;; is a reference, then everything is fine.  If `x` is a numeric
+;;; primitive, then the value type of `x` is not compatible with
+;;; `nil`.
+;;; 
+;;; But if `x` is of boolean primitive type, then the `nil` is
+;;; interpreted as boolean `false` to determine the if's result
+;;; type.
+;;;
+;;; FIXME... can this special case be retired now that the `cond`
+;;; expansion has been changed?
+(deftest if-else-nil
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (IRETURN)]
+         (asm-expr ^boolean [^boolean x]
+                   (if :else       ;:else is logical true
+                     x             ;whole if is reduced to this branch
+                     nil)))))
+
+(deftest if-nil-or-object
+  (is (= '[["LOCAL 0: boolean x"]
+           ["LOCAL 1: Object y"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (ACONST_NULL)
+           (ARETURN)
+           [L:0]
+           (ALOAD_1)
+           (ARETURN)]
+         (asm-expr [^boolean x ^Object y]
+                   (if x
+                     nil
+                     y)))))
+
+(deftest if-string-or-object
+  (is (= '[["LOCAL 0: boolean x"]
+           ["LOCAL 1: Object y"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (LDC "foo")
+           (ARETURN)
+           [L:0]
+           (ALOAD_1)
+           (ARETURN)]
+         (asm-expr ^:auto-return-type [^boolean x ^Object y]
+                   (if x
+                     "foo"
+                     y)))))
+
+(deftest if-int-or-long
+  (is (= '[(LCONST_0) (LRETURN)]
+         (asm-expr []
+                   (if true (int 0) (long 0))))))
+
+(deftest nested-if-1
+  (is (= '[["LOCAL 0: int i"]
+           (ILOAD_0)
+           (ICONST_1)
+           (IF_ICMPNE L:0)
+           (LDC "1")
+           (ARETURN)
+           [L:0]
+           (ACONST_NULL)
+           (ARETURN)]
+         (asm-expr ^String [^int i]
+                   (if (= i 1)
+                     "1"
+                     nil)))))
+
+(deftest nested-if-2
+  (is (= '[["LOCAL 0: int i"]
+           (ILOAD_0)
+           (ICONST_1)
+           (IF_ICMPNE L:0)
+           (LDC "1")
+           (ARETURN)
+           [L:0]
+           (ILOAD_0)
+           (ICONST_2)
+           (IF_ICMPNE L:1)
+           (LDC "2")
+           (ARETURN)
+           [L:1]
+           (ACONST_NULL)
+           (ARETURN)]
+         (asm-expr ^String [^int i]
+                   (if (= i 1)
+                     "1"
+                     (if (= i 2)
+                       "2"
+                       nil))))))
+(deftest nested-if-3
+  (is (= '[["LOCAL 0: int i"]
+           (ILOAD_0)
+           (ICONST_1)
+           (IF_ICMPNE L:0)
+           (LDC "1")
+           (ARETURN)
+           [L:0]
+           (ILOAD_0)
+           (ICONST_2)
+           (IF_ICMPNE L:1)
+           (LDC "2")
+           (ARETURN)
+           [L:1]
+           (ILOAD_0)
+           (ICONST_3)
+           (IF_ICMPNE L:2)
+           (LDC "3")
+           (ARETURN)
+           [L:2]
+           (ACONST_NULL)
+           (ARETURN)]
+         (asm-expr ^String [^int i]
+                   (if (= i 1)
+                     "1"
+                     (if (= i 2)
+                       "2"
+                       (if (= i 3)
+                         "3"
+                         nil)))))))
+
+(deftest negate-cmp
+  (is (= '[["LOCAL 0: int a"]
+           (ILOAD_0)
+           (ICONST_1)
+           (IF_ICMPLT L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr ^boolean [^int a]
+                   (if (not (< a 1))
+                     true
+                     false))))
+  (is (= '[["LOCAL 0: int a"]
+           (ILOAD_0)
+           (ICONST_1)
+           (IF_ICMPLT L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr ^boolean [^int a]
+                   (not (< a 1))))))
+
+;;; Should fail because of incompatible path types.
+;; (deftest mixed-and
+;;   (is (= '[]
+;;          (nmsp '[(ns pkg.ns0)
+;;                  (def mixed-and
+;;                    (fn* mixed-and [^boolean x ^Object y]
+;;                         (if x
+;;                           x
+;;                           y)))]))))           ;cannot convert y to type of x
+                 
+(deftest if-let-independent-locals
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/FooClass"
+                   nil "java/lang/Object" [IType])
+            [(METHOD [PUBLIC] "<init>" "()V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "if-let" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "if-let~1" "(Z)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "if-let~1" "(Z)V")
+             ["LOCAL 0: boolean x"]
+             (ILOAD_0)
+             (IFEQ L:0)
+             
+             (NEW FooClass) (DUP)
+             (INVOKESPECIAL FooClass "<init>" "()V")
+             (ASTORE_1)
+             ["LOCAL 1: FooClass a"]
+             (RETURN)
+             
+             [L:0]
+             (GETSTATIC Boolean "TRUE" "Ljava/lang/Boolean;")
+             (ASTORE_1)
+             ["LOCAL 1: Boolean b"]
+             (RETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 ;; Expansion of (deftype FooClass []) minus the
+                 ;; factory function and the class reference.
+                 (deftype*
+                   pkg.ns0/FooClass
+                   pkg.ns0.FooClass
+                   []
+                   :implements
+                   [clojure.lang.IType])
+                 (import* pkg.ns0.FooClass)
+                 (def if-let
+                   (fn* if-let ^:auto-return-type [^boolean x]
+                        (try
+                          (if x
+                            (let* [a (FooClass.)]
+                              )
+                            (let* [b Boolean/TRUE]
+                              ))
+                          (finally
+                            nil))))]))))
+
+(deftest statm-position-when
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~0" "()V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "g~1" "(Z)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "g~1" "(Z)V")
+             ["LOCAL 0: boolean x"]
+             (ILOAD_0)
+             (IFEQ L:0)
+             (INVOKESTATIC . "f~0" "()V")
+             [L:0]
+             (INVOKESTATIC . "f~0" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "h" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "h~1" "(J)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "h~1" "(J)V")
+             ["LOCAL 0: long x"]
+             (LLOAD_0)
+             (LCONST_0)
+             (LCMP)
+             (IFGE L:0)
+             (INVOKESTATIC . "f~0" "()V")
+             [L:0]
+             (INVOKESTATIC . "f~0" "()V")
+             (RETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^void []
+                             nil))
+                 (def g (fn* g ^void [^boolean x]
+                             (if x (f))
+                             ;; prevent RETURN from being moved into the `if`:
+                             (f)))
+                 (def h (fn* h ^void [^long x]
+                             (if (< x 0) (f))
+                             ;; prevent RETURN from being moved into the `if`:
+                             (f)))]))))
+
+(deftest statm-position-when-tail
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~0" "()V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "g~1" "(Z)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "g~1" "(Z)V")
+             ["LOCAL 0: boolean x"]
+             (ILOAD_0)
+             (IFEQ L:0)
+             (INVOKESTATIC . "f~0" "()V")
+             (RETURN)
+             [L:0]
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "h" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "g^5857~1" "(J)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "g^5857~1" "(J)V")
+             ["LOCAL 0: long x"]
+             (LLOAD_0)
+             (LCONST_0)
+             (LCMP)
+             (IFGE L:0)
+             (INVOKESTATIC . "f~0" "()V")
+             (RETURN)
+             [L:0]
+             (RETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^void []
+                             nil))
+                 (def g (fn* g ^void [^boolean x]
+                             (if x (f))))
+                 (def h (fn* g ^void [^long x]
+                             (if (< x 0) (f))))]))))
+
+(deftest statm-position-when-not
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~0" "()V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "g~1" "(Z)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "g~1" "(Z)V")
+             ["LOCAL 0: boolean x"]
+             (ILOAD_0)
+             (IFNE L:0)
+             (INVOKESTATIC . "f~0" "()V")
+             [L:0]
+             (INVOKESTATIC . "f~0" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "h" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "h~1" "(J)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "h~1" "(J)V")
+             ["LOCAL 0: long x"]
+             (LLOAD_0)
+             (LCONST_0)
+             (LCMP)
+             (IFLT L:0)
+             (INVOKESTATIC . "f~0" "()V")
+             [L:0]
+             (INVOKESTATIC . "f~0" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^void []
+                             nil))
+                 (def g (fn* g ^void [^boolean x]
+                             (if x nil (f))
+                             ;; prevent RETURN from being moved into the `if`
+                             (f)))
+                 (def h (fn* h ^void [^long x]
+                             (if (< x 0) nil (f))
+                             ;; prevent RETURN from being moved into the `if`
+                             (f)))]))))
+
+(deftest statm-position-when-not-tail
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~0" "()V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "g~1" "(Z)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "g~1" "(Z)V")
+             ["LOCAL 0: boolean x"]
+             (ILOAD_0)
+             (IFEQ L:0)
+             (RETURN)
+             [L:0]
+             (INVOKESTATIC . "f~0" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "h" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "h~1" "(J)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "h~1" "(J)V")
+             ["LOCAL 0: long x"]
+             (LLOAD_0)
+             (LCONST_0)
+             (LCMP)
+             (IFGE L:0)
+             (RETURN)
+             [L:0]
+             (INVOKESTATIC . "f~0" "()V")
+             (RETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^void []
+                             nil))
+                 (def g (fn* g ^void [^boolean x]
+                             (if x nil (f))))
+                 (def h (fn* h ^void [^long x]
+                             (if (< x 0) nil (f))))]))))
+
+(deftest statm-position-empty-when
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~0" "()V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "g~1" "(Z)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "g~1" "(Z)V")
+             ["LOCAL 0: boolean x"]
+             (INVOKESTATIC . "f~0" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "h" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "h~1" "(J)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "h~1" "(J)V")
+             ["LOCAL 0: long x"]
+             (LLOAD_0)
+             (LCONST_0)
+             (LCMP)
+             (POP)
+             (INVOKESTATIC . "f~0" "()V")
+             (RETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^void []
+                             nil))
+                 (def g (fn* g ^void [^boolean x]
+                             (if x 1 2)
+                             ;; prevent RETURN from being moved into the `if`
+                             (f)))
+                 (def h (fn* h ^void [^long x]
+                             (if (< x 0) 1 2)
+                             ;; prevent RETURN from being moved into the `if`
+                             (f)))]))))  
+
+(deftest statm-position-empty-when-tail
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "g~1" "(Z)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "g~1" "(Z)V")
+             ["LOCAL 0: boolean x"]
+             (ILOAD_0)
+             (IFEQ L:0)
+             (RETURN)
+             [L:0]
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "h" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "h~1" "(J)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "h~1" "(J)V")
+             ["LOCAL 0: long x"]
+             (LLOAD_0)
+             (LCONST_0)
+             (LCMP)
+             (IFGE L:0)
+             (RETURN)
+             [L:0]
+             (RETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def g (fn* g ^void [^boolean x]
+                             (if x 1 2)))
+                 (def h (fn* h ^void [^long x]
+                             (if (< x 0) 1 2)))]))))
+
+(deftest statm-position-throw-when-not
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "test?" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "test?~0" "()Z"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "test?~0" "()Z")
+             (ICONST_1)
+             (IRETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~0" "()Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~0" "()Ljava/lang/Object;")
+             (INVOKESTATIC . "test?~0" "()Z")
+             (IFNE L:0)
+             (NEW IllegalArgumentException) (DUP)
+             (LDC "")
+             (INVOKESPECIAL IllegalArgumentException "<init>" "(Ljava/lang/String;)V")
+             (ATHROW)
+             [L:0]
+             (LDC "foo")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def test? (fn* test? ^boolean []
+                                 true))
+                 (def f (fn* f []
+                             (if (test?)
+                               nil
+                               (throw (IllegalArgumentException. "")))
+                             "foo"))]))))
+
+(deftest path-join-with-nil
+  (is (= '[["LOCAL 0: String x"]
+           (ALOAD_0)
+           (IFNONNULL L:0)
+           (ACONST_NULL)
+           (GOTO L:1)
+           [L:0]
+           (ALOAD_0)
+           [L:1]
+           (INVOKEVIRTUAL String "length" "()I")
+           (IRETURN)]
+         ;; The joined path typed of <reference-type> and null_type is
+         ;; the reference type.  That is, the following if statement
+         ;; produces the identity and the type of `x`.
+         (asm-expr ^int [^String x]
+                   (.length (if (nil? x)
+                              nil       ;takes on String type
+                              x))))))
+
+(deftest negate-boolean-value
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (IFNE L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr ^boolean [^boolean x]
+                   (not x)))))
+
+(deftest equiv-with-keyword
+  (is (= '[["LOCAL 0: Object x"]
+           (LDC [:bsm-quote
+                 "keyword"
+                 "Lclojure/lang/Keyword;"
+                 ["foo"]])
+           (ALOAD_0)
+           (IF_ACMPNE L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [x] (= :foo x))))
+  (is (= '[["LOCAL 0: Keyword x"]
+           (ALOAD_0)
+           (IFNONNULL L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^clojure.lang.Keyword x] (= nil x))))
+  (is (= '[(ICONST_0)
+           (IRETURN)]
+         (asm-expr (= nil :foo)))))

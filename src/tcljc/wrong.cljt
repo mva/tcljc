@@ -1,0 +1,172 @@
+(ns tcljc.wrong
+  (:require [tcljc.javabase :as jb]
+            [tinyclj.alpha.ptest__term :as term])
+  (:import (clojure.lang Symbol ExceptionInfo IPersistentMap)
+           (java.lang.invoke TypeDescriptor$OfField)
+           (java.nio.file Path)))
+
+(defn- update-ex-data ^ExceptionInfo [^ExceptionInfo ex f & args]
+  (let [ex* (ex-info (ex-message ex) (apply f (ex-data ex) args) (ex-cause ex))]
+    (when-some [t (.getStackTrace ex)]
+      (.setStackTrace ex* t))
+    ex*))
+
+;;; The compiler reports errors by throwing an ExceptionInfo instance.
+;;; Its data map encodes information about the context of the error,
+;;; while the exception's message is a free form error message.
+;;;
+;;; :form/context is a seq of forms, with each element but the last
+;;; one being the parent list of the next element.  The last element
+;;; is the innermost form that could not be processed by the
+;;; compiler's frontend.  Identical duplicates of the current head are
+;;; omitted.  Forms from source code provide :line numbers,
+;;; but most forms created by macro expansion are not decorated like
+;;; this.
+;;;
+;;; If an `ExceptionInfo` is decorated with a ex-cause value, then it
+;;; is assumed that this Throwable originates outside of the control
+;;; of the compiler (e.g. during macro expansion).
+(defn- push-context ^ExceptionInfo [^ExceptionInfo ex context]
+  (if (identical? :tinyclj.frontend.expr/no-form context)
+    ex
+    (let [ctxs (get (ex-data ex) :form/context)]
+      (cond-> ex
+        (or (nil? ctxs) (not (identical? context (first ctxs))))
+        (update-ex-data assoc :form/context (cons context ctxs))))))
+
+(defn rethrow-with-list-context ^void [^ExceptionInfo e form]
+  (throw (push-context e form)))
+
+(defn mk-e
+  (^ExceptionInfo [msg]
+   (mk-e msg {}))
+  (^ExceptionInfo [msg data]
+   #_(prn :error msg data)
+   #_(.printStackTrace (Throwable.))
+   (ex-info msg data))
+  (^ExceptionInfo [msg data context]
+   (push-context (mk-e msg data) context)))
+
+;;; Only assoc `k` to the exception's data if this key is not defined
+;;; yet.  With exceptions decorated from the most to the least
+;;; specific context, this is used to preserve the most specific
+;;; information availlable.
+(defn assoc-if-new ^ExceptionInfo [^ExceptionInfo e k v]
+  (cond-> e
+    (not (contains? (ex-data e) k))
+    (update-ex-data assoc k v)))
+
+;;; ------------------------------------------------------------------------
+
+(defn str* ^String [x]
+  (cond
+    (nil? x) "nil"
+    (class? x) (if (jb/null? x) "null_type" (.getName ^Class x))
+    (string? x) (pr-str x)
+    :else (str x)))
+
+(defn q ^String [x]                    ;quoting a source code fragment
+  (let [s (str* x), s' (term/quote s)]
+    (if (identical? s s')
+      (str "`" s "`")                 ;fallback if styles are disabled
+      s')))
+
+(defn got ^String [x] (str " (got: " (str* x) ")"))
+(defn got-int ^String [^int i] (got (str i)))
+(defn got-q ^String [x] (got (q x)))
+
+
+
+(defn syntax
+  ([^String msg]
+   (throw (mk-e msg)))
+  ([^String msg-prefix form]
+   (throw (mk-e (str msg-prefix (got-q form)) {} form))))
+(defn ensure-sym
+  (^Symbol [form]
+   (if (symbol? form)
+     form
+     (syntax "expect symbol" form)))
+  (^Symbol [form ^Symbol exp]
+   (if (= form exp)
+     exp
+     (syntax (str "expected symbol " (q exp)) form))))
+(defn ensure-simple-sym ^Symbol [form]
+  (if (and (symbol? form) (nil? (namespace form)))
+    form
+    (syntax "expect unqualified symbol" form)))
+
+
+
+
+(defn unresolved
+  ([resolved-ns-nm ^Symbol fq-sym]
+   (throw (mk-e (str "no public var " (q (name fq-sym)) " in namespace "
+                     (q resolved-ns-nm)))))
+  ([^String msg-prefix sym-or-str context]
+   (throw (mk-e (str msg-prefix (q sym-or-str)) {} context))))
+(defn unresolved-interop [^String msg-prefix ^Symbol sym ^IPersistentMap data]
+  (throw (mk-e (str msg-prefix (q sym)) data)))
+
+(defn class-not-found [x]
+  (if (instance? NoClassDefFoundError x)
+    (class-not-found (ex-message ^NoClassDefFoundError x))
+    (let [sym (symbol x)]               ;idempotent
+      (unresolved "class not found " sym sym))))
+(defn no-class-def-found ^ExceptionInfo [^NoClassDefFoundError e]
+  (let [nm (.replace (ex-message e) \/ \.)]
+    (mk-e (str "failed to load class " (q (symbol nm))))))
+
+
+;;; If body raises an ExceptionInfo, then push seq `form` onto its
+;;; :form/context in the exception handler before re-raising it.
+;;; Primary use is around `compile-list` and `top-level-list`, but it
+;;; should also be done for any syntactic list that the parser takes
+;;; apart.
+(defmacro with-list-context [form & body] ;pre: (seq? form)
+  `(try
+     ~@body
+     (catch NoClassDefFoundError e#
+       (rethrow-with-list-context (no-class-def-found e#) ~form)
+       nil)
+     (catch clojure.lang.ExceptionInfo e#
+       (rethrow-with-list-context e# ~form)
+       nil)))
+
+(defn file [^Path rpath]
+  (throw (mk-e (str "failed to locate resource file " (q (str rpath))))))
+
+;;; see expr/wrong
+;; (defn expr [^String msg-prefix ^Expr x]
+;;   (throw (mk-e msg-prefix {} (.form x))))
+
+;;; This indicates an error regarding a type expression, i.e. an
+;;; expression of type Class.
+(defn type-expr [^String msg-prefix ^TypeDescriptor$OfField tp]
+  (throw (mk-e (str msg-prefix (got tp)))))
+
+(defn other
+  ([^String msg]
+   (throw (mk-e msg)))
+  ([^String msg context]
+   (throw (mk-e msg {} context))))
+
+;;; ------------------------------------------------------------------------
+
+(defn check-argc
+  ([^int n form]
+   (let [argc (dec (count form))]
+     (when-not (= argc n)
+       (other (str (q (first form)) " takes " n " argument"
+                   (when-not (= 1 n) "s") (got-int argc))))))
+  ([^int n ^int m form]
+   (let [argc (dec (count form))]
+     (when-not (<= n argc m)
+       (other (str (q (first form)) " takes " n " to " m " arguments"
+                   (got-int argc)))))))
+
+(defn check-argc-min [^int n form]
+  (let [argc (dec (count form))]
+    (when-not (>= argc n)
+      (other (str (q (first form)) " takes " n " or more arguments"
+                  (got-int argc))))))

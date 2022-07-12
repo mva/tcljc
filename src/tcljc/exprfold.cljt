@@ -1,0 +1,296 @@
+(ns tcljc.exprfold           ;constant folding Expr factories
+  (:require [tcljc.classfile :as cf]
+            [tcljc.javabase :as jb]
+            [tcljc.runtime :as rt]
+            [tcljc.expr :as x])
+  (:import (tcljc.expr Expr Insn Const Progn Block Setter BindingRef Identity
+                       LoopBody Branch SplitJoin Switch TryCatchFinally)
+           (clojure.lang IPersistentVector)
+           (jdk.classfile Classfile Opcode)))
+
+(defn conv ^Expr [^Class type ^Expr arg0 ^Opcode opc]
+  (letfn [(conv-1 ^Object [^int bytecode ^Number arg0]
+            (case bytecode
+              (#_l2i 136 #_f2i 139 #_d2i 142) (object (.intValue arg0))
+              (#_i2l 133 #_f2l 140 #_d2l 143) (object (.longValue arg0))
+              (#_i2f 134 #_l2f 137 #_d2f 144) (object (.floatValue arg0))
+              (#_i2d 135 #_l2d 138 #_f2d 141) (object (.doubleValue arg0))
+
+              #_i2b 145 (object (int (.byteValue arg0)))
+              #_i2c 146 (object (int (char (.intValue arg0))))
+              #_i2s 147 (object (int (.shortValue arg0)))))]
+    (let [c (when-some [c0 (.const-value arg0)]
+              (conv-1 (.bytecode opc) c0))]
+      (if (x/const? arg0)
+        (Const. nil type [] c)   ;e.g. (float 1.0) is the same as 1.0f
+        (Insn. nil type [arg0] c
+               (jdk.classfile.instruction.ConvertInstruction/of opc))))))
+
+(defn arith-2 ^Expr [^Class type ^Expr arg0 ^Expr arg1 ^Opcode opc]
+  (letfn [(arith-int-2 ^int [^int bytecode ^Number arg0 ^Number arg1]
+            (let [a0 (.intValue arg0), a1 (.intValue arg1)]
+              (case bytecode
+                #_iadd 96 (+ a0 a1)
+                #_isub 100 (- a0 a1)
+                #_imul 104 (* a0 a1)
+                #_idiv 108 (quot a0 a1)
+                #_irem 112 (rem a0 a1))))
+          (arith-long-2 ^long [^int bytecode ^Number arg0 ^Number arg1]
+            (let [a0 (.longValue arg0), a1 (.longValue arg1)]
+              (case bytecode
+                #_ladd 97 (+ a0 a1)
+                #_lsub 101 (- a0 a1)
+                #_lmul 105 (* a0 a1)
+                #_ldiv 109 (quot a0 a1)
+                #_lrem 113 (rem a0 a1))))
+          (arith-float-2 ^float [^int bytecode ^Number arg0 ^Number arg1]
+            (let [a0 (.floatValue arg0), a1 (.floatValue arg1)]
+              (case bytecode
+                #_fadd 98 (+ a0 a1)
+                #_fsub 102 (- a0 a1)
+                #_fmul 106 (* a0 a1)
+                #_fdiv 110 (/ a0 a1)
+                #_frem 114 (rem a0 a1))))
+          (arith-double-2 ^double [^int bytecode ^Number arg0 ^Number arg1]
+            (let [a0 (.doubleValue arg0), a1 (.doubleValue arg1)]
+              (case bytecode
+                #_dadd 99 (+ a0 a1)
+                #_dsub 103 (- a0 a1)
+                #_dmul 107 (* a0 a1)
+                #_ddiv 111 (/ a0 a1)
+                #_frem 115 (rem a0 a1))))
+          (arith-const ^Object []
+            (when-some [c0 (.const-value arg0)]
+              (when-some [c1 (.const-value arg1)]
+                (let [bytecode (.bytecode opc)]
+                  (case (bit-and bytecode 0x3)
+                    #_int 0 (object (arith-int-2 bytecode c0 c1))
+                    #_long 1 (object (arith-long-2 bytecode c0 c1))
+                    #_float 2 (object (arith-float-2 bytecode c0 c1))
+                    #_double 3 (object (arith-double-2 bytecode c0 c1)))))))]
+    
+    (if (and (x/const? arg0) ;constant literal like 1.0f or (float 1.0)
+             (zero? (.doubleValue ^Number (.const-value arg0))) ;and zero
+             (cf/between Classfile/ISUB opc Classfile/IMUL)) ;and XSUB opcode
+      (let [opc-neg (cf/bc2opc opc 16)] ;recover XNEG from XSUB
+        (Insn. nil type [arg1] (arith-const)
+               (jdk.classfile.instruction.OperatorInstruction/of opc-neg)))
+      (Insn. nil type [arg0 arg1] (arith-const)
+             (jdk.classfile.instruction.OperatorInstruction/of opc)))))
+
+(defn bits-2 ^Expr [^Class type ^Expr arg0 ^Expr arg1 ^Opcode opc]
+  (letfn [(bits-int-2 ^int [^int bytecode ^Number arg0 ^Number arg1]
+            (let [a0 (.intValue arg0), a1 (.intValue arg1)]
+              (case bytecode
+                #_ishl 120 (bit-shift-left a0 a1)
+                #_ishr 122 (bit-shift-right a0 a1)
+                #_iushr 124 (unsigned-bit-shift-right a0 a1)
+                #_iand 126 (bit-and a0 a1)
+                #_ior 128 (bit-or a0 a1)
+                #_ixor 130 (bit-xor a0 a1))))
+          (bits-long-2 ^long [^int bytecode ^Number arg0 ^Number arg1]
+            (let [a0 (.longValue arg0), a1 (.longValue arg1)]
+              (case bytecode
+                #_lshl 121 (bit-shift-left a0 (int a1))
+                #_lshr 123 (bit-shift-right a0 (int a1))
+                #_lushr 125 (unsigned-bit-shift-right a0 (int a1))
+                #_land 127 (bit-and a0 a1)
+                #_lor 129 (bit-or a0 a1)
+                #_lxor 131 (bit-xor a0 a1))))
+          (bits-const ^Object []
+            (when-some [c0 (.const-value arg0)]
+              (when-some [c1 (.const-value arg1)]
+                (let [bytecode (.bytecode opc)]
+                  (case (bit-and bytecode 0x1)
+                    #_int 0 (object (bits-int-2 bytecode c0 c1))
+                    #_long 1 (object (bits-long-2 bytecode c0 c1)))))))]
+    
+    (Insn. nil type [arg0 arg1] (bits-const)
+           (jdk.classfile.instruction.OperatorInstruction/of opc))))
+
+(defn icmp ^Expr [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
+  (let [c (when-some [c0 (.const-value arg0)]
+            (when-some [c1 (.const-value arg1)]
+              (let [n0 ^int c0, n1 ^int c1]
+                (rt/boolean-desc (case cmp-opcd
+                                   #_eq 0 (= n0 n1)
+                                   #_ne 1 (not= n0 n1)
+                                   #_lt 2 (< n0 n1)
+                                   #_ge 3 (>= n0 n1)
+                                   #_gt 4 (> n0 n1)
+                                   #_le 5 (<= n0 n1))))))]
+    (Branch. nil jb/boolean [arg0 arg1] c Opcode/IF_ICMPEQ cmp-opcd)))
+
+(defn acmp ^Expr [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
+  (let [c (when-some [c0 (rt/null-value-pred (.const-value arg0))]
+            (when-some [c1 (rt/null-value-pred (.const-value arg1))]
+              (let [c0 ^boolean c0, c1 ^boolean c1]
+                (when (or c0 c1) ;both non-null means "don't know"
+                  (rt/boolean-desc (not= (= cmp-opcd cf/ne) (and c0 c1)))))))]
+    (Branch. nil jb/boolean [arg0 arg1] c Opcode/IF_ACMPEQ cmp-opcd)))
+
+(defn xcmp-signum ^Expr [^Expr arg0 ^Expr arg1 ^Opcode opc]
+  (let [signum #(object (Integer/signum ^int %))
+        c (when-some [c0 (.const-value arg0)]
+            (when-some [c1 (.const-value arg1)]
+              ;; Never constant fold if a NaN is involved; this avoids
+              ;; the subleties of [fd]cmpl vs [fd]cmpg.  A floating
+              ;; point comparison of -0.0 to 0.0 must return zero --
+              ;; don't use `compare` in this case.
+              (case (.bytecode opc)
+                #_lcmp 148
+                (signum (Long/compare ^long c0 ^long c1))
+                    
+                (#_fcmpl 149 #_fcmpg 150)
+                (let [n0 ^float c0, n1 ^float c1]
+                  (when-not (or (Float/isNaN n0) (Float/isNaN n1))
+                    (signum (if (== n0 n1) 0 (Float/compare n0 n1)))))
+                    
+                (#_dcmpl 151 #_dcmpg 152)
+                (let [n0 ^double c0, n1 ^double c1]
+                  (when-not (or (Double/isNaN n0) (Double/isNaN n1))
+                    (signum (if (== n0 n1) 0 (Double/compare n0 n1))))))))]
+    (Insn. nil jb/int [arg0 arg1] c
+           (jdk.classfile.instruction.OperatorInstruction/of opc))))
+
+(defn pop ^Expr [^Expr arg]        ;returns `arg` if it is a statement
+  (letfn [(pop* ^Expr [^Expr arg]
+            (Insn. nil jb/void [arg] (x/empty-when (.safe-to-discard? arg))
+                   (-> (cf/by-slot-size (x/type arg) Opcode/POP Opcode/POP2)
+                       (jdk.classfile.instruction.StackInstruction/of))))
+          (undup ^Expr [^Expr arg]
+            (cond
+              (x/insn? arg) 
+              (let [insn ^Insn arg]
+                (Insn. (x/form insn) jb/void (tinyclj.core/pop (x/argv insn))
+                       (.const-value insn) (.instr insn)))
+              (x/setter? arg)
+              (let [insn ^Setter arg]
+                (Setter. (x/form insn) jb/void (tinyclj.core/pop (x/argv insn))
+                         (.const-value insn)))
+              :else (pop* arg)))]
+    (cond
+      (x/statement? arg) arg
+      (x/dup? (peek (x/argv arg))) (undup arg)
+      :else (pop* arg))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- progn* ^Expr [^IPersistentVector argv]
+  ;; pre: all but the last `argv` have been coerced to statement
+  (let [n (count argv)
+        result-idx (loop [i 0]        ;scan forward to result
+                     (cond
+                       (= i n) (dec i)
+                       (x/returns? (nth argv i)) (recur (inc i))
+                       :else i))
+        result-idx (loop [i result-idx] ;scan backward over empty
+                     (cond
+                       (neg? i) i
+                       (x/expr-empty? (nth argv i)) (recur (dec i))
+                       :else i))]
+    (Progn. nil (x/type (nth argv result-idx x/expr-empty)) argv
+            (x/empty-when (neg? result-idx)) result-idx)))
+
+(defn rewrite-returning [f ^Expr x ^Class to-tp]
+  (letfn [(rebuild ^Expr [^Expr x ^IPersistentVector argv] ;pre: (x/returns? x)
+            (-> (condp instance? x
+                  Progn
+                  (progn* argv)
+               
+                  Block
+                  (Block. (x/form x) to-tp argv nil)
+                  
+                  SplitJoin
+                  (-> (x/split&join (nth argv 0) (nth argv 1) (nth argv 2))
+                      (x/with-innermost-form (x/form x)))
+                  
+                  Switch
+                  (let [sw ^Switch x]   ;no constant folding
+                    (Switch. (x/form x) to-tp argv nil (.guardv sw)))
+               
+                  TryCatchFinally
+                  (let [tcf ^TryCatchFinally x] ;no constant folding
+                    (TryCatchFinally. (x/form x) to-tp argv nil (.handlerv tcf)))
+               
+                  LoopBody              ;no constant folding
+                  (LoopBody. (x/form x) to-tp argv nil)
+               
+                  #_else (throw (IllegalArgumentException. (str (class x)))))
+                (x/with-innermost-form (x/form x))))
+          (rebuild-last ^Expr [^Expr x]
+            (let [xv (x/argv x)]
+              (rebuild x (conj (tinyclj.core/pop xv)
+                               (rewrite-returning f (peek xv) to-tp)))))
+          (rebuild-paths ^Expr [^Expr x ^int start ^int delta-end]
+            (let [v (x/argv x), end (+ (count v) delta-end)]
+              (rebuild x (vec (map-indexed (fn [^int i x]
+                                             (if (and (<= start i) (< i end))
+                                               (rewrite-returning f x to-tp)
+                                               x))
+                                           v)))))]
+    (if (x/returns? x)
+      (condp instance? x
+        ;; identity nodes may have been introduced on joined paths
+        ;; to match up their types
+        Identity (rewrite-returning f (x/nth-arg x 0) to-tp)
+
+        ;; compare nodes are subject to expansion: rewriting Branch means
+        ;; to expand it first and then to rewrite the result
+        Branch (rewrite-returning f (x/split&join ^Branch x) to-tp)
+        
+        Progn (let [tail (peek (x/argv x))]
+                (if (and (some? tail) (x/type? (x/type x) tail))
+                  (rebuild-last x)
+                  (f x to-tp)))
+
+        Block (rebuild-last x)
+        
+        SplitJoin (rebuild-paths x 1 0)
+        
+        Switch (rebuild-paths x 1 0)
+
+        LoopBody (rebuild-last x)
+
+        TryCatchFinally (if (or (jb/returns? to-tp)
+                                (x/expr-empty? (peek (x/argv x))))
+                          (rebuild-paths x 0 -1)
+                          (f x to-tp))
+        
+        #_else (f x to-tp))
+      x)))
+
+
+(defn checkcast ^Expr [^Expr x ^Class check-tp]
+  (cond
+    (x/type? check-tp x) x
+    (x/null-type? x) (x/const check-tp nil)
+    :else (x/type-check x Opcode/CHECKCAST check-tp)))
+
+(defn coerce ^Expr [^Expr x ^Class to-tp] ;pre: `x` returns
+  (letfn [(coerce-expr ^Expr [^Expr x ^Class to-tp] ;pre: `x` is not a join
+            (cond
+              (jb/statement? to-tp)
+              (pop x)
+                    
+              (.isAssignableFrom to-tp (x/type x))
+              (x/identity to-tp x)
+
+              :else (checkcast x to-tp)))]
+    (if (x/type? to-tp x)
+      x
+      (rewrite-returning coerce-expr x to-tp))))
+
+(defn coerce-to-statm ^Expr [^Expr x]
+  (coerce x jb/void))
+
+;;; ------------------------------------------------------------------------
+
+(defn progn-expr ^Expr [^IPersistentVector statmv ^Expr expr]
+  (if (zero? (count statmv))
+    expr
+    (progn* (conj (mapv coerce-to-statm statmv) expr))))
+
+(defn prog2-expr ^Expr [^Expr statm ^Expr expr]
+  (progn* [(coerce-to-statm statm) expr]))
+

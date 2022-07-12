@@ -1,0 +1,30 @@
+(ns tcljc.emitter.beachhead
+  (:require [tcljc.classfile :as cf])
+  (:import (jdk.classfile Classfile)
+           (java.lang.constant ClassDesc MethodTypeDesc)
+           (java.lang.invoke MethodHandles$Lookup MethodType)))
+
+(let [nm-beachhead "__beachhead"
+      cd-MethodHandles (ClassDesc/of "java.lang.invoke" "MethodHandles")
+      cd-Lookup (ClassDesc/of "java.lang.invoke" "MethodHandles$Lookup")]
+  
+  (defn- beachhead ^bytes [^String pkg-name]
+    (let [bhl-xb (cf/with-xbh [xb]
+                   (-> (.invokestatic xb cd-MethodHandles "lookup"
+                                      (MethodTypeDesc/of cd-Lookup))
+                       (.areturn)))]
+      (Classfile/build
+       (ClassDesc/of pkg-name nm-beachhead)
+       (cf/with-cbh [cb]
+         (-> (.withFlags cb Classfile/ACC_PUBLIC)
+             (.withMethodBody "beachheadLookup" (MethodTypeDesc/of cd-Lookup)
+                              (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
+                              bhl-xb))))))
+
+  (defn mk-lookup-in-pkg ^MethodHandles$Lookup [^MethodHandles$Lookup rt-lookup
+                                                ^ClassLoader dyn-ld
+                                                ^String pkg-name]
+    (let [bs (beachhead pkg-name)
+          mt (MethodType/methodType MethodHandles$Lookup (.arrayType Byte/TYPE))
+          mh (.findVirtual rt-lookup (class dyn-ld) "lookupInPackage" mt)]
+      ^MethodHandles$Lookup (.invokeExact (.bindTo mh dyn-ld) bs))))

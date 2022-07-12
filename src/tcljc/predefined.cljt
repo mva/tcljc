@@ -1,0 +1,83 @@
+(ns tcljc.predefined
+  (:require
+   [tcljc.classfile :as cf]
+   [tcljc.config :as cfg]
+   [tcljc.javabase :as jb]
+   [tcljc.expr :as x]
+   [tcljc.compiler :as compiler])
+  (:import
+   (tcljc.expr Expr FnPrimitiveFn)
+   (clojure.lang Symbol)
+   (jdk.classfile Opcode)
+   (java.util HashMap)))
+
+(defn globals-ns-primitive []
+  (letfn [(put-prim [m ^Symbol nm ^FnPrimitiveFn pfn]
+            (.put ^HashMap m (name nm)
+                  (x/primitive-fn-ref nm cfg/primitive-ns-str pfn))
+            m)
+          (put-nary [m ^Symbol nm ^FnPrimitiveFn pfn ^Expr id ^int min-argc]
+            (let [nm* (symbol (str (name nm) "-nary"))
+                  pfn* (compiler/nary-numeric min-argc id pfn)]
+              (-> (put-prim m nm pfn)
+                  (put-prim nm* pfn*))))
+          (put-nary-cmp [m ^Symbol nm ^FnPrimitiveFn pfn]
+            (-> (put-prim m nm pfn)
+                (put-prim (symbol (str (name nm) "-nary"))
+                          (compiler/nary-cmp pfn))))]
+    (-> (HashMap.)
+
+        ;; primitive conversion functions
+        (put-prim 'object compiler/object-primitive)
+        (put-prim 'boolean compiler/boolean-primitive)
+        (put-prim 'byte (compiler/primitive-conv-to jb/byte))
+        (put-prim 'short (compiler/primitive-conv-to jb/short))
+        (put-prim 'char (compiler/primitive-conv-to jb/char))
+        (put-prim 'int (compiler/primitive-conv-to jb/int))
+        (put-prim 'float (compiler/primitive-conv-to jb/float))
+        (put-prim 'long (compiler/primitive-conv-to jb/long))
+        (put-prim 'double (compiler/primitive-conv-to jb/double))
+        
+        ;; arithmetics
+        (put-nary 'xadd (compiler/arith-2 Opcode/IADD) x/expr-zero-int 0)
+        (put-nary 'xsub (compiler/arith-2 Opcode/ISUB) x/expr-zero-int 1)
+        (put-nary 'xmul (compiler/arith-2 Opcode/IMUL) x/expr-one-int 0)
+        (put-nary 'xdiv-float (compiler/arith-2-float Opcode/IDIV)
+                  x/expr-one-int 1)
+        (put-prim 'xdiv-int compiler/arith-2-xdiv-int)
+        (put-prim 'xrem (compiler/arith-2 Opcode/IREM))
+        
+        ;; bitset operations
+        (put-prim 'xdefault compiler/xdefault)
+        (put-prim 'xand (compiler/bits-2 Opcode/IAND))
+        (put-prim 'xor (compiler/bits-2 Opcode/IOR))
+        (put-prim 'xxor (compiler/bits-2 Opcode/IXOR))
+        (put-prim 'xshl (compiler/shift-2 Opcode/ISHL))
+        (put-prim 'xshr (compiler/shift-2 Opcode/ISHR))
+        (put-prim 'xushr (compiler/shift-2 Opcode/IUSHR))
+        
+        ;; comparisons -- also provide nary variants as primitives,
+        ;; because the macro equivalents are somewhat cumbersome do
+        ;; implement early in tinyclj.core
+        (put-nary-cmp 'equiv compiler/equiv)
+        (put-nary-cmp 'eq (compiler/binary-cmp cf/eq))
+        (put-nary-cmp 'lt (compiler/binary-cmp cf/lt))
+        (put-nary-cmp 'ge (compiler/binary-cmp cf/ge))
+        (put-nary-cmp 'gt (compiler/binary-cmp cf/gt))
+        (put-nary-cmp 'le (compiler/binary-cmp cf/le))
+        (put-prim 'acmpeq (compiler/binary-cmp-ref cf/eq))
+        (put-prim 'acmpne (compiler/binary-cmp-ref cf/ne))
+
+        ;; arrays
+        (put-prim 'alength compiler/alength-form)
+        (put-prim 'xaload compiler/xaload-form)
+        (put-prim 'xastore compiler/xastore-form)
+
+        ;; misc
+        (put-prim 'list compiler/list-primitive)
+        (put-prim 'not compiler/not-primitive)
+        (put-prim 'str compiler/concat-primitive)
+        (put-prim 'identity compiler/identity-primitive))))
+
+(def implicit-known-ns
+  {cfg/primitive-ns-str (into {} (globals-ns-primitive))})

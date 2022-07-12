@@ -1,0 +1,912 @@
+(ns tcljc.reader
+  (:require [tcljc.synquote :as sq]
+            [tinyclj.string :as str])
+  (:import (clojure.lang Symbol Keyword Cons ISeq IPersistentMap IMeta)
+           (java.net URL)
+           (java.nio.file Path Files)
+           (java.util ArrayList)
+           (java.util.regex Matcher Pattern PatternSyntaxException)))
+
+;;; Part 1: Parser.  Performs *very* coarse grained and lossless
+;;; parsing of a source file.  Input scenarios are reading largish
+;;; program texts either as a resource or from a file, and parsing
+;;; smaller strings from parts of a larger program (and from unit
+;;; tests).
+;;;
+;;; This is a preprocessing step done on all inputs, and for
+;;; simplicity it is straigtforward serial code doing a single linear
+;;; pass over the input.  The output is a kind of map that allows
+;;; later stages to process forms in a more flexible way, e.g. lists
+;;; as lazy seqs.
+;;;
+;;; While individual input tokens are only parsed down to the level of
+;;; string sequences that can have a non-trivial syntax themselves,
+;;; the hierarchical structure of the input is fully discovered.  The
+;;; scanner reports any unbalanced collections or incompletere nested
+;;; forms like discard or meta.  This means that it rejects input
+;;; texts with certain kinds of syntax errors outright.
+;;;
+;;; Output is an array of (token, length) tuple, with `token` being
+;;; one a a handful of syntactic unit types, and `length` the number
+;;; of characters of the token (possibly zero).
+
+
+;;; Note: `text` is the catch all class for unstructured sequences of
+;;; bytes.  This can be whitespace, a comment, or part of a string.
+;;; `text-nl` is like `text`, but ends either with newline or with the
+;;; end of the file.  Comments are always `text-nl`, usually with
+;;; non-comment whitespace before the first semicolon.
+(def unused-empty-0 0) ;maybe expand the range of delta indices via this tag?
+(def open-delim-1 1) ;list, vector, map, string / meta, quote, unquote, deref
+(def open-delim-2 2) ;fn literal, set, regex / var, discard, unquote
+(def close-delim 3)  ;closing delimiter for some open-delim-*
+(def token 4) ;symbol, keyword, character, unreadable, symbolic value, arg
+(def number 5)       ;number, i.e. either `digit...` or `[+-]digit...`
+(def text 6)         ;whitespace or content of string/regex
+(def text-nl 7)      ;whitespace or content of string/regex
+
+(def ^:private token-size 16)      ;aka Short/SIZE
+(def ^:private tag-bits 3)         ;number of bits to hold a token tag
+(def ^:private max-value (dec (bit-shift-left 1 (- token-size tag-bits))))
+
+(defn- mk-tk ^int [^int tag ^int value]
+  (when (> value max-value)
+    ;; If the delta index limit is ever reached, there are a number of
+    ;; options.  1) Move from shorts to ints.  2) Increase
+    ;; max-tokens-inline.  3) Parse into a lazy seq of Tokens, with
+    ;; one instance per top-level form.  4) Store every open-delim-*
+    ;; as two entries, with the value of the following tag 0 (of
+    ;; length 0) holding the other half if the indices bits.
+    (throw (IllegalStateException. "token size or delta index exceeded")))
+  (bit-or (bit-shift-left value tag-bits) tag))
+
+(defn tk-tag ^int [^int tk]
+  (bit-and (dec (bit-shift-left 1 tag-bits)) tk))
+
+(defn- tk-field ^int [^int tk]
+  (unsigned-bit-shift-right tk tag-bits))
+
+(defn tk-length ^int [^int tk]
+  ;; opening delimiters are special cased, so that their length field
+  ;; can be repurposed
+  (let [tag (tk-tag tk)]
+    (if (<= tag open-delim-2)
+      tag
+      (tk-field tk))))
+
+(defn get-tk ^int [^shorts tokens ^int i]
+  (Short/toUnsignedInt (aget tokens i)))
+
+(defn mk-ex-info ^clojure.lang.ExceptionInfo [^int line-num msg]
+  (ex-info (str line-num ": " msg) {}))
+
+;;; ------------------------------------------------------------------------
+
+;;; Mutable accumulator for a seq of tokens.  Also tracks numbers of
+;;; newline characters seen up to this point.
+(definterface IAcc
+  (add ^void [^int tag ^int value])        ;add token (tag, value)
+  (token-index ^int [])                    ;index of token to be added
+  (update-field ^void [^int i ^int value]) ;update value of token at `i`
+  (nl-count ^int [])                       ;newlines added upto now
+  (to-array ^shorts []))
+
+(deftype Acc [^:unsynchronized-mutable ^int data-end
+              ^:unsynchronized-mutable ^int nl-adds
+              ^:unsynchronized-mutable ^shorts a
+              ^ArrayList deltas]
+  IAcc
+  (add [_ tag value]
+    (when (= data-end (alength a))
+      (set! a (java.util.Arrays/copyOf a (* (alength a) 2))))
+    (aset a data-end (short (mk-tk tag value)))
+    (set! data-end (inc data-end))
+    (when (= tag text-nl)
+      (set! nl-adds (inc nl-adds))))
+  (token-index [_]
+    data-end)
+  (update-field [_ i value]             ;pre: field has value zero
+    (aset a i (short (bit-or (get-tk a i) (mk-tk 0 value)))))
+  (nl-count [_]
+    nl-adds)
+  (to-array [_]
+    (java.util.Arrays/copyOf a data-end)))
+
+(defn- mk-acc ^Acc []
+  ; dec power of two to have room for array header after at most three doublings
+  (Acc. 0 0 (new shorts (dec 4096)) (ArrayList.))) 
+
+;;; ------------------------------------------------------------------------
+
+;;; "End of text" character appended to program text to enable one
+;;; additional character of lookahead without the need to check the
+;;; string's length first.  But: The assumption is that this character
+;;; does not appear in valid input text.  To simplify program logic,
+;;; `parse-form` treats this like an unexpected closing parenthesis.
+;;; This should be a Latin-1 character, so that the string's compact
+;;; representation is not lost.
+(def ^:private eot \u0000)
+
+;;; Delta information covering up to this many tokens is recovered
+;;; from the tokens array, while anything longer is stored as fully
+;;; materialized delta record in an array list.
+(def ^:private max-tokens-inline 64)
+
+;;; If the whole list can be read by inspecting a small number of
+;;; tokens, then read it eagerly.  Range 16 to 32 gives rapidly
+;;; traversable top-level seq, but how much of a win this is depends
+;;; on how many of the nested seqs are materialized by the top-level
+;;; thread.
+(def eager-list-limit 32)  ;at most max-tokens-inline (see `lazy-read?`)
+
+(defn lazy-read? ^boolean [^int tk]     ;pre: tag is open-delim-*
+  ;; delta records start at max-tokens-inline; see `tk-delta` below
+  (assert (<= eager-list-limit max-tokens-inline))
+  (>= (tk-field tk) eager-list-limit))
+
+(deftype Mark [^int chars ^int tokens ^int newlines])
+
+(defn- tokenize* ^void [^Acc acc ^String cs]
+  (letfn [(char-at ^char [^int pos]
+            (.charAt cs pos))
+          (wrong ^int [^int pos msg]
+            #_(prn :pos pos :len (.length cs) :ch (char-at pos)
+                   :prefix (subs cs (max 0 (- pos 31)) (inc pos)))
+            (throw (mk-ex-info (inc (.nl-count acc)) msg))
+            -1)
+
+          (add ^int [^int start ^int end ^int tag]
+            #_(prn :add tag (subs cs start end))
+            (.add acc tag (- end start))
+            end)
+          (mark-start ^Mark [^int start]
+            (Mark. start (.token-index acc) (.nl-count acc)))
+          (delta ^Mark [^Mark start ^int end]
+            (Mark. (- end (.chars start))
+                   (- (.token-index acc) (.tokens start))
+                   (- (.nl-count acc) (.newlines start))))
+          (mark-end ^int [^int pos ^Mark start]
+            (let [d (delta start pos)]  ;(.tokens d) is positive
+              (if (<= (.tokens d) max-tokens-inline)
+                (.update-field acc (.tokens start) (dec (.tokens d)))
+                (let [deltas-idx (+ max-tokens-inline (.size (.deltas acc)))]
+                  (.update-field acc (.tokens start) deltas-idx)
+                  (.add (.deltas acc) d)))
+              pos))
+          (add-open-delim ^int [^Mark start ^int tag-open]
+            ;; opening delimiters are special cased, so that their
+            ;; length field can be repurposed
+            (.add acc tag-open 0)
+            (+ (.chars start) tag-open))
+          
+          (macro? ^boolean [^char ch]
+            (case ch            ;see `macros` array in LispReader.java
+              (\" \; \' \@ \^ \` \~ \( \) \[ \] \{ \} \\ \% \#) true
+              #_else false))
+          (terminating-macro? ^boolean [^char ch] ;isTerminatingMacro
+            (case ch          ;like `macro?`, but false for (\# \% \')
+              (\" \; \@ \^ \` \~ \( \) \[ \] \{ \} \\) true
+              #_else false))
+          
+          (parse-discard ^int [^int pos] ;pre: looking at "#_"
+            (let [start (mark-start pos)]
+              (-> (add-open-delim start open-delim-2)
+                  (parse-ws) (parse-form) (mark-end start))))
+          (skip-to-eol ^int [^int pos]
+            (case (char-at pos)
+              \newline (inc pos)
+              #_eot \u0000 pos
+              #_else (recur (inc pos))))
+          (whitespace? ^boolean [^char ch]
+            (or (Character/isWhitespace ch) (= ch \,)))
+          (parse-ws ^int [^int pos]
+            ;; post: unless at end of text, `pos` is not at `whitespace?`
+            (loop [start pos, i pos]
+              (let [ch (char-at i)]
+                (cond
+                  (whitespace? ch) (case ch
+                                     \newline
+                                     (recur (inc i) (add start (inc i) text-nl))
+                                     #_else
+                                     (recur start (inc i)))
+                  (= ch \;) (let [pos (add start (skip-to-eol i) text-nl)]
+                              (recur pos pos))
+                  :else (do (when-not (= i start) ;omit empty whitespace text
+                              (add start i (if (= ch eot) text-nl text)))
+                            (if (and (= ch \#) (= (char-at (inc i)) \_))
+                              (let [pos (parse-discard i)]
+                                (recur pos pos))
+                              i))))))
+          
+          (parse-number ^int [^int pos] ;see readNumber
+            (loop [i (inc pos)]
+              (let [ch (char-at i)]
+                (if (or (whitespace? ch) (macro? ch) (= ch eot))
+                  (add pos i number)
+                  (recur (inc i))))))
+          (parse-token ^int [^int pos ^int skip-chars]  ;see readToken
+            ;; pre: `skip-chars` does not skip over `eot` character
+            (loop [i (+ pos skip-chars)]
+              (let [ch (char-at i)]
+                (if (or (whitespace? ch) (terminating-macro? ch) (= ch eot))
+                  (add pos i token)
+                  (recur (inc i))))))
+          (parse-number-or-token ^int [^int pos ^char ch]
+            ;; pre: not looking at whitespace or starting character of a macro
+            (if (Character/isDigit ch)
+              (parse-number pos)
+              (parse-token pos 1)))
+
+          (at-eol? ^boolean [^int pos]
+            (case (char-at pos)
+              (\newline \return #_eot \u0000) true
+              false))
+          (parse-string ^int [^int pos ^int tag-open]
+            (let [start (mark-start pos)]
+              (loop [pos (add-open-delim start tag-open)
+                     i pos]
+                (case (char-at i)
+                  \" (-> (add pos i text)
+                         (add (inc i) close-delim)
+                         (mark-end start))
+                  \\ (if (at-eol? (inc i))
+                       (wrong pos "incomplete quote at end of line")
+                       (recur pos (+ i 2)))
+                  \newline (let [pos (add pos (inc i) text-nl)]
+                             (recur pos pos))
+                  #_eot \u0000 (wrong pos "unterminated string")
+                  #_else (recur pos (inc i))))))
+          
+          (parse-collection ^int [^int pos ^int tag-open ^char ch]
+            (let [start (mark-start pos)
+                  ch-end (case ch \( \), \[ \], \{ \})]
+              (loop [pos (add-open-delim start tag-open)]
+                (let [pos (parse-ws pos)]
+                  (if (= (char-at pos) ch-end)
+                    (-> pos (add (inc pos) close-delim) (mark-end start))
+                    (recur (parse-form pos)))))))
+          (parse-map ^int [^int pos]    ;parses elements in pairs
+            (let [start (mark-start pos)]
+              (loop [pos (add-open-delim start open-delim-1)]
+                (let [pos (parse-ws pos)]
+                  (if (= (char-at pos) \})
+                    (-> pos (add (inc pos) close-delim) (mark-end start))
+                    (recur (-> pos (parse-form) (parse-ws) (parse-form))))))))
+          (parse-list ^int [^int pos]
+            (parse-collection pos open-delim-1 \())
+          (parse-prefix ^int [^int pos ^int tag-open]
+            (let [start (mark-start pos)]
+              (-> (add-open-delim start tag-open)
+                  (parse-ws) (parse-form) (mark-end start))))
+          (parse-meta ^int [^int pos]   ;pre: looking at "^"
+            (let [start (mark-start pos)]
+              (-> (add-open-delim start open-delim-1)
+                  (parse-ws) (parse-form)
+                  (parse-ws) (parse-form) (mark-end start))))
+
+          (parse-form ^int [^int pos]
+            ;; pre: looking at start of a non-discard form
+            (let [ch (char-at pos)]
+              (case ch
+                (\+ \-) (parse-number-or-token pos (char-at (inc pos)))
+                \" (parse-string pos open-delim-1)
+                \# (parse-dispatch pos)
+                \( (parse-list pos)
+                \{ (parse-map pos)
+                \[ (parse-collection pos open-delim-1 ch)
+                (\) \] \} #_eot \u0000) (wrong pos "invalid start of token")
+                (\' \@ \`) (parse-prefix pos open-delim-1)
+                \~ (parse-prefix pos (if (= (char-at (inc pos)) \@)
+                                       open-delim-2
+                                       open-delim-1))
+                \^ (parse-meta pos)
+                \\ (parse-token pos (inc (int (not= (char-at (inc pos)) eot))))
+                #_else ;token includes argument `%...` & character `\...`
+                (parse-number-or-token pos ch))))
+          (parse-dispatch ^int [^int pos] ;pre: looking at "#" but not "#_"
+            ;; see `dispatchMacros` array in LispReader.java
+            (let [ch (char-at (inc pos))    ]
+              (case ch
+                ;; \^ (MetaReader; old meta syntax?)
+                \# (parse-token pos 1)             ;symbolic value
+                \' (parse-prefix pos open-delim-2) ;var
+                \" (parse-string pos open-delim-2) ;regex
+                (\( \{) (parse-collection pos open-delim-2 ch)
+                ;; \= (EvalReader?)
+                ;; \! (CommentReader?)
+                \< (add pos (+ pos 2) token) ;unreadable
+                ;; \_ discard is handled by parse-ws
+                ;; \? (ConditionalReader?)
+                ;; \: (NamespaceMapReader?)
+                #_else (wrong pos (str "invalid dispatch character: \\" ch)))))]
+    (loop [pos (parse-ws 0)]
+      (when (not= (char-at pos) eot)
+        (recur (-> pos (parse-form) (parse-ws)))))))
+
+(deftype Tokens [^String cs             ;program text plus `eot`
+                 ^shorts tokens
+                 ^ArrayList deltas])
+
+(defn tokenize ^Tokens [x-or-string]
+  (cond
+    (instance? Path x-or-string) (recur (Files/readString x-or-string))
+    (instance? URL x-or-string) (recur (slurp x-or-string))
+    :else (let [text-with-eot (str ^String x-or-string eot)
+                acc (mk-acc)]
+            (tokenize* acc text-with-eot)
+            (Tokens. text-with-eot (.to-array acc) (.deltas acc)))))
+
+(defn tk-delta ^Mark [^int tk-idx ^shorts tokens ^ArrayList deltas]
+  (let [tk (get-tk tokens tk-idx)
+        value (tk-field tk)]
+    #_(assert (<= (tk-tag tk) open-delim-2))
+    (if (< value max-tokens-inline)     ;must recover delta?
+      (let [token-cnt (inc value)]
+        (loop [chars 0, newlines 0, i tk-idx, n token-cnt]
+          (if (zero? n)
+            (Mark. chars token-cnt newlines)
+            (let [tk (get-tk tokens i)]
+              (recur (+ chars (tk-length tk))
+                     (+ newlines (int (= (tk-tag tk) text-nl)))
+                     (inc i) (dec n))))))
+      (.get deltas (- value max-tokens-inline)))))
+
+;;; ------------------------------------------------------------------------
+
+;;; Part 2: Reader.
+
+(definterface ICursor
+  (more? ^boolean [])
+  (nl-count ^int [])
+  (token ^int [])                  ;pre: `more?` is true
+  (this-char ^char [])
+  (this-dispatch-char ^char [])
+  (this-string ^String [^int tk])
+  (advance-tk ^void [^int tk])
+
+  ;; Updates `this` cursor to skip over a collection (or prefix) form,
+  ;; and returns a new cursor at the position of `this` cursor.  The
+  ;; new cursor is assigned `synquote-stack` and `arg-env`.
+  (skip-and-fork ^ICursor [^ISeq synquote-stack ^ArrayList arg-env]))
+
+;;; Every lazy seq gets its own cursor instance and mutates it along
+;;; the way.
+(deftype Cursor [^:unsynchronized-mutable ^int cs-pos ;index into `cs`
+                 ^:unsynchronized-mutable ^int tk-idx ;index into `tokens`
+                 ^:unsynchronized-mutable ^int nl-cnt ;starts at 0
+                 ^String cs             ;copied over from Tokens
+                 ^shorts tokens         ;copied over from Tokens
+                 ^ArrayList deltas      ;copied over from Tokens
+                 ^ISeq synquote-stack
+                 ^ArrayList arg-env]    ;no lazy read when set
+  ICursor
+  (more? [_]
+    (not= tk-idx (alength tokens)))
+  (nl-count [_]
+    nl-cnt)
+  (token [_]
+    (get-tk tokens tk-idx))
+  (this-char [_]
+    (.charAt cs cs-pos))
+  (this-dispatch-char [_]
+    (.charAt cs (inc cs-pos)))
+  (this-string [_ tk]
+    (.substring cs cs-pos (+ cs-pos (tk-length tk))))
+  (advance-tk [_ tk]
+    #_(prn :advance-tk (.substring cs cs-pos (+ cs-pos (tk-length tk))))
+    (set! cs-pos (+ cs-pos (tk-length tk)))
+    (set! tk-idx (inc tk-idx))
+    (when (= (tk-tag tk) text-nl)
+      #_(prn :line (+ nl-cnt 2))
+      (set! nl-cnt (inc nl-cnt))))
+  (skip-and-fork [this synquote-stack arg-env]
+    (let [c* (Cursor. cs-pos tk-idx nl-cnt cs tokens deltas
+                      synquote-stack arg-env)
+          d (tk-delta tk-idx tokens deltas)]
+      ;; advance this cursor by delta `d`
+      (set! cs-pos (+ cs-pos (.chars d)))
+      (set! tk-idx (+ tk-idx (.tokens d)))
+      (set! nl-cnt (+ nl-cnt (.newlines d)))
+      c*)))
+
+(defn- cursor ^Cursor [^Tokens t]
+  (Cursor. 0 0 0 (.cs t) (.tokens t) (.deltas t) nil nil))
+
+(defn- wrong ^Object [^Cursor c ^String msg]
+  (throw (mk-ex-info (inc (.nl-count c)) msg)))
+
+;;; ------------------------------------------------------------------------
+
+(defn- mk-arg-env ^ArrayList []
+  (doto (ArrayList.) (.add nil)))
+
+(def ^:private fnlit-param-pat #"(?:(rest)|p(\d+))__fnlit__")
+(def ^:private max-fnlit-param 255)
+
+(defn- replacement-sym [^int idx]
+  (-> (str (if (zero? idx) "rest" (str "p" idx)) "__fnlit__")
+      (symbol)))
+
+(defn- update-tag-count ^void [^ArrayList arg-env ^int idx tag ^int delta]
+  (let [m (-> (.get arg-env idx)
+              (update tag #(+ (if (nil? %) 0 (int %)) delta)))]
+    (.set arg-env idx m)))
+
+(defn- register-arg! ^Symbol [^ArrayList arg-env ^int idx]
+  ;; pre: `idx` is not negative, with zero meaning "rest parameter"
+  (while (<= (.size arg-env) idx)
+    (.add arg-env {}))
+  (update-tag-count arg-env idx nil +1)
+  (replacement-sym idx))
+
+(defn- replacement-idx ^int [x] ;-1 if `x` is not a replacement for a fnlit arg
+  (if (and (symbol? x) (nil? (namespace x)))
+    (let [m (.matcher fnlit-param-pat (name x))]
+      (if (.matches m)
+        (if (some? (.group m 1))
+          0
+          (let [n (Integer/parseInt (.group m 2))]
+            (if (<= 1 n max-fnlit-param) n -1)))
+        -1))
+    -1))
+
+(defn- register-meta! [^IMeta x ^IPersistentMap m ^ArrayList arg-env]
+  (when (some? arg-env)
+    (let [idx (replacement-idx x)]
+      (when (>= idx 0)
+        (update-tag-count arg-env idx (get (meta x) :tag) -1)
+        (update-tag-count arg-env idx (get m :tag) +1))))
+  (with-meta x m))
+
+(defn- fnlit-sig [^Cursor c]
+  (letfn [(type-str [x]
+            (if (nil? x) "(none)" (str x)))
+          (tagged-parameter [^int idx]
+            (let [sym (replacement-sym idx)
+                  tags (->> (.get (.arg-env c) idx)
+                            (filter #(not (zero? ^int (val %))))
+                            (map key))]
+              (when (> (count tags) 1)
+                (wrong c (str "conflicting type tags for arg literal: "
+                              (str/join " " (->> tags (map type-str) sort)))))
+              (if-some [tag (first tags)]
+                (with-meta sym {:tag tag})
+                sym)))]
+    (with-meta
+      (->> (when (some? (seq (.get (.arg-env c) 0)))
+             ['& (tagged-parameter 0)])
+           (concat (for [idx (range 1 (.size (.arg-env c)))]
+                     (tagged-parameter ^int idx)))
+           (vec))
+      {:auto-return-type true})))
+
+;;; ------------------------------------------------------------------------
+
+(defn- try-skip-ws-1 ^boolean [^Cursor c] ;pre: `more?` is true
+  (let [tk (.token c)]
+    (case (tk-tag tk)
+      #_open-delim-2 2
+      (if (and (= (.this-char c) \#) (= (.this-dispatch-char c) \_))
+        (do (.skip-and-fork c nil nil) true)
+        false)
+      (#_text 6 #_text-nl 7)
+      (do (.advance-tk c tk) true)
+      #_else
+      false)))
+
+
+(defn- read-unicode-char ^char [^Cursor c ^String s ^int offset ^int length
+                                ^int base]
+  (when (or (not= (.length s) (+ offset length))
+            (neg? (Character/digit (.charAt s offset) base)))
+    (wrong c (str "invalid character code: " s)))
+  (try
+    (let [n (Integer/parseInt s offset (+ offset length) base)]
+      (if (or (neg? n) (> n (int Character/MAX_VALUE)))
+        (do (wrong c (str "character out of range: " s)) \0)
+        (char n)))
+    (catch NumberFormatException e
+      (wrong c (str "number format error: " (.getMessage e)))
+      \0)))
+
+(defn- read-octal-char ^char [^Cursor c ^String s ^int offset ^int length]
+  (when (> length 3)
+    (wrong c (str "invalid octal escape sequence length: " s)))
+  (let [uc (read-unicode-char c s offset length 8)]
+    (when (> (int uc) 0377)
+      (wrong c "octal escape sequence must be in range [0, 377]"))
+    uc))
+
+(def this-namespace-key "")
+
+(defn- read-token [^Cursor c ^int tk ^IPersistentMap ns-alias]
+  (letfn [(parse-dispatch-token [^String s] ;pre: looking at "#..."
+            (case (.charAt s 1)
+              \# (or (get {"##Inf" Double/POSITIVE_INFINITY
+                           "##-Inf" Double/NEGATIVE_INFINITY
+                           "##NaN" Double/NaN} s)
+                     (wrong c (str "unknown symbolic value: " s)))
+              \< (wrong c "unreadable form")))
+          
+          (match-sym-or-kw [^String s]
+            ;; See matchSymbol in LispReader.java.  Note: Regex
+            ;; symbolPat diverges from function `symbol` if there are
+            ;; multiple slashes, e.g. like `a/b/c`: regex splits
+            ;; ("a/b/" "c") while symbol splits ("a/" "b/c").  Because
+            ;; of its limited value and the high cost (around half of
+            ;; the reader's time!), we do not do any regex matching on
+            ;; symbols or keywords.
+            (when-not (or #_(and (some? ns) (.endsWith ns ":/"))
+                          (.endsWith s ":")
+                          (not= (.indexOf s "::" 1) -1))
+              (if (.startsWith s ":")
+                (if (.startsWith s "::")
+                  (let [ks (Symbol/intern (.substring s 2))
+                        lookup-key (or (namespace ks) this-namespace-key)]
+                    (when-some [nstr (get ns-alias lookup-key)]
+                      (Keyword/intern nstr (name ks))))
+                  (-> (.substring s 1)
+                      (Symbol/intern)
+                      (Keyword/intern)))
+                (cond-> (Symbol/intern s)
+                  (some? (.synquote-stack c))
+                  (sq/wrap-synquote-name (first (.synquote-stack c)))))))
+          (parse-sym-or-kw [^String s]
+            (cond
+              (.equals "nil" s) nil
+              (.equals "true" s) Boolean/TRUE
+              (.equals "false" s) Boolean/FALSE
+              :else (or (match-sym-or-kw s)
+                        (wrong c (str "invalid token: " s)))))
+
+          (parse-character [^String s] ;pre: `s` starts with backslash
+            ;; see CharacterReader.invoke()
+            (let [h (when (> (.length s) 1)
+                      (.charAt s 1))]
+              (or (when (= (.length s) 2)
+                    (object h))
+                  (get {"\\newline" \u000a
+                        "\\space" \u0020
+                        "\\tab" \u0009
+                        "\\backspace" \u0008
+                        "\\formfeed" \u000c
+                        "\\return" \u000d} s nil)
+                  (when (= h \u)
+                    (let [uc (read-unicode-char c s 2 4 16)]
+                      (if (<= 0xD800 (int uc) 0xDFFF) ;surrogate code unit?
+                        (wrong c (str "invalid surrogate character: " s))
+                        (object uc))))
+                  (when (= h \o)
+                    (object (read-octal-char c s 2 (- (.length s) 2))))
+                  (wrong c (str "unsupported character: " s)))))
+
+          (parse-arg-num ^int [^String s] ;pre: (.length s) > 1
+            (let [n (if (Character/isDigit (.charAt s 1))
+                      (try
+                        (Integer/parseUnsignedInt s 1 (.length s) 10)
+                        (catch NumberFormatException _
+                          -1))
+                      -1)]
+              (when-not (<= 1 n max-fnlit-param)
+                (wrong c "arg literal must be %, %& or %integer"))
+              n))
+          (parse-arg-literal [^String s]
+            (cond
+              (nil? (.arg-env c)) (parse-sym-or-kw s)
+              (= s "%") (register-arg! (.arg-env c) 1)
+              (= s "%&") (register-arg! (.arg-env c) 0)
+              :else (register-arg! (.arg-env c) (parse-arg-num s))))]
+    
+    (let [s (.this-string c tk)
+          x (case (.charAt s 0)
+              \# (parse-dispatch-token s)
+              \\ (parse-character s)
+              \% (parse-arg-literal s)
+              #_else (parse-sym-or-kw s))]
+      (.advance-tk c tk)              ;only clobber position when done
+      x)))
+
+(def ^:private int-pat    ;from LispReader.java, but added suffix [lL]
+  #"([-+]?)(?:(0)|([1-9][0-9]*)|0[xX]([0-9A-Fa-f]+)|0([0-7]+)|([1-9][0-9]?)[rR]([0-9A-Za-z]+)|0[0-9]+)([lLN])?")
+(def ^:private float-pat  ;from LispReader.java, but added suffix [fF]
+  #"([-+]?[0-9]+(\.[0-9]*)?([eE][-+]?[0-9]+)?)([fFM])?")
+(def ^:private ratio-pat                ;from LispReader.java
+  #"([-+]?[0-9]+)/([0-9]+)")
+
+(defn- read-number [^Cursor c ^int tk] ;see matchNumber in LispReader.java 
+  (letfn [(unsupported-big-int []
+            (wrong c "BigInt values are not supported"))
+          (parse-int [^Matcher m ^String n ^int radix]
+            (let [bn (cond-> (BigInteger. n radix)
+                       (= "-" (.group m 1)) (.negate))
+                  int? (if-some [x (.group m 8)]
+                         (case (.charAt x 0)
+                           \N (do (unsupported-big-int) false)
+                           (\l \L) false)
+                         true)]
+              (cond
+                (and int? (< (.bitLength bn) 32)) (object (.intValue bn))
+                (< (.bitLength bn) 64) (object (.longValue bn))
+                :else (unsupported-big-int))))
+          (match-int [^Matcher m]
+            (if-some [n (or (.group m 2) (.group m 3))]
+              (parse-int m n 10)
+              (if-some [n (.group m 4)]
+                (parse-int m n 16)
+                (if-some [n (.group m 5)]
+                  (parse-int m n 8)
+                  (if-some [n (.group m 7)]
+                    (parse-int m n (Integer/parseInt (.group m 6)))
+                    (wrong c (str "invalid integer number: " (.group m))))))))
+
+          (unsupported-big-decimal []
+            (wrong c "BigDecimal values are not supported"))
+          (match-float [^Matcher m ^String s]
+            (if-some [x (.group m 4)]
+              (case (.charAt x 0)
+                \M (unsupported-big-decimal)
+                (\f \F) (object (Float/parseFloat s)))
+              (object (Double/parseDouble s))))]
+    
+    (let [s (.this-string c tk)
+          x (try
+              (or (let [m (.matcher int-pat s)]
+                    (when (.matches m)
+                      (match-int m)))
+                  (let [m (.matcher float-pat s)]
+                    (when (.matches m)
+                      (match-float m s)))
+                  (let [m (.matcher ratio-pat s)]
+                    (when (.matches m)
+                      (wrong c "Ratio values are not supported")))
+                  (wrong c (str "invalid number: " s)))
+              (catch NumberFormatException e
+                (wrong c (str "number format error: " (.getMessage e)))))]
+      (.advance-tk c tk)              ;only clobber position when done
+      x)))
+
+(defn skipped-close? ^boolean [^Cursor c]
+  (let [tk (.token c)]
+    (if (= close-delim (tk-tag tk))
+      (do (.advance-tk c tk) true)
+      false)))
+
+(defn- read-string [^Cursor c ^int tk]  ;see StringReader.invoke()
+  (let [sb (StringBuilder.)]
+    (letfn [(append-escape ^int [^String s ^int pos] ;pre: (.charAt s pos) = \\
+              (let [ch (.charAt s (inc pos))
+                    oct? (fn ^boolean [^int d]
+                           (if (>= (+ pos d) (.length s))
+                             false
+                             (>= (Character/digit (.charAt s (+ pos d)) 8) 0)))]
+                (case ch
+                  \t (do (.append sb \tab) 2)
+                  \r (do (.append sb \return) 2)
+                  \n (do (.append sb \newline) 2)
+                  \\ (do (.append sb \\) 2)
+                  \" (do (.append sb \") 2)
+                  \b (do (.append sb \backspace) 2)
+                  \f (do (.append sb \formfeed) 2)
+                  \u (let [j (min (.length s) (+ pos 6))
+                           x (.substring s pos j)]
+                       (.append sb (read-unicode-char c x 2 4 16))
+                       6)
+                  #_else
+                  (if (Character/isDigit ch)
+                    (let [len (if (oct? 2) (if (oct? 3) 3 2) 1)
+                          x (.substring s pos (+ pos len 1))]
+                      (.append sb (read-octal-char c x 1 len))
+                      (inc len))
+                    (do (wrong c (str "unsupported escape character: \\" ch))
+                        0)))))
+            (append-chars ^void [^String s]
+              (loop [i 0]
+                (let [j (.indexOf s "\\" i)]
+                  (if (neg? j)
+                    (.append sb s i (.length s))
+                    (do (.append sb s i j)
+                        (recur (+ j (append-escape s j))))))))]
+      (loop [tk tk]
+        (.advance-tk c tk)
+        (if (skipped-close? c)
+          (.toString sb)
+          (let [tk (.token c)]
+            (append-chars (.this-string c tk))
+            (recur tk)))))))
+
+(defn- read-regex [^Cursor c ^int tk]   ;see RegexReader.invoke()
+  (let [sb (StringBuilder.)]
+    (loop [tk tk]
+      (.advance-tk c tk)
+      (if (skipped-close? c)
+        (try
+          (Pattern/compile (.toString sb))
+          (catch PatternSyntaxException e
+            (wrong c (str "invalid regex: " e))))
+        (do (.append sb (.this-string c (.token c)))
+            (recur (.token c)))))))
+
+(defn- read-form [^Cursor c ^IPersistentMap ns-alias]
+  (letfn [(skip-ws ^Cursor [^Cursor c]  ;pre: `more?` is true
+            (while (try-skip-ws-1 c))
+            c)
+          (skip-open+ws ^void [^Cursor c ^int tk] ;pre: looking at open-delim-*
+            (.advance-tk c tk)
+            (skip-ws c))
+          (read-form+ws [^Cursor c]
+            (let [x (read-form c ns-alias)]
+              (skip-ws c)
+              x))
+          (skip-and-enter+ws ^Cursor [^Cursor c ^int tk ^ISeq synquote-stack]
+            (let [c* ^Cursor (.skip-and-fork c synquote-stack (.arg-env c))]
+              (.advance-tk c* tk)
+              (skip-ws c*)))
+          (line-meta ^IPersistentMap [^Cursor c]
+            {:line (inc (.nl-count c))})
+          
+          (read-map [^Cursor c ^int tk] ;pre: at "{"
+            (skip-open+ws c tk)
+            (loop [acc (transient {}), cnt 0]
+              (if (skipped-close? c)
+                (persistent! acc)
+                (let [k (read-form+ws c) ;note: parser guarantees that v exists
+                      acc (assoc! acc k (read-form+ws c))]
+                  (when (= (count acc) cnt)
+                    (wrong c (str "duplicate key: " k)))
+                  (recur acc (inc cnt))))))
+          
+          (read-set [^Cursor c ^int tk] ;pre: at "#{"
+            (skip-open+ws c tk)
+            (loop [acc (transient #{}), cnt 0]
+              (if (skipped-close? c)
+                (persistent! acc)
+                (let [k (read-form+ws c)
+                      acc (conj! acc k)]
+                  (when (= (count acc) cnt)
+                    (wrong c (str "duplicate key: " k)))
+                  (recur acc (inc cnt))))))
+          
+          (read-vector [^Cursor c ^int tk] ;pre: at "["
+            (skip-open+ws c tk)
+            (loop [l (ArrayList.)]
+              (if (skipped-close? c)
+                (tinyclj.lang.Literal/vector (.toArray l))
+                (do (.add l (read-form+ws c))
+                    (recur l)))))
+
+          (read-list-eager-tail ^IMeta [^Cursor c]
+            ;; pre: looking at form
+            (loop [l (ArrayList.)]
+              (.add l (read-form+ws c))
+              (if (skipped-close? c)
+                (tinyclj.lang.Literal/listOfList l)
+                (recur l))))
+          (read-list-eager [^Cursor c ^int tk ^IPersistentMap lmeta]
+            ;; pre: at "(" or "#("
+            (skip-open+ws c tk)
+            (if (skipped-close? c)
+              ()
+              (with-meta (read-list-eager-tail c) lmeta)))
+          (read-list-lazy [^Cursor c ^int tk ^IPersistentMap lmeta]
+            ;; pre: at "(" and not inside an anonymous fn definition
+            (let [c* (skip-and-enter+ws c tk (.synquote-stack c))]
+              (if (skipped-close? c*)
+                () ;force empty seq singleton even if large
+                ;; Note: LazySeq's `with-meta` implementation would
+                ;; force the head of the seq anyway, i.e. the first
+                ;; element is *always* realized.
+                (Cons. lmeta (read-form+ws c*)
+                       (when-not (= (tk-tag (.token c*)) close-delim)
+                         ;; realize whole tail in one step
+                         (lazy-seq (read-list-eager-tail c*)))))))
+          (read-list [^Cursor c ^int tk]
+            (let [lmeta (line-meta c)] ;note: lmeta is not attached to ()
+              (if (and #_false (nil? (.arg-env c)) (lazy-read? tk))
+                (read-list-lazy c tk lmeta)
+                (read-list-eager c tk lmeta))))
+
+          (merge-meta [^IPersistentMap m dm]
+            (cond
+              (symbol? dm) (assoc m :tag dm)
+              (keyword? dm) (assoc m dm (object true))
+              (string? dm) (assoc m :tag dm)
+              (map? dm) (merge m dm)
+              :else (wrong c "metadata must be symbol, keyword, string or map")))
+          (read-meta [^Cursor c ^int tk]
+            (skip-open+ws c tk)
+            (let [dm (read-form+ws c)
+                  x (read-form c ns-alias)]
+              (if (instance? IMeta x)
+                (register-meta! x (merge-meta (meta x) dm) (.arg-env c))
+                (wrong c "metadata can only be applied to IMeta instances"))))
+          (read-prefix-as-list [^Cursor c ^int tk op]
+            (let [lmeta (line-meta c)]
+              (skip-open+ws c tk)
+              (with-meta (list op (read-form c ns-alias)) lmeta)))
+          (read-syntax-quote [^Cursor c ^int tk]
+            (let [lmeta (line-meta c)]
+              (with-meta
+                (list sq/sym-syntax-quote
+                      (-> (skip-and-enter+ws c tk (cons (sq/mk-gensym-map)
+                                                        (.synquote-stack c)))
+                          (read-form ns-alias)))
+                lmeta)))
+          (read-unquote [^Cursor c ^int tk op]
+            (if (some? (.synquote-stack c))
+              (-> ^Cursor (.skip-and-fork c (next (.synquote-stack c))
+                                          (.arg-env c))
+                  (read-prefix-as-list tk op))
+              (wrong c "unquote outside of syntax quote `...")))
+
+          ;; Note: The whole function literal is parsed eagerly and
+          ;; single threaded.  All information is collected into
+          ;; member `.arg-env` without any locking.
+          (read-fnlit [^Cursor c ^int tk]
+            (if (some? (.arg-env c))
+              (wrong c "nested fn literals #(...) are not allowed")
+              (let [lmeta (line-meta c)
+                    c* ^Cursor (.skip-and-fork c (.synquote-stack c)
+                                               (mk-arg-env))
+                    body (read-list-eager c* tk lmeta)] ;has side-effects
+                (with-meta
+                  (list 'fn* (fnlit-sig c*) body)
+                  lmeta))))]
+    
+    (let [tk (.token c)]
+      (case (tk-tag tk)
+        #_open-delim-1 1 (case (.this-char c)
+                           \( (read-list c tk)
+                           \[ (read-vector c tk)
+                           \{ (read-map c tk)
+                           \" (read-string c tk)
+
+                           \^ (read-meta c tk)
+                           \' (read-prefix-as-list c tk sq/sym-quote)
+                           \@ (read-prefix-as-list c tk 'deref)
+                           \` (read-syntax-quote c tk)
+                           \~ (read-unquote c tk sq/sym-unquote))
+        #_open-delim-2 2 (case (.this-dispatch-char c)
+                           \{ (read-set c tk)
+                           \" (read-regex c tk)
+                           \@ (read-unquote c tk sq/sym-unquote-splicing) ;~@
+                           \( (read-fnlit c tk)
+                           \' (read-prefix-as-list c tk 'var))
+        #_token 4 (read-token c tk ns-alias)
+        #_number 5 (read-number c tk)))))
+
+(definterface IReader
+  (read-1 [^IPersistentMap ns-alias eof-value]))
+
+(defn mk-reader ^IReader [^Tokens t]
+  (let [c (cursor t)]
+    (fn ^IReader read-1-fn [ns-alias eof-value]
+      (while (and (.more? c) (try-skip-ws-1 c)))
+      (if (.more? c)
+        (read-form c ns-alias)
+        eof-value))))
+
+;;; ------------------------------------------------------------------------
+
+;;; Materializes the reader as a seq.  All forms use the same
+;;; `ns-alias` map to rewrite auto-resolved keywords.
+(defn read-all [^IReader rdr ^IPersistentMap ns-alias]
+  ((fn read-step []
+     (lazy-seq
+      (let [x (.read-1 rdr ns-alias ::eof)]
+        (when-not (identical? ::eof x)
+          (cons x (read-step))))))))
+
+(deftype SeqReader [^:unsynchronized-mutable ^ISeq xs]
+  IReader
+  (read-1 [_ ns-alias eof-value]
+    (if (some? xs)
+      (let [[x & xr] xs]
+        (set! xs xr)
+        x)
+      eof-value)))
+
+;;; Wraps a seq into a reader interface.  Used for unit tests.  Hands
+;;; out data from `xs` without any modifications, i.e. the `ns-alias`
+;;; map provided later will be ignored.
+(defn mk-seq-reader ^SeqReader [xs]
+  (SeqReader. (seq xs)))

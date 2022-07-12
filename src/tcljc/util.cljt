@@ -1,0 +1,74 @@
+(ns tcljc.util
+  (:import (clojure.lang LazySeq)
+           (java.util.function ToIntFunction)))
+
+(def ^:private initial-capacity 6)
+
+;; Small mutable identity map recording the bindings that a function
+;; closes over.  Will usually hold at most a handful of entries, and
+;; is empty for most functions.  Entries can be traversed in insertion
+;; order.
+(defn mk-shm ^objects []
+  (new objects (inc (* initial-capacity 2))))
+
+(letfn [(cont-hm ^objects [^objects hm]
+          (let [i (dec (alength hm))]
+            (aget hm i)))
+        (next-hm ^objects [^objects hm]
+          (let [i (dec (alength hm))]
+            (if-some [x (aget hm i)]
+              x
+              (aset hm i (new objects (dec (* (alength hm) 2)))))))
+        (first-key-idx ^int [^objects hm]
+          (dec (quot (alength hm) 2)))
+        (val-idx ^int [^objects hm ^int key-idx]
+          (+ key-idx (quot (alength hm) 2)))]
+
+  (defn sim-empty? ^boolean [^objects hm]
+    (nil? (aget hm (first-key-idx hm))))
+  
+  (defn sim-keys ^LazySeq [^objects hm]
+    ((fn lazy-keys
+       ([^objects hm]
+        (lazy-keys hm (first-key-idx hm)))
+       ([^objects hm ^int i]
+        (lazy-seq (if (neg? i)
+                    (when-some [hm' (cont-hm hm)]
+                      (lazy-keys hm'))
+                    (when-some [k (aget hm i)]
+                      (cons k (lazy-keys hm (dec i))))))))
+     hm))
+  
+  (defn sim-get ^Object [^objects hm k]
+    (assert (some? k))
+    (loop [i (dec (quot (alength hm) 2))]
+      (if (neg? i)
+        (sim-get (next-hm hm) k)
+        (when-some [hm-k (aget hm i)]
+          (if (identical? hm-k k)
+            (aget hm (val-idx hm i))
+            (recur (dec i)))))))
+
+  (defn sim-put-absent! ^Object [^objects hm k v] ;returns `v`
+    (assert (some? k))
+    (assert (some? v))
+    ;; FIXME... the precondition "absent" allows to skip all segments
+    ;; that have a `next-mh`; probably not a worthwhile change, though
+    (loop [i (dec (quot (alength hm) 2))]
+      (if (neg? i)
+        (sim-put-absent! (next-hm hm) k v)
+        (if-some [hm-k (aget hm i)]
+          (do (assert (not (identical? hm-k k)))
+              (recur (dec i)))
+          (do (aset hm i k)
+              (aset hm (val-idx hm i) v))))))
+
+  (defn sim-sum-keys! ^int [^ToIntFunction f! ^int acc ^objects hm]
+    (loop [acc acc, i (dec (quot (alength hm) 2))]
+      (if (neg? i)
+        (if-some [cont (cont-hm hm)]
+          (sim-sum-keys! f! acc cont)
+          acc)
+        (if-some [hm-k (aget hm i)]
+          (recur (+ acc (.applyAsInt f! hm-k)) (dec i))
+          acc)))))

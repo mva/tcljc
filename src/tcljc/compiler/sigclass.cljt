@@ -1,0 +1,334 @@
+(ns tcljc.compiler.sigclass
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.javabase :as jb]
+   [tcljc.classfile :as cf]
+   [tcljc.runtime :as rt]
+   [tcljc.wrong :as wrong]
+   [tcljc.expr :as x]
+   [tcljc.context :as ctx]
+   [tcljc.compiler.resolve :as resolve]
+   [tcljc.compiler.sigfn :as sig]
+   [tinyclj.string :as str])
+  (:import
+   (tcljc.classfile ClassDef FieldDef ILdStInstr)
+   (tcljc.expr Arity Binding)
+   (clojure.lang Symbol IPersistentMap IPersistentVector)
+   (jdk.classfile Classfile ClassBuilder CodeBuilder)
+   (java.lang.constant ClassDesc MethodTypeDesc DirectMethodHandleDesc
+                       ConstantDesc)
+   (java.lang.reflect Method)
+   (java.util.function Consumer)))
+
+(defn check-no-suffix [xs]
+  (when (some? (seq xs))
+    (wrong/syntax "expect end of list" (cons '... xs))))
+
+(defn ensure-parameters [x ^boolean receiver?]
+  (when-not (vector? x)
+    (wrong/syntax "expect vector of parameters" x))
+  (when (and receiver? (zero? (count x)))
+    (wrong/syntax "expect at least receiver parameter" x)))
+
+;;; ------------------------------------------------------------------------
+
+(defn- hinted? ^boolean [sig]
+  (when (some? (sig/get-tag (first sig)))
+    (wrong/syntax "no type tag allowed for receiver parameter"))
+  (not (and (nil? (sig/get-tag sig))
+            (every? (comp nil? sig/get-tag) (rest sig)))))
+
+(defn- method-as-arity ^Arity [^Method m ^Arity at]
+  (let [paramv (mapv #(sig/mk-param (.level at)
+                                    (-> ^Binding %2 .bref (x/sname)) ^Class %1)
+                     (.getParameterTypes m) (.paramv at))]
+    (assert (= (count paramv) (count (.paramv at))))
+    (Arity. paramv (.getReturnType m) (count paramv)
+            (.isVarArgs m) false (.getName m)
+            (.this-name at) (.level at) (.aform at)
+            (.!closes-over at) (.at-idx at))))
+
+(defn- fixup-method-sig ^Arity [^Arity at ^Class etp]
+  (let [nm (.method-name at)
+        n (x/at-n at)]
+    (letfn [(invoke-ex-data []
+              {:invoke/name nm
+               :invoke/owner etp
+               :invoke/paramter-count n})]
+      (if-some [ms (seq (resolve/itf-methods-with-name etp nm n))]
+        (if (nil? (next ms))
+          (method-as-arity (first ms) at)
+          (-> (str "multiple virtual " n "-parameter methods matching ")
+              (wrong/unresolved-interop (symbol nm) (invoke-ex-data))))
+        (-> (str "no virtual " n "-parameter method matching ")
+            (wrong/unresolved-interop (symbol nm) (invoke-ex-data)))))))
+
+(defn- check-method-match ^Arity [^Arity at ^Class etp]
+  (let [nm (.method-name at)
+        atypes (into-array Class (x/at-parameter-types at))]
+    (if-some [m (resolve/itf-method-exact etp nm (.rtype at) atypes)]
+      (method-as-arity m at)
+      (wrong/unresolved-interop "no virtual method matching " (symbol nm)
+                                {:invoke/owner etp
+                                 :invoke/static? false
+                                 :invoke/name nm
+                                 :invoke/arg-types (cons etp atypes)}))))
+
+(defn method-arity-type ^Arity [^Class etp [nm sig & body :as form]
+                                ^int level ^int at-idx tl-ctx]
+  ;; The returned Arity omits the first parameter.  Its name is
+  ;; stored in `this-name` and it is translated into the
+  ;; receiver of the virtual method.
+  (wrong/ensure-sym nm)  ;silently ignore namespace part for defrecord
+  (ensure-parameters sig true)
+  (let [aforms (list (list* (with-meta (subvec sig 1) (meta sig)) body))
+        at (-> (sig/parse-arity-sigs level jb/cl-polymorphic-type nil aforms
+                                     tl-ctx)
+               ^Arity (first)
+               (x/with-method-name nm (nth sig 0) at-idx))]
+    (-> (if (hinted? sig)
+          (check-method-match at etp)
+          (fixup-method-sig at etp)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn itf-class-def ^ClassDef [^String pkg-name ^IPersistentMap imports
+                               [_ if-nm & methods :as form]]
+  (letfn [(as-class-desc ^ClassDesc [x]
+            ;; used by definterface to accept class names without
+            ;; existing definition
+            (if (symbol? x)
+              (or (some-> (get imports x nil) (rt/describe-class))
+                  (let [s (str x)]
+                    (if (str/includes? s ".")
+                      (recur s)
+                      (recur (str pkg-name "." s)))))
+              (try
+                (rt/str-to-cld x)
+                (catch IllegalArgumentException _
+                  (wrong/syntax "invalid class name" x)))))
+          
+          (tag-desc-of ^ClassDesc [form ^boolean void? ^ClassDesc no-hint]
+            (if-some [tag (sig/get-tag form)]
+              (let [tp (as-class-desc tag)]
+                (when (and (not void?) (= rt/void tp))
+                  (wrong/syntax "`void` tag not applicable in this context"))
+                tp)
+              no-hint))
+          
+          (method-sig ^MethodTypeDesc [msig]
+            (loop [acc []
+                   [p :as params] (seq msig)]
+              (cond
+                (nil? params)
+                (rt/mtd-of (tag-desc-of msig true rt/object) acc)
+             
+                (= p '&)
+                (let [p (sig/ensure-parameter (second params))
+                      tp (tag-desc-of p false nil)
+                      tp (cond
+                           (nil? tp)
+                           (wrong/syntax "method cannot have rest parameter")
+                           (not (rt/array? tp))
+                           (wrong/type-expr "type of vararg parameter must be array" tp)
+                           :else tp)]
+                  (if (nnext params)
+                    (wrong/syntax "additional parameters after vararg parameter")
+                    (recur (conj acc tp) nil))) ;VARARGS flag is set by caller
+
+                :else
+                (let [tp (tag-desc-of p false rt/object)]
+                  (recur (conj acc tp) (next params))))))
+
+
+          (method-cbh ^Consumer [[mname msig & methodr]]
+            (wrong/ensure-simple-sym mname)
+            (ensure-parameters msig false)
+            (check-no-suffix methodr)
+            (when-some [tag (sig/get-tag mname)]
+              (wrong/other (str "method result tag " (wrong/q tag) " must be "
+                                "placed on the parameter vector, not the "
+                                "method name") tag))
+            (let [mnm (cfg/munge-name mname)
+                  flags (cond-> (bit-or Classfile/ACC_PUBLIC
+                                        Classfile/ACC_ABSTRACT)
+                          (and (>= (count msig) 2) (= '& (peek (pop msig))))
+                          (bit-or Classfile/ACC_VARARGS))
+                  mtd (method-sig msig)]
+              (cf/with-cbh [cb]
+                (.withMethod cb mnm mtd flags (cf/with-mbh [mb] nil)))))]
+    
+    (let [if-nm (wrong/ensure-simple-sym if-nm)]
+      (cf/class-def (ClassDesc/of pkg-name (name if-nm))
+                    rt/object
+                    (bit-or Classfile/ACC_PUBLIC Classfile/ACC_INTERFACE
+                            Classfile/ACC_ABSTRACT)
+                    () nil [] (mapv method-cbh methods)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- pass-to-super? ^boolean [^Symbol nm]
+  (boolean (-> nm (meta) :pass-to-super-constructor)))
+
+(defn- take-super-mhd [tps field-sig tl-ctx]
+  (let [cl ^Class (first tps)]
+    (if (or (nil? cl) (jb/array? cl) (jb/primitive? cl) (jb/interface? cl))
+      [(rt/no-args-constructor rt/object) tps]
+      ;; FIXME... maybe check for constructor first? (can only
+      ;; unreflect if it is public or protected; for example,
+      ;; PrintWriter-on in core_print.cljt uses the protected
+      ;; constructor of Writer)
+      [(->> (filter pass-to-super? field-sig)
+            (map #(sig/tag-of % false jb/Object tl-ctx))
+            (rt/fixed-args-constructor cl))
+       (rest tps)])))
+
+(defn- super-classes [itfs field-sig tl-ctx]
+  (letfn [(take-class-symbol ^Class [form]
+            (or (when (symbol? form) (ctx/lookup-type form tl-ctx))
+                (sig/wrong-class form)))]
+    (let [tps (mapv take-class-symbol itfs) ;eager
+          [super-mhd tps :as supers] (take-super-mhd tps field-sig tl-ctx)]
+      (doseq [tp tps]
+        (sig/ensure-interface tp))
+      supers)))
+
+(letfn [(field-flags ^int [nm]
+          (let [m (meta nm)]
+            (cond
+              (:unsynchronized-mutable m)
+              Classfile/ACC_PRIVATE
+              (:volatile-mutable m)
+              (bit-or Classfile/ACC_PRIVATE Classfile/ACC_VOLATILE)
+              :else 
+              (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL))))
+        (record-deftype? ^boolean [^IPersistentVector fieldv]
+          (let [cnt (count fieldv)]
+            (letfn [(nth-last-mnm ^String [^int i]
+                      (.mnm ^FieldDef (nth fieldv (- cnt i))))]
+              (and (>= cnt 4)
+                   (= "__meta" (nth-last-mnm 4))
+                   (= "__extmap" (nth-last-mnm 3))
+                   (= "__hash" (nth-last-mnm 2))
+                   (= "__hasheq" (nth-last-mnm 1))))))
+        
+        (kw-instr ^CodeBuilder [^CodeBuilder xb ^FieldDef fdef]
+          (let [const (rt/describe-const-expr (keyword (.mnm fdef)))]
+            (.constantInstruction xb const)))
+        (conv-to-field ^CodeBuilder [^CodeBuilder xb ^FieldDef fdef]
+          (let [tp (.tp fdef)]
+            (if (jb/reference? tp)
+              (cond-> xb (not (jb/object? tp)) (.checkcast (.tpd fdef)))
+              ;; low-level variant of conv/primitive-unbox-expr:
+              (-> (.checkcast xb (rt/cd-of (jb/logical->box tp)))
+                  (cf/invoke (rt/logical->accessor-mhd tp))))))
+        (lookup+cast ^CodeBuilder [^CodeBuilder xb ^FieldDef fdef]
+          (-> (.aload xb 0)
+              (kw-instr fdef)
+              (.aconst_null)
+              (.invokeinterface rt/map "valAt" rt/mtd-object-object-object)
+              (conv-to-field fdef)))
+        (map-without ^CodeBuilder [^CodeBuilder xb ^FieldDef fdef]
+          (-> (kw-instr xb fdef)
+              (.invokeinterface rt/map "without" rt/mtd-map-object)))
+        (record-factory ^void [^CodeBuilder xb ^ClassDesc this-class
+                               primary-param-lds ^IPersistentVector fieldv]
+          (-> (.new_ xb this-class)
+              (.dup))
+          (doseq [field fieldv] (lookup+cast xb field))
+          (-> (.aconst_null xb)
+              (.aload 0))
+          (doseq [field fieldv] (map-without xb field))
+          (-> (.invokestatic xb rt/ClojureRT "seqOrElse" rt/mtd-object-object)
+              (.iconst_0)
+              (.iconst_0)
+              (.invokespecial this-class cf/object-initializer-name
+                              (cf/parameter-mtd rt/void [] primary-param-lds))
+              (.areturn)))]
+  
+  (defn eph-dtp-class-def ^ClassDef [^ClassDesc this-class field-sig opts
+                                     tl-ctx]
+    (letfn [(eph-field ^FieldDef [nm]
+              ;; mirrors `field-bref` below
+              (let [tp (sig/tag-of nm false jb/Object tl-ctx)
+                    mnm (cfg/munge-name nm)]
+                (cf/field-def mnm tp (field-flags nm) (pass-to-super? nm))))
+
+            (constr-argn ^int [^DirectMethodHandleDesc mhd]
+              (-> mhd .invocationType .parameterCount))
+            (parameter-ld ^ILdStInstr [^int i ^FieldDef fdef]
+              (cf/ld-st-parameter (.tpd fdef) (.mnm fdef) i))
+            (field-st ^ILdStInstr [^FieldDef fdef]
+              (cf/ld-st-virtual this-class (.mnm fdef) (.tpd fdef)))
+            (primary-constructor ^Consumer [^DirectMethodHandleDesc super-mhd
+                                            ^IPersistentVector fieldv]
+              (let [super-argn (constr-argn super-mhd)]
+                (cf/with-cbh [cb]
+                  (cf/constructor cb Classfile/ACC_PUBLIC super-mhd
+                                  (map-indexed parameter-ld fieldv)
+                                  (map field-st (subvec fieldv super-argn))))))
+            (record-constructors ^Consumer [^IPersistentVector fieldv]
+              ;; pre: super-argn is zero
+              (cf/with-cbh [cb]
+                (let [primary-param-lds (map-indexed parameter-ld fieldv)]
+                  (cf/delegating-constructor
+                   cb Classfile/ACC_PUBLIC this-class primary-param-lds
+                   [jb/jvm-null jb/jvm-null jb/jvm-int-zero jb/jvm-int-zero])
+                  (cf/delegating-constructor
+                   cb Classfile/ACC_PUBLIC this-class primary-param-lds
+                   [jb/jvm-int-zero jb/jvm-int-zero])
+                  (let [factory-fieldv (subvec fieldv 0 (- (count fieldv) 4))]
+                    (.withMethodBody cb "create"
+                                     (MethodTypeDesc/of this-class rt/map)
+                                     (bit-or Classfile/ACC_PUBLIC
+                                             Classfile/ACC_STATIC)
+                                     (cf/with-xbh [xb]
+                                       (record-factory xb this-class
+                                                       primary-param-lds
+                                                       factory-fieldv)))))))
+            
+            (field-cbh ^Consumer [^FieldDef fdef]
+              (cf/with-cbh [cb]
+                (.withField cb (.mnm fdef) (.tpd fdef) (.flags fdef))))]
+      (let [fieldv (->> (if-some [s (seq (filter pass-to-super? field-sig))]
+                          ;; sort "pass to super" entries to front
+                          (concat s (remove pass-to-super? field-sig))
+                          field-sig)
+                        (mapv eph-field))
+            [super-mhd itfs] (super-classes (:implements opts) field-sig tl-ctx)
+            flags (bit-or Classfile/ACC_PUBLIC (if (:abstract opts)
+                                                 Classfile/ACC_ABSTRACT
+                                                 Classfile/ACC_FINAL))
+            record? (record-deftype? fieldv)]
+        ;; put constructor into class definition, so that it is
+        ;; visible for methods of the deftype*
+        (cf/class-def this-class (.owner ^DirectMethodHandleDesc super-mhd)
+                      flags (map rt/cd-of itfs) super-mhd fieldv
+                      (cond-> [(primary-constructor super-mhd fieldv)]
+                        record? (conj (record-constructors fieldv))
+                        true (into (map field-cbh)
+                                   (subvec fieldv (constr-argn super-mhd))))))))
+
+  (defn dtp-field-brefs [^ClassDesc this-class field-sig tl-ctx]
+    (letfn [(field-bref [nm]
+              ;; mirrors `eph-field` above
+              (when-not (pass-to-super? nm)
+                (let [tp (sig/tag-of nm false jb/Object tl-ctx)
+                      mnm (cfg/munge-name nm)
+                      flags (field-flags nm)
+                      mutable? (zero? (bit-and flags Classfile/ACC_FINAL))
+                      bref (x/field-ref nm tp mutable?)]
+                  (.deliver-load bref (cf/ld-st-virtual this-class mnm
+                                                        (rt/cd-of tp)))
+                  bref)))]
+      (keep field-bref field-sig))))
+
+;;; ------------------------------------------------------------------------
+
+(defn eph-reify-class-def ^ClassDef [^ClassDesc this-class itfs tl-ctx]
+    (let [field-sig []
+          [super-mhd itfs] (super-classes itfs field-sig tl-ctx)
+          itfs (cons (ctx/get-type rt/clnm-obj tl-ctx) itfs)
+          flags Classfile/ACC_PUBLIC]
+      (cf/class-def this-class (.owner ^DirectMethodHandleDesc super-mhd)
+                    flags (map rt/cd-of itfs) super-mhd [] [])))

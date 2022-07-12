@@ -1,0 +1,253 @@
+(ns tcljc.let-test
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr nmsp]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest do-test
+  (is (= '[(RETURN)]
+         (asm-expr (do))))
+  (is (= '[(ACONST_NULL) (ARETURN)]
+         (asm-expr (do nil))))
+  (is (= '[(ICONST_1) (IRETURN)]
+         (asm-expr (do true))))
+  (is (= '[(ICONST_1) (IRETURN)]
+         (asm-expr (do 1))))
+  (is (= '[(ICONST_1) (IRETURN)]
+         (asm-expr (do 1 true))))
+  (is (= '[["LOCAL 0: int a"]
+           (ILOAD_0)
+           (I2F)
+           (FCONST_0)
+           (FDIV)
+           (POP)
+           (ICONST_1)
+           (IRETURN)]
+         (asm-expr [^int a] (do (/ a 0) true)))))
+
+(deftest do-statement-test
+  ;; there is no ACONST_NULL followed by POP after the void invoke
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "hello")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (BIPUSH 123)
+           (IRETURN)]
+         (asm-expr (do (.println java.lang.System/out "hello") 123)))))
+
+(deftest let*-test
+  (is (= '[(ACONST_NULL)
+           (ARETURN)]
+         (asm-expr (let* [] nil))))
+  (is (= '[(ACONST_NULL)
+           (ARETURN)]
+         (asm-expr (let* [a 0] nil))))
+  (is (= '[["LOCAL 0: int c"]
+           (ILOAD_0)
+           (ICONST_2)
+           (IADD)
+           (ISTORE_1)
+           ["LOCAL 1: int a"]
+           (ACONST_NULL)
+           (ARETURN)]
+         (asm-expr [^int c] (let* [a (+ c 2)] nil))))
+
+  (is (= '[(ACONST_NULL)
+           (ARETURN)]
+         (asm-expr (let* [a nil] a))))
+  (is (= '[["LOCAL 0: int c"]
+           (ILOAD_0)
+           (I2F)
+           (FCONST_2)
+           (FDIV)
+           (POP)
+           (ACONST_NULL)
+           (ARETURN)]
+         (asm-expr [^int c] (let* [a c, b 2] (/ a b) nil)))))
+
+(deftest stacked-binding-test
+  (is (= '[(LDC 42000000)
+           (IRETURN)]
+         (asm-expr (let* [i 42000000]
+                     i))))
+  (is (= '[(LDC 42000000)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ASTORE_0)
+           ["LOCAL 0: Integer i-boxed"]
+           (ALOAD_0)
+           (ARETURN)]
+         (asm-expr (let* [i 42000000
+                          i-boxed (. java.lang.Integer valueOf i)]
+                     i-boxed))))
+  (is (= '[(LDC 42000000)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ASTORE_0)
+           ["LOCAL 0: Integer i-boxed"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL Integer "toString" "()Ljava/lang/String;")
+           (ASTORE_1)
+           ["LOCAL 1: String i-string"]
+           (ALOAD_1)
+           (ARETURN)]
+         (asm-expr (let* [i 42000000
+                          i-boxed (. java.lang.Integer valueOf i)
+                          i-string (.toString i-boxed)]
+                     i-string))))
+  (is (= '[(LDC 42000000)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ASTORE_0)
+           ["LOCAL 0: Integer i-boxed"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL Integer "toString" "()Ljava/lang/String;")
+           (ASTORE_1)
+           ["LOCAL 1: String i-string"]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (ASTORE_2)
+           ["LOCAL 2: PrintStream out"]
+           (ALOAD_2)
+           (ALOAD_1)
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (RETURN)]
+         (asm-expr (let* [i 42000000
+                          i-boxed (. java.lang.Integer valueOf i)
+                          i-string (.toString i-boxed)
+                          out (. java.lang.System out)]
+                     (. out println i-string)))))
+
+  ;; sugared version version low-level to version
+  (is (= (asm-expr (let* [i 42000000 i-boxed (. java.lang.Integer valueOf i)
+                          i-string (.toString i-boxed)
+                          out (. java.lang.System out)]
+                     (. out println i-string)))
+         (asm-expr (let* [i 42000000
+                          i-boxed (java.lang.Integer/valueOf i)
+                          i-string (.toString i-boxed)
+                          out java.lang.System/out]
+                     (.println out i-string))))))
+
+(deftest duplicate-binding-test
+  (is (= '[["LOCAL 0: int c"]
+           (ILOAD_0)
+           (ICONST_1)
+           (IADD)
+           (ISTORE_1)
+           ["LOCAL 1: int i"]
+           (ILOAD_0)
+           (ICONST_1)
+           (IADD)
+           (ISTORE_2)
+           ["LOCAL 2: int i"]
+           (ILOAD_2)
+           (IRETURN)]
+         (asm-expr [^int c] (let* [i (+ c 1), i (+ c 1)] i)))))
+
+(deftest propagate-const
+  (is (= '[["LOCAL 0: int c"]
+           (ILOAD_0)
+           (ICONST_2)
+           (IADD)
+           (IRETURN)]
+         (asm-expr [^int c] (let* [a c, b 2]
+                              (+ a b))))))
+
+(deftest reused-name
+  (is (= '[["LOCAL 0: int n"]
+           (ILOAD_0)
+           (ICONST_1)
+           (IMUL)
+           (ISTORE_1)
+           ["LOCAL 1: int a"]
+           (ILOAD_0)
+           (ICONST_2)
+           (IMUL)
+           (ISTORE_2)
+           ["LOCAL 2: int a"]
+           (ILOAD_1)
+           (IRETURN)]
+         (asm-expr [^int n]
+                   (let* [a (* n 1)
+                          x a
+                          a (* n 2)]
+                     x)))))
+
+(deftest primitive-fn-alias
+  (is (= '[["LOCAL 0: int n"]
+           (ILOAD_0)
+           (ILOAD_0)
+           (IADD)
+           (IRETURN)]
+         (asm-expr [^int n]
+                   (let* [add +]
+                     (add n n))))))
+
+(deftest typed-name-test
+  (is (= '[(LCONST_1)
+           (LRETURN)]
+         (asm-expr (let* [^long n 1]
+                     n)))))
+
+(deftest propagate-const-into-fn-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "three" "I")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "three-fn" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "fn~0" "()I"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "fn~0" "()I")
+             (ICONST_3)
+             (IRETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (INVOKESTATIC . "fn~0" "()I")
+             (PUTSTATIC . "three" "I")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (let* [a 1, b 2]
+                   (def three-fn (fn* ^int []
+                                      (+ a b))))
+                 (def three (three-fn))]))))
+
+(deftest macro-binding-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~1" "(I)I"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~1" "(I)I")
+             ["LOCAL 0: int n"]
+             (ILOAD_0)
+             (ICONST_1)
+             (INVOKESTATIC . "f$fn~1" "(II)I")
+             (IRETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f$fn~1" "(II)I")
+             ["LOCAL 0: int n"]
+             ["LOCAL 1: int a"]
+             (ILOAD_0)
+             (ILOAD_1)
+             (IADD)
+             (IRETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^int [^int n]
+                             (let* [alias-fn fn]
+                               ((alias-fn ^int [^int a] (+ n a)) 1))))]))))

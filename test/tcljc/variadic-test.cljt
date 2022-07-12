@@ -1,0 +1,1033 @@
+(ns tcljc.variadic-test
+  (:require [tcljc.bootstrap :refer [nmsp]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+(deftest varargs-list
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "list" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "fn~1" "([Ljava/lang/Object;)Lclojure/lang/IPersistentList;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL VARARGS] "fn~1"
+                     "([Ljava/lang/Object;)Lclojure/lang/IPersistentList;")
+             ["LOCAL 0: Object[] items"]
+             (ALOAD_0)
+             (INVOKESTATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;")
+             (INVOKESTATIC PersistentList "create" "(Ljava/util/List;)Lclojure/lang/IPersistentList;")
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def list
+                   (fn* ^clojure.lang.IPersistentList [& ^objects items]
+                        (clojure.lang.PersistentList/create (java.util.Arrays/asList items))))]))))
+
+(deftest varargs-invoke
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "l0" "Ljava/util/List;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "l1" "Ljava/util/List;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "l2" "Ljava/util/List;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"]]])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (INVOKEVIRTUAL MethodHandle "invoke" "()Ljava/util/List;")
+             (PUTSTATIC . "l0" "Ljava/util/List;")
+             
+             (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (ICONST_1)
+             (INVOKEVIRTUAL MethodHandle "invoke" "(I)Ljava/util/List;")
+             (PUTSTATIC . "l1" "Ljava/util/List;")
+             
+             (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (ICONST_1)
+             (ICONST_2)
+             (INVOKEVIRTUAL MethodHandle "invoke" "(II)Ljava/util/List;")
+             (PUTSTATIC . "l2" "Ljava/util/List;")
+
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def as-list
+                   (fn* as-list ^java.util.List [& ^objects items]
+                        (java.util.Arrays/asList items)))
+                 (def l0 (as-list))
+                 (def l1 (as-list 1))
+                 (def l2 (as-list 1 2))]))))
+
+(deftest varargs-array-to-array
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "lnested" "Ljava/util/List;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "lints" "Ljava/util/List;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"]]])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "as-list-wrapped" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "as-list-wrapped~1"
+                     "([Ljava/lang/Object;)Ljava/util/List;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL VARARGS] "as-list-wrapped~1" "([Ljava/lang/Object;)Ljava/util/List;")
+             ["LOCAL 0: Object[] items"]
+             (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (ALOAD_0)
+             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Ljava/util/List;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (LDC [STATIC . "as-list-wrapped~1"
+                   "([Ljava/lang/Object;)Ljava/util/List;"])
+             (ICONST_1)
+             (INVOKEVIRTUAL MethodHandle "invoke" "(I)Ljava/util/List;")
+             (PUTSTATIC . "lnested" "Ljava/util/List;")
+
+             (LDC [STATIC . "as-list-wrapped~1"
+                   "([Ljava/lang/Object;)Ljava/util/List;"])
+             (ICONST_0)
+             (NEWARRAY int)
+             (INVOKEVIRTUAL MethodHandle "invoke" "([I)Ljava/util/List;")
+             (PUTSTATIC . "lints" "Ljava/util/List;")
+             
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def as-list
+                   (fn* as-list ^java.util.List [& ^objects items]
+                        ;; method call passes array `items` unmodified to
+                        ;; `asList` (the "varargs agnostic" calling
+                        ;; convention)
+                        (java.util.Arrays/asList items)))
+                 (def as-list-wrapped
+                   (fn* as-list-wrapped ^java.util.List [& ^objects items]
+                        ;; function call wraps array `items` in another
+                        ;; array before calling `as-list` (i.e. an
+                        ;; `(Object)items` is passed on)
+                        (as-list items)))
+                 (def lnested (as-list-wrapped 1))
+                 (def lints (as-list-wrapped (new ints 0)))])))
+  ;; At the moment, ints cannot be passed to an objects vararg
+  ;; directly.  As such there is no need to cast them to object if
+  ;; they appear in a vararg argument position.  This will probably
+  ;; change with Valhalla.  (Also applies to call to varargs method.)
+  (is (not (.isAssignableFrom objects ints))))
+
+(deftest varargs-applyfn-invoke
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "l0" "Ljava/lang/Object;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "l1" "Ljava/lang/Object;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "l2" "Ljava/lang/Object;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"]]])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "apply-0" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "apply-0~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "apply-0~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object f"]
+             (ALOAD_0)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)Ljava/lang/Object;"
+                            :bsm-invoke-fn [])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "apply-1" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "apply-1~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "apply-1~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object f"]
+             (ALOAD_0)
+             (ICONST_1)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;I)Ljava/lang/Object;"
+                            :bsm-invoke-fn [])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "apply-2" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "apply-2~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "apply-2~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object f"]
+             (ALOAD_0)
+             (ICONST_1)
+             (ICONST_2)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;II)Ljava/lang/Object;"
+                            :bsm-invoke-fn [])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (INVOKESTATIC . "as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (INVOKESTATIC . "apply-0~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (PUTSTATIC . "l0" "Ljava/lang/Object;")
+
+             (INVOKESTATIC . "as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (INVOKESTATIC . "apply-1~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (PUTSTATIC . "l1" "Ljava/lang/Object;")
+
+             (INVOKESTATIC . "as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (INVOKESTATIC . "apply-2~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (PUTSTATIC . "l2" "Ljava/lang/Object;")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def as-list
+                   (fn* as-list ^java.util.List [& ^objects items]
+                        (java.util.Arrays/asList items)))
+                 (def apply-0 (fn* apply-0 [f] (f)))
+                 (def apply-1 (fn* apply-1 [f] (f 1)))
+                 (def apply-2 (fn* apply-2 [f] (f 1 2)))
+                 (def l0 (apply-0 as-list))
+                 (def l1 (apply-1 as-list))
+                 (def l2 (apply-2 as-list))]))))
+
+(deftest varargs-applyfn-invoke-closure
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "as-list-fn" "Ltinyclj/lang/AFnMh;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "l0" "Ljava/lang/Object;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "l1" "Ljava/lang/Object;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "l2" "Ljava/lang/Object;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "mk-as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "mk-as-list~1"
+                     "(Ljava/lang/String;)Ltinyclj/lang/AFnMh;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "mk-as-list~1" "(Ljava/lang/String;)Ltinyclj/lang/AFnMh;")
+             ["LOCAL 0: String s"]
+             (ALOAD_0)
+             (INVOKESTATIC mk-as-list$as-list "__create" "(Ljava/lang/String;)Lpkg/ns0/mk-as-list$as-list;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "apply-0" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "apply-0~1"
+                     "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "apply-0~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object f"]
+             (ALOAD_0)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)Ljava/lang/Object;" :bsm-invoke-fn [])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "apply-1" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "apply-1~1"
+                     "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "apply-1~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object f"]
+             (ALOAD_0)
+             (ICONST_1)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;I)Ljava/lang/Object;" :bsm-invoke-fn [])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "apply-2" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "apply-2~1"
+                     "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "apply-2~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object f"]
+             (ALOAD_0)
+             (ICONST_1)
+             (ICONST_2)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;II)Ljava/lang/Object;" :bsm-invoke-fn [])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (LDC "")
+             (INVOKESTATIC . "mk-as-list~1" "(Ljava/lang/String;)Ltinyclj/lang/AFnMh;")
+             (PUTSTATIC . "as-list-fn" "Ltinyclj/lang/AFnMh;")
+             
+             (GETSTATIC . "as-list-fn" "Ltinyclj/lang/AFnMh;")
+             (INVOKESTATIC . "apply-0~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (PUTSTATIC . "l0" "Ljava/lang/Object;")
+
+             (GETSTATIC . "as-list-fn" "Ltinyclj/lang/AFnMh;")
+             (INVOKESTATIC . "apply-1~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (PUTSTATIC . "l1" "Ljava/lang/Object;")
+            
+             (GETSTATIC . "as-list-fn" "Ltinyclj/lang/AFnMh;")
+             (INVOKESTATIC . "apply-2~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (PUTSTATIC . "l2" "Ljava/lang/Object;")
+
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/mk-as-list$as-list" nil "tinyclj/lang/AFnMh")
+            [(FIELD [PRIVATE FINAL] "s" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC FINAL VARARGS] "fn1" "([Ljava/lang/Object;)Ljava/util/List;")
+             ["LOCAL 0: mk-as-list$as-list as-list"]
+             ["LOCAL 1: Object[] items"]
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (ALOAD_0)
+             (GETFIELD . "s" "Ljava/lang/String;")
+             (INVOKEVIRTUAL PrintStream "print" "(Ljava/lang/String;)V")
+             (ALOAD_1)
+             (INVOKESTATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
+             #_["LOCAL 0: mk-as-list$as-list __this"]
+             #_["LOCAL 1: int n"]
+             (LDC [VIRTUAL . "fn1" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
+             #_["LOCAL 0: mk-as-list$as-list __this"]
+             (LDC [VIRTUAL . "fn1" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
+             (ARETURN)]
+            
+            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: IPersistentMap __meta"]
+             #_["LOCAL 2: String s"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (ALOAD_0)
+             (ALOAD_2)
+             (PUTFIELD . "s" "Ljava/lang/String;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "__create" "(Ljava/lang/String;)Lpkg/ns0/mk-as-list$as-list;")
+             #_["LOCAL 0: String s"]
+             (NEW mk-as-list$as-list) (DUP)
+             (ACONST_NULL)
+             (ALOAD_0)
+             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
+             (ARETURN)]
+            
+            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/mk-as-list$as-list;")
+             #_["LOCAL 0: mk-as-list$as-list __this"]
+             #_["LOCAL 1: IPersistentMap __meta"]
+             (NEW mk-as-list$as-list) (DUP)
+             (ALOAD_1)
+             (ALOAD_0)
+             (GETFIELD . "s" "Ljava/lang/String;")
+             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def mk-as-list
+                   (fn* mk-as-list ^:auto-return-type [^String s]
+                        (fn* as-list ^java.util.List [& ^objects items]
+                             (.print System/out s)
+                             (java.util.Arrays/asList items))))
+                 (def apply-0 (fn* apply-0 [f] (f)))
+                 (def apply-1 (fn* apply-1 [f] (f 1)))
+                 (def apply-2 (fn* apply-2 [f] (f 1 2)))
+                 (def as-list-fn (mk-as-list ""))
+                 (def l0 (apply-0 as-list-fn))
+                 (def l1 (apply-1 as-list-fn))
+                 (def l2 (apply-2 as-list-fn))]))))
+
+(deftest varargs-applyfn-array-to-array
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "l1" "Ljava/util/List;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"]]])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "apply-1" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "apply-1~2" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/util/List;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL VARARGS] "apply-1~2" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/util/List;")
+             ["LOCAL 0: Object f"]
+             ["LOCAL 1: Object[] items"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/List;"
+                            :bsm-invoke-fn [])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (LDC [STATIC . "apply-1~2" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/util/List;"])
+             (INVOKESTATIC . "as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (ICONST_1)
+             (INVOKEVIRTUAL MethodHandle "invoke" "(Ltinyclj/lang/AFnMh;I)Ljava/util/List;")
+             (PUTSTATIC . "l1" "Ljava/util/List;")
+             
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def as-list
+                   (fn* as-list ^java.util.List [& ^objects items]
+                        ;; method call passes array `items` unmodified to
+                        ;; `asList` (the "varargs agnostic" calling
+                        ;; convention)
+                        (java.util.Arrays/asList items)))
+                 (def apply-1
+                   (fn* apply-1 ^java.util.List [f & ^objects items]
+                        ;; function call wraps array `items` in another
+                        ;; array before calling `as-list` (i.e. an
+                        ;; `(Object)items` is passed on)
+                        ^java.util.List (f items))) ;cast pushes type into INVOKEDYNAMIC
+                 (def l1 (apply-1 as-list 1))]))))
+
+(deftest varargs-applyfn-array-to-array-closure
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "l1" "Ljava/util/List;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "mk-as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "mk-as-list~1" "(Ljava/lang/String;)Ltinyclj/lang/AFnMh;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "mk-as-list~1" "(Ljava/lang/String;)Ltinyclj/lang/AFnMh;")
+             ["LOCAL 0: String s"]
+             (ALOAD_0)
+             (INVOKESTATIC mk-as-list$as-list "__create"
+                           "(Ljava/lang/String;)Lpkg/ns0/mk-as-list$as-list;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "apply-1" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "apply-1~2" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/util/List;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL VARARGS] "apply-1~2" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/util/List;")
+             ["LOCAL 0: Object f"]
+             ["LOCAL 1: Object[] items"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"
+                            :bsm-invoke-fn [])
+             (CHECKCAST List)
+             (ARETURN)]
+                        
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (LDC [STATIC . "apply-1~2" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/util/List;"])
+             (LDC "")
+             (INVOKESTATIC . "mk-as-list~1" "(Ljava/lang/String;)Ltinyclj/lang/AFnMh;")
+             (ICONST_1)
+             (INVOKEVIRTUAL MethodHandle "invoke" "(Ltinyclj/lang/AFnMh;I)Ljava/util/List;")
+             (PUTSTATIC . "l1" "Ljava/util/List;")
+             
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/mk-as-list$as-list" nil "tinyclj/lang/AFnMh")
+            [(FIELD [PRIVATE FINAL] "s" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC FINAL VARARGS] "fn1" "([Ljava/lang/Object;)Ljava/util/List;")
+             ["LOCAL 0: mk-as-list$as-list as-list"]
+             ["LOCAL 1: Object[] items"]
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (ALOAD_0)
+             (GETFIELD . "s" "Ljava/lang/String;")
+             (INVOKEVIRTUAL PrintStream "print" "(Ljava/lang/String;)V")
+             (ALOAD_1)
+             (INVOKESTATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
+             #_["LOCAL 0: mk-as-list$as-list __this"]
+             #_["LOCAL 1: int n"]
+             (LDC [VIRTUAL . "fn1" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
+             #_["LOCAL 0: mk-as-list$as-list __this"]
+             (LDC [VIRTUAL . "fn1" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
+             (ARETURN)]
+            
+            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: IPersistentMap __meta"]
+             #_["LOCAL 2: String s"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (ALOAD_0)
+             (ALOAD_2)
+             (PUTFIELD . "s" "Ljava/lang/String;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "__create" "(Ljava/lang/String;)Lpkg/ns0/mk-as-list$as-list;")
+             #_["LOCAL 0: String s"]
+             (NEW mk-as-list$as-list) (DUP)
+             (ACONST_NULL)
+             (ALOAD_0)
+             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
+             (ARETURN)]
+            
+            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/mk-as-list$as-list;")
+             #_["LOCAL 0: mk-as-list$as-list __this"]
+             #_["LOCAL 1: IPersistentMap __meta"]
+             (NEW mk-as-list$as-list) (DUP)
+             (ALOAD_1)
+             (ALOAD_0)
+             (GETFIELD . "s" "Ljava/lang/String;")
+             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def mk-as-list
+                   (fn* mk-as-list ^:auto-return-type [^String s]
+                        (fn* as-list ^java.util.List [& ^objects items]
+                             (.print System/out s)
+                             ;; method call passes array `items` unmodified to
+                             ;; `asList` (the "varargs agnostic" calling
+                             ;; convention)
+                             (java.util.Arrays/asList items))))
+                 (def apply-1
+                   (fn* apply-1 ^java.util.List [f & ^objects items]
+                        ;; function call wraps array `items` in another
+                        ;; array before calling `as-list` (i.e. an
+                        ;; `(Object)items` is passed on)
+                        (f items)))
+                 (def l1 (apply-1 (mk-as-list "") 1))]))))
+
+(deftest varargs-array-to-iseq
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "callee-gets-iseq"
+                     "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "callee-gets-iseq~1"
+                     "([Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "callee-gets-iseq~1"
+                     "([Ljava/lang/Object;)Ljava/lang/Object;")
+             #_["LOCAL 0: Object[] items"]
+             (ALOAD_0)
+             (INVOKESTATIC ArraySeq "create"
+                           "([Ljava/lang/Object;)Lclojure/lang/ArraySeq;")
+             (INVOKESTATIC . "callee-gets-iseq~1"
+                           "(Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "callee-gets-iseq~1"
+                     "(Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             ["LOCAL 0: ISeq items"]
+             (ACONST_NULL)
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def callee-gets-iseq
+                   (fn* callee-gets-iseq [& items]
+                        ))]))))
+
+(deftest varargs-array-to-iseq-apply
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "callee-gets-iseq"
+                     "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "callee-gets-iseq~2"
+                     "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "callee-gets-iseq~2"
+                     "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
+             #_["LOCAL 0: Object item"]
+             #_["LOCAL 1: Object[] items"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESTATIC ArraySeq "create"
+                           "([Ljava/lang/Object;)Lclojure/lang/ArraySeq;")
+             (INVOKESTATIC . "callee-gets-iseq~2"
+                           "(Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "callee-gets-iseq~2"
+                     "(Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             ["LOCAL 0: Object item"]
+             ["LOCAL 1: ISeq items"]
+             (ACONST_NULL)
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def callee-gets-iseq
+                   (fn* callee-gets-iseq [item & items]
+                        ))]))))
+
+(deftest varargs-array-to-iseq-apply-2
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "callee-gets-iseq"
+                     "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "callee-gets-iseq~1"
+                     "(Ljava/lang/Object;)Ljava/lang/Object;"]
+                    [STATIC . "callee-gets-iseq~2"
+                     "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "callee-gets-iseq~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object item"]
+             (ACONST_NULL)
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "callee-gets-iseq~2"
+                     "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
+             #_["LOCAL 0: Object item"]
+             #_["LOCAL 1: Object[] items"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESTATIC ArraySeq "create"
+                           "([Ljava/lang/Object;)Lclojure/lang/ArraySeq;")
+             (INVOKESTATIC . "callee-gets-iseq~2"
+                           "(Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "callee-gets-iseq~2"
+                     "(Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             ["LOCAL 0: Object item"]
+             ["LOCAL 1: ISeq items"]
+             (ACONST_NULL)
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def callee-gets-iseq
+                   (fn* callee-gets-iseq
+                        ([item]
+                         nil)
+                        ([item & items]
+                         nil)))]))))
+
+(deftest varargs-array-to-iseq-apply-3
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            
+            [(METHOD [PUBLIC STATIC FINAL] "and" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "and~0"
+                     "()Ljava/lang/Object;"]
+                    [STATIC . "and~1"
+                     "(Ljava/lang/Object;)Ljava/lang/Object;"]
+                    [STATIC . "and~2"
+                     "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "and~0" "()Ljava/lang/Object;")
+             (ACONST_NULL)
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "and~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object x"]
+             (ACONST_NULL)
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "and~2"
+                     "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
+             #_["LOCAL 0: Object x"]
+             #_["LOCAL 1: Object[] next"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESTATIC ArraySeq "create"
+                           "([Ljava/lang/Object;)Lclojure/lang/ArraySeq;")
+             (INVOKESTATIC . "and~2"
+                           "(Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "and~2"
+                     "(Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             ["LOCAL 0: Object x"]
+             ["LOCAL 1: ISeq next"]
+             (ACONST_NULL)
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def and
+                   (fn* and
+                        ([]
+                         nil)
+                        ([x]
+                         nil)
+                        ([x & next]
+                         nil)))]))))
+
+(deftest varargs-array-to-iseq-flyweight
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object x"]
+             (LDC [STATIC . "f$callee-gets-iseq~1"
+                   "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"])
+             (ALOAD_0)
+             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "f$callee-gets-iseq~1" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
+             #_["LOCAL 0: Object x"]
+             #_["LOCAL 1: Object[] items"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESTATIC ArraySeq "create"
+                           "([Ljava/lang/Object;)Lclojure/lang/ArraySeq;")
+             (INVOKESTATIC . "f$callee-gets-iseq~1"
+                           "(Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "f$callee-gets-iseq~1" "(Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             ["LOCAL 0: Object x"]
+             ["LOCAL 1: ISeq items"]
+             (ALOAD_0)
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f [x]
+                             ((fn* callee-gets-iseq [& items] x))))]))))
+
+(deftest varargs-array-to-iseq-closure
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~1" "(Ljava/lang/Object;)Ltinyclj/lang/AFnMh;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/lang/Object;)Ltinyclj/lang/AFnMh;")
+             ["LOCAL 0: Object a"]
+             (ALOAD_0)
+             (INVOKESTATIC f$callee-gets-iseq "__create"
+                           "(Ljava/lang/Object;)Lpkg/ns0/f$callee-gets-iseq;")
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/f$callee-gets-iseq" nil "tinyclj/lang/AFnMh")
+            [(FIELD [PRIVATE FINAL] "a" "Ljava/lang/Object;")]
+            
+            [(METHOD [PUBLIC FINAL BRIDGE VARARGS] "fn1"
+                     "([Ljava/lang/Object;)Ljava/lang/Object;")
+             #_["LOCAL 0: f$callee-gets-iseq callee-gets-iseq"]
+             #_["LOCAL 1: Object[] items"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESTATIC ArraySeq "create"
+                           "([Ljava/lang/Object;)Lclojure/lang/ArraySeq;")
+             (INVOKEVIRTUAL . "fn1" "(Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "fn1"
+                     "(Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             ["LOCAL 0: f$callee-gets-iseq callee-gets-iseq"]
+             ["LOCAL 1: ISeq items"]
+             (ALOAD_0)
+             (GETFIELD . "a" "Ljava/lang/Object;")
+             (ARETURN)]
+
+            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
+             #_["LOCAL 0: f$callee-gets-iseq __this"]
+             #_["LOCAL 1: int n"]
+             (LDC [VIRTUAL . "fn1" "([Ljava/lang/Object;)Ljava/lang/Object;"])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
+             #_["LOCAL 0: f$callee-gets-iseq __this"]
+             (LDC [VIRTUAL . "fn1" "([Ljava/lang/Object;)Ljava/lang/Object;"])
+             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
+             (ARETURN)]
+            
+            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/Object;)V")
+             #_["LOCAL 0: uninitialized_this_type __this"]
+             #_["LOCAL 1: IPersistentMap __meta"]
+             #_["LOCAL 2: Object a"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (ALOAD_0)
+             (ALOAD_2)
+             (PUTFIELD . "a" "Ljava/lang/Object;")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "__create" "(Ljava/lang/Object;)Lpkg/ns0/f$callee-gets-iseq;")
+             #_["LOCAL 0: Object a"]
+             (NEW f$callee-gets-iseq) (DUP)
+             (ACONST_NULL)
+             (ALOAD_0)
+             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/Object;)V")
+             (ARETURN)]
+            
+            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/f$callee-gets-iseq;")
+             #_["LOCAL 0: f$callee-gets-iseq __this"]
+             #_["LOCAL 1: IPersistentMap __meta"]
+             (NEW f$callee-gets-iseq) (DUP)
+             (ALOAD_1)
+             (ALOAD_0)
+             (GETFIELD . "a" "Ljava/lang/Object;")
+             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/Object;)V")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^:auto-return-type [a]
+                             (fn* callee-gets-iseq [& items]
+                                  a)))]))))
+
+(deftest non-matching-array-to-rest-parameter
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Ljava/lang/Object;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "concat" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "concat~3" "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "concat~3"
+                     "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
+             #_["LOCAL 0: Object x"]
+             #_["LOCAL 1: Object y"]
+             #_["LOCAL 2: Object[] zs"]
+             (ALOAD_0)
+             (ALOAD_1)
+             (ALOAD_2)
+             (INVOKESTATIC ArraySeq "create" "([Ljava/lang/Object;)Lclojure/lang/ArraySeq;")
+             (INVOKESTATIC . "concat~3" "(Ljava/lang/Object;Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "concat~3"
+                     "(Ljava/lang/Object;Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             ["LOCAL 0: Object x"]
+             ["LOCAL 1: Object y"]
+             ["LOCAL 2: ISeq zs"]
+             (ACONST_NULL)
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (LDC [STATIC . "concat~3" "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"])
+             (ICONST_0)
+             (ANEWARRAY Object)
+             (ICONST_0)
+             (ANEWARRAY Object)
+             (ICONST_0)
+             (ANEWARRAY Integer)
+             (INVOKEVIRTUAL MethodHandle "invoke" "([Ljava/lang/Object;[Ljava/lang/Object;[Ljava/lang/Integer;)Ljava/lang/Object;")
+             (PUTSTATIC . "x" "Ljava/lang/Object;")
+
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def concat (fn* concat [x y & zs]
+                                  nil))
+                 (def x (concat (new objects 0)
+                                (new objects 0)
+                                (new "[Ljava.lang.Integer;" 0)))]))))
+
+(deftest void-as-variadic-arg
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Ljava/util/List;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "as-list" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"]]])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "y" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "fn~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "fn~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             ["LOCAL 0: Object f"]
+             (ALOAD_0)
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (LDC "foo")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (ACONST_NULL)
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;" :bsm-invoke-fn [])
+             (ARETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (LDC "foo")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (ACONST_NULL)
+             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Ljava/util/List;")
+             (PUTSTATIC . "x" "Ljava/util/List;")
+             
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def as-list
+                   (fn* as-list ^java.util.List [& ^objects items]
+                        (java.util.Arrays/asList items)))
+                 (def x (as-list (.println System/out "foo")))
+                 (def y (fn* [f] (f (.println System/out "foo"))))]))))
+
+(deftest void-in-collection-literal
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "x" "Lclojure/lang/IPersistentVector;")]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+
+             (LDC [STATIC Literal "vector"
+                   "([Ljava/lang/Object;)Lclojure/lang/IPersistentVector;"])
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (LDC "foo")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (ACONST_NULL)
+             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
+             (PUTSTATIC . "x" "Lclojure/lang/IPersistentVector;")
+             
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def x [(.println System/out "foo")])]))))
+

@@ -1,0 +1,142 @@
+(ns tcljc.logic-test
+  (:require [tcljc.bootstrap :refer [asm-expr]]
+            [tcljc.reader-test :refer [deterministic-gensyms]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+;;; Note: `and` and `or` below are expanded by macros provided by the
+;;; unit test framework, *not* the macros from the core library.
+
+(deftest if-const-test                  ;aka truthy-constants-test
+  (is (= '[(ICONST_2) (IRETURN)]
+         (asm-expr (if true 2 4))))
+  
+  ;; this seems to require progn unwrapping for constant folding of
+  ;; the if (unwrapping is disabled to prevent switch miscompilation
+  ;; in code/flat-insns)
+  (is (= '[(ICONST_1)
+           (IFEQ L:0)
+           (ICONST_2)
+           (IRETURN)
+           [L:0]
+           (ICONST_4)
+           (IRETURN)]
+         (asm-expr (if 123 2 4))))
+  
+  (is (= '[(ICONST_4) (IRETURN)]
+         (asm-expr (if false 2 4))))
+  (is (= '[(ICONST_4) (IRETURN)]
+         (asm-expr (if nil 2 4)))))
+
+#_
+(deftest and-test
+  (is (= '[(ICONST_0) (IRETURN)] (asm-expr (and false false))))
+  (is (= '[(ICONST_0) (IRETURN)] (asm-expr (and false true))))
+  (is (= '[(ICONST_0) (IRETURN)] (asm-expr (and true false))))
+  (is (= '[(ICONST_1) (IRETURN)] (asm-expr (and true true))))
+
+  (is (= '[(ACONST_NULL)
+           (IFNONNULL L:0)
+           (ICONST_1)
+           (GOTO L:1)
+           [L:0]
+           (ICONST_0)
+           [L:1]
+           ["LOCAL 0: boolean and__$1$__auto__"]
+           (ISTORE_0)
+           
+           (ILOAD_0)
+           (IFEQ L:2)
+           (ACONST_NULL)
+           (IFNULL L:3)
+           (ICONST_1)
+           (IRETURN)
+           [L:3]
+           (ICONST_0)
+           (IRETURN)
+           [L:2]
+           (ILOAD_0)
+           (IRETURN)]
+         #_(comment                ;macroexpands to this let*/if combo
+             (let* [and__$1$__auto__ (nil? nil)]
+               (if and__$1$__auto__
+                 (some? nil)
+                 and__$1$__auto__)))
+         (-> (asm-expr (and (nil? nil) (some? nil)))
+             (deterministic-gensyms)))))
+
+#_
+(deftest or-test
+  (is (= '[(ICONST_0) (IRETURN)] (asm-expr (or false false))))
+  (is (= '[(ICONST_1) (IRETURN)] (asm-expr (or false true))))
+  (is (= '[(ICONST_1) (IRETURN)] (asm-expr (or true false))))
+  (is (= '[(ICONST_1) (IRETURN)] (asm-expr (or true true))))
+
+  (is (= '[(ACONST_NULL)
+           (IFNONNULL L:0)
+           (ICONST_1)
+           (GOTO L:1)
+           [L:0]
+           (ICONST_0)
+           [L:1]
+           ["LOCAL 0: boolean or__$1$__auto__"]
+           (ISTORE_0)
+
+           (ILOAD_0)
+           (IFEQ L:2)
+           (ILOAD_0)
+           (IRETURN)
+           [L:2]
+           (ACONST_NULL)
+           (IFNULL L:3)
+           (ICONST_1)
+           (IRETURN)
+           [L:3]
+           (ICONST_0)
+           (IRETURN)]
+         #_(comment                ;macroexpands to this let*/if combo
+             (let* [or__$1$__auto__ (nil? nil)]
+               (if or__$1$__auto__
+                 or__$1$__auto__
+                 (some? nil))))
+         (-> (asm-expr (or (nil? nil) (some? nil)))
+             (deterministic-gensyms)))))
+
+(deftest complement-test
+  (is (= '[#_(ICONST_1)
+           #_(ICONST_1)
+           #_(IXOR)
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr (not true))))
+  (is (= '[#_(BIPUSH 15)
+           #_(IFLT L:0)
+           (ICONST_1)
+           (IRETURN)
+           #_[L:0]
+           #_(ICONST_0)
+           #_(IRETURN)]
+         (asm-expr (not (< 15 0))))))
+
+(deftest compare-test
+  (is (= '[["LOCAL 0: int a"]
+           ["LOCAL 1: int b"]
+           (ILOAD_0)
+           (ILOAD_1)
+           (IF_ICMPNE L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^int a ^int b] (= a b))))
+  (is (= '[["LOCAL 0: boolean a"]
+           ["LOCAL 1: boolean b"]
+           (ILOAD_0)
+           (ILOAD_1)
+           (IF_ICMPNE L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^boolean a ^boolean b] (= a b)))))
