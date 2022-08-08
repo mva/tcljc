@@ -48,9 +48,9 @@
      ;; Computational int values are represented by Integer instances.
      ;; tcljc.runtime/describe-const-expr maps this to a ConstantDesc.
      ;;
-     ;; The marker `const-value-empty` signals the empty statement, a
+     ;; The marker `const-value-void` signals the empty statement, a
      ;; form of constant that does not emit any code.  It can only
-     ;; appear in a void context.  Any Expr *not* marked as empty is
+     ;; appear in a void context.  Any Expr *not* marked like this is
      ;; expected to emit at least one bytecode instruction (although
      ;; at least Binding violates this expectation).
      ]
@@ -417,19 +417,19 @@
 (defn progn? ^boolean [x]
   (instance? Progn x))
 
-(def const-value-empty
+(def const-value-void
   (ClassDesc/of "tinyclj.lang" "EmptyStatementMarker"))
 
-(def expr-empty
-  (Progn. (list 'do) jb/void [] const-value-empty -1)) ;stable non-nil form
-(def expr-provided  ;"produces" method argument, or exception of catch handler
+(def expr-empty                     ;empty expression "producing" void
+  (Progn. (list 'do) jb/void [] const-value-void -1)) ;stable non-nil form
+(def expr-provided  ;"produces" exception of catch handler, or method argument
   (Progn. (list 'do) jb/void [] nil -1)) ;stable non-nil form
 
 (defn expr-empty? ^boolean [^Expr x]
-  (identical? const-value-empty (.const-value x)))
+  (identical? const-value-void (.const-value x)))
 
 (defn empty-when [^boolean cond]
-  (when cond const-value-empty))
+  (when cond const-value-void))
 (defn propagate-empty
   ([^Expr x1]
    (empty-when (expr-empty? x1)))
