@@ -267,21 +267,23 @@
                      ^:pass-to-super-constructor ^Object const-value
                      ^DirectMethodHandleDesc$Kind kind
                      ^ClassDesc owner
-                     ^String method-name]
+                     ^String method-name
+                     ^boolean owner-interface?]
   Expr)
 
 (defn invoke-poly ^InvokePoly [^Class tp ^IPersistentVector argv
                                ^Object const-value
                                ^DirectMethodHandleDesc$Kind kind
-                               ^ClassDesc owner ^String method-name]
-  (InvokePoly. nil tp argv const-value kind owner method-name))
+                               ^ClassDesc owner ^String method-name
+                               ^boolean owner-interface?]
+  (InvokePoly. nil tp argv const-value kind owner method-name owner-interface?))
 
 (defn invoke-poly? ^boolean [^Expr x]
   (instance? InvokePoly x))
 
 (defn mh-invoke-inexact ^InvokePoly [^Class tp mh+argv ^Object const-value]
-  (invoke-poly tp (vec mh+argv) const-value
-               rt/mhk-virtual rt/MethodHandle "invoke"))
+  (invoke-poly tp (vec mh+argv) const-value rt/mhk-virtual rt/MethodHandle
+               "invoke" false))
 
 (defn mh-invoke-xref ^InvokePoly [^Class tp ^IPersistentVector argv
                                   ^Object const-value
@@ -1451,7 +1453,8 @@
                                     (.invocation-name x) (.bsm x) (.cexprs x)))
     InvokePoly (let [x ^InvokePoly x]
                  (InvokePoly. (form x) tp (argv x) (.const-value x)
-                              (.kind x) (.owner x) (.method-name x)))
+                              (.kind x) (.owner x) (.method-name x)
+                              (.owner-interface? x)))
     #_else (throw (IllegalArgumentException. (str x)))))
 
 ;;; ------------------------------------------------------------------------

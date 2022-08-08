@@ -203,17 +203,6 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn invoke-instr ^CodeBuilder [^CodeBuilder xb
-                                 ^DirectMethodHandleDesc$Kind k ^ClassDesc owner
-                                 ^String name ^MethodTypeDesc mtd]
-  (let [opc (case (.refKind k)
-              #_REF_invokeVirtual 5 Opcode/INVOKEVIRTUAL
-              #_REF_invokeStatic 6 Opcode/INVOKESTATIC
-              #_REF_invokeSpecial 7 Opcode/INVOKESPECIAL
-              #_REF_newInvokeSpecial 8 Opcode/INVOKESPECIAL
-              #_REF_invokeInterface 9 Opcode/INVOKEINTERFACE)]
-    (.invokeInstruction xb opc owner name mtd (.isInterface k))))
-
 (defn invoke
   (^CodeBuilder [^CodeBuilder xb ^DirectMethodHandleDesc$Kind kind
                  ^ClassDesc owner ^String method-name

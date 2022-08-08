@@ -213,7 +213,8 @@
               rt/mhk-static)]
       (cond
         (signature-polymorphic? m)
-        (x/invoke-poly jb/cl-polymorphic-type argv nil k owner-cd (.getName m))
+        (x/invoke-poly jb/cl-polymorphic-type argv nil k owner-cd (.getName m)
+                       (.isInterface owner))
 
         (invoke-via-method-handle? m argv)
         (x/mh-invoke-xref (.getReturnType m) argv nil k
@@ -235,7 +236,8 @@
               rt/mhk-virtual)]
       (cond
         (signature-polymorphic? m)
-        (x/invoke-poly jb/cl-polymorphic-type argv nil k owner-cd (.getName m))
+        (x/invoke-poly jb/cl-polymorphic-type argv nil k owner-cd (.getName m)
+                       (.isInterface owner))
 
         (invoke-via-method-handle? m argv)
         (x/mh-invoke-xref (.getReturnType m) argv nil k

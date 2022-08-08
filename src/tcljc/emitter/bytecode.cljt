@@ -199,7 +199,8 @@
             (let [argv (x/argv x)
                   mtd (rt/mtd-of (x/type x) (map x/type (rest argv)))] ;virtual
               (-> (exprv-insns xb argv)
-                  (cf/invoke-instr (.kind x) (.owner x) (.method-name x) mtd))))
+                  (cf/invoke (.kind x) (.owner x) (.method-name x)
+                             (.descriptorString mtd) (.owner-interface? x)))))
           (invoke-arity-fa ^void [^CodeBuilder xb ^InvokeArity x ^IEmitPlan ep
                                   ^Arity at ^DirectMethodHandleDesc mhd]
             (if (.invoke-arity-with-self? ep)
