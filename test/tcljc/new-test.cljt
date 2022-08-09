@@ -30,19 +30,19 @@
 
 (deftest new-array-test
   ;; array of primitives
-  (let [exp-asm '[(BIPUSH 123) (NEWARRAY int) (ARETURN)]]
+  (let [exp-asm '[(BIPUSH 123) (NEWARRAY "int[]") (ARETURN)]]
     (is (= exp-asm (asm-expr (new ints 123))))
     (is (= exp-asm (asm-expr (new "[I" 123))))
     (is (= (.arrayType Integer/TYPE)
            (.getClass (call-expr (new ints 123))))))
-  (let [exp-asm '[(BIPUSH 123) (NEWARRAY double) (ARETURN)]]
+  (let [exp-asm '[(BIPUSH 123) (NEWARRAY "double[]") (ARETURN)]]
     (is (= exp-asm (asm-expr (new doubles 123))))
     (is (= exp-asm (asm-expr (new "[D" 123))))
     (is (= (.arrayType Double/TYPE)
            (.getClass (call-expr (new doubles 123))))))
   
   ;; array of objects
-  (let [exp-asm '[(BIPUSH 123) (ANEWARRAY Object) (ARETURN)]]
+  (let [exp-asm '[(BIPUSH 123) (ANEWARRAY "Object[]") (ARETURN)]]
     (is (= exp-asm (asm-expr (new objects 123))))
     (is (= exp-asm (asm-expr (new "[Ljava.lang.Object;" 123))))
     (is (= (.arrayType Object)

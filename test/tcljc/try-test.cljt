@@ -360,7 +360,7 @@
 
 (deftest finally-duplicates-local-1
   (is (= '[(ICONST_2)
-           (ANEWARRAY Object)
+           (ANEWARRAY "Object[]")
            (ASTORE_0)
            ["LOCAL 0: Object[] aframe"]
            

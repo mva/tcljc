@@ -4,7 +4,7 @@
 
 (deftest make-array-test
   (is (= '[(ICONST_2)
-           (ANEWARRAY Object)
+           (ANEWARRAY "Object[]")
            (ARETURN)]
          (asm-expr (new objects 2)))))
 

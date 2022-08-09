@@ -248,12 +248,12 @@
 
 (deftest dot-call-varargs-exact
   (is (= '[(ICONST_0)
-           (ANEWARRAY Object)
+           (ANEWARRAY "Object[]")
            (INVOKESTATIC Objects "hash" "([Ljava/lang/Object;)I")
            (IRETURN)]
          (asm-expr (java.util.Objects/hash (new objects 0)))))
   (is (= '[(ICONST_0)
-           (ANEWARRAY String)
+           (ANEWARRAY "String[]")
            (INVOKESTATIC Objects "hash" "([Ljava/lang/Object;)I")
            (IRETURN)]
          (asm-expr (java.util.Objects/hash (new "[Ljava.lang.String;" 0))))))
@@ -261,7 +261,7 @@
 (deftest dot-call-varargs-array-to-array
   (is (= '[(LDC [STATIC Objects "hash" "([Ljava/lang/Object;)I"])
            (ICONST_0)
-           (NEWARRAY int)
+           (NEWARRAY "int[]")
            (INVOKEVIRTUAL MethodHandle "invoke" "([I)I")
            (IRETURN)]
          (asm-expr (java.util.Objects/hash (new ints 0)))))

@@ -122,7 +122,7 @@
              (LDC [STATIC . "as-list-wrapped~1"
                    "([Ljava/lang/Object;)Ljava/util/List;"])
              (ICONST_0)
-             (NEWARRAY int)
+             (NEWARRAY "int[]")
              (INVOKEVIRTUAL MethodHandle "invoke" "([I)Ljava/util/List;")
              (PUTSTATIC . "lints" "Ljava/util/List;")
              
@@ -936,11 +936,11 @@
              
              (LDC [STATIC . "concat~3" "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"])
              (ICONST_0)
-             (ANEWARRAY Object)
+             (ANEWARRAY "Object[]")
              (ICONST_0)
-             (ANEWARRAY Object)
+             (ANEWARRAY "Object[]")
              (ICONST_0)
-             (ANEWARRAY Integer)
+             (ANEWARRAY "Integer[]")
              (INVOKEVIRTUAL MethodHandle "invoke" "([Ljava/lang/Object;[Ljava/lang/Object;[Ljava/lang/Integer;)Ljava/lang/Object;")
              (PUTSTATIC . "x" "Ljava/lang/Object;")
 

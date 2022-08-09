@@ -87,10 +87,15 @@
      jdk.classfile.constantpool.LoadableConstantEntry
      (recur (.constantValue const) owner-cld))))
 
-(defn- type-name [^ClassEntry type]     ;returns symbol or string
-  (let [cd (.asSymbol type)]
-    (cond-> (.displayName cd)
-      (not (.isArray cd)) (symbol))))
+(defn- type-name [tp]                   ;returns symbol or string
+  (condp instance? tp
+    ClassDesc
+    (let [cd ^ClassDesc tp]
+      (cond-> (.displayName cd)
+        (not (.isArray cd)) (symbol)))
+    ClassEntry
+    (recur (.asSymbol ^ClassEntry tp))
+    #_else (throw (IllegalArgumentException. (str (class tp))))))
 
 (defn- instruction-data [insn ^ClassDesc owner-cld ^HashMap label-names]
   (letfn [(opcode ^Symbol [^CodeElement insn]
@@ -137,9 +142,9 @@
      jdk.classfile.instruction.NewObjectInstruction
      (simple-insn insn (type-name (.className insn)))
      jdk.classfile.instruction.NewReferenceArrayInstruction
-     (simple-insn insn (type-name (.componentType insn)))
+     (simple-insn insn (type-name (-> insn .componentType .asSymbol .arrayType)))
      jdk.classfile.instruction.NewPrimitiveArrayInstruction
-     (simple-insn insn (-> insn .typeKind .typeName (symbol)))
+     (simple-insn insn (type-name (-> insn .typeKind .descriptor ClassDesc/ofDescriptor .arrayType)))
      jdk.classfile.instruction.NewMultiArrayInstruction
      (list (opcode insn) (type-name (.arrayType insn)) (.dimensions insn))
      
