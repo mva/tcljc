@@ -61,7 +61,7 @@
 (defn str* ^String [x]
   (cond
     (nil? x) "nil"
-    (class? x) (if (jb/null? x) "null_type" (.getName ^Class x))
+    (class? x) (.getName ^Class x)
     (string? x) (pr-str x)
     :else (str x)))
 

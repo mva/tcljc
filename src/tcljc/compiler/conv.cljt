@@ -23,9 +23,7 @@
                 nil #_"bootstrap")
               "class-desc")))]
   (defn type-str ^String [clx]
-    (if (jb/null? clx)
-      "nil"
-      (str (.displayName (rt/cd-of clx)) (class-loader-suffix clx)))))
+    (str (.displayName (rt/cd-of clx)) (class-loader-suffix clx))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -141,7 +139,7 @@
 
 (defn box-any-expr ^Expr [^Expr x]
   (cond
-    (x/type? jb/void x) x/expr-nil
+    (x/statement? x) x/expr-nil-object
     (x/reference? x) (x/identity x)
     :else (box-expr x)))
 
@@ -168,7 +166,7 @@
     (resolve/numeric-assignable-to? (x/type from) to-tp)
     (widen-from to-tp from)
 
-    (or (and (x/null-type? from) (jb/reference? to-tp))
+    (or (and (x/expr-nil-object? from) (jb/reference? to-tp))
         (.isAssignableFrom to-tp (x/type from)))
     (xf/coerce from to-tp)
 
@@ -217,7 +215,7 @@
         (x/statement? from) ;case "no return" is handled by jvm-adapt-to
         (xf/prog2-expr from (expr-default to-tp))
         
-        (and (jb/same-class? jb/boolean to-tp) (x/null-type? from))
+        (and (jb/same-class? jb/boolean to-tp) (x/const-value-nil? from))
         (xf/prog2-expr from x/expr-false)
         
         :else
@@ -229,7 +227,8 @@
   (when (x/returns? to)
     (when (or (not (x/pushes-result? from))
               (resolve/numeric-assignable-to? (x/type from) (x/type to))
-              (and (x/null-type? from)
+              (and (x/expr-nil-object? from)
+                   ;; FIXME... eliminate special treatment of boolean here?
                    (or (x/boolean? to) (x/reference? to))))
       to)))
 
@@ -255,10 +254,9 @@
 ;;; pre: `x` is a runtime value & not polymorphic.
 (defn consume-poly ^Expr [^Expr x]
   (let [x-tp (x/type x)]
-    (cond
-      (jb/statement? x-tp) (xf/prog2-expr x x/expr-nil-object)
-      (jb/null? x-tp) (xf/coerce x jb/Object)
-      :else x)))
+    (if (jb/statement? x-tp)
+      (xf/prog2-expr x x/expr-nil-object)
+      x)))
 
 ;;; Transform `x` into a type that is assignment compatible to type
 ;;; `to-tp`.  If `to-tp` is jb/polymorphic?, this function delegates

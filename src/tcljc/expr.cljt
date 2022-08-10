@@ -100,8 +100,6 @@
   (jb/reference? (type x)))
 (defn statement? ^boolean [^Expr x]
   (jb/statement? (type x)))
-(defn null-type? ^boolean [^Expr x]
-  (jb/null? (type x)))
 (defn returns? ^boolean [^Expr x] ;excludes macro or primitive function values
   (jb/returns? (type x)))
 (defn pushes-result? ^boolean [^Expr x]
@@ -166,8 +164,12 @@
 (defn const-value-false? ^boolean [^Expr x]
   (.equals jb/jvm-int-zero (.const-value x)))
 
-(def expr-nil (const jb/cl-null nil))
 (def expr-nil-object (const jb/Object nil))
+(defn const-value-nil? ^boolean [^Expr x]
+  (and (identical? jb/jvm-null (.const-value x))))
+(defn expr-nil-object? ^boolean [^Expr x]
+  (and (const-value-nil? x) (jb/object? (type x))))
+
 (def expr-zero-int (const jb/int jb/jvm-int-zero))
 (def expr-one-int (const jb/int jb/jvm-int-one))
 (def expr-zero-byte (const jb/byte jb/jvm-int-zero))

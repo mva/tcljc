@@ -124,4 +124,4 @@
   (is (= '[(INVOKE-XREF VIRTUAL "String[]" "clone"
                         "()Ljava/lang/Object;"
                         :owner-is-class)]
-         (inv [(invoke-array-clone (.arrayType String) x/expr-nil)]))))
+         (inv [(invoke-array-clone (.arrayType String) x/expr-nil-object)]))))

@@ -264,7 +264,7 @@
 (defn checkcast ^Expr [^Expr x ^Class check-tp]
   (cond
     (x/type? check-tp x) x
-    (x/null-type? x) (x/const check-tp nil)
+    (x/expr-nil-object? x) (x/const check-tp nil)
     :else (x/type-check x Opcode/CHECKCAST check-tp)))
 
 (defn coerce ^Expr [^Expr x ^Class to-tp] ;pre: `x` returns

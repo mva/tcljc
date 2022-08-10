@@ -95,23 +95,6 @@
 
 ;;; ------------------------------------------------------------------------
 
-;;; null_type is a special case with a verification type of
-;;; `Null_variable_info`.  An operand of this type usually originates
-;;; from an ACONST_NULL.  Storing an ACONST_NULL in a local and
-;;; retrieving it is also an option, but not with user-visible locals.
-(deftype NullTypeMarker []
-  Object
-  (clone [_]                           ;see `method-clone-array` below
-    (throw (CloneNotSupportedException.))))
-(def cl-null NullTypeMarker)
-(defn null? ^boolean [^Class cl]
-  (same-class? cl-null cl))
-
-;;; Artificial method instance used to mark a call to the polymorphic
-;;; `clone` virtual method that every array type implicitly has.
-(def method-clone-array (.getMethod NullTypeMarker "clone"))
-
-
 ;;; Special type of expressions that interrupt the normal flow of
 ;;; control: return, recur, throw.  This is a control flow indicator.
 ;;; Expressions that split/join control flow handle it specially.
@@ -219,7 +202,7 @@
 ;;; single column.
 
 (def ^:private box-types                ;types produced by the reader
-  (doto (new objects 12)
+  (doto (new objects 11)
     ;; native constant pool loadable
     (aset 0 java.lang.Integer)
     (aset 1 java.lang.Long)
@@ -228,16 +211,14 @@
     (aset 4 java.lang.String)
     (aset 5 java.lang.Class)
     ;; mapped to condy
-    (aset 6 cl-null)
-    (aset 7 java.lang.Boolean)
-    (aset 8 java.lang.Character)
-    (aset 9 java.lang.Byte)
-    (aset 10 java.lang.Short)
-    (aset 11 Pattern)
-    ))
+    (aset 6 java.lang.Boolean)
+    (aset 7 java.lang.Character)
+    (aset 8 java.lang.Byte)
+    (aset 9 java.lang.Short)
+    (aset 10 Pattern)))
 
 (def logical-types       ;types assigned internally to constant values
-  (doto (new "[Ljava.lang.Class;" 12)
+  (doto (new "[Ljava.lang.Class;" 11)
     ;; native constant pool loadable
     (aset 0 int)
     (aset 1 long)
@@ -246,12 +227,11 @@
     (aset 4 String)
     (aset 5 Class)
     ;; mapped to condy
-    (aset 6 cl-null)
-    (aset 7 boolean)                    ;computational int
-    (aset 8 char)                       ;computational int
-    (aset 9 byte)                       ;computational int
-    (aset 10 short)                     ;computational int
-    (aset 11 Pattern)))
+    (aset 6 boolean)                    ;computational int
+    (aset 7 char)                       ;computational int
+    (aset 8 byte)                       ;computational int
+    (aset 9 short)                      ;computational int
+    (aset 10 Pattern)))
 
 (defn aidx ^int [^objects a ^Object x]
   (loop [i 0]

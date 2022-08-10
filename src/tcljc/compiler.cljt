@@ -132,7 +132,7 @@
               Short jb/short
               #_else (throw (IllegalArgumentException.))))]
     (cond
-      (nil? form) x/expr-nil
+      (nil? form) x/expr-nil-object
       (instance? ConstantDesc form) (x/const (const-desc-tp form) form)
       (keyword? form) (compile-named form rt/clnm-keyword tl-ctx)
       (boolean? form) (x/expr-boolean ^boolean form) ;enforce singletons
@@ -341,7 +341,7 @@
        (consume-args acc argv ptypes
                      (dec (alength ptypes)) jb/cl-polymorphic-type)
        (consume-args acc argv ptypes
-                     Integer/MAX_VALUE jb/cl-null))))
+                     Integer/MAX_VALUE jb/Object))))
   (^IPersistentVector [^IPersistentVector acc
                        ^IPersistentVector argv
                        ^"[Ljava.lang.Class;" ptypes
@@ -1155,7 +1155,7 @@
        
        (compile-meta ^Expr [m]
          (if (nil? m)
-           x/expr-nil
+           x/expr-nil-object
            ;; Problem: Cannot evaluate the `foo` in a meta map like
            ;; {:tag foo}.  E.g. `int` would refer to a primitive
            ;; function and does not have a value, while `objects` only
@@ -1393,7 +1393,7 @@
   (wrong/check-argc 1 form)
   (let [arg ^Expr (nth argv 0)]
     (cond
-      (x/statement? arg) x/expr-nil
+      (x/statement? arg) x/expr-nil-object
       (x/reference? arg) (x/identity arg)
       :else (conv/box-expr arg))))
 

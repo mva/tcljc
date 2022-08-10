@@ -26,7 +26,7 @@
     (x/invoke-xref jb/boolean [x] rt/mhd-truthy-reference)
 
     :else       ;any reference that is a non-Boolean subtype of Object
-    (xf/acmp x x/expr-nil cf/ne)))
+    (xf/acmp x x/expr-nil-object cf/ne)))
 
 (defn if-expr ^Expr [^Expr test ^Expr if-true ^Expr if-false]
   (let [test (conv-to-boolean test)

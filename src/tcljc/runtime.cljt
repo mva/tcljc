@@ -65,13 +65,7 @@
 (defn cd-of ^ClassDesc [cdx]
   (cond
     (instance? ClassDesc cdx) cdx
-    (instance? Class cdx) (if (jb/null? cdx)
-                            ConstantDescs/CD_Object ;FIXME... drop this?
-                            (describe-class cdx))
-    ;; (string? cdx)
-    ;; (if (or (.startsWith ^String cdx "[") (.endsWith ^String cdx ";"))
-    ;;   (ClassDesc/ofDescriptor (str/replace cdx "." "/")) ;array type or "L...;"
-    ;;   (ClassDesc/of cdx))
+    (instance? Class cdx) (describe-class cdx)
     :else (throw (IllegalArgumentException. (str (class cdx))))))
 
 (defn cd-array-of ^"[Ljava.lang.constant.ClassDesc;" [cdxs]
@@ -274,19 +268,18 @@
 
 ;;; converting object to primitive value (currently "checked" variant):
 (def ^:private primitive-conv-method
-  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 12)
+  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 11)
     (aset 0 (mhd-static [RT "intCast"] int [object]))
     (aset 1 (mhd-static [RT "longCast"] long [object]))
     (aset 2 (mhd-static [RT "floatCast"] float [object]))
     (aset 3 (mhd-static [RT "doubleCast"] double [object]))
     (aset 4 nil)
     (aset 5 nil)
-    (aset 6 nil)
-    (aset 7 (mhd-static [RT "booleanCast"] boolean [object]))
-    (aset 8 (mhd-static [RT "charCast"] char [object]))
-    (aset 9 (mhd-static [RT "byteCast"] byte [object]))
-    (aset 10 (mhd-static [RT "shortCast"] short [object]))
-    (aset 11 nil)))
+    (aset 6 (mhd-static [RT "booleanCast"] boolean [object]))
+    (aset 7 (mhd-static [RT "charCast"] char [object]))
+    (aset 8 (mhd-static [RT "byteCast"] byte [object]))
+    (aset 9 (mhd-static [RT "shortCast"] short [object]))
+    (aset 10 nil)))
 
 (defn logical->conv-object-mhd ^DirectMethodHandleDesc [^Class tp]
   ;; pre: `cl` is a non-void primitive type
@@ -294,19 +287,18 @@
 
 ;;; boxing:
 (def ^:private box-factory
-  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 12)
+  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 11)
     (aset 0 (mhd-static [Integer "valueOf"] Integer [int]))
     (aset 1 (mhd-static [Long "valueOf"] Long [long]))
     (aset 2 (mhd-static [Float "valueOf"] Float [float]))
     (aset 3 (mhd-static [Double "valueOf"] Double [double]))
     (aset 4 nil)
     (aset 5 nil)
-    (aset 6 nil)
-    (aset 7 (mhd-static [Boolean "valueOf"] Boolean [boolean]))
-    (aset 8 (mhd-static [Character "valueOf"] Character [char]))
-    (aset 9 (mhd-static [Byte "valueOf"] Byte [byte]))
-    (aset 10 (mhd-static [Short "valueOf"] Short [short]))
-    (aset 11 nil)))
+    (aset 6 (mhd-static [Boolean "valueOf"] Boolean [boolean]))
+    (aset 7 (mhd-static [Character "valueOf"] Character [char]))
+    (aset 8 (mhd-static [Byte "valueOf"] Byte [byte]))
+    (aset 9 (mhd-static [Short "valueOf"] Short [short]))
+    (aset 10 nil)))
 
 (defn logical->box-factory ^DirectMethodHandleDesc [^Class tp]
   ;; pre: `cl` is a non-void primitive type
@@ -314,19 +306,18 @@
 
 ;;; unboxing:
 (def ^:private primitive-accessor
-  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 12)
+  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 11)
     (aset 0 (mhd-virtual [Integer "intValue"] int []))
     (aset 1 (mhd-virtual [Long "longValue"] long []))
     (aset 2 (mhd-virtual [Float "floatValue"] float []))
     (aset 3 (mhd-virtual [Double "doubleValue"] double []))
     (aset 4 nil)
     (aset 5 nil)
-    (aset 6 nil)
-    (aset 7 (mhd-virtual [Boolean "booleanValue"] boolean []))
-    (aset 8 (mhd-virtual [Character "charValue"] char []))
-    (aset 9 (mhd-virtual [Byte "byteValue"] byte []))
-    (aset 10 (mhd-virtual [Short "shortValue"] short []))
-    (aset 11 nil)))
+    (aset 6 (mhd-virtual [Boolean "booleanValue"] boolean []))
+    (aset 7 (mhd-virtual [Character "charValue"] char []))
+    (aset 8 (mhd-virtual [Byte "byteValue"] byte []))
+    (aset 9 (mhd-virtual [Short "shortValue"] short []))
+    (aset 10 nil)))
 
 (defn logical->accessor-mhd ^DirectMethodHandleDesc [^Class tp]
   ;; pre: `cl` is a non-void primitive type
