@@ -113,14 +113,6 @@
 (defn- class-file? ^boolean [^Path x]
   (str/ends-with? (.toString x) class-suffix))
 
-(defn delete-class-files ^void [^Path dest-dir ^String ns-str]
-  (when (some? dest-dir)
-    (let [pkg-dir (.resolve dest-dir (path-of (str/replace ns-str "." "/")))]
-      (doseq [^Path x (directory-file-seq pkg-dir)
-              :when (class-file? x)]
-        #_(prn :delete-class-files (.toString x))
-        (Files/delete x)))))
-
 (defn- create-directories ^Path [^Path p]
   (let [perm (-> (Set/of PosixFilePermission/OWNER_READ
                          PosixFilePermission/OWNER_WRITE
@@ -128,6 +120,16 @@
                  (PosixFilePermissions/asFileAttribute))]
     (Files/createDirectories p perm)))
 
+(defn prepare-class-directory ^void [^Path dest-dir ^String ns-str]
+  (when (some? dest-dir)
+    (let [pkg-dir (.resolve dest-dir (path-of (str/replace ns-str "." "/")))]
+      (create-directories pkg-dir)
+      (doseq [^Path x (directory-file-seq pkg-dir)
+              :when (class-file? x)]
+        #_(prn :delete-class-files (.toString x))
+        (Files/delete x)))))
+
+#_
 (defn spit-class ^void [^Path dest-prefix ^String owner-name ^bytes b]
   (when (some? dest-prefix)
     (let [f (.resolve dest-prefix (path-of (str owner-name class-suffix)))]
@@ -176,9 +178,8 @@
         ;; drop "L" and ";", but keep "/"
         owner-nm (.substring desc 1 (dec (.length desc)))]
     #_(prn :write-and-define-class owner-nm)
-    (when (some? dest-dir)
+    (when (some? dest-dir)          ;expects output directory to exist
       (let [f (.resolve dest-dir (path-of (str owner-nm class-suffix)))]
-        (create-directories (.getParent f))
         (with-open [w (Files/newOutputStream f)]
           (.write w bs))))
     (try

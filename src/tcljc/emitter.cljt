@@ -413,7 +413,7 @@
 ;; their result/exception in emit order.
 (defn emit-thread ^SegmState [^BuildEnv env ^IPersistentMap provided-ns
                               ^NamespaceCtx nmsp-ctx]
-  (cfg/delete-class-files (.dest-dir env) (ctx/this-ns nmsp-ctx))
+  (cfg/prepare-class-directory (.dest-dir env) (ctx/this-ns nmsp-ctx))
   (let [s-thread (when-not cfg/deterministic-namespace-compile?
                    (ctx/start-solo-thread
                     nmsp-ctx
