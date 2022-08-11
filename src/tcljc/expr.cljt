@@ -75,7 +75,6 @@
 
 (defn expr? ^boolean [x] (instance? Expr x))
 (defn type ^Class [^Expr x] (.type x))
-(defn type-kind ^TypeKind [^Expr x] (cf/type-kind (.type x)))
 (defn argv ^IPersistentVector [^Expr x] (._args x))
 (defn form ^Object [^Expr x] (.form x))
 
@@ -329,7 +328,7 @@
 
 (defn return ^Expr [^Expr arg ^Class to-tp] ;pre: `to-tp` is jb/no-return
   (if (returns? arg)
-    (insn* to-tp [arg] (-> (type-kind arg)
+    (insn* to-tp [arg] (-> (cf/type-kind (type arg))
                            (jdk.classfile.instruction.ReturnInstruction/of)))
     arg))
 

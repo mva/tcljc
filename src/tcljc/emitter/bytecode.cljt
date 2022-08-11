@@ -136,8 +136,7 @@
             (^CodeBuilder [^CodeBuilder xb ^Binding b ^Expr v
                            ^TypeDescriptor$OfField tp]
              (let [bref (.bref b)
-                   tk (cf/type-kind tp)
-                   slot (.allocateLocal xb tk)
+                   slot (.allocateLocal xb (cf/type-kind tp))
                    ld-st (cf/ld-st-local tp (x/mnm bref) slot)]
                (.deliver-load bref ld-st)
                (-> xb (expr-insns es v) (cf/st-insn ld-st true)))))

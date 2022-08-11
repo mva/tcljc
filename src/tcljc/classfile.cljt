@@ -280,7 +280,7 @@
 (deftype LdStReceiver [^TypeDescriptor$OfField tp ^String mnm]
   ILdStInstr
   (emit-load [_ xb]
-    (.loadInstruction xb (type-kind tp) (.receiverSlot xb)))
+    (.loadInstruction xb TypeKind/ReferenceType (.receiverSlot xb)))
   (emit-store [_ xb binding?]
     (assert binding?)
     (when cfg/enable-local-variables
