@@ -414,7 +414,7 @@
 (defn emit-thread ^SegmState [^BuildEnv env ^IPersistentMap provided-ns
                               ^NamespaceCtx nmsp-ctx]
   (cfg/prepare-class-directory (.dest-dir env) (ctx/this-ns nmsp-ctx))
-  (let [s-thread (when-not cfg/deterministic-namespace-compile?
+  (let [p-thread (when-not cfg/deterministic-namespace-compile?
                    (ctx/start-solo-thread
                     nmsp-ctx
                     (try
@@ -439,7 +439,7 @@
         segm (emit-segments env nmsp-ctx)]
     (.join c-thread 5000l)      ;does not pick up result or exceptions
     (when-not cfg/deterministic-namespace-compile?
-      (.join s-thread 5000l))   ;does not pick up result or exceptions
+      (.join p-thread 5000l))   ;does not pick up result or exceptions
     segm))
 
 ;;; ------------------------------------------------------------------------

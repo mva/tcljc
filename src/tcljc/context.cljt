@@ -184,7 +184,7 @@
 ;;; Part `q` is consumed directly by the emit thread.  Part `s` is a
 ;;; staging area that passes messages on in the order of arrival, but
 ;;; ensures that all compilation threads working on a top-level form
-;;; have finished before sending it on to `q`.
+;;; have finished before sending it on to `q` (see `preparer-thread`).
 (deftype EmitQueue [^BlockingQueue q
                     ^BlockingQueue s])
 
