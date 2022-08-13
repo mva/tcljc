@@ -248,8 +248,8 @@
 ;;; ------------------------------------------------------------------------
 
 ;;; Transform `x` into a type that can be represented as a non-void
-;;; type descriptor.  In particular, void and null_type produce an
-;;; expression that in the end pushes a nil operand of type Object.
+;;; type descriptor.  In particular, void is turned into an expression that
+;;; pushes a nil operand of type Object.
 ;;; 
 ;;; pre: `x` is a runtime value & not polymorphic.
 (defn consume-poly ^Expr [^Expr x]
@@ -271,8 +271,11 @@
 ;;; Special case of `consume` which passes on a statement `x` if
 ;;; `to-tp` is polymorphic.
 (defn consume-body ^Expr [^Expr x ^Class to-tp]
-  (if (and (jb/polymorphic? to-tp) (x/statement? x))
-    x
+  (if (jb/polymorphic? to-tp)
+    (cond
+      (x/statement? x) x
+      (not (x/returns? x)) (x/identity jb/void x)
+      :else x)
     (consume x to-tp)))
 
 (defn consume-paths ^IPersistentVector [^Class to-tp paths]
