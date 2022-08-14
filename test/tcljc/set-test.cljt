@@ -329,6 +329,12 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
             
+            [(METHOD [PUBLIC STATIC FINAL] "fn~0" "()Ljava/lang/Object;")
+             (GETSTATIC . "v" "Lclojure/lang/Var;")
+             (LDC "bar")
+             (INVOKEVIRTUAL Var "set" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (ARETURN)]
+            
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
@@ -342,15 +348,13 @@
                     [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "v" "Lclojure/lang/Var;")
-             (GETSTATIC . "v" "Lclojure/lang/Var;")
-             (LDC "bar")
-             (INVOKEVIRTUAL Var "set" "(Ljava/lang/Object;)Ljava/lang/Object;")
-             (POP)
-             
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^:var v "foo")
-                 (set! v "bar")])))
+                 ;; IllegalStateException: Can't change/establish root
+                 ;; binding of: v with set
+                 #_(set! v "bar")
+                 (fn* [] (set! v "bar"))])))
   
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
@@ -362,6 +366,13 @@
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/String;>;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "fn~0" "()Ljava/lang/Object;")
+             (GETSTATIC . "v" "Lclojure/lang/Var;")
+             (LDC "bar")
+             (INVOKEVIRTUAL Var "set" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (CHECKCAST String)
+             (ARETURN)]
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
@@ -378,17 +389,13 @@
                     [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "v" "Lclojure/lang/Var;")
-            
-             (GETSTATIC . "v" "Lclojure/lang/Var;")
-             (LDC "bar")
-             (INVOKEVIRTUAL Var "set" "(Ljava/lang/Object;)Ljava/lang/Object;")
-             (CHECKCAST String)
-             (POP)
-             
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^:var ^String v "foo")
-                 (set! v "bar")]))))
+                 ;; IllegalStateException: Can't change/establish root
+                 ;; binding of: v with set
+                 #_(set! v "bar")
+                 (fn* [] (set! v "bar"))]))))
 
 (deftest set-var-expression-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
@@ -401,6 +408,15 @@
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "fn~0" "()Ljava/lang/Object;")
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (GETSTATIC . "v" "Lclojure/lang/Var;")
+             (LDC "bar")
+             (INVOKEVIRTUAL Var "set" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/Object;)V")
+             (ACONST_NULL)
+             (ARETURN)]
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
@@ -415,14 +431,10 @@
                     [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "v" "Lclojure/lang/Var;")
-            
-             (GETSTATIC System "out" "Ljava/io/PrintStream;")
-             (GETSTATIC . "v" "Lclojure/lang/Var;")
-             (LDC "bar")
-             (INVOKEVIRTUAL Var "set" "(Ljava/lang/Object;)Ljava/lang/Object;")
-             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/Object;)V")
-             
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^:var v "foo")
-                 (.println System/out (set! v "bar"))]))))
+                 ;; IllegalStateException: Can't change/establish root
+                 ;; binding of: v with set
+                 #_(.println System/out (set! v "bar"))
+                 (fn* [] (.println System/out (set! v "bar")))]))))
