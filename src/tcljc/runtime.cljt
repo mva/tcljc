@@ -166,12 +166,6 @@
 (def AFn (ClassDesc/of clnm-abstract-fn))
 (def StaticFnMh (ClassDesc/of clnm-static-fn))
 
-
-(defn array? ^boolean [^ClassDesc tpd]
-  (.isArray tpd))
-
-
-
 (def name-force-clinit "forceClinit~1")
 (def name-requires "requires~1")
 
@@ -229,6 +223,8 @@
 (def mhd-popFileContext (mhd-static [RT "popFileContext"] void []))
 (def mhd-markCoreInitialization (mhd-static [RT "markCoreInitialization"]
                                             void [String]))
+(def mhd-arityHandlesIfFn (mhd-static [RT "arityHandlesIfFn"]
+                                      MethodHandleArray [Lookup Class Object]))
 
 ;;; namespace boilerplate:
 (def mhd-createNamespace (mhd-static [RT "createNamespace"] void [String]))

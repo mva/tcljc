@@ -129,7 +129,7 @@
                       tp (cond
                            (nil? tp)
                            (wrong/syntax "method cannot have rest parameter")
-                           (not (rt/array? tp))
+                           (not (.isArray tp))
                            (wrong/type-expr "type of vararg parameter must be array" tp)
                            :else tp)]
                   (if (nnext params)

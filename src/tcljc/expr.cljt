@@ -657,7 +657,7 @@
 ;;; methods.  This makes field bindings local to all methods, similar
 ;;; to the methods' parameter bindings.
 
-;; (def lvl-outermost-fn 2)
+(def lvl-outermost-fn 2)
 ;;; The lowest level assigned to an `fn*` or `reify*` form.
 
 ;; Level indicates the enclosing fn*/reify*/deftype* forms.  Global

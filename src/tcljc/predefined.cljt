@@ -80,4 +80,6 @@
         (put-prim 'identity compiler/identity-primitive))))
 
 (def implicit-known-ns
-  {cfg/primitive-ns-str (into {} (globals-ns-primitive))})
+  (let [globals (-> {cfg/key-force-clinit x/expr-empty}
+                    (into (globals-ns-primitive)))]
+    {cfg/primitive-ns-str globals}))

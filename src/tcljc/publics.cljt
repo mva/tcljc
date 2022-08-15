@@ -1,0 +1,137 @@
+(ns tcljc.publics
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.runtime :as rt]
+   [tcljc.javabase :as jb]
+   [tcljc.classfile :as cf]
+   [tcljc.expr :as x]
+   [tcljc.context :as ctx])
+  (:import
+   (tcljc.expr FnForm FnCode Arity ArityCode Binding IEmitPlan)
+   (clojure.lang IPersistentMap)
+   (java.lang.invoke MethodHandle MethodHandles$Lookup)
+   (java.lang.reflect Field Method Member Modifier)))
+
+(defn- mk-emit-import ^IEmitPlan [^boolean virtual?]
+  (reify
+    IEmitPlan
+    (fn-value-const [_]
+      (throw (IllegalStateException.)))
+    (fn-value-instr [this xb caller-closes-over]
+      (throw (IllegalStateException.)))
+    (fn-patch-instr [_ xb bref-mapper bref]
+      (throw (IllegalStateException.)))
+
+    (fn-class-hierarchy-info [_]
+      (throw (IllegalStateException.)))
+    (fn-class [_ dyn-chr]
+      (throw (IllegalStateException.)))
+    (fn-methods [this cb]
+      (throw (IllegalStateException.)))
+    
+    (invoke-arity-with-self? [_]
+      virtual?)
+    (arity-env [_ xb bref-mapper at]
+      [])))
+
+(def ^:private emit-statics-import (mk-emit-import false))
+(def ^:private emit-virtuals-import (mk-emit-import true))
+
+(defn- call-only-fn-form ^FnForm [^Class declared-tp ^boolean virtual?
+                                  ^"[Ljava.lang.invoke.MethodHandle;" mhs]
+  (letfn [(import-parameter ^Binding [^Class tp]
+            (-> (x/local-ref x/lvl-outermost-fn nil tp x/b-parameter)
+                (x/local-binding nil)))
+          (import-arity ^Arity [^int i ^MethodHandle mh]
+            (let [mt (.type mh)
+                  pcount (cond->> (.parameterCount mt)
+                           virtual? (dec))
+                  ptypes (cond->> (seq (.parameterList mt))
+                           virtual? (rest))
+                  va? (.isVarargsCollector mh)]
+              (Arity. (mapv import-parameter ptypes) (.returnType mt) pcount
+                      va? va? nil nil -1 nil nil i)))
+          (import-arity-code ^ArityCode [^int i ^MethodHandle mh]
+            (let [mhd (.get (.describeConstable mh))]
+              (ArityCode. (import-arity i mh) nil nil mhd nil false)))]
+    (let [ep (if virtual? emit-virtuals-import emit-statics-import)
+          aca (new "[Ltcljc.expr.ArityCode;" (alength mhs))]
+      (dotimes [i (alength aca)]
+        (aset aca i (import-arity-code i (aget mhs i))))
+      (FnForm. nil declared-tp [] nil x/lvl-outermost-fn nil nil nil
+               (mapv #(.at ^ArityCode %) aca) nil
+               (FnCode. 0 true false declared-tp ep aca)))))
+
+(defn- import-fn-form ^FnForm [^MethodHandles$Lookup lookup-in-pkg
+                               ^MethodHandle arity-handles-mh
+                               ^Class declared-tp ^Object value]
+  (when-some [mhs ^"[Ljava.lang.invoke.MethodHandle;"
+              (.invokeExact arity-handles-mh lookup-in-pkg declared-tp value)]
+    (let [static? (jb/same-classname? rt/clnm-static-fn (.getClass value))]
+      (call-only-fn-form declared-tp (not static?) mhs))))
+
+(defn- add-publics [acc ^Class cl ^MethodHandles$Lookup lookup-in-pkg
+                    ^MethodHandle arity-handles-mh]
+  (let [cld (rt/cd-of cl)]
+    (letfn [(global-nm ^String [^Member m]
+              (when (Modifier/isPublic (.getModifiers m))
+                (let [nm (.getName m)]
+                  (when-not (.contains nm "~")
+                    (cfg/demunge-name nm)))))
+            (clojure-var-type ^Class [^Field f]
+              (when (jb/same-classname? rt/clnm-Var (.getType f))
+                (let [s (-> f .getGenericType .getTypeName)
+                      i (.indexOf s "<")
+                      nm (.substring s (inc i) (dec (.length s)))]
+                  (when-not (or (neg? i) (.isEmpty nm))
+                    (Class/forName nm false (.getClassLoader cl))))))
+            (constant-init-x [^Class tp ^int mods ^Object value]
+              (or (import-fn-form lookup-in-pkg arity-handles-mh tp value)
+                  (when (and (not (Modifier/isTransient mods))
+                             (cf/constant-loads-as-ldc? tp))
+                    (x/const tp value))))
+            (add-field [acc ^Field f]
+              (if-some [nm (global-nm f)]
+                (let [tp (.getType f)
+                      mods (.getModifiers f)
+                      redef? (not (Modifier/isFinal mods))
+                      init-x (when-not redef?
+                               (constant-init-x tp mods (.get f nil)))
+                      bref (if-some [var-tp (clojure-var-type f)]
+                             (x/global-ref (symbol nm) (.getPackageName cl)
+                                           var-tp redef? true init-x)
+                             (x/global-ref (symbol nm) (.getPackageName cl)
+                                           tp redef? false init-x))
+                      ld-st (cf/ld-st-static cld (.getName f) (rt/cd-of tp))]
+                  (.deliver-load bref ld-st)
+                  (assoc acc nm bref))
+                acc))
+            (add-method [acc ^Method m]
+              (if (= (.getName m) rt/name-force-clinit)
+                (let [inv (x/invoke-xref jb/void [] nil rt/mhk-static
+                                         (rt/cd-of cl) rt/name-force-clinit
+                                         "()V" false false)]
+                  (assoc acc cfg/key-force-clinit inv))
+                (if-some [nm (global-nm m)]
+                  (let [tp (.getReturnType m)
+                        init-x (constant-init-x tp 0 (.invoke m nil))
+                        bref (x/global-ref (symbol nm) (.getPackageName cl)
+                                           tp false false init-x)
+                        ld-st (cf/ld-st-method cld (.getName m) (rt/cd-of tp))]
+                    (.deliver-load bref ld-st)
+                    (assoc acc nm bref))
+                  acc)))]
+      (reduce add-field
+              (reduce add-method acc (.getDeclaredMethods cl))
+              (.getDeclaredFields cl)))))
+
+(defn extract ^IPersistentMap [^MethodHandles$Lookup lookup-in-pkg
+                               ^Class capstone]
+  (letfn [(all-segments [acc ^Class cl]
+            (if (identical? Object cl)
+              (reverse acc)
+              (recur (cons cl acc) (.getSuperclass cl))))]
+    (let [arity-handles-mh (ctx/resolve-mh lookup-in-pkg
+                                           rt/mhd-arityHandlesIfFn)]
+      (reduce #(add-publics %1 %2 lookup-in-pkg arity-handles-mh)
+              {} (all-segments () capstone)))))

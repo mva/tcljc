@@ -10,8 +10,10 @@
              (LDC "tinyclj.core")
              (ARETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
-            (LDC "pkg.ns0")
-            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")]
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
 
            [(CLASS Vx [PUBLIC] "pkg/ns1/__ns" nil "pkg/ns1/__ns100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
@@ -20,8 +22,10 @@
              (LDC "tinyclj.core")
              (ARETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns1/__ns100")
-            (LDC "pkg.ns1")
-            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")]]
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns1")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (ns pkg.ns1)]))))
 
@@ -33,9 +37,13 @@
              (LDC "tinyclj.core")
              (ARETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
-            (LDC "pkg.exp")
-            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-            (FIELD [PUBLIC STATIC VOLATILE] "foo" "I" 123)]
+            [(FIELD [PUBLIC STATIC VOLATILE] "foo" "I")
+             (ConstantValue 123)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.exp")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
 
            [(CLASS Vx [PUBLIC] "pkg/ns1/__ns" nil "pkg/ns1/__ns100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
@@ -44,9 +52,11 @@
              (LDC "pkg.exp,tinyclj.core")
              (ARETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns1/__ns100")
-            (LDC "pkg.ns1")
-            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-            (INVOKESTATIC __ns "forceClinit~1" "()V")]]
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns1")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (INVOKESTATIC __ns "forceClinit~1" "()V")
+             (RETURN)]]]
          (nmsp '[(ns pkg.exp)
                  (def ^:redef foo 123)
                  (ns pkg.ns1
@@ -61,10 +71,13 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
-            (LDC "pkg.exp")
-            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-            
-            (FIELD [PUBLIC STATIC FINAL] "foo" "I" 123)]
+            [(FIELD [PUBLIC STATIC FINAL] "foo" "I")
+             (ConstantValue 123)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.exp")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns1/__ns" nil "pkg/ns1/__ns100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
@@ -74,11 +87,14 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns1/__ns100")
-            (LDC "pkg.ns1")
-            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-            (INVOKESTATIC __ns "forceClinit~1" "()V")
+            [(FIELD [PUBLIC STATIC FINAL] "x" "I")
+             (ConstantValue 124)]
 
-            (FIELD [PUBLIC STATIC FINAL] "x" "I" 124)]]
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns1")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (INVOKESTATIC __ns "forceClinit~1" "()V")
+             (RETURN)]]]
 
          (nmsp '[(ns pkg.exp)
                  (def foo 123)
@@ -94,9 +110,13 @@
                 (LDC "tinyclj.core")
                 (ARETURN)]]
               [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
-               (LDC "pkg.exp")
-               (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-               (FIELD [PUBLIC STATIC FINAL] "public-var" "I" 123)]
+               [(FIELD [PUBLIC STATIC FINAL] "public-var" "I")
+                (ConstantValue 123)]
+
+               [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+                (LDC "pkg.exp")
+                (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+                (RETURN)]]
              
               [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
                [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
@@ -105,11 +125,14 @@
                 (LDC "pkg.exp,tinyclj.core")
                 (ARETURN)]]
               [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
-               (LDC "pkg.ns0")
-               (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-               (INVOKESTATIC __ns "forceClinit~1" "()V")
+               [(FIELD [PUBLIC STATIC FINAL] "local-var" "I")
+                (ConstantValue 123)]
                
-               (FIELD [PUBLIC STATIC FINAL] "local-var" "I" 123)]]]
+               [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+                (LDC "pkg.ns0")
+                (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+                (INVOKESTATIC __ns "forceClinit~1" "()V")
+                (RETURN)]]]]
     (is (= exp (nmsp '[(ns pkg.exp)
                        (def public-var 123)
 
@@ -145,20 +168,25 @@
              (LDC "tinyclj.core")
              (ARETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
-            (LDC "pkg.exp")
-            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "public-var" "Lclojure/lang/Var;")
+             (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.exp")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
             
-            (FIELD [PUBLIC STATIC FINAL TRANSIENT] "public-var" "Lclojure/lang/Var;"
-                   nil "Lclojure/lang/Var<Ljava/lang/Object;>;")
-            (LDC "pkg.exp")
-            (LDC "public-var")
-            (LDC "123")
-            (INVOKESTATIC RT "var" "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)Lclojure/lang/Var;")
-            (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
-                  [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["var"]]
-                   [:bsm-invoke "_" "Z" [:mhd-not-zero-int 1]]]])
-            (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
-            (PUTSTATIC . "public-var" "Lclojure/lang/Var;")]
+             (LDC "pkg.exp")
+             (LDC "public-var")
+             (LDC "123")
+             (INVOKESTATIC RT "var" "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)Lclojure/lang/Var;")
+             (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
+                   [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["var"]]
+                    [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
+             (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
+             (PUTSTATIC . "public-var" "Lclojure/lang/Var;")
+
+             (RETURN)]]
 
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
@@ -167,14 +195,19 @@
              (LDC "pkg.exp,tinyclj.core")
              (ARETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
-            (LDC "pkg.ns0")
-            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-            (INVOKESTATIC __ns "forceClinit~1" "()V")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "local-var" "Ljava/lang/Object;")]
             
-            (FIELD [PUBLIC STATIC FINAL TRANSIENT] "local-var" "Ljava/lang/Object;")
-            (GETSTATIC __ns100 "public-var" "Lclojure/lang/Var;")
-            (INVOKEVIRTUAL Var "deref" "()Ljava/lang/Object;")
-            (PUTSTATIC . "local-var" "Ljava/lang/Object;")]]
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (INVOKESTATIC __ns "forceClinit~1" "()V")
+
+             (GETSTATIC __ns100 "public-var" "Lclojure/lang/Var;")
+             (INVOKEVIRTUAL Var "deref" "()Ljava/lang/Object;")
+             (PUTSTATIC . "local-var" "Ljava/lang/Object;")
+             
+             (RETURN)]]]
          (nmsp '[(ns pkg.exp)
                  (def ^:var public-var "123")
                  
@@ -189,11 +222,7 @@
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
-
            [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
-            (LDC "pkg.exp")
-            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-            
             [(METHOD [PUBLIC STATIC FINAL] "inc1" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "inc1~1" "(I)I"]]])
@@ -203,7 +232,12 @@
              (ILOAD_0)
              (ICONST_1)
              (IADD)
-             (IRETURN)]]
+             (IRETURN)]
+
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.exp")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
 
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
@@ -211,11 +245,13 @@
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "pkg.exp,tinyclj.core")
              (ARETURN)]]
-
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
-            (LDC "pkg.ns0")
-            (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-            (INVOKESTATIC __ns "forceClinit~1" "()V")
+            [(FIELD [PUBLIC STATIC VOLATILE] "inc1_alias" "Ljava/lang/Object;")
+             (RuntimeVisibleAnnotations (Alias ["of" "pkg.exp/inc1"]))]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "three" "Ljava/lang/Object;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "three_alias" "I")]
             
             [(METHOD [PUBLIC STATIC FINAL] "apply1" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
@@ -226,27 +262,28 @@
              ["LOCAL 1: int n"]
              (ALOAD_0)
              (ILOAD_1)
-             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;I)Ljava/lang/Object;" :bsm-invoke-n [])
+             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;I)Ljava/lang/Object;" :bsm-invoke-fn [])
              (ARETURN)]
 
             #_[(METHOD [PUBLIC STATIC FINAL] "inc1_alias" "()Ltinyclj/lang/StaticFnMh;")
                (INVOKESTATIC __ns100 "inc1" "()Ltinyclj/lang/StaticFnMh;")
                (ARETURN)]
 
-            (FIELD [PUBLIC STATIC VOLATILE] "inc1_alias" "Ljava/lang/Object;"
-                   nil nil (RuntimeVisibleAnnotations
-                            ["Ltinyclj/lang/Alias;" "of" "pkg.exp/inc1"]))
-            
-            (FIELD [PUBLIC STATIC FINAL TRANSIENT] "three" "Ljava/lang/Object;")
-            (INVOKESTATIC __ns100 "inc1" "()Ltinyclj/lang/StaticFnMh;")
-            (ICONST_2)
-            (INVOKESTATIC . "apply1~2" "(Ljava/lang/Object;I)Ljava/lang/Object;")
-            (PUTSTATIC . "three" "Ljava/lang/Object;")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (INVOKESTATIC __ns "forceClinit~1" "()V")
 
-            (FIELD [PUBLIC STATIC FINAL TRANSIENT] "three_alias" "I")
-            (ICONST_2)
-            (INVOKESTATIC __ns100 "inc1~1" "(I)I")
-            (PUTSTATIC . "three_alias" "I")]]
+             (INVOKESTATIC __ns100 "inc1" "()Ltinyclj/lang/StaticFnMh;")
+             (ICONST_2)
+             (INVOKESTATIC . "apply1~2" "(Ljava/lang/Object;I)Ljava/lang/Object;")
+             (PUTSTATIC . "three" "Ljava/lang/Object;")
+             
+             (ICONST_2)
+             (INVOKESTATIC __ns100 "inc1~1" "(I)I")
+             (PUTSTATIC . "three_alias" "I")
+             
+             (RETURN)]]]
          (nmsp '[(ns pkg.exp)
                  (def inc1 (fn* inc1 ^int [^int n]
                                 (+ n 1)))

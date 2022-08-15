@@ -9,13 +9,14 @@
    [tcljc.expr :as x]
    [tcljc.context :as ctx]
    [tcljc.emitter :as em]
+   [tcljc.publics :as publics]
    [tcljc.predefined :as predefined]
    [tinyclj.alpha.ptest :as ptest]      ;for get-test-context & is
    [tcljc.classdata :as classdata])
   (:import
    (tcljc.expr MacroRef FnMacroFn)
    (tcljc.context FnRequireNamespace)
-   (clojure.lang Symbol ExceptionInfo)
+   (clojure.lang Symbol IPersistentMap ExceptionInfo)
    (java.lang.invoke MethodHandle MethodType)
    (java.lang.reflect Method)
    (java.nio.file Path)
@@ -258,7 +259,8 @@
      (ctx/with-executor exc-nmsp
        ;; manual unrolled reduce to reduce stack trace noise; during
        ;; development, `emit-namespace` will die uncountable times
-       (loop [known-ns (assoc predefined/implicit-known-ns cfg/core-lib {})
+       (loop [known-ns (assoc predefined/implicit-known-ns
+                              cfg/core-lib {cfg/key-force-clinit x/expr-empty})
               i 0]
          (if (= i (alength ans-strs))
            known-ns
@@ -268,11 +270,14 @@
                  tl-ctx (em/mk-nmsp-ctx env noop-require-namespace
                                         known-ns bootstrap-globals ns-str
                                         exc-method)
-                 segm (em/emit-thread env known-ns tl-ctx)]
-             (doseq [^bytes bs (remove class? (.bs+clv segm))
+                 nmsp (-> (em/mk-first-segm env tl-ctx true)
+                          (em/emit-thread known-ns))]
+             (doseq [^bytes bs (.bytesv nmsp)
                      :let [x (classdata/extract bs)]]
                (.put !render-to (classdata/class-name x) x))
-             (recur (assoc known-ns ns-str (-> segm .nsd :publics)) (inc i))))))
+             (let [lookup-in-pkg (-> nmsp .nmsp-ctx .lookup-in-pkg)
+                   globals (publics/extract lookup-in-pkg (.capstone nmsp))]
+               (recur (assoc known-ns ns-str globals) (inc i)))))))
      
      (->> (sort-by key (seq !render-to))
           (mapv (comp vec val))))))

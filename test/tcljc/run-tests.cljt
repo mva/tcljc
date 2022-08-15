@@ -10,8 +10,7 @@
 
           namespace-test fn-test variadic-test macro-test deftype-test
           set-test definterface-test closure-test line-test letfn-test
-          reify-test ;; require-test #_publics-test
-          )
+          reify-test require-test)
    
    tcljc.core                      ;at least compile unused namespaces
    tcljc.run-rtiow
@@ -55,9 +54,7 @@
     tcljc.line-test
     tcljc.letfn-test
     tcljc.reify-test
-    ;; #_tcljc.require-test
-    ;; #_tcljc.publics-test
-    ])
+    tcljc.require-test])
 
 (defn run []
   (let [res (run-scoped-tests all-namespaces)]

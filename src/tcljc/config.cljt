@@ -32,6 +32,8 @@
 
 (def primitive-ns-str "tinyclj.lang.primitive")
 
+(def key-force-clinit nil)
+
 (def wait-cyclic-ms (* 5 1000l))
 
 (def java-lang-classes

@@ -42,7 +42,8 @@
              tl-ctx (em/mk-nmsp-ctx env noop-require-namespace
                                     known-ns globals ns-str
                                     exc-method)]
-         (em/emit-thread env known-ns tl-ctx)
+         (-> (em/mk-first-segm env tl-ctx false)
+             (em/emit-thread known-ns))
          :success))))
 
 (defn -main [& args]

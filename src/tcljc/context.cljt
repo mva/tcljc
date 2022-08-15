@@ -76,8 +76,11 @@
 (definterface IEmitterContext
   (ns-str ^String [])
   
+  (get-ns-alias-map ^IPersistentMap [])
+  (put-ns-alias ^void [^String alias ^String ns-str])
+  
   ;; If there is a def with the given name in this namespace, then
-  ;; return the expression that loads its value or nil.
+  ;; this map has an entry mapping its name to the BindingRef.
   (get-globals ^IPersistentMap [])
 
   ;; Define global `nm` as `x`.  The new name is immediatly visible,
@@ -97,7 +100,6 @@
 
   
   (get-imports ^IPersistentMap [])
-  
   (put-import ^void [^Symbol nm ^Class cl])
   
   (lookup-in-pkg ^MethodHandles$Lookup [])
@@ -219,11 +221,11 @@
 (definterface ICompilerContext
   (update-macro-count ^int [^int delta]))
 
-;;; The mutable `EmitNmsp` context is private to the namespace thread.
-;;; All updates and reads are confined to this single thread.
+;;; The mutable `NamespaceCtx` context is private to the namespace
+;;; thread.  All updates and reads are confined to this single thread.
 (deftype NamespaceCtx
     [^IPersistentMap known-ns
-     ^IPersistentMap ns-alias
+     ^:unsynchronized-mutable ^IPersistentMap _ns-alias
      ^:unsynchronized-mutable ^IPersistentMap _globals
      ^:unsynchronized-mutable ^IPersistentMap _imports
      
@@ -246,17 +248,20 @@
     IEmitterContext
     (ns-str [_]
       ns-str)
+    (get-ns-alias-map [_]
+      _ns-alias)
+    (put-ns-alias [_ alias ns-str]
+      (set! _ns-alias (assoc _ns-alias alias ns-str)))
     (get-globals [_]
       _globals)
     (put-global [_ nm x]
-      (set! _globals (assoc _globals nm x))
-      x)
+      (set! _globals (assoc _globals nm x)))
     (lookup-global [this globals ns nm]
       ;; When called from a methods context, the immutable `globals`
       ;; of the calling thread must be passed in.
       (if (nil? ns)
         (.valAt globals nm nil)
-        (let [resolved-ns-nm (.valAt ns-alias ns ns)]
+        (let [resolved-ns-nm (.valAt _ns-alias ns ns)]
           (if (.equals ns-str resolved-ns-nm)
             (or (.lookup-global this globals nil nm)
                 (wrong/unresolved resolved-ns-nm (symbol nm)))
@@ -267,8 +272,7 @@
     (get-imports [_]
       _imports)
     (put-import [_ nm x]
-      (set! _imports (assoc _imports nm x))
-      x)
+      (set! _imports (assoc _imports nm x)))
     (lookup-in-pkg [_]
       lookup-in-pkg)
     
@@ -311,13 +315,19 @@
 ;;; deftype*.  It isolates its users from concurrent or reordered
 ;;; updates in the namespace environment, effectively freezing the
 ;;; environment to enable concurrent compilation.
-(deftype MethodsCtx [^IPersistentMap _globals
+(deftype MethodsCtx [^IPersistentMap _ns-alias
+                     ^IPersistentMap _globals
                      ^IPersistentMap _imports
                      ^MethodHandles$Lookup l
                      ^NamespaceCtx nmsp-ctx]
   IEmitterContext
   (ns-str [_]
     (.ns-str nmsp-ctx))
+  
+  (get-ns-alias-map [_]
+    _ns-alias)
+  (put-ns-alias [_ alias ns-str]
+    (throw (UnsupportedOperationException.)))
   
   (get-globals [_]
     _globals)
@@ -344,10 +354,12 @@
    (if (instance? MethodsCtx ctx)
      ctx
      (let [nmsp-ctx ^NamespaceCtx ctx]
-       (MethodsCtx. (.get-globals nmsp-ctx) (.get-imports nmsp-ctx)
+       (MethodsCtx. (.get-ns-alias-map nmsp-ctx) (.get-globals nmsp-ctx)
+                    (.get-imports nmsp-ctx)
                     (.lookup-in-pkg nmsp-ctx) nmsp-ctx))))
   (^MethodsCtx [^NamespaceCtx nmsp-ctx ^Class ephemeral-class]
-   (MethodsCtx. (.get-globals nmsp-ctx)
+   (MethodsCtx. (.get-ns-alias-map nmsp-ctx)
+                (.get-globals nmsp-ctx)
                 (-> (.get-imports nmsp-ctx)
                     (assoc (jb/import-symbol-short ephemeral-class)
                            ephemeral-class)
@@ -412,15 +424,16 @@
     (recur (.nmsp-ctx ^MethodsCtx tl-ctx))))
 
 
-(letfn [(resolve-mh ^MethodHandle [^MethodHandles$Lookup l ^ConstantDesc cd]
-          ^MethodHandle (.resolveConstantDesc cd l))]
-  (defn push-nmsp-context ^void [^NamespaceCtx nmsp-ctx]
-    (let [ns-str (.ns-str nmsp-ctx)
-          mh (resolve-mh (.lookup-in-pkg nmsp-ctx) rt/mhd-pushFileContext)]
-      ^void (.invokeExact mh ns-str)))
-  (defn pop-nmsp-context ^void [^NamespaceCtx nmsp-ctx]
-    (let [mh (resolve-mh (lookup-in-pkg nmsp-ctx) rt/mhd-popFileContext)]
-      ^void (.invokeExact mh))))
+(defn resolve-mh ^MethodHandle [^MethodHandles$Lookup l ^ConstantDesc cd]
+  ^MethodHandle (.resolveConstantDesc cd l))
+
+(defn push-nmsp-context ^void [^MethodHandles$Lookup lookup-in-pkg
+                               ^String ns-str]
+  (let [mh (resolve-mh lookup-in-pkg rt/mhd-pushFileContext)]
+    ^void (.invokeExact mh ns-str)))
+(defn pop-nmsp-context ^void [^MethodHandles$Lookup lookup-in-pkg]
+  (let [mh (resolve-mh lookup-in-pkg rt/mhd-popFileContext)]
+    ^void (.invokeExact mh)))
 
 (defn exc-method ^ExecutorService [tl-ctx]
   (.exc-method (tl-ctx* tl-ctx)))
