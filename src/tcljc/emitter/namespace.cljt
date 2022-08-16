@@ -11,7 +11,7 @@
    [tinyclj.string :as str])
   (:import
    (tcljc.reader IReader)
-   (tcljc.context NamespaceCtx)
+   (tcljc.context Ctx)
    (tcljc.expr BindingRef)
    (clojure.lang Symbol ISeq IPersistentMap IPersistentSet IPersistentVector
                  ExceptionInfo)
@@ -27,27 +27,26 @@
 
 (deftype Namespace [^IBuildEnv env
                     ^IPersistentMap provided-ns
-                    ^NamespaceCtx nmsp-ctx
+                    ^Ctx ctx
                     
                     ^IPersistentSet rpaths
                     ^IPersistentSet req-strs
                     ^Class capstone
                     bytesv])            ;bytes of emitted classes, or nil
-(defn- mk-nmsp ^Namespace [^IBuildEnv env ^IPersistentMap provided-ns
-                           ^NamespaceCtx nmsp-ctx]
-  (Namespace. env provided-ns nmsp-ctx #{} #{} nil nil))
+(defn- mk-nmsp ^Namespace [^IBuildEnv env ^IPersistentMap provided-ns ^Ctx ctx]
+  (Namespace. env provided-ns ctx #{} #{} nil nil))
 (def ^:private compile-namespace-in-progress (mk-nmsp nil nil nil))
 (defn- with-rpath ^Namespace [^Namespace nmsp ^Path rpath]
-  (Namespace. (.env nmsp) (.provided-ns nmsp) (.nmsp-ctx nmsp)
+  (Namespace. (.env nmsp) (.provided-ns nmsp) (.ctx nmsp)
               (conj (.rpaths nmsp) rpath) (.req-strs nmsp)
               (.capstone nmsp) (.bytesv nmsp)))
 (defn- with-require ^Namespace [^Namespace nmsp ^String ns-str]
-  (Namespace. (.env nmsp) (.provided-ns nmsp) (.nmsp-ctx nmsp)
+  (Namespace. (.env nmsp) (.provided-ns nmsp) (.ctx nmsp)
               (.rpaths nmsp) (conj (.req-strs nmsp) ns-str)
               (.capstone nmsp) (.bytesv nmsp)))
 (defn with-capstone ^Namespace [^Namespace nmsp ^Class capstone
                                 ^IPersistentVector bytesv]
-  (Namespace. (.env nmsp) (.provided-ns nmsp) (.nmsp-ctx nmsp)
+  (Namespace. (.env nmsp) (.provided-ns nmsp) (.ctx nmsp)
               (.rpaths nmsp) (.req-strs nmsp) capstone bytesv))
 
 (defn- file-rpath ^Path [^Path parent-rpath ^String path-str]
@@ -77,7 +76,7 @@
 
     :else x))
 
-(defn- put-required-globals ^void [^NamespaceCtx nmsp-ctx gmaps require-map]
+(defn- put-required-globals ^void [^Ctx ctx gmaps require-map]
   (assert (identical? :require (:tag require-map)))
   (let [{:keys [ns-sym]} require-map
         req-str (name ns-sym)
@@ -89,10 +88,10 @@
         put-req (fn ^void [^Symbol nm ^BindingRef bref]
                   (let [nm-sym (get rename nm nm)
                         nm* (name nm-sym)]
-                    (if (contains? (.get-globals nmsp-ctx) nm*)
+                    (if (contains? (.get-globals ctx) nm*)
                       (wrong/other (str "required name already defined by this "
                                         "namespace: " (wrong/q nm-sym)))
-                      (.put-global nmsp-ctx nm* bref))))]
+                      (.put-global ctx nm* bref))))]
     (if (or (identical? :all incl) (some? excl))
       (if (some? excl)
         (let [excl-set (set excl)]
@@ -109,33 +108,32 @@
           (put-req nm bref)
           (wrong/unresolved ns-sym nm))))))
 
-(defn- put-ns-alias ^void [^NamespaceCtx nmsp-ctx ^String ns-str
-                           ^Symbol opt-alias]
-  (let [ns-alias (.get-ns-alias-map nmsp-ctx)]
-    (when (= ns-str (.ns-str nmsp-ctx))
+(defn- put-ns-alias ^void [^Ctx ctx ^String ns-str ^Symbol opt-alias]
+  (let [ns-alias (.get-ns-alias-map ctx)]
+    (when (= ns-str (.ns-str ctx))
       (wrong/other (str "namespace cannot require itself: "
                         (wrong/q ns-str))))
     (when-some [prev (.valAt ns-alias ns-str)]
       (when (not= prev ns-str)
         (wrong/other (str "namespace alias already exists: "
                           (wrong/q prev)))))
-    (.put-ns-alias nmsp-ctx ns-str ns-str)
+    (.put-ns-alias ctx ns-str ns-str)
     (when (some? opt-alias)
       (let [alias (name opt-alias)]
         (when (some? (.valAt ns-alias alias))
           (wrong/other (str "namespace alias already exists: "
                             (wrong/q opt-alias))))
-        (.put-ns-alias nmsp-ctx alias ns-str)))))
+        (.put-ns-alias ctx alias ns-str)))))
 
-(defn- add-namespace-deps ^void [^NamespaceCtx nmsp-ctx gmaps deps]
+(defn- add-namespace-deps ^void [^Ctx ctx gmaps deps]
   (doseq [dep deps]
     (case (:tag dep)
       :import (assert false) #_(parser/add-imports ns dep)
-      :require (do (put-ns-alias nmsp-ctx (name (:ns-sym dep)) (:as dep))
-                   (put-required-globals nmsp-ctx gmaps dep)))))
+      :require (do (put-ns-alias ctx (name (:ns-sym dep)) (:as dep))
+                   (put-required-globals ctx gmaps dep)))))
 
 (letfn [(ns-str ^String [^Namespace nmsp]
-          (-> nmsp .nmsp-ctx .ns-str))
+          (-> nmsp .ctx .ns-str))
         (core-provided-ns ^IPersistentMap [^Namespace nmsp]
           (if (cfg/core-lib? (ns-str nmsp))
             ;; FIXME... flush namespace classes and provide actual
@@ -156,7 +154,7 @@
               (let [req-str (aget req-strs i)]
                 (aset a i
                       (or (get (.provided-ns nmsp) req-str)
-                          (-> (.require-namespace (.nmsp-ctx nmsp))
+                          (-> (.require-namespace (.ctx nmsp))
                               (.schedule req-str (core-provided-ns nmsp)))))))
             ;; wait for and pick up namespace outcomes
             (dotimes [i n]              ;avoid stack frame spamming
@@ -165,12 +163,12 @@
             ;; globals to this namespace
             (loop [gmaps {}, i 0]
               (if (= i n)
-                (add-namespace-deps (.nmsp-ctx nmsp) gmaps deps)
+                (add-namespace-deps (.ctx nmsp) gmaps deps)
                 (recur (assoc gmaps (aget req-strs i) (aget anmsp i))
                        (inc i))))
             ;; ensure that all required namespace classes are
             ;; initialized at this point
-            (ctx/send-msg (-> nmsp .nmsp-ctx .emit) ctx/msg-emit-tlf
+            (ctx/send-msg (-> nmsp .ctx .emit) ctx/msg-emit-tlf
                           (-> (reduce conj-force-clinit [] anmsp)
                               (xf/progn-expr x/expr-empty)))
             (reduce with-require nmsp req-strs)))
@@ -209,7 +207,7 @@
                                     "namespace " (wrong/q ns-sym)))))
            
               #_else
-              (do (compiler/top-level-form form (.nmsp-ctx nmsp))
+              (do (compiler/top-level-form form (.ctx nmsp))
                   nmsp))))
         (top-level-file ^Namespace [^Namespace nmsp ^Path rpath ^URL rurl]
           ;; FIXME... use proper ns-alias map later
@@ -223,16 +221,15 @@
                     (seq? form) (recur
                                  (wrong/with-list-context form
                                    (top-level-list-form nmsp rpath form)))
-                    :else (do (compiler/top-level-form form (.nmsp-ctx nmsp))
+                    :else (do (compiler/top-level-form form (.ctx nmsp))
                               (recur nmsp)))))
               (catch ExceptionInfo e
                 (throw (wrong/assoc-if-new e :file/resource-url rurl))))))]
   
-  (defn compile-thread [^IBuildEnv env ^IPersistentMap provided-ns
-                        ^NamespaceCtx nmsp-ctx]
-    (ctx/push-nmsp-context (.lookup-in-pkg nmsp-ctx) (.ns-str nmsp-ctx))
+  (defn compile-thread [^IBuildEnv env ^IPersistentMap provided-ns ^Ctx ctx]
+    (ctx/push-nmsp-context (.lookup-in-pkg ctx) (.ns-str ctx))
     (try
-      (-> (mk-nmsp env provided-ns nmsp-ctx)
-          (top-level-file (ctx/this-rpath nmsp-ctx) (ctx/this-rurl nmsp-ctx)))
+      (-> (mk-nmsp env provided-ns ctx)
+          (top-level-file (ctx/this-rpath ctx) (ctx/this-rurl ctx)))
       (finally
-        (ctx/pop-nmsp-context (.lookup-in-pkg nmsp-ctx))))))
+        (ctx/pop-nmsp-context (.lookup-in-pkg ctx))))))

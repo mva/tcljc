@@ -19,7 +19,7 @@
    [tcljc.compiler.branch :as branch]
    [tinyclj.string :as str])
   (:import
-   (tcljc.context NamespaceCtx EmitQueue)
+   (tcljc.context Ctx EmitQueue)
    (tcljc.classfile ClassDef)
    (tcljc.expr Expr InvokeXref Const Branch Guard TryHandler
                Binding BindingRef ValueRef MacroRef
@@ -103,11 +103,11 @@
 
 (defn add-imports ^Expr [import-map tl-ctx]
   (assert (identical? :import (:tag import-map)))
-  (let [nmsp-ctx (ctx/namespace-ctx tl-ctx)]
+  (let [ctx (ctx/tl-ctx* tl-ctx)]
     (reduce (fn [res cl-nm]
-              (if-some [x (classname-expr cl-nm nmsp-ctx)]
+              (if-some [x (classname-expr cl-nm ctx)]
                 (let [cl (x/classname-type x)]
-                  (.put-import nmsp-ctx (jb/import-symbol-short cl) cl)
+                  (.put-import ctx (jb/import-symbol-short cl) cl)
                   x)
                (sig/wrong-class cl-nm)))
             x/expr-empty (:classes import-map))))
@@ -236,11 +236,11 @@
             ;; value position.
             (if (x/meta-flag? nm :macro)
               (let [bref (x/with-macro-value bref macro-v) ;then baked into mfn
-                    nmsp-ctx (ctx/namespace-ctx tl-ctx)
-                    mfn (DelayedMacroFn. (.apply-mh nmsp-ctx) (.emit nmsp-ctx)
+                    ctx (ctx/tl-ctx* tl-ctx)
+                    mfn (DelayedMacroFn. (.apply-mh ctx) (.emit ctx)
                                          bref nil)
                     mref (x/macro-ref nm ns-str mfn macro-v bref)]
-                (.update-macro-count nmsp-ctx +1)
+                (.update-macro-count ctx +1)
                 (ctx/put-global (name nm) mref tl-ctx)
                 (x/global-binding bref v))
               (do
@@ -524,7 +524,7 @@
          ;; Parse all function arities in one future.  While the
          ;; smallest unit of work a single arity's body, there is
          ;; little use in moving each arity into a future of its own.
-         (let [tl-ctx' (ctx/mk-methods tl-ctx)
+         (let [tl-ctx' (ctx/locked tl-ctx)
                body-fut (ctx/with-fork+context (ctx/exc-method tl-ctx) tl-ctx'
                           (let [n (count (.at-sigs fn-form))
                                 aca (new "[Ltcljc.expr.ArityCode;" n)]
@@ -877,13 +877,13 @@
                cdef (sigclass/eph-dtp-class-def this-class field-sig opts
                                                 tl-ctx)
                
-               nmsp-ctx (ctx/namespace-ctx tl-ctx)
+               ctx (ctx/tl-ctx* tl-ctx)
                ;; Construct ephemeral type instance that is only valid
                ;; inside this deftype* and derive the deftype's
                ;; compilation context from it.
-               etp (ctx/send-msg (.emit nmsp-ctx) ctx/req-define-class-ephemeral
+               etp (ctx/send-msg (.emit ctx) ctx/req-define-class-ephemeral
                                  cdef)
-               method-ctx (ctx/mk-methods nmsp-ctx etp)]
+               method-ctx (ctx/locked-in-class ctx etp)]
            
            ;; Moving method compilation to other threads does not help
            ;; much, because compilation can only progress once this
@@ -906,7 +906,7 @@
                                   [acc xs]))
                cdef (dtp-class-def env short-sym fq-sym binary-sym
                                    field-sig opts methods)
-               cl (ctx/send-msg (.emit (ctx/namespace-ctx tl-ctx))
+               cl (ctx/send-msg (.emit (ctx/tl-ctx* tl-ctx))
                                 ctx/req-define-class cdef)]
            x/expr-empty))
 
@@ -930,12 +930,8 @@
                this-class (ClassDesc/of (ctx/this-ns tl-ctx) unique-mnm)
                eph-cdef (sigclass/eph-reify-class-def this-class itf-vector tl-ctx)
                
-               ;; nmsp-ctx (ctx/namespace-ctx tl-ctx)
-               ;; FIXME... replace the nmsp-ctx hack with something sane?
-               nmsp-ctx (if (instance? tcljc.context.MethodsCtx tl-ctx)
-                          (.nmsp-ctx (ctx/methods-ctx tl-ctx))
-                          (ctx/namespace-ctx tl-ctx))
-               etp ^Class (ctx/send-msg (.emit nmsp-ctx)
+               ctx (ctx/tl-ctx* tl-ctx)
+               etp ^Class (ctx/send-msg (.emit ctx)
                                         ctx/req-define-class-ephemeral eph-cdef)
                
                atv (reduce (fn [acc form]
@@ -951,7 +947,7 @@
                ;; A reify's ephemeral type is leaked into expression
                ;; trees.  It becomes visible for example when invoking
                ;; a method on the receiver.
-               tl-ctx' (ctx/mk-methods tl-ctx)
+               tl-ctx' (ctx/locked tl-ctx)
                body-fut (ctx/with-fork+context (ctx/exc-method tl-ctx) tl-ctx'
                           (let [n (count atv)
                                 aca (new "[Ltcljc.expr.ArityCode;" n)]
@@ -969,7 +965,7 @@
          (let [cdef (sigclass/itf-class-def (ctx/this-ns tl-ctx)
                                             (.get-imports (ctx/tl-ctx* tl-ctx))
                                             form)
-               cl (ctx/send-msg (.emit (ctx/namespace-ctx tl-ctx))
+               cl (ctx/send-msg (.emit (ctx/tl-ctx* tl-ctx))
                                 ctx/req-define-class cdef)]
            x/expr-empty))
 
@@ -1355,19 +1351,19 @@
           (x/with-innermost-form form))))
 
 (def ^:private empty-global-env (Env. x/lvl-environment nil {} nil nil))
-(defn top-level-form ^void [form ^NamespaceCtx nmsp-ctx]
-  (let [mc-pre (.update-macro-count nmsp-ctx 0)
-        x (-> (compile-form empty-global-env ctx-tlf form nmsp-ctx)
+(defn top-level-form ^void [form ^Ctx ctx]
+  (let [mc-pre (.update-macro-count ctx 0)
+        x (-> (compile-form empty-global-env ctx-tlf form ctx)
               (x/ensure-runtime-outcome)
               (conv/consume jb/void))
-        mc-post (.update-macro-count nmsp-ctx 0)]
-    (ctx/send-msg (.emit nmsp-ctx) ctx/msg-emit-tlf x)
+        mc-post (.update-macro-count ctx 0)]
+    (ctx/send-msg (.emit ctx) ctx/msg-emit-tlf x)
     (when (and (not cfg/deterministic-namespace-compile?) (not= mc-pre mc-post))
       ;; After a macro, delay further compilation until the macro's
       ;; top-level form has made it into the emit queue.  This means
       ;; that its effect's are visible to all future `req-macro-value`
       ;; requests.
-      (ctx/send-msg (.emit nmsp-ctx) ctx/req-flush-s-queue nil))))
+      (ctx/send-msg (.emit ctx) ctx/req-flush-s-queue nil))))
 
 ;;; ------------------------------------------------------------------------
 

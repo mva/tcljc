@@ -21,7 +21,7 @@
    (tcljc.emitter.namespace Namespace)
    (tcljc.emitter.emitfn FnSpec)
    (tcljc.emitter.prepare TlfSummary)
-   (tcljc.context FnRequireNamespace NamespaceCtx Msg EmitQueue)
+   (tcljc.context FnRequireNamespace Ctx Msg EmitQueue)
    (tcljc.expr Expr Binding BindingRef FnForm)
    (clojure.lang ISeq IPersistentMap IPersistentVector)
    (jdk.classfile Classfile ClassBuilder CodeBuilder TypeKind)
@@ -87,7 +87,7 @@
 (def ns-class-name "__ns")
 
 (deftype SegmState [^BuildEnv env
-                    ^NamespaceCtx nmsp-ctx
+                    ^Ctx ctx
                     ^String sourcefile
                     
                     ^int segm-id
@@ -97,9 +97,9 @@
                     ^IPersistentVector bytesv]) ;nil if bytes are not tracked
 
 (defn- segment-lookup ^MethodHandles$Lookup [^SegmState segm]
-  (-> segm .nmsp-ctx .lookup-in-pkg))
+  (-> segm .ctx .lookup-in-pkg))
 (defn- segment-ns-str ^String [^SegmState segm]
-  (-> segm .nmsp-ctx .ns-str))
+  (-> segm .ctx .ns-str))
 (defn- segment-name ^String [^SegmState segm ^int id-delta]
   (str (segment-ns-str segm) "." ns-class-name (+ (.segm-id segm) id-delta)))
 (defn- segment-cld ^ClassDesc [^SegmState segm ^int id-delta]
@@ -110,19 +110,19 @@
   (-> segm .env .dyn-chr))
 
 (defn with-summary ^SegmState [^SegmState segm ^TlfSummary summary]
-  (SegmState. (.env segm) (.nmsp-ctx segm) (.sourcefile segm)
+  (SegmState. (.env segm) (.ctx segm) (.sourcefile segm)
               (.segm-id segm) (.segm-cld segm) (conj (.summaryv segm) summary)
               (.bytesv segm)))
 (defn with-bytes ^SegmState [^SegmState segm ^int id-delta
                              ^boolean clear-summaryv? ^bytes bs]
   (let [bytesv' (when-some [bsv (.bytesv segm)]
                   (conj bsv bs))]
-    (SegmState. (.env segm) (.nmsp-ctx segm) (.sourcefile segm)
+    (SegmState. (.env segm) (.ctx segm) (.sourcefile segm)
                 (+ (.segm-id segm) id-delta) (segment-cld segm id-delta)
                 (if clear-summaryv? [] (.summaryv segm)) bytesv')))
 
 (defn- capstone-cld ^ClassDesc [^SegmState segm]
-  (ClassDesc/of (-> segm .nmsp-ctx .ns-str) ns-class-name))
+  (ClassDesc/of (-> segm .ctx .ns-str) ns-class-name))
 
 (defn- build-segment ^bytes [^SegmState segm]
   (let [clinit-xb (cf/with-xbh [xb]
@@ -157,7 +157,7 @@
 
 (defn with-main ^ClassBuilder [^ClassBuilder cb ^SegmState segm]
   (letfn [(main-function ^BindingRef []
-            (let [globals (.get-globals (.nmsp-ctx segm))]
+            (let [globals (.get-globals (.ctx segm))]
               (when-some [bref (get globals "-main" nil)]
                 (when (some? (x/root-fn-form bref))
                   bref))))]
@@ -230,15 +230,14 @@
     (let [cdef (.cdef dtdef)]
       (cf/with-methods cdef (map method-cbh (.method-defs dtdef))))))
 
-(defn mk-first-segm ^SegmState [^BuildEnv env ^NamespaceCtx nmsp-ctx
-                                ^boolean collect-bytesv?]
-  (let [rurl (ctx/this-rurl nmsp-ctx)
+(defn mk-first-segm ^SegmState [^BuildEnv env ^Ctx ctx ^boolean collect-bytesv?]
+  (let [rurl (ctx/this-rurl ctx)
         sourcefile (when (and cfg/enable-line-numbers (some? rurl))
                      (let [s (.getPath rurl)]
                        (subs s (inc (.lastIndexOf s "/")))))
-        cld (ClassDesc/of (.ns-str nmsp-ctx)
+        cld (ClassDesc/of (.ns-str ctx)
                           (str ns-class-name first-segm-id))]
-    (SegmState. env nmsp-ctx sourcefile first-segm-id cld
+    (SegmState. env ctx sourcefile first-segm-id cld
                 [] (when collect-bytesv? []))))
 
 (defn- emit-segments ^Namespace [^SegmState segm]
@@ -283,12 +282,12 @@
           (try-load-bref ^Object [^SegmState segm ^BindingRef bref]
             (when (.realized? bref)
               (let [global-mh (try
-                                (let [l (-> segm .nmsp-ctx .lookup-in-pkg)]
+                                (let [l (-> segm .ctx .lookup-in-pkg)]
                                   (.mh-if-global (x/deref-load bref) l))
                                 (catch ClassNotFoundException _
                                   nil))]
                 (when (some? global-mh)
-                  (if (nil? (.apply-mh (.nmsp-ctx segm)))
+                  (if (nil? (.apply-mh (.ctx segm)))
                     ;; compiler and application share runtime?
                     ;; careful, this is a very brittle method type!
                     ^tinyclj.lang.StaticFnMh (.invokeExact global-mh)
@@ -357,7 +356,7 @@
             (when-not (ctx/close-queue? msg)
               (recur q t (.take q))))]
 
-    (let [msg ^Msg (-> segm .nmsp-ctx .emit .q (.take))
+    (let [msg ^Msg (-> segm .ctx .emit .q (.take))
           p (.promise msg)]
       (if (= (.task msg) ctx/msg-close-queue)
         (-> segm (write-segment) (write-capstone (.x msg)))
@@ -366,7 +365,7 @@
                 (assert (or (nil? p) (.isDone p)))
                 segm)
               (catch Throwable t
-                (drain-queue (-> segm .nmsp-ctx .emit .q) t msg)
+                (drain-queue (-> segm .ctx .emit .q) t msg)
                 (throw t)))
             (recur))))))
 
@@ -409,31 +408,31 @@
 ;; their result/exception in emit order.
 (defn emit-thread ^Namespace [^SegmState segm ^IPersistentMap provided-ns]
   (cfg/prepare-class-directory (.dest-dir (.env segm))
-                               (ctx/this-ns (.nmsp-ctx segm)))
+                               (ctx/this-ns (.ctx segm)))
   (let [env (.env segm)
-        nmsp-ctx (.nmsp-ctx segm)
+        ctx (.ctx segm)
         p-thread (when-not cfg/deterministic-namespace-compile?
                    (ctx/start-solo-thread
-                    nmsp-ctx
+                    ctx
                     (try
-                      (preparer-thread (.emit nmsp-ctx) (HashSet.))
+                      (preparer-thread (.emit ctx) (HashSet.))
                       (catch Throwable t ;no re-raise and wait for close-queue
-                        (ctx/send-msg* (-> nmsp-ctx .emit .q)
+                        (ctx/send-msg* (-> ctx .emit .q)
                                        ctx/msg-fatal-error t))
                       (finally        ;there is always a `close-queue`
-                        (ctx/send-msg* (-> nmsp-ctx .emit .q)
+                        (ctx/send-msg* (-> ctx .emit .q)
                                        ctx/msg-close-queue nil)))))
         c-thread (ctx/start-solo-thread
-                  nmsp-ctx
+                  ctx
                   (try
-                    (let [nsd (nmsp/compile-thread env provided-ns nmsp-ctx)]
+                    (let [nsd (nmsp/compile-thread env provided-ns ctx)]
                       ;; regular completion: pass back result in first
                       ;; `close-queue` message
-                      (ctx/send-msg (.emit nmsp-ctx) ctx/msg-close-queue nsd))
+                      (ctx/send-msg (.emit ctx) ctx/msg-close-queue nsd))
                     (catch Throwable t ;no re-raise and wait for close-queue
-                      (ctx/send-msg (.emit nmsp-ctx) ctx/msg-fatal-error t))
+                      (ctx/send-msg (.emit ctx) ctx/msg-fatal-error t))
                     (finally          ;there is always a `close-queue`
-                      (ctx/send-msg (.emit nmsp-ctx) ctx/msg-close-queue nil))))
+                      (ctx/send-msg (.emit ctx) ctx/msg-close-queue nil))))
         nmsp (emit-segments segm)]
     (.join c-thread 5000l)      ;does not pick up result or exceptions
     (when-not cfg/deterministic-namespace-compile?
@@ -442,14 +441,14 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn mk-nmsp-ctx ^NamespaceCtx [^BuildEnv env
-                                 ^FnRequireNamespace require-namespace
+(defn mk-ctx ^Ctx [^BuildEnv env
+                   ^FnRequireNamespace require-namespace
                                  
-                                 ^IPersistentMap known-ns
-                                 ^IPersistentMap initial-globals
-                                 ^String ns-str
+                   ^IPersistentMap known-ns
+                   ^IPersistentMap initial-globals
+                   ^String ns-str
                                  
-                                 ^ExecutorService exc-method]
+                   ^ExecutorService exc-method]
   (let [rpath (cfg/nmsp-rpath ns-str)
         rurl (or (.resolve-rpath env rpath)
                  (wrong/file rpath))
@@ -459,9 +458,9 @@
         lookup-in-pkg (beachhead/mk-lookup-in-pkg l (.dyn-ld env) ns-str)
         ;; FIXME... use non-nil as apply-mh when isolated runtime
         apply-mh nil #_(.resolveConstantDesc rt/mhd-applyMacroMapped l)]
-    (ctx/mk-namespace known-ns initial-globals
-                      ns-str rpath rurl 
-                      lookup-in-pkg require-namespace apply-mh exc-method)))
+    (ctx/mk-ctx* known-ns initial-globals
+                 ns-str rpath rurl 
+                 lookup-in-pkg require-namespace apply-mh exc-method)))
 
 (def initial-globals {})
 
@@ -483,7 +482,7 @@
               
               (fork-namespace ^Future [^String ns-str provided-ns]
                 (ctx/with-executor exc-method
-                  (let [tl-ctx (mk-nmsp-ctx env require-fn
+                  (let [tl-ctx (mk-ctx env require-fn
                                             provided-ns initial-globals ns-str
                                             exc-method)]
                     #_(prn :namespace-start ns-str)
@@ -541,9 +540,9 @@
   (let [!futs (java.util.HashMap.)]     ;single-threaded!
     (letfn [(^FnRequireNamespace require-fn [ns-str provided-ns]
              (or (.get !futs ns-str)
-                 (let [tl-ctx (mk-nmsp-ctx env require-fn
-                                           provided-ns initial-globals ns-str
-                                           nil)]
+                 (let [tl-ctx (mk-ctx env require-fn
+                                      provided-ns initial-globals ns-str
+                                      nil)]
                    (ctx/with-context tl-ctx
                      (.put !futs ns-str nmsp/marker-depth-first-path)
                      #_(prn :namespace-start ns-str)

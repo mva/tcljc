@@ -30,21 +30,21 @@
         dyn-ld (cfg/dyn-class-loader app-ld [])
         dest-dir (cfg/dest-dir "tcljc.rtiow")
         env (em/mk-build-env app-ld dest-dir dyn-ld)]
-     (ctx/with-executor exc-nmsp
-       ;; manual unrolled reduce to reduce stack trace noise; during
-       ;; development, `emit-namespace` will die uncountable times
-       (let [ns-str "tcljc.rtiow-nocore-ref"
-             known-ns (assoc predefined/implicit-known-ns cfg/core-lib {})
+    (ctx/with-executor exc-nmsp
+      ;; manual unrolled reduce to reduce stack trace noise; during
+      ;; development, `emit-namespace` will die uncountable times
+      (let [ns-str "tcljc.rtiow-nocore-ref"
+            known-ns (assoc predefined/implicit-known-ns cfg/core-lib {})
              
-             exc-method (when-not cfg/deterministic-namespace-compile?
-                          exc-nmsp)
-             globals (core-ns-globals rt-lookup)
-             tl-ctx (em/mk-nmsp-ctx env noop-require-namespace
-                                    known-ns globals ns-str
-                                    exc-method)]
-         (-> (em/mk-first-segm env tl-ctx false)
-             (em/emit-thread known-ns))
-         :success))))
+            exc-method (when-not cfg/deterministic-namespace-compile?
+                         exc-nmsp)
+            globals (core-ns-globals rt-lookup)
+            tl-ctx (em/mk-ctx env noop-require-namespace
+                              known-ns globals ns-str
+                              exc-method)]
+        (-> (em/mk-first-segm env tl-ctx false)
+            (em/emit-thread known-ns))
+        :success))))
 
 (defn -main [& args]
   (try
