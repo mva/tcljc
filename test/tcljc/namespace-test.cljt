@@ -676,6 +676,8 @@
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
+                    "s" "Ljava/lang/String;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
                     "var-unbound" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
 
@@ -683,7 +685,6 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
-             (GETSTATIC System "out" "Ljava/io/PrintStream;")
              (LDC "pkg.ns0")
              (LDC "var-unbound")
              (INVOKESTATIC RT "var" "(Ljava/lang/String;Ljava/lang/String;)Lclojure/lang/Var;")
@@ -694,11 +695,12 @@
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "var-unbound" "Lclojure/lang/Var;")
              (GETSTATIC . "var-unbound" "Lclojure/lang/Var;")
-             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/Object;)V")
-
+             (INVOKEVIRTUAL Var "toString" "()Ljava/lang/String;")
+             (PUTSTATIC . "s" "Ljava/lang/String;")
+             
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (.println System/out (def ^:var var-unbound))]))))
+                 (def s (.toString (def ^:var var-unbound)))]))))
 
 (deftest def-init-is-expr-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
@@ -709,6 +711,8 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "s"
+                    "Ljava/lang/String;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
                     "var-bound" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
@@ -717,7 +721,6 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
-             (GETSTATIC System "out" "Ljava/io/PrintStream;")
              (LDC "pkg.ns0")
              (LDC "var-bound")
              (GETSTATIC Boolean "FALSE" "Ljava/lang/Boolean;")
@@ -730,11 +733,12 @@
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "var-bound" "Lclojure/lang/Var;")
              (GETSTATIC . "var-bound" "Lclojure/lang/Var;")
-             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/Object;)V")
+             (INVOKEVIRTUAL Var "toString" "()Ljava/lang/String;")
+             (PUTSTATIC . "s" "Ljava/lang/String;")
              
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (.println System/out (def ^:var var-bound Boolean/FALSE))]))))
+                 (def s (.toString (def ^:var var-bound Boolean/FALSE)))]))))
 
 (deftest def-as-alias
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns101")

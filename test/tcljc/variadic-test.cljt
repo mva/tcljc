@@ -963,6 +963,15 @@
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Ljava/util/List;")]
             
+            [(METHOD [PUBLIC STATIC FINAL]
+                     "void-fn" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "void-fn~1" "(Ljava/lang/String;)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "void-fn~1" "(Ljava/lang/String;)V")
+             ["LOCAL 0: String s"]
+             (RETURN)]
+            
             [(METHOD [PUBLIC STATIC FINAL] "as-list" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"]]])
@@ -975,9 +984,8 @@
             [(METHOD [PUBLIC STATIC FINAL] "fn~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
              ["LOCAL 0: Object f"]
              (ALOAD_0)
-             (GETSTATIC System "out" "Ljava/io/PrintStream;")
              (LDC "foo")
-             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (INVOKESTATIC . "void-fn~1" "(Ljava/lang/String;)V")
              (ACONST_NULL)
              (INVOKEDYNAMIC "_" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;" :bsm-invoke-fn [])
              (ARETURN)]
@@ -987,20 +995,20 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
              (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
-             (GETSTATIC System "out" "Ljava/io/PrintStream;")
              (LDC "foo")
-             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (INVOKESTATIC . "void-fn~1" "(Ljava/lang/String;)V")
              (ACONST_NULL)
              (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Ljava/util/List;")
              (PUTSTATIC . "x" "Ljava/util/List;")
              
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
+                 (def void-fn (fn* void-fn ^void [^String s]))
                  (def as-list
                    (fn* as-list ^java.util.List [& ^objects items]
                         (java.util.Arrays/asList items)))
-                 (def x (as-list (.println System/out "foo")))
-                 (def y (fn* [f] (f (.println System/out "foo"))))]))))
+                 (def x (as-list (void-fn "foo")))
+                 (def y (fn* [f] (f (void-fn "foo"))))]))))
 
 (deftest void-in-collection-literal
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
@@ -1014,20 +1022,29 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
                     "x" "Lclojure/lang/IPersistentVector;")]
             
+            [(METHOD [PUBLIC STATIC FINAL]
+                     "void-fn" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "void-fn~1" "(Ljava/lang/String;)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "void-fn~1" "(Ljava/lang/String;)V")
+             ["LOCAL 0: String s"]
+             (RETURN)]
+            
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
 
              (LDC [STATIC Literal "vector"
                    "([Ljava/lang/Object;)Lclojure/lang/IPersistentVector;"])
-             (GETSTATIC System "out" "Ljava/io/PrintStream;")
              (LDC "foo")
-             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+             (INVOKESTATIC . "void-fn~1" "(Ljava/lang/String;)V")
              (ACONST_NULL)
              (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
              (PUTSTATIC . "x" "Lclojure/lang/IPersistentVector;")
              
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (def x [(.println System/out "foo")])]))))
+                 (def void-fn (fn* void-fn ^void [^String s]))
+                 (def x [(void-fn "foo")])]))))
 
