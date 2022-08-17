@@ -117,7 +117,7 @@
     `(reify*
       [java.util.function.Consumer]
       (accept [_ ~nm]
-              (let* [~nm ~(with-meta nm {:tag jdk.classfile.ClassBuilder})]
+              (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.ClassBuilder})]
                 #_(.println System/out ":accept ClassBuilder start")
                 ~@body
                 #_(.println System/out ":accept ClassBuilder end"))))))
@@ -129,7 +129,7 @@
     `(reify*
       [java.util.function.Consumer]
       (accept [_ ~nm]
-              (let* [~nm ~(with-meta nm {:tag jdk.classfile.MethodBuilder})]
+              (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.MethodBuilder})]
                 #_(.println System/out ":accept MethodBuilder start")
                 ~@body
                 #_(.println System/out ":accept MethodBuilder end"))))))
@@ -141,7 +141,7 @@
     `(reify*
       [java.util.function.Consumer]
       (accept [_ ~nm]
-              (let* [~nm ~(with-meta nm {:tag jdk.classfile.CodeBuilder})]
+              (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.CodeBuilder})]
                 #_(.println System/out "\n:accept CodeBuilder start")
                 ~@body
                 #_(.println System/out ":accept CodeBuilder end\n"))))))
@@ -153,7 +153,7 @@
     `(reify*
       [java.util.function.Consumer]
       (accept [_ ~nm]
-              (let* [~nm ~(with-meta nm {:tag jdk.classfile.FieldBuilder})]
+              (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.FieldBuilder})]
                 #_(.println System/out ":accept FieldBuilder start")
                 ~@body
                 #_(.println System/out ":accept FieldBuilder end"))))))
