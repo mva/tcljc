@@ -255,11 +255,11 @@
                 :else (throw (IllegalStateException.)))
               xb))
           
-          (branch-opcode! ^Opcode [^CodeBuilder xb ^Branch branch-to-true]
-            (let [opc (.opcode branch-to-true)]
-              (loop [opcd (.opcd branch-to-true)
-                     left (x/nth-arg branch-to-true 0)
-                     right (x/nth-arg branch-to-true 1)]
+          (branch-opcode* ^Opcode [^CodeBuilder xb ^Branch branch]
+            (let [opc (.opcode branch)]
+              (loop [opcd (.opcd branch)
+                     left (x/nth-arg branch 0)
+                     right (x/nth-arg branch 1)]
                 ;; loop body is executed at most twice
                 (cond
                   (x/const-value? right jb/jvm-int-zero)
@@ -279,6 +279,13 @@
                   :else
                   (do (-> xb (expr-insns es left) (expr-insns es right))
                       (cf/bc2opc opc opcd))))))
+          (branch-opcode! ^Opcode [^CodeBuilder xb ^Branch branch]
+            (if (x/const-value? branch)
+              (do (if (x/const-value-true? branch)
+                    (.iconst_0 xb)
+                    (.iconst_1 xb))
+                  Opcode/IFEQ)
+              (branch-opcode* xb branch)))
           (if-then-else ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
                                       ^Expr if-true ^Expr if-false]
             (let [start-false (.newLabel xb), end-false (.newLabel xb)
@@ -301,11 +308,13 @@
           (split-join-insn* ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
                                           ^Expr if-true ^Expr if-false]
             (cond
-              (x/const-value-true? branch-to-true)
-              (expr-insns xb es if-true)
-              (x/const-value-false? branch-to-true)
-              (expr-insns xb es if-false)
-
+              (and (x/const-value-true? branch-to-true)
+                   (jb/same-class? (x/type if-true) (x/type if-false)))
+              (expr-insns xb es if-true) ;must retain "returns?" status
+              (and (x/const-value-false? branch-to-true)
+                   (jb/same-class? (x/type if-true) (x/type if-false)))
+              (expr-insns xb es if-false) ;must retain "returns?" status
+              
               (x/expr-empty? if-false)
               (if (x/expr-empty? if-true)
                 (let [argv (x/argv branch-to-true)] ;avoid Branch recursion

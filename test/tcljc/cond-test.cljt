@@ -22,6 +22,29 @@
                      x             ;whole if is reduced to this branch
                      nil)))))
 
+(deftest if-else-omit-path
+  (is (= '[["LOCAL 0: boolean x"]
+           (ILOAD_0)
+           (IRETURN)]
+         (asm-expr ^boolean [^boolean x]
+                   (if :else x))))
+  (is (= '[["LOCAL 0: boolean x"]
+           (ICONST_1)
+           (IFEQ L:0)
+           (NEW IllegalArgumentException)
+           (DUP)
+           (INVOKESPECIAL IllegalArgumentException "<init>" "()V")
+           (ATHROW)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         ;; Carry both branches into the bytecode, because the if's
+         ;; return type is a boolean and therefore passed to IRETURN.
+         ;; If only the ATHROW branch is emitted, the IRETURN becomes
+         ;; unreachable.
+         (asm-expr ^boolean [^boolean x]
+                   (if :else (throw (IllegalArgumentException.)))))))
+
 (deftest if-nil-or-object
   (is (= '[["LOCAL 0: boolean x"]
            ["LOCAL 1: Object y"]
