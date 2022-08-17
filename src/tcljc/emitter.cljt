@@ -27,7 +27,7 @@
    (jdk.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.nio.file Path)
    (java.lang.constant ClassDesc MethodTypeDesc)
-   (java.lang.invoke MethodHandles$Lookup)
+   (java.lang.invoke MethodHandles$Lookup MethodHandle)
    (java.util Map HashMap HashSet)
    (java.util.concurrent Future CompletableFuture ConcurrentHashMap
                          BlockingQueue ExecutorService)
@@ -441,6 +441,14 @@
 
 ;;; ------------------------------------------------------------------------
 
+(defn- get-apply-mh ^MethodHandle [^MethodHandles$Lookup l]
+  (let [compiler-rt-witness tinyclj.lang.AFnMh
+        app-rt-witness (.resolveConstantDesc rt/AFn l)
+        shared-runtime? (identical? compiler-rt-witness app-rt-witness)]
+    (if shared-runtime?
+      nil
+      (ctx/resolve-mh l rt/mhd-applyMacroMapped))))
+
 (defn mk-ctx ^Ctx [^BuildEnv env
                    ^FnRequireNamespace require-namespace
                                  
@@ -455,12 +463,10 @@
         ;; the namespace context needs a lookup into the package of
         ;; the namespace
         l (.rt-lookup env)
-        lookup-in-pkg (beachhead/mk-lookup-in-pkg l (.dyn-ld env) ns-str)
-        ;; FIXME... use non-nil as apply-mh when isolated runtime
-        apply-mh nil #_(.resolveConstantDesc rt/mhd-applyMacroMapped l)]
+        lookup-in-pkg (beachhead/mk-lookup-in-pkg l (.dyn-ld env) ns-str)]
     (ctx/mk-ctx* known-ns initial-globals
                  ns-str rpath rurl 
-                 lookup-in-pkg require-namespace apply-mh exc-method)))
+                 lookup-in-pkg require-namespace (get-apply-mh l) exc-method)))
 
 (def initial-globals {})
 
