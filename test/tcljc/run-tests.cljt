@@ -1,6 +1,6 @@
 (ns tcljc.run-tests
   (:require
-   (tcljc reader-test #_synquote-test grammar-test
+   (tcljc reader-test synquote-test grammar-test
 
           resolve-test bootstrap-test
           
@@ -19,7 +19,7 @@
 
 (def all-namespaces
   '[tcljc.reader-test
-    #_tcljc.synquote-test
+    tcljc.synquote-test
     tcljc.grammar-test
 
     tcljc.resolve-test

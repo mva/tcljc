@@ -171,7 +171,8 @@
                 
                 (seq? form)
                 (if (sq/syntax-quote? form)
-                  (compile-quote (sq/syntax-quote form) tl-ctx)
+                  (-> (sq/syntax-quote form tl-ctx)
+                      (compile-quote tl-ctx))
                   (quote-coll rt/clnm-list rt/mhd-list form))
                 
                 (vector? form)

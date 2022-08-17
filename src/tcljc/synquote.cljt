@@ -1,7 +1,12 @@
 (ns tcljc.synquote
   (:require [tcljc.config :as cfg]
+            [tcljc.expr :as x]
+            [tcljc.context :as ctx]
             [tinyclj.string :as str])
-  (:import (clojure.lang Symbol)))
+  (:import (tcljc.expr BindingRef)
+           (tcljc.context Ctx)
+           (clojure.lang Symbol IPersistentVector IMapEntry IRecord)
+           (java.util HashMap)))
 
 ;;; note: a copy of this lives in tinyclj.core/specials
 (def specials '#{def loop* recur if case* let* letfn*
@@ -11,7 +16,7 @@
                  definterface* instanceof*})
 
 (def sym-quote 'quote)
-(def ^:private sq-namespace "`")
+(def ^:private lacks-namespace "`") ;marks simple symbol inside syntax quote
 ;;; FIXME... switch to unreadable symbols for these three?
 (def sym-syntax-quote (symbol cfg/core-lib "syntax-quote"))
 (def sym-unquote (symbol cfg/core-lib "unquote"))
@@ -60,13 +65,166 @@
     (if (str/ends-with? (name sym) "#")
       (or (get @agensym-map sym)
           (get (swap! agensym-map update sym replacement-symbol sym) sym))
-      ;; mark symbol for further processing in the compiler
+      ;; mark symbol for further processing by synquote/encode-symbol
       ;; FIXME... exclude specials like try, finally, etc.
-      (symbol sq-namespace (name sym)))))
+      (symbol lacks-namespace (name sym)))))
 
-(defn syntax-quote [form]               ;pre: (syntax-quote? form)
-  (assert false)
-  #_
-  (-> (mk-syntax-quote-state (symbol (.ns-str ns)) ns)
+;;; ------------------------------------------------------------------------
+
+;;; This holds unsynchronized mutable state in the pushed `gmap`s and
+;;; can only be used within a single namespace's thread.
+(deftype SyntaxQuoteState [^Symbol this-namespace
+                           ^IPersistentVector gstack
+                           ^Ctx ctx])
+
+(defn- encode-symbol [^SyntaxQuoteState sqs sym]
+  (letfn [(resolve-class-name ^String [^String nm]
+            (if-some [tp (ctx/lookup-type (symbol nm) (.ctx sqs))]
+              (.getName tp)
+              (when-not (neg? (.indexOf nm (int \.)))
+                nm)))
+          (trim-last ^String [^String nm]
+            (.substring nm 0 (dec (.length nm))))]
+    (let [nm (name sym)
+          ns-part (namespace sym)]
+      (if (= lacks-namespace ns-part) ;simple symbol inside syntax quote?
+        (cond
+          (.startsWith nm ".")          ;method name and ..
+          (symbol nil nm)
+            
+          (.endsWith nm ".")            ;shorthand for (new ...)
+          (if-some [nm' (resolve-class-name (trim-last nm))]
+            (symbol nil (str nm' "."))
+            (symbol nil nm))
+            
+          :else
+          (if-some [bref ^BindingRef (.valAt (-> sqs .ctx .get-globals) nm)]
+            (x/qname bref)
+            (if-some [nm' (resolve-class-name nm)]
+              (symbol nil nm')
+              (symbol (-> sqs .this-namespace (name)) nm))))
+        
+        (if-some [ns-part' (and ns-part
+                                (or (.valAt (-> sqs .ctx .get-ns-alias-map)
+                                            ns-part nil)
+                                    (resolve-class-name ns-part)))]
+          (symbol ns-part' nm)
+          sym)))))
+
+(defn- push-gmap [^SyntaxQuoteState sqs]
+  (SyntaxQuoteState. (.this-namespace sqs) (conj (.gstack sqs) (HashMap.))
+                     (.ctx sqs)))
+
+(defn- pop-gmap [^SyntaxQuoteState sqs]
+  (SyntaxQuoteState. (.this-namespace sqs) (pop (.gstack sqs)) (.ctx sqs)))
+
+(defn- outside-syntax-quote? ^boolean [^SyntaxQuoteState sqs]
+  (zero? (count (.gstack sqs))))
+
+;; Baseline is the method syntaxQuote() from Clojure's
+;; LispReader.java.  One major difference is, that this function
+;; expects the balancing of unquotes with respect to syntax-quotes to
+;; be checked by the caller beforehand.
+
+(defn encode [^SyntaxQuoteState sqs form]
+  (letfn
+      [(wrong [^String msg]
+         (throw (ex-info msg {}))) ;no line/column info available here
+       (q [form]
+         (list sym-quote form))
+            
+       (expand-list ^IPersistentVector [xs]
+         (reduce (fn ^IPersistentVector [^IPersistentVector ret item]
+                   (.cons ret (cond
+                                (unquote? item) (list `list (second item))
+                                (unquote-splicing? item) (second item)
+                                :else (list `list (encode sqs item)))))
+                 [] xs))
+       (flatten-map ^IPersistentVector [m]
+         (reduce (fn ^IPersistentVector [^IPersistentVector keyvals
+                                         ^IMapEntry e]
+                   (-> keyvals (.cons (.key e)) (.cons (.val e))))
+                 [] (seq m)))
+
+       (quoted? ^boolean [x]        ;quoted form or autoquoted literal
+         ;; Assumption: values with non-constant meta are represented
+         ;; by a (with-meta ...) form in `x` and return false.
+         (if (seq? x)
+           (and (= sym-quote (first x)) (nil? (meta x)))
+           (not (symbol? x))))
+       (unwrap-quote [x]                ;pre: `(quoted? x)` is true
+         (if (seq? x) (second x) x))
+       (quoted-in-list? ^boolean [x]
+         (and (seq? x) (= `list (first x)) (nil? (nnext x)) ;list of one?
+              (quoted? (second x))))
+       (unwrap-list [x]            ;pre: `(quoted-in-list? x)` is true
+         (unwrap-quote (second x)))
+       (list-of? ^boolean [l]
+         (and (seq? l) (= (first l) `list)))
+       (concat-of [ls]
+         (if (every? list-of? ls)
+           (list* `list (mapcat rest ls))
+           (cons `concat ls)))
+       (assemble [apply-sym apply-fn xs]
+         (let [ls (expand-list xs)]
+           (if (every? quoted-in-list? ls)
+             (q (cond->> (map unwrap-list ls)
+                  (some? apply-fn) (apply apply-fn)))
+             (cond->> (list `seq (concat-of ls))
+               (some? apply-sym) (list `apply apply-sym)))))
+       
+       (encode-collection [form]
+         (cond
+           (instance? IRecord form) form
+           (map? form) (assemble `hash-map hash-map (flatten-map form))
+           (vector? form) (assemble `vector vector form)
+           (set? form) (assemble `hash-set hash-set form)
+           (or (seq? form) (list? form)) (if-some [seq (seq form)]
+                                           (assemble nil nil seq)
+                                           ())
+           :else (throw (UnsupportedOperationException.
+                         "unknown collection type"))))]
+
+      (if (outside-syntax-quote? sqs)
+        form
+        (let [tmpl (cond
+                     (contains? specials form)
+                     (q form)
+
+                     (symbol? form)
+                     (q (encode-symbol sqs form))
+
+                     (unquote? form)
+                     (encode (pop-gmap sqs) (second form))
+
+                     (unquote-splicing? form)
+                     (wrong "unquote-splicing ~@ outside of list")
+
+                     (syntax-quote? form)
+                     (q (encode (push-gmap sqs) (second form)))
+                        
+                     (coll? form)
+                     (encode-collection form)
+
+                     ;; all other forms produced by the reader are
+                     ;; auto-quoting
+                     :else form)]
+          (if-some [m (source-meta form)]
+            (let [m-tmpl (encode sqs m)]
+              (if (and (quoted? tmpl) (quoted? m-tmpl))
+                (q (with-meta (unwrap-quote tmpl) (unwrap-quote m-tmpl)))
+                (list `with-meta tmpl m-tmpl)))
+            tmpl)))))
+
+(defn mk-syntax-quote-state ^SyntaxQuoteState [^Symbol this-namespace ^Ctx ctx]
+  (SyntaxQuoteState. this-namespace [(HashMap.)] ctx))
+
+(defn- copy-meta [to from]
+  (if (instance? clojure.lang.IMeta to)
+    (with-meta to (meta from))
+    to))
+
+(defn syntax-quote [form ^Ctx ctx]      ;pre: (syntax-quote? form)
+  (-> (mk-syntax-quote-state (symbol (.ns-str ctx)) ctx)
       (encode (second form))
       (copy-meta form)))

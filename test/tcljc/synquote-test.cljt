@@ -1,0 +1,245 @@
+(ns tcljc.synquote-test
+  (:require
+   [tcljc.reader-test :as rdt :refer [deterministic-gensyms]]
+   [tcljc.expr :as x]
+   [tcljc.context :as ctx]
+   [tcljc.synquote :as sq]
+   [tinyclj.alpha.ptest :refer :all])
+  (:import
+   (tcljc.synquote SyntaxQuoteState)
+   (clojure.lang Symbol ExceptionInfo)
+   (java.lang.invoke MethodHandles MethodType)
+   (java.util HashMap)
+   (java.util.regex Pattern)))
+
+(defn mk-sqs ^SyntaxQuoteState [^Symbol this-namespace]
+  (let [l (MethodHandles/lookup)
+        ctx (ctx/mk-ctx* {} {} (name this-namespace) nil nil l nil nil nil)]
+    (.put-global ctx "imported-var"
+                 (x/global-ref 'remote-var "my.name.space" Object
+                               false false nil))
+    (.put-ns-alias ctx "my.name.space" "my.name.space") ;required namespace
+    (.put-ns-alias ctx "space" "my.name.space") ;namespace alias
+    (sq/mk-syntax-quote-state this-namespace ctx)))
+
+(defn rdr                            ;pre: `cs` is a syntax-quote form
+  ([^String cs]
+   (rdr cs 'name.space))
+  ([^String cs ^Symbol this-namespace]
+   (let [x (rdt/read1 cs)]
+     (assert (sq/syntax-quote? x) (str x))
+     (sq/encode (mk-sqs this-namespace) (second x)))))
+
+(deftest reader-autoquote-test
+  (is (= nil (rdr "`nil")))
+  (is (= :foo (rdr "`:foo")))
+  (is (= "foo" (rdr "`\"foo\"")))
+  (is (= (object true) (rdr "`true")))
+  (is (= (object 123) (rdr "`123"))))
+
+(deftest autoquote-test
+  (let [sq (fn [form]
+             (sq/encode (mk-sqs 'name.space) form))
+        auto? (fn ^boolean [form]
+                (identical? form (sq form)))]
+    (is (auto? nil))
+    (is (auto? Boolean/TRUE))           ;aka true
+    (is (auto? Boolean/FALSE))          ;aka false
+    (is (auto? "foo"))                  ;string
+    
+    (is (auto? (Integer/valueOf 1)))
+    (is (auto? (Long/valueOf 1)))
+    (is (auto? (Float/valueOf 1)))
+    (is (auto? (Double/valueOf 1)))
+    
+    (is (auto? (Character/valueOf \a)))
+    (is (auto? :foo))                   ;keyword
+    (is (auto? #"foo"))                 ;regex
+    
+    ;; not produced by reader, but listed for completeness:
+    (is (auto? Object))                 ;class
+    (is (auto? (Byte/valueOf (byte 1))))
+    (is (auto? (Short/valueOf (short 1))))))
+
+(deftest symbol-test
+  (is (= '(quote name.space/a)
+         (rdr "`a"))))
+
+(deftest map-test
+  (is (= '(quote {name.space/a name.space/b})
+         (rdr "`{a b}"))))
+
+(deftest vector-test
+  (is (= '(quote [name.space/a name.space/b])
+         (rdr "`[a b]"))))
+
+(deftest hash-set-test
+  (is (= '(quote #{name.space/a name.space/b})
+         (rdr "`#{a b}"))))
+
+(deftest list-test
+  (is (= '(quote (name.space/a name.space/b))
+         (rdr "`(a b)")))
+  (is (= '(quote (quote name.space/a))
+         (rdr "`'a"))))
+
+
+(deftest this-namespace-test
+  (is (= '(quote name.space/a) (rdr "`a")))
+  (is (= '(quote other.name.space/a) (rdr "`a" 'other.name.space))))
+
+(deftest reader-autoquote-test
+  (is (= nil (rdr "`nil")))
+  (is (= :foo (rdr "`:foo")))
+  (is (= "foo" (rdr "`\"foo\"")))
+  (is (= (object true) (rdr "`true")))
+  (is (= (object 123) (rdr "`123"))))
+
+(deftest meta-test
+  ;; Note: ^{:line ... :column ...} map entries are always dropped
+  ;; from meta, even in the presence of other keys.
+  (is (= '(quote (1 2)) (rdr "`(1 2)")))
+  (is (= nil (-> (rdr "`(1 2)") (second) (meta))))    
+  (is (= '(quote (1 2)) (rdr "`^:foo (1 2)")))
+  (is (= '{:foo true} (-> (rdr "`^:foo (1 2)") (second) (meta))))
+
+  (is (= '(tinyclj.core/with-meta
+            (quote (1 2))
+            (tinyclj.core/apply
+             tinyclj.core/hash-map
+             (tinyclj.core/seq
+              (tinyclj.core/list :foo bar))))
+         (rdr "`^{:foo ~bar} (1 2)"))))
+
+(deftest quote-test
+  (is (= '(quote name.space/a)
+         (rdr "`a")))
+  (is (= '(quote (quote name.space/a))
+         (rdr "`'a")))
+  (is (= '(quote (quote name.space/a))
+         (rdr "``a")))
+  (is (= '(quote (quote (quote name.space/a)))
+         (rdr "``'a"))))
+
+(deftest unquote-test
+  (is (= 'a
+         (rdr "`~a")))
+  (is (= '(quote a)
+         (rdr "`~'a")))
+  
+  (is (= '(tinyclj.core/seq
+           (tinyclj.core/list (quote name.space/a) (quote name.space/b) x))
+         (rdr "`(a b ~x)")))
+  (is (= '(tinyclj.core/seq
+           (tinyclj.core/list (quote name.space/a) x (quote name.space/b)))
+         (rdr "`(a ~x b)")))
+  (is (= '(tinyclj.core/seq
+           (tinyclj.core/list x (quote name.space/a) (quote name.space/b)))
+         (rdr "`(~x a b)"))))
+
+(deftest unquote-splicing-test
+  (is (= '(tinyclj.core/seq
+           (tinyclj.core/concat (tinyclj.core/list (quote name.space/a))
+                                (tinyclj.core/list (quote name.space/b))
+                                [x y]))
+         (rdr "`(a b ~@[x y])")))
+  (is (= '(tinyclj.core/seq
+           (tinyclj.core/concat (tinyclj.core/list (quote name.space/a))
+                                [x y]
+                                (tinyclj.core/list (quote name.space/b))))
+         (rdr "`(a ~@[x y] b)")))
+  (is (= '(tinyclj.core/seq
+           (tinyclj.core/concat [x y]
+                                (tinyclj.core/list (quote name.space/a))
+                                (tinyclj.core/list (quote name.space/b))))
+         (rdr "`(~@[x y] a b)")))
+
+  (is (thrown-with-msg? ExceptionInfo
+                        #"unquote-splicing ~@ outside of list"
+                        (rdr "`~@[x y]"))))
+
+
+(deftest gensym-literal-test
+  (is (= '(quote foo__$1$__auto__)
+         (-> (rdr "`foo#") (deterministic-gensyms))))
+  (is (= '(quote (foo__$1$__auto__ foo__$1$__auto__))
+         (-> (rdr "`(foo# foo#)") (deterministic-gensyms))))
+
+  (is (= '(quote (foo__$1$__auto__ (quote foo__$2$__auto__)))
+         (-> (rdr "`(foo# `foo#)") (deterministic-gensyms))))
+  (is (= '(quote (foo__$1$__auto__
+                  (quote foo__$2$__auto__)
+                  foo__$1$__auto__))
+         (-> (rdr "`(foo# `foo# foo#)") (deterministic-gensyms))))
+
+  ;; Disallow gensym literal outside of syntax-quote, in analogy to
+  ;; the unquotes.  Clojure 1.10.1 accepts both, although the
+  ;; LispReader source code has a similar error message that is not
+  ;; commented out.
+  #_
+  (is (thrown-with-msg? ExceptionInfo
+                        #"1:0: gensym literal outside of syntax quote `\.\.\."
+                        (rdr "foo#")))
+  #_
+  (is (thrown-with-msg? ExceptionInfo
+                        #"1:2: gensym literal outside of syntax quote `\.\.\."
+                        (rdr "`~foo#"))))
+
+(deftest new-shorthand-test
+  (is (= '(quote java.lang.Object.)
+         (rdr "`Object.")))
+  (is (= '(quote java.lang.Object.)
+         (rdr "`java.lang.Object.")))
+
+  (is (= '(quote NoSuchClass.)
+         (rdr "`NoSuchClass.")))
+  (is (= '(quote java.lang.NoSuchClass.)
+         (rdr "`java.lang.NoSuchClass."))))
+
+(deftest class-name-test
+  (is (= '(quote java.lang.Object)
+         (rdr "`Object")))
+  (is (= '(quote java.lang.Object)
+         (rdr "`java.lang.Object")))
+
+  (is (= '(quote name.space/NoSuchClass)
+         (rdr "`NoSuchClass")))
+  (is (= '(quote java.lang.NoSuchClass)
+         (rdr "`java.lang.NoSuchClass"))))
+
+(deftest class-member-test
+  (is (= '(quote java.lang.Object/foo)
+         (rdr "`Object/foo")))
+  (is (= '(quote java.lang.Object/foo)
+         (rdr "`java.lang.Object/foo")))
+
+  (is (= '(quote NoSuchClass/foo)
+         (rdr "`NoSuchClass/foo")))
+  (is (= '(quote java.lang.NoSuchClass/foo)
+         (rdr "`java.lang.NoSuchClass/foo"))))
+
+(deftest method-name-test
+  (is (= '(quote .foo)
+         (rdr "`.foo"))))
+
+(deftest namespaced-global-test
+  (is (= '(quote my.name.space/foo)
+         (rdr "`my.name.space/foo")))
+  (is (= '(quote my.name.space/foo)
+         (rdr "`space/foo")))
+
+  (is (= '(quote no.such.name.space/foo)
+         (rdr "`no.such.name.space/foo")))
+  (is (= '(quote nsns/foo)
+         (rdr "`nsns/foo"))))
+
+(deftest globals-test
+  (is (= '(quote name.space/no-such-var)
+         (rdr "`no-such-var")))
+  (is (= '(quote name.space/local-var)
+         (rdr "`local-var")))
+  (is (= '(quote my.name.space/remote-var)
+         (rdr "`imported-var")))
+
+  (is (= '(quote ..)
+         (rdr "`.."))))
