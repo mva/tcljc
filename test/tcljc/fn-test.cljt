@@ -1030,3 +1030,39 @@
                  (def f (fn* f ^void [x]
                              (let* [g* (if (nil? x) fn-2 fn-1)]
                                nil)))]))))
+
+
+(deftest delegate-to-interface
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "key" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[INTERFACE_VIRTUAL Map$Entry "getKey" "()Ljava/lang/Object;"]]])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn
+                   "_"
+                   "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~1" "(Ljava/util/Map$Entry;)V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/util/Map$Entry;)V")
+             ["LOCAL 0: Map$Entry e"]
+             (ALOAD_0)
+             (INVOKEINTERFACE Map$Entry "getKey" "()Ljava/lang/Object;" :itf)
+             (POP)
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def key (fn* key [^java.util.Map$Entry e]
+                               (. e (getKey))))
+                 (def f (fn* f ^void [^java.util.Map$Entry e]
+                             (key e)))]))))
