@@ -815,3 +815,68 @@
 
                  (def add-alias add)
                  (def d (add-alias 1 2))]))))
+
+(deftest conditional-and-of-vars
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "a" "Lclojure/lang/Var;")
+             (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "b" "Lclojure/lang/Var;")
+             (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;" [[STATIC . "f~0" "()Z"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~0" "()Z")
+             (GETSTATIC . "a" "Lclojure/lang/Var;")
+             (INVOKEVIRTUAL Var "deref" "()Ljava/lang/Object;")
+             (ASTORE_0)
+             ["LOCAL 0: Object temp"]
+             (ALOAD_0)
+             (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+             (IFEQ L:0)
+             (GETSTATIC . "b" "Lclojure/lang/Var;")
+             (INVOKEVIRTUAL Var "deref" "()Ljava/lang/Object;")
+             (GOTO L:1)
+             [L:0]
+             (ALOAD_0)
+             [L:1]
+             (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+             (IRETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (LDC "pkg.ns0")
+             (LDC "a")
+             (GETSTATIC Boolean "FALSE" "Ljava/lang/Boolean;")
+             (INVOKESTATIC RT "var" "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)Lclojure/lang/Var;")
+             (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
+                   [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["var"]]
+                    [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
+             (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
+             (PUTSTATIC . "a" "Lclojure/lang/Var;")
+             (LDC "pkg.ns0")
+             (LDC "b")
+             (GETSTATIC Boolean "TRUE" "Ljava/lang/Boolean;")
+             (INVOKESTATIC RT "var" "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Object;)Lclojure/lang/Var;")
+             (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;"
+                   [[:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["var"]]
+                    [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
+             (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
+             (PUTSTATIC . "b" "Lclojure/lang/Var;")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 
+                 (def ^:var a Boolean/FALSE)
+                 (def ^:var b Boolean/TRUE)
+
+                 (def f (fn* f ^boolean []
+                             (boolean (let* [temp a]
+                                        (if temp
+                                          b
+                                          temp)))))]))))

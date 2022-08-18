@@ -579,7 +579,7 @@
                    v (compile-form env (without-recur form-ctx)
                                    (second bs) tl-ctx)
                    b (if (and (not= kind x/b-loop)
-                              (x/bref? v)
+                              (x/pure-let-initialization? v)
                               (jb/polymorphic? dest-tag))
                        ;; there is no type tag on `nm` and `v` could
                        ;; be a macro or primitive function
