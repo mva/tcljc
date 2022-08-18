@@ -65,9 +65,10 @@
     (if (str/ends-with? (name sym) "#")
       (or (get @agensym-map sym)
           (get (swap! agensym-map update sym replacement-symbol sym) sym))
-      ;; mark symbol for further processing by synquote/encode-symbol
-      ;; FIXME... exclude specials like try, finally, etc.
-      (symbol lacks-namespace (name sym)))))
+      (if (contains? specials sym)
+        sym
+        ;; mark symbol for further processing by synquote/encode-symbol
+        (symbol lacks-namespace (name sym))))))
 
 ;;; ------------------------------------------------------------------------
 
