@@ -562,6 +562,20 @@
                           0 (int 0)
                           1 (long 0))))))
 
+(deftest switch-into-local
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (LOOKUPSWITCH L:2 [-1 1] [L:1 L:0])
+           [L:0] (ICONST_M1) (GOTO L:3)
+           [L:1] (ICONST_1) (GOTO L:3)
+           [L:2] (ICONST_0)             ;default
+           [L:3]
+           (ISTORE_1)
+           ["LOCAL 1: int y"]
+           (RETURN)]
+         (asm-expr [^int x]
+                   (let* [y (case* x 1 -1 -1 1 0)])))))
+
 (deftest adjacent-jump-targets
   (is (= '[["LOCAL 0: Object a"] ["LOCAL 1: Object b"]
            (ALOAD_0) (IFNULL L:4)

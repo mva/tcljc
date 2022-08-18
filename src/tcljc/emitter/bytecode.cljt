@@ -370,15 +370,20 @@
               (loop [lo Integer/MAX_VALUE, hi Integer/MIN_VALUE
                      [^SwitchCase sc :as scs] (seq sc-list)]
                 (if (nil? scs)
-                  (let [dtarget (peek labelv)]
+                  (let [dtarget (peek labelv)
+                        n (count labelv)
+                        end-switch (.newLabel xb)]
                     (expr-insns xb es (x/nth-arg x 0))
                     (if (cf/table-switch? lo hi (count sc-list))
                       (.tableSwitchInstruction xb lo hi dtarget sc-list)
                       (.lookupSwitchInstruction xb dtarget sc-list))
-                    (dotimes [i (count labelv)]
-                      (.labelBinding xb (nth labelv i))
-                      (expr-insns xb es (nth argv (inc i))))
-                    xb)
+                    (dotimes [i n]
+                      (let [case-x (nth argv (inc i))]
+                        (.labelBinding xb (nth labelv i))
+                        (expr-insns xb es case-x)
+                        (when (and (x/returns? case-x) (< i (dec n)))
+                          (.goto_ xb end-switch)))) ;omit goto for default path
+                    (.labelBinding xb end-switch))
                   (recur (min lo (.caseValue sc)) (max hi (.caseValue sc))
                          (next scs))))))
           (switch-insn ^CodeBuilder [^CodeBuilder xb ^Switch x]
