@@ -410,19 +410,25 @@
                   finally? (not (x/expr-empty? finally-statm))
 
                   start-body (.newLabel xb)
-                  end-body (.newLabel xb)]
+                  end-body (.newLabel xb)
+                  vempty-body-expr (volatile! nil)]
               ;; first emit body and its finally; emit handlers only
               ;; if body-expr is not empty, because EXCEPTION_CATCH
               ;; requires a non-empty bci region
               (assert (= (count argv) (+ n 2)))
               (-> (.labelBinding xb start-body)
-                  (expr-insns es body-expr)
+                  (.block (cf/with-xbh [xb]
+                            (expr-insns xb es body-expr)
+                            (vreset! vempty-body-expr
+                                     (-> ^jdk.classfile.impl.BlockCodeBuilderImpl xb
+                                         (.isEmpty)
+                                         (Boolean/valueOf)))))
                   (.labelBinding end-body))
               (when (x/returns? body-expr)
                 (expr-insns xb es finally-statm))
               
               (when-not (or (x/expr-empty? body-expr)
-                            (cf/empty-bci-range? xb start-body end-body))
+                            ^boolean @vempty-body-expr)
                 (let [end-try (.newLabel xb)
                       start-handler (vec (repeatedly n #(.newLabel xb)))]
                   (dotimes [i n]

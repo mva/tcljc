@@ -105,9 +105,6 @@
       (primitive-delta cl)
       4)))
 
-(defn empty-bci-range? ^boolean [^CodeBuilder xb ^Label start ^Label end]
-  (not (< (.labelToBci xb start) (.labelToBci xb end))))
-
 ;;; ------------------------------------------------------------------------
 
 (defmacro with-cbh [sig & body]
