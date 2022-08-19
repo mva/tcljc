@@ -4,14 +4,14 @@
    [tinyclj.string :as str])
   (:import
    (clojure.lang Symbol IPersistentVector)
-   (jdk.classfile Classfile ClassModel MethodModel CodeModel FieldModel
+   (jdk.classfile Classfile ClassModel MethodModel FieldModel
                   CodeElement Attribute Instruction PseudoInstruction Label
                   AccessFlags)
    (jdk.classfile.constantpool ClassEntry)
    (jdk.classfile.instruction LocalVariable BranchInstruction SwitchCase
                               TableSwitchInstruction LookupSwitchInstruction
                               ExceptionCatch LabelTarget)
-   (jdk.classfile.attribute RuntimeVisibleAnnotationsAttribute)
+   (jdk.classfile.attribute CodeAttribute RuntimeVisibleAnnotationsAttribute)
    (java.lang.constant ConstantDesc ConstantDescs ClassDesc)
    (java.lang.reflect AccessFlag)
    (java.util HashMap LinkedList)))
@@ -207,7 +207,7 @@
      jdk.classfile.instruction.NopInstruction
      (simple-insn insn))))
 
-(defn- instructions-into [acc ^CodeModel xm ^ClassDesc owner-cld
+(defn- instructions-into [acc ^CodeAttribute xm ^ClassDesc owner-cld
                           ^java.util.List elements]
   (let [label-names (HashMap.)
         local-variables (LinkedList.)
@@ -363,8 +363,8 @@
                 (-> mm .methodType .stringValue)))
         (method-data [^MethodModel mm]
           (reduce (fn [acc elem]
-                    (if (instance? CodeModel elem)
-                      (let [xm ^CodeModel elem
+                    (if (instance? CodeAttribute elem)
+                      (let [xm ^CodeAttribute elem
                             owner-cld (-> mm .parent ^ClassModel (.get)
                                           .thisClass .asSymbol)]
                         (instructions-into acc xm owner-cld (.elements xm)))
