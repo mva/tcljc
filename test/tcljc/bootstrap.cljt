@@ -9,7 +9,6 @@
    [tcljc.expr :as x]
    [tcljc.context :as ctx]
    [tcljc.emitter :as em]
-   [tcljc.publics :as publics]
    [tcljc.predefined :as predefined]
    [tinyclj.alpha.ptest :as ptest]      ;for get-test-context & is
    [tcljc.classdata :as classdata])
@@ -274,8 +273,7 @@
              (doseq [^bytes bs (.bytesv nmsp)
                      :let [x (classdata/extract bs)]]
                (.put !render-to (classdata/class-name x) x))
-             (let [lookup-in-pkg (.lookup-in-pkg tl-ctx)
-                   globals (publics/extract lookup-in-pkg (.capstone nmsp))]
+             (let [globals (get (.exported-known-ns nmsp) ns-str)]
                (recur (assoc known-ns ns-str globals) (inc i)))))))
      
      (->> (sort-by key (seq !render-to))

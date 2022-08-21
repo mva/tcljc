@@ -16,8 +16,8 @@
         app-ld (cfg/app-class-loader :platform sourcev)
         dest-dir (cfg/dest-dir "tcljc.core")
         load-from-dest-dir? false
-        all-nmsps ["tinyclj.core"
-                   #_"tcljc.rtiow-ref"]
+        all-nmsps [#_"tinyclj.core"
+                   "tcljc.rtiow-ref"]
 
         rt-lookup (cfg/get-rt-lookup app-ld)
         dyn-ld (cfg/dyn-class-loader app-ld (if load-from-dest-dir?

@@ -8,7 +8,7 @@
                        DirectMethodHandleDesc DirectMethodHandleDesc$Kind
                        MethodTypeDesc MethodHandleDesc DynamicConstantDesc)
    (java.lang.invoke MethodHandles$Lookup MethodHandle TypeDescriptor$OfField)
-   (java.lang.reflect Member Method Constructor)
+   (java.lang.reflect Method Constructor)
    (java.util.regex Pattern))
   (:refer-clojure
    :exclude [symbol keyword vector map set seq list object objects
@@ -137,6 +137,7 @@
 (def ^:private Lookup ConstantDescs/CD_MethodHandles_Lookup)
 (def ^:private MethodType ConstantDescs/CD_MethodType)
 (def ^:private CallSite ConstantDescs/CD_CallSite)
+(def ^:private Member (ClassDesc/of "java.lang.reflect.Member"))
 
 (def ^:private Object object)
 (def ^:private ObjectArray (.arrayType Object))
@@ -226,6 +227,8 @@
                                             void [String]))
 (def mhd-arityHandlesIfFn (mhd-static [RT "arityHandlesIfFn"]
                                       MethodHandleArray [Lookup Class Object]))
+(def mhd-publicDefInfo (mhd-static [RT "publicDefInfo"]
+                                   ObjectArray [Lookup Member]))
 
 ;;; namespace boilerplate:
 (def mhd-createNamespace (mhd-static [RT "createNamespace"] void [String]))

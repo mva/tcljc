@@ -5,10 +5,13 @@
    [tcljc.javabase :as jb]
    [tcljc.classfile :as cf]
    [tcljc.expr :as x]
+   [tcljc.macro :as macro]
    [tcljc.context :as ctx])
   (:import
-   (tcljc.expr FnForm FnCode Arity ArityCode Binding IEmitPlan)
-   (clojure.lang IPersistentMap)
+   (tcljc.expr FnForm FnCode Arity ArityCode Binding BindingRef ValueRef
+               IEmitPlan FnMacroFn)
+   (tcljc.context Ctx)
+   (clojure.lang Symbol IPersistentMap)
    (java.lang.invoke MethodHandle MethodHandles$Lookup)
    (java.lang.reflect Field Method Member Modifier)))
 
@@ -70,66 +73,134 @@
     (let [static? (jb/same-classname? rt/clnm-static-fn (.getClass value))]
       (call-only-fn-form declared-tp (not static?) mhs))))
 
-(defn- add-publics [acc ^Class cl ^MethodHandles$Lookup lookup-in-pkg
-                    ^MethodHandle arity-handles-mh]
-  (let [cld (rt/cd-of cl)]
-    (letfn [(global-nm ^String [^Member m]
+(deftype ImportedMacroFn [^MethodHandle apply-mh
+                          ^Object f]
+  FnMacroFn
+  (expand [_ env form]
+    ;; pass nil as `env` for now
+    (macro/apply-macro apply-mh f form nil)))
+
+(defn- add-publics [acc ^Class cl ^Ctx ctx ^MethodHandle arity-handles-mh]
+  (let [cld (rt/cd-of cl)
+        pdf-mh (ctx/resolve-mh (.lookup-in-pkg ctx) rt/mhd-publicDefInfo)
+        postponed (java.util.HashMap.)]
+    (letfn [(ns-str ^String []
+              (.getPackageName cl))
+            (global-nm ^String [^Member m]
               (when (Modifier/isPublic (.getModifiers m))
                 (let [nm (.getName m)]
                   (when-not (.contains nm "~")
                     (cfg/demunge-name nm)))))
-            (clojure-var-type ^Class [^Field f]
-              (when (jb/same-classname? rt/clnm-Var (.getType f))
-                (let [s (-> f .getGenericType .getTypeName)
-                      i (.indexOf s "<")
-                      nm (.substring s (inc i) (dec (.length s)))]
-                  (when-not (or (neg? i) (.isEmpty nm))
-                    (Class/forName nm false (.getClassLoader cl))))))
             (constant-init-x [^Class tp ^int mods ^Object value]
-              (or (import-fn-form lookup-in-pkg arity-handles-mh tp value)
+              (or (import-fn-form (.lookup-in-pkg ctx) arity-handles-mh tp value)
                   (when (and (not (Modifier/isTransient mods))
                              (cf/constant-loads-as-ldc? tp))
                     (x/const tp value))))
+            (public-def-info ^objects [^Member member]
+              ^objects (.invokeExact pdf-mh (.lookup-in-pkg ctx) member))
+            (resolve-sym ^BindingRef [^Symbol sym acc-publics]
+              (if (= (namespace sym) (ns-str))
+                (get acc-publics (name sym)) ;nil if not yet known
+                (-> (.valAt (.get-known-ns ctx) (namespace sym))
+                    (get (name sym))
+                    (java.util.Objects/requireNonNull))))
+
+            (postpone! [acc-publics ^Symbol sym rf-bref]
+              (let [nm (name sym)]
+                (.put postponed nm (cons rf-bref (.get postponed nm)))
+                acc-publics))
+            (put! [acc-publics ^String nm ^BindingRef bref]
+              (let [acc* (assoc acc-publics nm bref)]
+                (if-some [rf-bref-seq (.get postponed nm)]
+                  (do (.put postponed nm nil)
+                      (reduce #(%2 %1 bref) acc* rf-bref-seq))
+                  acc*)))
+            
+            (field-bref ^ValueRef [acc ^Field f ^String nm]
+              (let [tp (.getType f)
+                    mods (.getModifiers f)
+                    redef? (not (Modifier/isFinal mods))
+                    init-x (when-not redef?
+                             (constant-init-x tp mods (.get f nil)))
+                    bref (x/global-ref (symbol nm) (ns-str)
+                                       tp redef? false init-x)
+                    ld-st (cf/ld-st-static cld (.getName f) (rt/cd-of tp))]
+                (.deliver-load bref ld-st)
+                bref))
+            (add-clojure-var [acc ^Field f ^String nm ^Class var-tp]
+              (let [tp (.getType f)
+                    mods (.getModifiers f)
+                    redef? (not (Modifier/isFinal mods))
+                    bref (x/global-ref (symbol nm) (ns-str)
+                                       var-tp redef? true nil)
+                    ld-st (cf/ld-st-static cld (.getName f) (rt/cd-of tp))]
+                (.deliver-load bref ld-st)
+                (put! acc nm bref)))
+            (add-alias* [acc ^String nm ^BindingRef alias-for]
+              (let [aref (x/alias-ref x/lvl-global (symbol nm) (ns-str)
+                                      alias-for x/b-def)]
+                (.deliver-load aref (x/deref-load alias-for))
+                (put! acc nm aref)))
+            (add-alias [acc ^String nm ^String sym-str]
+              (let [sym (symbol sym-str)]
+                (if-some [alias-for (resolve-sym sym acc)]
+                  (add-alias* acc nm alias-for)
+                  (postpone! acc sym (fn [acc ^BindingRef alias-for]
+                                       (add-alias* acc nm alias-for))))))
             (add-field [acc ^Field f]
               (if-some [nm (global-nm f)]
-                (let [tp (.getType f)
-                      mods (.getModifiers f)
-                      redef? (not (Modifier/isFinal mods))
-                      init-x (when-not redef?
-                               (constant-init-x tp mods (.get f nil)))
-                      bref (if-some [var-tp (clojure-var-type f)]
-                             (x/global-ref (symbol nm) (.getPackageName cl)
-                                           var-tp redef? true init-x)
-                             (x/global-ref (symbol nm) (.getPackageName cl)
-                                           tp redef? false init-x))
-                      ld-st (cf/ld-st-static cld (.getName f) (rt/cd-of tp))]
-                  (.deliver-load bref ld-st)
-                  (assoc acc nm bref))
+                (if-some [pdf (public-def-info f)]
+                  (case (aget pdf 0)
+                    ":var" (add-clojure-var acc f nm (aget pdf 1))
+                    ":alias" (add-alias acc nm (aget pdf 1))
+                    ":macro" (add-macro acc nm pdf (field-bref acc f nm)))
+                  (put! acc nm (field-bref acc f nm)))
                 acc))
+            
+            (method-bref ^ValueRef [acc ^Method m ^String nm]
+              (let [tp (.getReturnType m)
+                    init-x (constant-init-x tp 0 (.invoke m nil))
+                    bref (x/global-ref (symbol nm) (ns-str)
+                                       tp false false init-x)
+                    ld-st (cf/ld-st-method cld (.getName m) (rt/cd-of tp))]
+                (.deliver-load bref ld-st)
+                bref))
+            (add-macro* [acc ^String nm ^objects pdf ^ValueRef mimpl
+                         ^BindingRef mvalue]
+              (let [f (aget pdf 1)
+                    mfn (ImportedMacroFn. (.apply-mh ctx) f)
+                    mref (x/macro-ref (symbol nm) (ns-str) mfn mvalue mimpl)]
+                (put! acc nm mref)))
+            (add-macro [acc ^String nm ^objects pdf ^ValueRef mimpl]
+              (if-some [sym-str (aget pdf 2)]
+                (let [sym (symbol sym-str)]
+                  (if-some [mvalue (resolve-sym sym acc)]
+                    (add-macro* acc nm pdf mimpl mvalue)
+                    (postpone! acc sym (fn [acc ^BindingRef mvalue]
+                                         (add-macro* acc nm pdf mimpl mvalue)))))
+                (add-macro* acc nm pdf mimpl nil)))
             (add-method [acc ^Method m]
               (if (= (.getName m) rt/name-force-clinit)
                 (assoc acc cfg/key-force-clinit (x/invoke-force-clinit cl))
                 (if-some [nm (when (zero? (.getParameterCount m)) ;skip main
                                (global-nm m))]
-                  (let [tp (.getReturnType m)
-                        init-x (constant-init-x tp 0 (.invoke m nil))
-                        bref (x/global-ref (symbol nm) (.getPackageName cl)
-                                           tp false false init-x)
-                        ld-st (cf/ld-st-method cld (.getName m) (rt/cd-of tp))]
-                    (.deliver-load bref ld-st)
-                    (assoc acc nm bref))
+                  (if-some [pdf (public-def-info m)]
+                    (case (aget pdf 0)
+                      ":macro" (add-macro acc nm pdf (method-bref acc m nm)))
+                    (put! acc nm (method-bref acc m nm)))
                   acc)))]
-      (reduce add-field
-              (reduce add-method acc (.getDeclaredMethods cl))
-              (.getDeclaredFields cl)))))
+      (let [res (reduce add-field
+                        (reduce add-method acc (.getDeclaredMethods cl))
+                        (.getDeclaredFields cl))]
+        (doseq [x postponed] (assert (nil? (val x))))
+        res))))
 
-(defn extract ^IPersistentMap [^MethodHandles$Lookup lookup-in-pkg
-                               ^Class capstone]
+(defn extract ^IPersistentMap [^Ctx ctx ^Class capstone]
   (letfn [(all-segments [acc ^Class cl]
             (if (identical? Object cl)
-              (reverse acc)
+              acc
               (recur (cons cl acc) (.getSuperclass cl))))]
-    (let [arity-handles-mh (ctx/resolve-mh lookup-in-pkg
+    (let [arity-handles-mh (ctx/resolve-mh (.lookup-in-pkg ctx)
                                            rt/mhd-arityHandlesIfFn)]
-      (reduce #(add-publics %1 %2 lookup-in-pkg arity-handles-mh)
+      (reduce #(add-publics %1 %2 ctx arity-handles-mh)
               {} (all-segments () capstone)))))

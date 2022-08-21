@@ -213,11 +213,11 @@
 
 (deftype DelayedMacroFn [^MethodHandle apply-mh
                          ^EmitQueue emit
-                         ^BindingRef macro-def
+                         ^BindingRef mimpl
                          ^:unsynchronized-mutable ^Object f]
   FnMacroFn
   (expand [_ env form]
-    (let [x (or f (set! f (ctx/send-msg emit ctx/req-macro-value macro-def)))]
+    (let [x (or f (set! f (ctx/send-msg emit ctx/req-macro-value mimpl)))]
       ;; pass nil as `env` for now
       (macro/apply-macro apply-mh f form nil))))
 
@@ -230,9 +230,9 @@
               ;; into some prior namespace segment, and treat the
               ;; redefinition as a fresh macro
               (let [macro-fn (.macro-fn ^MacroRef prior)
-                    macro-def (.macro-def ^DelayedMacroFn macro-fn)]
+                    mimpl (.mimpl ^DelayedMacroFn macro-fn)]
                 (ctx/send-msg (-> tl-ctx (ctx/tl-ctx*) .emit)
-                              ctx/req-macro-value macro-def)
+                              ctx/req-macro-value mimpl)
                 nil)
               prior))
           
@@ -272,7 +272,8 @@
               (x/assign-def v bref)))
           (member-def-alias ^Expr [^Symbol nm ^BindingRef bref]
             (let [nm* (with-meta (x/qname bref) (meta nm))
-                  aref (x/alias-ref 0 nm (ctx/this-ns tl-ctx) bref x/b-def)]
+                  aref (x/alias-ref x/lvl-global nm (ctx/this-ns tl-ctx)
+                                    bref x/b-def)]
               ;; global alias is just a new name for the old
               ;; BindingRef, without any additional work
               (ctx/put-global (name nm) aref tl-ctx)

@@ -71,8 +71,14 @@ print-javap:
 	$(JAVAC) $(JAVA_OPTS) -source 20 Hello.java
 	$(JAVAP) -v -p *.class
 
+run-rtiow-nocore: IMAGE=$(DEST_DIR).rtiow/ray.ppm
+run-rtiow-nocore:
+	$(JAVA) --module-path $(TCLJ_MDIR) --add-modules tinyclj.rt -cp $(DEST_DIR).rtiow tcljc.rtiow-nocore-ref.__ns >$(IMAGE)
+	md5sum $(IMAGE)
+#	xdg-open $(IMAGE)
+
 run-rtiow: IMAGE=$(DEST_DIR).rtiow/ray.ppm
 run-rtiow:
-	$(JAVA) --module-path $(TCLJ_MDIR) --add-modules tinyclj.rt -cp $(DEST_DIR).rtiow tcljc.rtiow-nocore-ref.__ns >$(IMAGE)
+	$(JAVA) --module-path $(TCLJ_MDIR) --add-modules tinyclj.rt -cp $(DEST_DIR).core tcljc.rtiow-ref.__ns >$(IMAGE)
 	md5sum $(IMAGE)
 #	xdg-open $(IMAGE)

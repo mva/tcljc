@@ -61,7 +61,7 @@
 (defn with-capstone ^Namespace [^Namespace nmsp ^Class capstone
                                 ^IPersistentVector bytesv]
   (let [ctx (.ctx nmsp)
-        publics (publics/extract (.lookup-in-pkg ctx) capstone)
+        publics (publics/extract ctx capstone)
         ;; do not re-export namespaces from `provided-nmsp`, because
         ;; this would cause obsoleted versions of the core namespace
         ;; to reach downstream namespaces like tinyclj.java.io
