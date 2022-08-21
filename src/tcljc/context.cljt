@@ -74,6 +74,13 @@
 ;;; ------------------------------------------------------------------------
 
 (definterface ICtx
+  ;; `known-ns` maps a namespace name (a string) to a map of the
+  ;; public globals of the namespace (a map string -> BindingRef).  It
+  ;; is the transitive closure over all directly and indirectly
+  ;; required namespaces.
+  (get-known-ns ^IPersistentMap [])
+  (merge-into-known-ns ^void [^IPersistentMap other-known-ns])
+  
   (get-ns-alias-map ^IPersistentMap [])
   (put-ns-alias ^void [^String alias ^String ns-str])
   
@@ -91,10 +98,11 @@
   (put-import ^void [^Symbol nm ^Class cl]))
 
 (definterface FnRequireNamespace
-  ;; Schedule the namespace `ns-str` for compilation, starting from
-  ;; `provided-ns` as its map of known namespaces.  Returns a map
-  ;; {:rpaths :req-strs :publics} of `ns-str`, possible via a future.
-  (schedule [^String ns-str ^IPersistentMap provided-ns]))
+  ;; Schedule the namespace `ns-str` for compilation, passing it
+  ;; `provided-nmsp` as its map of known namespaces (string ->
+  ;; Namespace).  Returns the Namespace instance for `ns-str`,
+  ;; possible via a future.
+  (schedule [^String ns-str ^IPersistentMap provided-nmsp]))
 
 ;;; ------------------------------------------------------------------------
 
@@ -145,6 +153,13 @@
 (def req-flush-s-queue 3)
 ;;; Returns when there are no outstanding messages in the `s` queue.
 
+(def req-flush-namespace-segment 4)
+;;; Returns when all namespace code accumulated upto this point has
+;;; been defined into the class loader.  That is, the namespace code
+;;; has become both visible and possibly active.  The value being
+;;; returned is an expression that forces the namespace's
+;;; initialization up to this point.
+
 
 (deftype Msg [^int task ^Object x ^CompletableFuture promise])
 
@@ -180,8 +195,7 @@
   ;;
   ;; FIXME... might be helpful (read: no stall the compiling reify*)
   ;; to define ephemeral classes directly in the compilation thread
-  (send-msg* (if (or cfg/deterministic-namespace-compile?
-                     (= task req-macro-value)
+  (send-msg* (if (or (= task req-macro-value)
                      (= task req-define-class-ephemeral))
                (.q emit)
                (.s emit))
@@ -198,7 +212,7 @@
 ;;; across function-level compilation threads.  It isolates its users
 ;;; from concurrent or reordered updates in the namespace environment,
 ;;; effectively freezing the environment.
-(deftype Ctx [^IPersistentMap known-ns
+(deftype Ctx [^:unsynchronized-mutable ^IPersistentMap _known-ns
               ^:unsynchronized-mutable ^IPersistentMap _ns-alias
               ^:unsynchronized-mutable ^IPersistentMap _globals
               ^:unsynchronized-mutable ^IPersistentMap _imports
@@ -232,6 +246,20 @@
               ^boolean locked?
               ^:unsynchronized-mutable ^int _macro-count]
   ICtx
+  (get-known-ns [_]
+    _known-ns)
+  (merge-into-known-ns [_ other-known-ns]
+    (if locked?
+      (throw (IllegalStateException.))
+      (set! _known-ns
+            (reduce-kv (fn [acc k v]
+                         (assert (string? k))
+                         (assert (map? v))
+                         (cond-> acc
+                           (not (or (= ns-str k) (contains? acc k)))
+                           (assoc k v)))
+                       other-known-ns _known-ns))))
+  
   (get-ns-alias-map [_]
     _ns-alias)
   (put-ns-alias [_ alias ns-str]
@@ -262,8 +290,7 @@
 (defn resolve-mh ^MethodHandle [^MethodHandles$Lookup l ^ConstantDesc cd]
   ^MethodHandle (.resolveConstantDesc cd l))
 
-(defn mk-ctx* ^Ctx [^IPersistentMap known-ns
-                    ^IPersistentMap initial-globals
+(defn mk-ctx* ^Ctx [^IPersistentMap initial-globals
                                   
                     ^String ns-str ^Path rpath ^java.net.URL rurl
                                   
@@ -273,7 +300,8 @@
                     ^ExecutorService exc-method]
   ;; pick up bindings for *out* and *err* at this point, so that
   ;; output redirection established by ptest works for worker threads
-  (let [ns-alias {cfg/primitive-ns-str cfg/primitive-ns-str}
+  (let [known-ns {}
+        ns-alias {}
         binding-frame (clojure.lang.Var/cloneThreadBindingFrame)
         ;; FIXME... test with capacity of 1 to see if it deadlocks
         capacity 32 ;for top-level forms, macro values, define class, ...
@@ -289,8 +317,8 @@
 (defn locked ^Ctx [^Ctx ctx]
   (if (.locked? ctx)
     ctx
-    (Ctx. (.known-ns ctx)
-          (.get-ns-alias-map ctx) (.get-globals ctx) (.get-imports ctx)
+    (Ctx. (.get-known-ns ctx) (.get-ns-alias-map ctx) (.get-globals ctx)
+          (.get-imports ctx)
           (.ns-str ctx) (.rpath ctx) (.rurl ctx)
           (.lookup-in-pkg ctx) (.require-namespace ctx)
           (.!private-names ctx) (.binding-frame ctx) (.emit ctx)
@@ -300,8 +328,8 @@
   (let [short-sym (jb/import-symbol-short ephemeral-class)
         imports (assoc (.get-imports ctx) short-sym ephemeral-class)
         l (.in (.lookup-in-pkg ctx) ephemeral-class)]
-    (Ctx. (.known-ns ctx)
-          (.get-ns-alias-map ctx) (.get-globals ctx) imports
+    (Ctx. (.get-known-ns ctx) (.get-ns-alias-map ctx) (.get-globals ctx)
+          imports
           (.ns-str ctx) (.rpath ctx) (.rurl ctx)
           l (.require-namespace ctx)
           (.!private-names ctx) (.binding-frame ctx) (.emit ctx)
@@ -357,7 +385,7 @@
               (if (.equals (.ns-str ctx) resolved-ns-nm)
                 (or (.valAt (.get-globals ctx) nm nil) ;same as for (nil? ns)
                     (wrong/unresolved resolved-ns-nm (symbol nm)))
-                (when-some [publics (.valAt (.known-ns ctx) resolved-ns-nm nil)]
+                (when-some [publics (.valAt (.get-known-ns ctx) resolved-ns-nm nil)]
                   (or (.valAt ^IPersistentMap publics nm nil)
                       (wrong/unresolved resolved-ns-nm (symbol nm))))))))] 
   (defn lookup-global ^BindingRef [^Symbol nm tl-ctx]

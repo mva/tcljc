@@ -8,6 +8,7 @@
    [tcljc.expr :as x]
    [tcljc.exprfold :as xf]
    [tcljc.compiler :as compiler]
+   [tcljc.publics :as publics]
    [tinyclj.string :as str])
   (:import
    (tcljc.reader IReader)
@@ -26,28 +27,48 @@
   (forms-reader ^IReader [^URL rurl]))
 
 (deftype Namespace [^IBuildEnv env
-                    ^IPersistentMap provided-ns
+                    ^IPersistentMap provided-nmsp ;string -> Namespace
                     ^Ctx ctx
                     
                     ^IPersistentSet rpaths
                     ^IPersistentSet req-strs
                     ^Class capstone
-                    bytesv])            ;bytes of emitted classes, or nil
-(defn- mk-nmsp ^Namespace [^IBuildEnv env ^IPersistentMap provided-ns ^Ctx ctx]
-  (Namespace. env provided-ns ctx #{} #{} nil nil))
+                    ^IPersistentMap exported-known-ns
+                    ^IPersistentVector bytesv]) ;emitted classes, or stays nil
+
+(defn- mk-nmsp ^Namespace [^IBuildEnv env ^IPersistentMap provided-nmsp
+                           ^Ctx ctx]
+  (Namespace. env provided-nmsp ctx #{} #{} nil nil nil))
+
+(defn mk-provided ^Namespace [^String ns-str ^IPersistentMap publics]
+  (Namespace. nil nil nil #{} #{} nil {ns-str publics} nil))
+
+(defn assoc-provided [provided-nmsp ^String ns-str ^IPersistentMap publics]
+  (assoc provided-nmsp ns-str (mk-provided ns-str publics)))
+
 (def ^:private compile-namespace-in-progress (mk-nmsp nil nil nil))
+
 (defn- with-rpath ^Namespace [^Namespace nmsp ^Path rpath]
-  (Namespace. (.env nmsp) (.provided-ns nmsp) (.ctx nmsp)
+  (Namespace. (.env nmsp) (.provided-nmsp nmsp) (.ctx nmsp)
               (conj (.rpaths nmsp) rpath) (.req-strs nmsp)
-              (.capstone nmsp) (.bytesv nmsp)))
+              (.capstone nmsp) (.exported-known-ns nmsp) (.bytesv nmsp)))
+
 (defn- with-require ^Namespace [^Namespace nmsp ^String ns-str]
-  (Namespace. (.env nmsp) (.provided-ns nmsp) (.ctx nmsp)
+  (Namespace. (.env nmsp) (.provided-nmsp nmsp) (.ctx nmsp)
               (.rpaths nmsp) (conj (.req-strs nmsp) ns-str)
-              (.capstone nmsp) (.bytesv nmsp)))
+              (.capstone nmsp) (.exported-known-ns nmsp) (.bytesv nmsp)))
+
 (defn with-capstone ^Namespace [^Namespace nmsp ^Class capstone
                                 ^IPersistentVector bytesv]
-  (Namespace. (.env nmsp) (.provided-ns nmsp) (.ctx nmsp)
-              (.rpaths nmsp) (.req-strs nmsp) capstone bytesv))
+  (let [ctx (.ctx nmsp)
+        publics (publics/extract (.lookup-in-pkg ctx) capstone)
+        ;; do not re-export namespaces from `provided-nmsp`, because
+        ;; this would cause obsoleted versions of the core namespace
+        ;; to reach downstream namespaces like tinyclj.java.io
+        kns (-> (reduce dissoc (.get-known-ns ctx) (keys (.provided-nmsp nmsp)))
+                (assoc (.ns-str ctx) publics))]
+    (Namespace. nil nil nil ;clear `env`, `provided-nmsp`, and `ctx`
+                (.rpaths nmsp) (.req-strs nmsp) capstone kns bytesv)))
 
 (defn- file-rpath ^Path [^Path parent-rpath ^String path-str]
   (let [s (str path-str cfg/source-suffix)]
@@ -57,7 +78,12 @@
 
 (def marker-depth-first-path (Object.)) ;FIXME... (Object/identityObject)
 
-(defn nmsp-globals ^IPersistentMap [^String ns-str x] 
+(defn publics-of ^IPersistentMap [^Namespace nmsp ^String ns-str]
+  (-> (.exported-known-ns nmsp)
+      (get ns-str)
+      (java.util.Objects/requireNonNull)))
+
+(defn- nmsp-of ^Namespace [x ^String ns-str]
   (cond
     (identical? marker-depth-first-path x)
     (wrong/other (str "cyclic require via " (wrong/q (symbol ns-str))
@@ -69,18 +95,18 @@
         (.get fut cfg/wait-cyclic-ms java.util.concurrent.TimeUnit/MILLISECONDS)
         (catch java.util.concurrent.ExecutionException e ;unwrap
           (throw (or (.getCause e) ^Throwable e)))
-        (catch TimeoutException e       ;may not be repeatable!
+        (catch TimeoutException e     ;may not be repeatable!
           (wrong/mk-e (str "Wait for require " (wrong/q (symbol ns-str))
                            " timed out.  Maybe a cyclic import?  "
                            "Use --deterministic for better feedback.")))))
 
     :else x))
 
-(defn- put-required-globals ^void [^Ctx ctx gmaps require-map]
+(defn- put-required-globals ^void [^Ctx ctx publics-map require-map]
   (assert (identical? :require (:tag require-map)))
   (let [{:keys [ns-sym]} require-map
         req-str (name ns-sym)
-        req-defs (get gmaps req-str)
+        req-defs (get publics-map req-str)
         
         incl (:refer-include require-map)
         excl (:refer-exclude require-map)
@@ -125,22 +151,25 @@
                             (wrong/q opt-alias))))
         (.put-ns-alias ctx alias ns-str)))))
 
-(defn- add-namespace-deps ^void [^Ctx ctx gmaps deps]
+(defn- add-namespace-deps ^void [^Ctx ctx publics-map deps]
   (doseq [dep deps]
     (case (:tag dep)
-      :import (assert false) #_(parser/add-imports ns dep)
+      :import (compiler/add-imports dep ctx)
       :require (do (put-ns-alias ctx (name (:ns-sym dep)) (:as dep))
-                   (put-required-globals ctx gmaps dep)))))
+                   (put-required-globals ctx publics-map dep)))))
 
 (letfn [(ns-str ^String [^Namespace nmsp]
           (-> nmsp .ctx .ns-str))
-        (core-provided-ns ^IPersistentMap [^Namespace nmsp]
-          (if (cfg/core-lib? (ns-str nmsp))
-            ;; FIXME... flush namespace classes and provide actual
-            ;; globals
-            (let [globals {cfg/key-force-clinit x/expr-empty}]
-              (assoc (.provided-ns nmsp) cfg/core-lib globals))
-            (.provided-ns nmsp)))
+        (core-lib? ^boolean [^Namespace nmsp]
+          (cfg/core-lib? (ns-str nmsp)))
+        (core-provided-nmsp ^IPersistentMap [^Namespace nmsp ^boolean require?]
+          (if (and require? (core-lib? nmsp))
+            (let [force-x (ctx/send-msg (-> nmsp .ctx .emit)
+                                        ctx/req-flush-namespace-segment nil)
+                  globals (-> (-> nmsp .ctx .get-globals)
+                              (assoc cfg/key-force-clinit force-x))]
+              (assoc-provided (.provided-nmsp nmsp) cfg/core-lib globals))
+            (.provided-nmsp nmsp)))
         (conj-force-clinit [statmv globals]
           (conj statmv (-> (get globals cfg/key-force-clinit)
                            (java.util.Objects/requireNonNull))))
@@ -148,28 +177,33 @@
           (let [req-strs (grammar/required-ns-strs deps)
                 n (alength req-strs)
                 a (new objects n)
-                anmsp (new "[Lclojure.lang.IPersistentMap;" n)]
+                apublics (new "[Lclojure.lang.IPersistentMap;" n)
+                provide-ns (core-provided-nmsp nmsp (some? deps))]
             ;; schedule namespaces in parallel
             (dotimes [i (alength req-strs)]
               (let [req-str (aget req-strs i)]
-                (aset a i
-                      (or (get (.provided-ns nmsp) req-str)
-                          (-> (.require-namespace (.ctx nmsp))
-                              (.schedule req-str (core-provided-ns nmsp)))))))
+                (aset a i (or (get (.provided-nmsp nmsp) req-str)
+                              (-> (.require-namespace (.ctx nmsp))
+                                  (.schedule req-str provide-ns))))))
             ;; wait for and pick up namespace outcomes
             (dotimes [i n]              ;avoid stack frame spamming
-              (aset anmsp i (nmsp-globals (aget req-strs i) (aget a i))))
+              (let [ns-str (aget req-strs i)]
+                (aset apublics i (-> (nmsp-of (aget a i) ns-str)
+                                     (publics-of ns-str)))))
             ;; collect all "require"d globals and then add any new
             ;; globals to this namespace
-            (loop [gmaps {}, i 0]
+            (loop [publics-map {}, i 0]
               (if (= i n)
-                (add-namespace-deps (.ctx nmsp) gmaps deps)
-                (recur (assoc gmaps (aget req-strs i) (aget anmsp i))
-                       (inc i))))
+                (doto (.ctx nmsp)
+                  (.merge-into-known-ns publics-map)
+                  (add-namespace-deps publics-map deps))
+                (let [ns-str (aget req-strs i)
+                      ekns (.exported-known-ns (nmsp-of (aget a i) ns-str))]
+                  (recur (merge publics-map ekns) (inc i)))))
             ;; ensure that all required namespace classes are
             ;; initialized at this point
             (ctx/send-msg (-> nmsp .ctx .emit) ctx/msg-emit-tlf
-                          (-> (reduce conj-force-clinit [] anmsp)
+                          (-> (reduce conj-force-clinit [] apublics)
                               (xf/progn-expr x/expr-empty)))
             (reduce with-require nmsp req-strs)))
         (top-level-list-form ^Namespace [^Namespace nmsp ^Path rpath ^ISeq form]
@@ -185,18 +219,18 @@
                 (add-require-deps nmsp deps))
            
               load
-              ;; (cond-> ns
-              ;;   (and (core-lib? ns) (= (fnext form) "core_print"))
-              ;;   ;; hack for dependency chain core_print.cljt
-              ;;   ;; -> MultiFn.java -> tinyclj.core fns
-              ;;   (flush-namespace-segment))
-              (reduce
-               (fn ^Namespace [^Namespace nmsp ^String path-str]
-                 (let [rpath (file-rpath rpath path-str)]
-                   (if-some [rurl (.resolve-rpath (.env nmsp) rpath)]
-                     (top-level-file nmsp rpath rurl)
-                     (wrong/file rpath))))
-               nmsp (next form))
+              (do (when (and (core-lib? nmsp) (= (fnext form) "core_print"))
+                    ;; hack for dependency chain core_print.cljt
+                    ;; -> MultiFn.java -> tinyclj.core fns
+                    (ctx/send-msg (-> nmsp .ctx .emit)
+                                  ctx/req-flush-namespace-segment nil))
+                  (reduce
+                   (fn ^Namespace [^Namespace nmsp ^String path-str]
+                     (let [rpath (file-rpath rpath path-str)]
+                       (if-some [rurl (.resolve-rpath (.env nmsp) rpath)]
+                         (top-level-file nmsp rpath rurl)
+                         (wrong/file rpath))))
+                   nmsp (next form)))
            
               in-ns
               (let [[arg & argr] (grammar/strip-quotes (rest form))
@@ -226,10 +260,10 @@
               (catch ExceptionInfo e
                 (throw (wrong/assoc-if-new e :file/resource-url rurl))))))]
   
-  (defn compile-thread [^IBuildEnv env ^IPersistentMap provided-ns ^Ctx ctx]
+  (defn compile-thread [^IBuildEnv env ^IPersistentMap provided-nmsp ^Ctx ctx]
     (ctx/push-nmsp-context (.lookup-in-pkg ctx) (.ns-str ctx))
     (try
-      (-> (mk-nmsp env provided-ns ctx)
+      (-> (mk-nmsp env provided-nmsp ctx)
           (top-level-file (ctx/this-rpath ctx) (ctx/this-rurl ctx)))
       (finally
         (ctx/pop-nmsp-context (.lookup-in-pkg ctx))))))

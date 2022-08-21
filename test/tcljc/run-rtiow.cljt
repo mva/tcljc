@@ -14,7 +14,7 @@
   [#_(cfg/path-of "../jvm-stuff/bootstrap-tclj/tinyclj.rt")
    (cfg/path-of "test")])
 
-(defn- ^FnRequireNamespace noop-require-namespace [ns-str provided-ns]
+(defn- ^FnRequireNamespace noop-require-namespace [ns-str provided-nmsp]
   nil)
 
 (defn- core-ns-globals [^java.lang.invoke.MethodHandles$Lookup l]
@@ -29,13 +29,13 @@
         rt-lookup (cfg/get-rt-lookup app-ld)
         dyn-ld (cfg/dyn-class-loader app-ld [])
         dest-dir (cfg/dest-dir "tcljc.rtiow")
-        env (em/mk-build-env app-ld dest-dir dyn-ld)]
+        env (em/mk-build-env app-ld dest-dir dyn-ld {})]
     (ctx/with-executor exc-nmsp
-      ;; manual unrolled reduce to reduce stack trace noise; during
-      ;; development, `emit-namespace` will die uncountable times
       (let [ns-str "tcljc.rtiow-nocore-ref"
-            known-ns (assoc predefined/implicit-known-ns cfg/core-lib {})
-             
+            provided-nmsp (em/mk-provided-nmsp)
+            known-ns (assoc predefined/implicit-known-ns
+                            cfg/core-lib {cfg/key-force-clinit x/expr-empty})
+            
             exc-method (when-not cfg/deterministic-namespace-compile?
                          exc-nmsp)
             globals (core-ns-globals rt-lookup)
@@ -43,7 +43,7 @@
                               known-ns globals ns-str
                               exc-method)]
         (-> (em/mk-first-segm env tl-ctx false)
-            (em/emit-thread known-ns))
+            (em/emit-thread provided-nmsp))
         :success))))
 
 (defn -main [& args]

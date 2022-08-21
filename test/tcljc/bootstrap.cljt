@@ -235,9 +235,6 @@
       
       :else (recur acc i (inc j)))))
 
-(defn- ^FnRequireNamespace noop-require-namespace [ns-str provided-ns]
-  nil)
-
 (defn nmsp
   ([formv]
    (nmsp (cfg/dyn-class-loader app-ld []) formv))
@@ -251,31 +248,33 @@
                                            (seq forms)]))
                                    ns-forms-seq)
          !render-to (HashMap.)
-         env (em/mk-build-env app-ld (dest-dir-of-test) dyn-ld
+         env (em/mk-build-env app-ld (dest-dir-of-test) dyn-ld {}
                               injected-file-forms nil)
          ans-strs (->> ns-forms-seq
                        (map (comp nmsp-name-str first))
-                       ^"[Ljava.lang.String;" (into-array String))]
+                       ^"[Ljava.lang.String;" (into-array String))
+         provided-nmsp (em/mk-provided-nmsp cfg/core-lib {cfg/key-force-clinit
+                                                          x/expr-empty})]
      (ctx/with-executor exc-nmsp
        ;; manual unrolled reduce to reduce stack trace noise; during
        ;; development, `emit-namespace` will die uncountable times
-       (loop [known-ns (assoc predefined/implicit-known-ns
-                              cfg/core-lib {cfg/key-force-clinit x/expr-empty})
+       (loop [known-ns predefined/implicit-known-ns
               i 0]
          (if (= i (alength ans-strs))
            known-ns
            (let [ns-str (aget ans-strs i)
                  exc-method (when-not cfg/deterministic-namespace-compile?
                               exc-nmsp)
-                 tl-ctx (em/mk-ctx env noop-require-namespace
-                                   known-ns bootstrap-globals ns-str
+                 req-fn (fn ^FnRequireNamespace provided [ns-str provided-nmsp]
+                          (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
+                 tl-ctx (em/mk-ctx env req-fn known-ns bootstrap-globals ns-str
                                    exc-method)
                  nmsp (-> (em/mk-first-segm env tl-ctx true)
-                          (em/emit-thread known-ns))]
+                          (em/emit-thread provided-nmsp))]
              (doseq [^bytes bs (.bytesv nmsp)
                      :let [x (classdata/extract bs)]]
                (.put !render-to (classdata/class-name x) x))
-             (let [lookup-in-pkg (-> nmsp .ctx .lookup-in-pkg)
+             (let [lookup-in-pkg (.lookup-in-pkg tl-ctx)
                    globals (publics/extract lookup-in-pkg (.capstone nmsp))]
                (recur (assoc known-ns ns-str globals) (inc i)))))))
      

@@ -240,6 +240,10 @@
     (MethodHandleDesc/of (.kind x) (.owner x) (.method-name x)
                          (.lookup-descriptor x))))
 
+(defn invoke-force-clinit ^Expr [^Class cl]
+  (invoke-xref jb/void [] nil rt/mhk-static (rt/cd-of cl) rt/name-force-clinit
+               "()V" false false))
+
 
 (deftype InvokeDynamic [^:pass-to-super-constructor ^Object _form
                         ^:pass-to-super-constructor ^Class type
@@ -1330,7 +1334,7 @@
 
 
 (definterface FnMacroFn
-  (expand ^Object [env form]))
+  (expand ^Object [env form])) ;`env` is currently passed the Ctx instance
 
 (deftype MacroRef [^:pass-to-super-constructor ^Object _form
                    ^:pass-to-super-constructor ^Class type

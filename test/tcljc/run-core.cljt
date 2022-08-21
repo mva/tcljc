@@ -1,0 +1,39 @@
+(ns tcljc.run-core
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.classfile :as cf]
+   [tcljc.runtime :as rt]
+   [tcljc.expr :as x]
+   [tcljc.emitter :as em]
+   [tcljc.predefined :as predefined]))
+
+(defn run []
+  (let [sourcev [(cfg/path-of "../jvm-stuff/bootstrap-tclj"
+                              "tinyclj.rt")
+                 (cfg/path-of "../jvm-stuff/tclj-in-tclj"
+                              "src/tinyclj.core")
+                 (cfg/path-of "test")]
+        app-ld (cfg/app-class-loader :platform sourcev)
+        dest-dir (cfg/dest-dir "tcljc.core")
+        load-from-dest-dir? false
+        all-nmsps ["tinyclj.core"
+                   #_"tcljc.rtiow-ref"]
+
+        rt-lookup (cfg/get-rt-lookup app-ld)
+        dyn-ld (cfg/dyn-class-loader app-ld (if load-from-dest-dir?
+                                              [dest-dir]
+                                              []))
+        provided-nmsp (em/mk-provided-nmsp)
+        env (em/mk-build-env app-ld dest-dir dyn-ld provided-nmsp)]
+    (-> (if cfg/deterministic-namespace-compile?
+          (em/emit-namespaces-st env all-nmsps)
+          (em/emit-namespaces-mt env all-nmsps))
+        #_(time)
+        (em/summary)
+        #_(prn))))
+
+(defn -main [& args]
+  (try
+    (run)
+    (finally
+      (shutdown-agents))))     ;can only shut down when owning the JVM

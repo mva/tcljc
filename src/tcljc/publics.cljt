@@ -108,11 +108,9 @@
                 acc))
             (add-method [acc ^Method m]
               (if (= (.getName m) rt/name-force-clinit)
-                (let [inv (x/invoke-xref jb/void [] nil rt/mhk-static
-                                         (rt/cd-of cl) rt/name-force-clinit
-                                         "()V" false false)]
-                  (assoc acc cfg/key-force-clinit inv))
-                (if-some [nm (global-nm m)]
+                (assoc acc cfg/key-force-clinit (x/invoke-force-clinit cl))
+                (if-some [nm (when (zero? (.getParameterCount m)) ;skip main
+                               (global-nm m))]
                   (let [tp (.getReturnType m)
                         init-x (constant-init-x tp 0 (.invoke m nil))
                         bref (x/global-ref (symbol nm) (.getPackageName cl)

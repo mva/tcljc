@@ -224,7 +224,18 @@
 (defn def-form ^Expr [[_ nm :as form] ^Expr v ^BindingRef macro-v tl-ctx]
   (letfn [(prior-def ^BindingRef [^Symbol nm]
             (some-> (ctx/lookup-global nm tl-ctx) (x/root-bref)))
-
+          (force-macro-to-class ^BindingRef [^BindingRef prior]
+            (if (and (some? prior) (x/b-macro? prior))
+              ;; make sure that the old definition has been defined
+              ;; into some prior namespace segment, and treat the
+              ;; redefinition as a fresh macro
+              (let [macro-fn (.macro-fn ^MacroRef prior)
+                    macro-def (.macro-def ^DelayedMacroFn macro-fn)]
+                (ctx/send-msg (-> tl-ctx (ctx/tl-ctx*) .emit)
+                              ctx/req-macro-value macro-def)
+                nil)
+              prior))
+          
           (put-value-or-macro ^Binding [^String ns-str ^Symbol nm
                                         ^ValueRef bref ^Expr v]
             ;; For macros, there is a split view.  There is the
@@ -307,8 +318,8 @@
     (wrong/check-argc 1 2 form)
     (when (or (not (symbol? nm)) (some? (namespace nm)))
       (wrong/syntax "var name must be an unqualified symbol" nm))
-    (if-some [d (prior-def nm)]
-      (do (assert (not (x/meta-flag? d :macro)))
+    (if-some [d (-> (prior-def nm) (force-macro-to-class))]
+      (do (assert (not (x/meta-flag? d :macro)) nm)
           (when-not (some? v)
             (wrong/other "redefinition must provide a value"))
           (if (x/meta-flag? d :var)
@@ -445,11 +456,11 @@
     (when (nil? (namespace sym))
       (classname-expr sym tl-ctx))))
 
-(defn- expand-macro [^MacroRef x ^Env env form]
-  ;; Note: Macro in an isolated runtime setup is much more expansive
+(defn- expand-macro [^MacroRef x form tl-ctx]
+  ;; Note: Macro in an isolated runtime setup is much more expensive
   ;; than in the shared setup, where the compiler can call directly
   ;; into the macro function.
-  (let [ex (.expand (.macro-fn x) env form)]
+  (let [ex (.expand (.macro-fn x) tl-ctx form)]
     #_(prn :ex ex)
     ex))
 
@@ -711,7 +722,7 @@
                    (let [x (or (resolve-sym-global op-sym tl-ctx)
                                (wrong-unresolved op-sym))
                          m ^MacroRef (x/root-bref ^BindingRef x)]
-                     (expand-macro m env form)))
+                     (expand-macro m form tl-ctx)))
                  (expand-fn [form]
                    (let [ex (expand-once form)]
                      (if (and (seq? ex) (= (first ex) 'fn*))
@@ -1307,7 +1318,7 @@
                      (x/b-macro? x)
                      (let [m ^MacroRef (x/root-bref x)]
                        ;; note: recursive `compile-form` picks up error context
-                       (compile-form env form-ctx (expand-macro m env form)
+                       (compile-form env form-ctx (expand-macro m form tl-ctx)
                                      tl-ctx))
                      
                      :else
@@ -1359,7 +1370,7 @@
               (conv/consume jb/void))
         mc-post (.update-macro-count ctx 0)]
     (ctx/send-msg (.emit ctx) ctx/msg-emit-tlf x)
-    (when (and (not cfg/deterministic-namespace-compile?) (not= mc-pre mc-post))
+    (when (not= mc-pre mc-post)
       ;; After a macro, delay further compilation until the macro's
       ;; top-level form has made it into the emit queue.  This means
       ;; that its effect's are visible to all future `req-macro-value`

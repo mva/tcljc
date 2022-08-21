@@ -15,6 +15,9 @@ TCLJ_MDIR=../jvm-stuff/bootstrap-tclj
 #DET=--deterministic
 TCLJ=$(JAVA) --module-path $(TCLJ_MDIR) $(JAVA_OPTS) -m tinyclj.compiler $(DET)
 
+BOOTSTRAP_TCLJ=$(JAVA) --class-path $(TCLJ_MDIR)/tinyclj.rt:$(TCLJ_MDIR)/tinyclj.core:$(TCLJ_MDIR)/tinyclj.compiler $(JAVA_OPTS) tinyclj.build.main.__ns $(DET) --parent-loader :platform
+BOOTSTRAP_RUN=$(JAVA) --class-path $(TCLJ_MDIR)/tinyclj.rt:$(DEST_DIR):resources
+
 MAIN_NS=tcljc.core
 RUN_TESTS_NS=tcljc.run-tests
 
@@ -43,6 +46,14 @@ watch-and-test:
 
 run-main:
 	$(JAVA) --module-path $(TCLJ_MDIR) $(JAVA_OPTS) --add-modules tinyclj.core -cp $(DEST_DIR):resources $(MAIN_NS).__ns
+
+# Compilation of tinyclj.core needs the bootstrap setup: place modules
+# in classpath so that they do not interfere with the compilation of
+# this special namespace.
+# test-core:
+# 	$(JAVA) --class-path $(TCLJ_MDIR)/tinyclj.rt:$(TCLJ_MDIR)/tinyclj.core:$(DEST_DIR):resources $(JAVA_OPTS) tcljc.run-core.__ns
+watch-and-test-core:
+	$(BOOTSTRAP_TCLJ) --watch -s $(TCLJ_MDIR)/tinyclj.rt -s $(TCLJ_MDIR)/tinyclj.core -s src -s test tcljc.run-core/run
 
 clean:
 	rm -rf "$(DEST_DIR)"/* "$(DEST_DIR).out" "$(DEST_DIR).test" *.class hs_err_pid*.log replay_pid*.log

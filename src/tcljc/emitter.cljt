@@ -7,6 +7,7 @@
    [tcljc.reader :as rd]
    [tcljc.context :as ctx]
    [tcljc.expr :as x]
+   [tcljc.predefined :as predefined]
    [tcljc.emitter.beachhead :as beachhead]
    [tcljc.emitter.namespace :as nmsp]
    [tcljc.emitter.prepare :as prepare]
@@ -46,9 +47,9 @@
      ;; Classes and methods from module tinyclj.rt are
      ;; accessed via this lookup.
 
-     ^IPersistentMap builtin-ns
+     ^IPersistentMap builtin-nmsp
      ;; Builtin namespaces that can be required directly from
-     ;; any namespace.
+     ;; any namespace (maps string -> Namespace).
 
      ^Path dest-dir
      ;; When set, then class files are also written to this
@@ -75,11 +76,12 @@
       (rd/mk-reader (rd/tokenize rurl)))))
 
 (defn mk-build-env
-  (^BuildEnv [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld]
-   (mk-build-env app-ld dest-dir dyn-ld nil nil))
   (^BuildEnv [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld
-              injected-file-forms arender-to]
-   (BuildEnv. app-ld (cfg/get-rt-lookup app-ld) {} dest-dir
+              ^IPersistentMap builtin-nmsp]
+   (mk-build-env app-ld dest-dir dyn-ld builtin-nmsp nil nil))
+  (^BuildEnv [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld
+              ^IPersistentMap builtin-nmsp injected-file-forms arender-to]
+   (BuildEnv. app-ld (cfg/get-rt-lookup app-ld) builtin-nmsp dest-dir
               dyn-ld (cf/mk-chr dyn-ld)
               injected-file-forms arender-to)))
 
@@ -94,7 +96,8 @@
                     ^ClassDesc segm-cld
                     ^IPersistentVector summaryv ;of TlfSummary
                     
-                    ^IPersistentVector bytesv]) ;nil if bytes are not tracked
+                    ^IPersistentVector bytesv ;nil if bytes are not tracked
+                    ^Class prev-segment-class])
 
 (defn- segment-lookup ^MethodHandles$Lookup [^SegmState segm]
   (-> segm .ctx .lookup-in-pkg))
@@ -112,19 +115,29 @@
 (defn with-summary ^SegmState [^SegmState segm ^TlfSummary summary]
   (SegmState. (.env segm) (.ctx segm) (.sourcefile segm)
               (.segm-id segm) (.segm-cld segm) (conj (.summaryv segm) summary)
-              (.bytesv segm)))
+              (.bytesv segm) (.prev-segment-class segm)))
 (defn with-bytes ^SegmState [^SegmState segm ^int id-delta
-                             ^boolean clear-summaryv? ^bytes bs]
+                             ^boolean clear-summaryv? ^bytes bs ^Class segm-cl]
   (let [bytesv' (when-some [bsv (.bytesv segm)]
                   (conj bsv bs))]
     (SegmState. (.env segm) (.ctx segm) (.sourcefile segm)
                 (+ (.segm-id segm) id-delta) (segment-cld segm id-delta)
-                (if clear-summaryv? [] (.summaryv segm)) bytesv')))
+                (if clear-summaryv? [] (.summaryv segm)) bytesv'
+                (or segm-cl (.prev-segment-class segm)))))
 
 (defn- capstone-cld ^ClassDesc [^SegmState segm]
   (ClassDesc/of (-> segm .ctx .ns-str) ns-class-name))
 
-(defn- build-segment ^bytes [^SegmState segm]
+(defn with-force-clinit ^ClassBuilder [^ClassBuilder cb]
+  ;; static method with zero parameters, cannot clash with a
+  ;; regular function's method name because of the suffix "~1";
+  ;; FIXME... drop this and use requires~1 instead?
+  (.withMethodBody cb rt/name-force-clinit rt/mtd-void-void
+                   (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
+                           Classfile/ACC_FINAL)
+                   (cf/with-xbh [xb] (.return_ xb))))
+
+(defn- build-segment ^bytes [^SegmState segm ^boolean force-clinit?]
   (let [clinit-xb (cf/with-xbh [xb]
                     (let [ns-str (segment-ns-str segm)]
                       (when (= (.segm-id segm) first-segm-id)
@@ -150,6 +163,7 @@
          (doseq [^FnSpec fspec (.fn-specs summary)]
            (.fn-methods (-> fspec .fn-form .!fnc .emit-plan) cb)))
        (-> (.withFlags cb Classfile/ACC_PUBLIC)
+           (cond-> force-clinit? (with-force-clinit))
            (.withMethodBody cf/class-initializer-name rt/mtd-void-void
                             (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
                             clinit-xb)))
@@ -175,9 +189,7 @@
         (.withMethodBody cb "main" main-mtd flags xbh)))))
 
 (defn- build-capstone ^bytes [^SegmState segm ^Namespace nmsp]
-  (let [force-xb (cf/with-xbh [xb]
-                   (.return_ xb))
-        requires-xb (cf/with-xbh [xb]
+  (let [requires-xb (cf/with-xbh [xb]
                       (let [s (str/join "," (sort (.req-strs nmsp)))]
                         (-> xb (.constantInstruction s) (.areturn))))]
     (cf/build
@@ -186,14 +198,7 @@
        (-> (.withFlags cb Classfile/ACC_PUBLIC)
            (.withSuperclass (segment-cld segm -1))
            
-           ;; static method with zero parameters, cannot clash with a
-           ;; regular function's method name because of the suffix "~1";
-           ;; FIXME... drop this and use requires~1 instead?
-           (.withMethodBody rt/name-force-clinit rt/mtd-void-void
-                            (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
-                                    Classfile/ACC_FINAL)
-                            force-xb)
-
+           (with-force-clinit)
            (.withMethodBody rt/name-requires rt/mtd-String-void
                             (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
                                     Classfile/ACC_FINAL)
@@ -238,7 +243,7 @@
         cld (ClassDesc/of (.ns-str ctx)
                           (str ns-class-name first-segm-id))]
     (SegmState. env ctx sourcefile first-segm-id cld
-                [] (when collect-bytesv? []))))
+                [] (when collect-bytesv? []) nil)))
 
 (defn- emit-segments ^Namespace [^SegmState segm]
   (letfn [(all-fn-code [^SegmState segm]
@@ -251,16 +256,16 @@
                     cl (cfg/write-and-define-class (-> segm .env .dest-dir)
                                                    (segment-lookup segm)
                                                    this bs)]
-                (with-bytes segm 0 false bs))
+                (with-bytes segm 0 false bs nil))
               segm))
-          (write-segment ^SegmState [^SegmState segm]
+          (write-segment ^SegmState [^SegmState segm ^boolean force-clinit?]
             (let [segm ^SegmState (reduce write-fn-class
                                           segm (all-fn-code segm))
-                  bs (build-segment segm)
+                  bs (build-segment segm force-clinit?)
                   cl (cfg/write-and-define-class (-> segm .env .dest-dir)
                                                  (segment-lookup segm)
                                                  (segment-cld segm 0) bs)]
-              (with-bytes segm +1 true bs)))
+              (with-bytes segm +1 true bs cl)))
           (write-and-define ^SegmState [^SegmState segm ^ClassDef cdef
                                         ^CompletableFuture promise]
             (let [bs (build-class cdef (segment-chr segm))
@@ -269,14 +274,14 @@
                                                  (segment-lookup segm)
                                                  this-class bs)]
               (ctx/with-complete promise cl)
-              (with-bytes segm 0 false bs)))
+              (with-bytes segm 0 false bs nil)))
           (write-capstone ^Namespace [^SegmState segm ^Namespace nmsp]
             (let [bs (build-capstone segm nmsp)
                   cl (cfg/write-and-define-class
                       (-> segm .env .dest-dir)
                       (segment-lookup segm)
                       (capstone-cld segm) bs)
-                  segm (with-bytes segm 0 true bs)]
+                  segm (with-bytes segm 0 true bs cl)]
               (nmsp/with-capstone nmsp cl (.bytesv segm))))
           
           (try-load-bref ^Object [^SegmState segm ^BindingRef bref]
@@ -302,7 +307,7 @@
                 (if-some [f (try-load-bref segm bref)] ;first try
                   (do (.complete promise f)
                       segm)
-                  (let [segm (write-segment segm)] ;second and last try
+                  (let [segm (write-segment segm false)] ;second and last try
                     (.complete promise (try-load-bref segm bref))
                     segm)))
 
@@ -342,6 +347,12 @@
                 (ctx/with-complete promise
                   (.invoke m ld (doto (new objects 1) (aset 0 bs))))
                 segm)
+
+              ctx/req-flush-namespace-segment
+              (let [segm (write-segment segm true)
+                    force-x (x/invoke-force-clinit (.prev-segment-class segm))]
+                (.complete promise force-x)
+                segm)
               
               ctx/msg-fatal-error
               (throw ^Throwable x)
@@ -359,7 +370,7 @@
     (let [msg ^Msg (-> segm .ctx .emit .q (.take))
           p (.promise msg)]
       (if (= (.task msg) ctx/msg-close-queue)
-        (-> segm (write-segment) (write-capstone (.x msg)))
+        (-> segm (write-segment false) (write-capstone (.x msg)))
         (-> (try
               (let [segm (complete-req! segm (.task msg) (.x msg) p)]
                 (assert (or (nil? p) (.isDone p)))
@@ -402,30 +413,46 @@
       (when-not (ctx/close-queue? msg)
         (recur emit !private-names)))))
 
+
+(defn mk-provided-nmsp
+  ([]
+   (reduce-kv nmsp/assoc-provided {} predefined/implicit-known-ns))
+  ([^String ns-str ^IPersistentMap publics]
+   (nmsp/assoc-provided (mk-provided-nmsp) ns-str publics)))
+
 ;; Note: Exceptions are reported in the order in which they occur in
 ;; the emitter thread.  The "compile namespace" thread can fork of an
 ;; arbitrary number of futures of its own, and the emitter retrieves
 ;; their result/exception in emit order.
-(defn emit-thread ^Namespace [^SegmState segm ^IPersistentMap provided-ns]
+(defn emit-thread ^Namespace [^SegmState segm ^IPersistentMap provided-nmsp]
+  (doseq [[ns-str nmsp] provided-nmsp]
+    (assert (string? ns-str))
+    (assert (instance? Namespace nmsp)))
+  (let [primitive-publics (-> (get provided-nmsp cfg/primitive-ns-str)
+                              (nmsp/publics-of cfg/primitive-ns-str))]
+    (doto (.ctx segm)
+      ;; primitive namespace can be used without require-ing it
+      (.merge-into-known-ns {cfg/primitive-ns-str primitive-publics})
+      (.put-ns-alias cfg/primitive-ns-str cfg/primitive-ns-str)))
+  
   (cfg/prepare-class-directory (.dest-dir (.env segm))
                                (ctx/this-ns (.ctx segm)))
   (let [env (.env segm)
         ctx (.ctx segm)
-        p-thread (when-not cfg/deterministic-namespace-compile?
-                   (ctx/start-solo-thread
-                    ctx
-                    (try
-                      (preparer-thread (.emit ctx) (HashSet.))
-                      (catch Throwable t ;no re-raise and wait for close-queue
-                        (ctx/send-msg* (-> ctx .emit .q)
-                                       ctx/msg-fatal-error t))
-                      (finally        ;there is always a `close-queue`
-                        (ctx/send-msg* (-> ctx .emit .q)
-                                       ctx/msg-close-queue nil)))))
+        p-thread (ctx/start-solo-thread
+                  ctx
+                  (try
+                    (preparer-thread (.emit ctx) (HashSet.))
+                    (catch Throwable t ;no re-raise and wait for close-queue
+                      (ctx/send-msg* (-> ctx .emit .q)
+                                     ctx/msg-fatal-error t))
+                    (finally        ;there is always a `close-queue`
+                      (ctx/send-msg* (-> ctx .emit .q)
+                                     ctx/msg-close-queue nil))))
         c-thread (ctx/start-solo-thread
                   ctx
                   (try
-                    (let [nsd (nmsp/compile-thread env provided-ns ctx)]
+                    (let [nsd (nmsp/compile-thread env provided-nmsp ctx)]
                       ;; regular completion: pass back result in first
                       ;; `close-queue` message
                       (ctx/send-msg (.emit ctx) ctx/msg-close-queue nsd))
@@ -435,8 +462,7 @@
                       (ctx/send-msg (.emit ctx) ctx/msg-close-queue nil))))
         nmsp (emit-segments segm)]
     (.join c-thread 5000l)      ;does not pick up result or exceptions
-    (when-not cfg/deterministic-namespace-compile?
-      (.join p-thread 5000l))   ;does not pick up result or exceptions
+    (.join p-thread 5000l)      ;does not pick up result or exceptions
     nmsp))
 
 ;;; ------------------------------------------------------------------------
@@ -464,17 +490,14 @@
         ;; the namespace
         l (.rt-lookup env)
         lookup-in-pkg (beachhead/mk-lookup-in-pkg l (.dyn-ld env) ns-str)]
-    (ctx/mk-ctx* known-ns initial-globals
-                 ns-str rpath rurl 
+    (ctx/mk-ctx* initial-globals ns-str rpath rurl 
                  lookup-in-pkg require-namespace (get-apply-mh l) exc-method)))
-
-(def initial-globals {})
 
 (defn emit-namespaces-mt ^IPersistentMap [^BuildEnv env ns-strs]
   (let [namespaces-q (java.util.concurrent.LinkedBlockingQueue.)
         !futs (ConcurrentHashMap.)]     ;updated by this thread only
     (ctx/with-executor namespaces-scope
-      (letfn [(^FnRequireNamespace require-fn [ns-str provided-ns]
+      (letfn [(^FnRequireNamespace require-fn [ns-str provided-nmsp]
                (or
                 ;; First peek into the current namespace map, and
                 ;; return a known namespace immediately.
@@ -483,20 +506,22 @@
                 ;; exchange/promise to the top-level thread's
                 ;; `namespace-loop`.
                 (let [cf (CompletableFuture.)]
-                  (.put namespaces-q [ns-str provided-ns cf])
+                  (.put namespaces-q [ns-str provided-nmsp cf])
                   (ctx/wait-for-result 1 cf))))
               
-              (fork-namespace ^Future [^String ns-str provided-ns]
+              (fork-namespace ^Future [^String ns-str provided-nmsp]
                 (ctx/with-executor exc-method
-                  (let [tl-ctx (mk-ctx env require-fn
-                                            provided-ns initial-globals ns-str
-                                            exc-method)]
+                  (let [globals (predefined/initial-globals-for (.rt-lookup env)
+                                                                ns-str)
+                        tl-ctx (mk-ctx env require-fn
+                                       predefined/implicit-known-ns
+                                       globals ns-str exc-method)]
                     #_(prn :namespace-start ns-str)
                     (ctx/with-fork+context namespaces-scope tl-ctx
                       (try
                         (-> (mk-first-segm env tl-ctx false)
-                            (emit-thread provided-ns))
-                        (finally    ;signal completion to namespace loop
+                            (emit-thread provided-nmsp))
+                        (finally  ;signal completion to namespace loop
                           (.put namespaces-q [ns-str])))))))
               
               (fork-all! ^int [ns-strs] ;returns number of new namespaces
@@ -506,7 +531,7 @@
                 (let [n (.size !futs)]
                   (doseq [ns-str ns-strs
                           :when (not (.containsKey !futs ns-str))
-                          :let [fut (fork-namespace ns-str (.builtin-ns env))]]
+                          :let [fut (fork-namespace ns-str (.builtin-nmsp env))]]
                     (.put !futs ns-str fut))
                   (- (.size !futs) n)))]
         
@@ -518,12 +543,12 @@
             (let [d (fork-all! ns-strs)] ;(re-)add all top-level namespace tasks
               (when (pos? d)     ;exit loop if no new tasks were added
                 (recur d)))
-            (let [[^String ns-str provided-ns ^CompletableFuture cf] (.take namespaces-q)]
+            (let [[^String ns-str provided-nmsp ^CompletableFuture cf] (.take namespaces-q)]
               (if (some? cf)
                 (if-some [fut (.get !futs ns-str)]
                   (do (.complete cf fut)
                       (recur n))
-                  (let [fut (fork-namespace ns-str provided-ns)]
+                  (let [fut (fork-namespace ns-str provided-nmsp)]
                     (.put !futs ns-str fut)
                     (.complete cf fut)
                     (recur (inc n))))
@@ -544,26 +569,28 @@
 
 (defn emit-namespaces-st ^IPersistentMap [^BuildEnv env ns-strs]
   (let [!futs (java.util.HashMap.)]     ;single-threaded!
-    (letfn [(^FnRequireNamespace require-fn [ns-str provided-ns]
+    (letfn [(^FnRequireNamespace require-fn [ns-str provided-nmsp]
              (or (.get !futs ns-str)
-                 (let [tl-ctx (mk-ctx env require-fn
-                                      provided-ns initial-globals ns-str
-                                      nil)]
+                 (let [globals (predefined/initial-globals-for (.rt-lookup env)
+                                                               ns-str)
+                       tl-ctx (mk-ctx env require-fn
+                                      predefined/implicit-known-ns
+                                      globals ns-str nil)]
                    (ctx/with-context tl-ctx
                      (.put !futs ns-str nmsp/marker-depth-first-path)
                      #_(prn :namespace-start ns-str)
                      (let [x (-> (mk-first-segm env tl-ctx false)
-                                 (emit-thread provided-ns))]
+                                 (emit-thread provided-nmsp))]
                        #_(prn :namespace-end ns-str)
                        (.put !futs ns-str x)
                        x)))))]
       ;; first, force discovery of core library
-      (.schedule require-fn cfg/core-lib (.builtin-ns env))
+      (.schedule require-fn cfg/core-lib (.builtin-nmsp env))
       ;; then handle all namespaces from `ns-strs`
       (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
         ;; loop over array to avoid stack frame spamming
         (dotimes [i (alength a)]
-          (.schedule require-fn (aget a i) (.builtin-ns env))))
+          (.schedule require-fn (aget a i) (.builtin-nmsp env))))
       (into {} !futs))))
 
 (defn summary ^IPersistentMap [^IPersistentMap ns-futs]
