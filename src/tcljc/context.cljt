@@ -451,12 +451,11 @@
        (.submit ~exc task#)
        ^Future (CompletableFuture/completedFuture (.call task#)))))
 
-;; (defmacro with-fork [exc & body]
-;;   ;; force context computation in outside thread
-;;   `(let [exc# ~exc
-;;          other-thread?# (some? exc#)]
-;;      (with-fork-or-on-thread exc# other-thread?#
-;;        ~@body)))
+(defmacro with-fork [exc & body]
+  `(let [exc# ~exc
+         other-thread?# (some? exc#)]
+     (with-fork-or-on-thread exc# other-thread?#
+       ~@body)))
 
 (defmacro with-fork+context [exc local-ctx & body]
   ;; force context computation in outside thread

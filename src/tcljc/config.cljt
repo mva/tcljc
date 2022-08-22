@@ -14,7 +14,7 @@
 ;;; each namespace is compiled sequentially.  In particular, macro and
 ;;; syntax quote expansions happen in deterministic order, which in
 ;;; turn means that emitted class files are identical across builds.
-(def deterministic-namespace-compile? #_false true)
+(def deterministic-namespace-compile? false #_true)
 
 ;; Emit ClassFile attribute SourceFile & Code attribute LineNumberTable?
 (def enable-line-numbers true)

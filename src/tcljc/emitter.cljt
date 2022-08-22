@@ -510,19 +510,20 @@
                   (ctx/wait-for-result 1 cf))))
               
               (fork-namespace ^Future [^String ns-str provided-nmsp]
-                (ctx/with-executor exc-method
-                  (let [globals (predefined/initial-globals-for (.rt-lookup env)
-                                                                ns-str)
-                        tl-ctx (mk-ctx env require-fn
-                                       predefined/implicit-known-ns
-                                       globals ns-str exc-method)]
-                    #_(prn :namespace-start ns-str)
-                    (ctx/with-fork+context namespaces-scope tl-ctx
-                      (try
-                        (-> (mk-first-segm env tl-ctx false)
-                            (emit-thread provided-nmsp))
-                        (finally  ;signal completion to namespace loop
-                          (.put namespaces-q [ns-str])))))))
+                (ctx/with-fork namespaces-scope
+                  (ctx/with-executor exc-method
+                    (let [globals (predefined/initial-globals-for
+                                   (.rt-lookup env) ns-str)
+                          tl-ctx (mk-ctx env require-fn
+                                         predefined/implicit-known-ns
+                                         globals ns-str exc-method)]
+                      #_(prn :namespace-start ns-str)
+                      (ctx/with-context tl-ctx (some? namespaces-scope)
+                        (try
+                          (-> (mk-first-segm env tl-ctx false)
+                              (emit-thread provided-nmsp))
+                          (finally ;signal completion to namespace loop
+                            (.put namespaces-q [ns-str]))))))))
               
               (fork-all! ^int [ns-strs] ;returns number of new namespaces
                 ;; this thread owns !futs and there are no concurrent
