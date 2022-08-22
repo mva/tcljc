@@ -598,14 +598,16 @@
                     ann (doto (new "[Ljdk.classfile.Annotation;" 1)
                           (aset 0 (Annotation/of rt/Macro ae)))]
                 (.with b (RuntimeVisibleAnnotationsAttribute/of ann)))))
+          (static-flags ^int [^BindingRef bref]
+            (if (x/b-private? bref)
+              Classfile/ACC_STATIC
+              (bit-or Classfile/ACC_STATIC Classfile/ACC_PUBLIC)))
           (field-flags ^int [^BindingRef bref ^Expr init-x]
             (letfn [(init-with-const? ^boolean []
                       (or (some? (x/root-fn-const init-x))
                           (and (some? init-x) (x/const-value? init-x))
                           (x/alias-ref? bref)))]
-              (bit-or (if (x/b-private? bref)
-                        Classfile/ACC_STATIC
-                        (bit-or Classfile/ACC_STATIC Classfile/ACC_PUBLIC))
+              (bit-or (static-flags bref)
                       (cond
                         (x/b-mutable? bref) Classfile/ACC_VOLATILE
                         (init-with-const?) Classfile/ACC_FINAL
@@ -642,8 +644,7 @@
                   mnm (x/mnm bref)
                   fbh (cf/with-fbh [fb]
                         (-> fb
-                            (.withFlags (bit-or Classfile/ACC_PUBLIC
-                                                Classfile/ACC_STATIC
+                            (.withFlags (bit-or (static-flags bref)
                                                 Classfile/ACC_VOLATILE))
                             (.with (RuntimeVisibleAnnotationsAttribute/of
                                     (alias-annotation bref)))))]
@@ -657,8 +658,9 @@
                             (.areturn)))
                   mbh (cf/with-mbh [mb]
                         (macro-annotation mb bref)
-                        (.withCode mb xbh))]
-              (.withMethod cb mnm mtd acc-static mbh)))]
+                        (.withCode mb xbh))
+                  flags (bit-or (static-flags bref) Classfile/ACC_FINAL)]
+              (.withMethod cb mnm mtd flags mbh)))]
 
     (let [init-x (x/nth-arg b 0 nil)
           bref (.bref b)]

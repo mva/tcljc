@@ -265,9 +265,10 @@
                   ns-str (ctx/this-ns tl-ctx)
                   bref (x/global-ref nm ns-str (x/type v) redef? false v)]
               (put-value-or-macro ns-str nm bref v)))
-          (assign-member-def-form ^Expr [^BindingRef bref nm]
+          (assign-member-def-form ^Expr [^BindingRef bref ^Symbol nm]
             (when-not (x/b-mutable? bref)
-              (wrong/other "prior definition is final"))
+              (wrong/other (str "prior definition of " (wrong/q nm)
+                                " is final")))
             (let [v (conv/consume v (x/type bref))]
               (x/assign-def v bref)))
           (member-def-alias ^Expr [^Symbol nm ^BindingRef bref]

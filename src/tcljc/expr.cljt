@@ -1304,7 +1304,9 @@
             (when-some [const (some-> init-x .const-value)]
               (when (cf/constant-loads-as-ldc? tp)
                 const)))]
-    (let [f (cond-> 0 clojure-var? (bit-or b-def-var))
+    (let [f (cond-> 0
+              (meta-flag? simple-nm :private) (bit-or b-private)
+              clojure-var? (bit-or b-def-var))
           entity (if (meta-flag? simple-nm :macro) b-macro b-def)]
       (if redef? 
         (let [f (bit-or f b-mutable)]
