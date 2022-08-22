@@ -289,3 +289,16 @@
                     path
                     java.nio.file.StandardOpenOption/WRITE
                     java.nio.file.StandardOpenOption/CREATE_NEW)))))
+
+(deftest dot-varargs-empty
+  (is (= '[["LOCAL 0: String nm"]
+           (LDC [VIRTUAL Class "getMethod"
+                 "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;"])
+           (LDC Object)
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/reflect/Method;")
+           (ARETURN)]
+
+         (asm-expr [^String nm]
+                   (.getMethod Object nm)))))

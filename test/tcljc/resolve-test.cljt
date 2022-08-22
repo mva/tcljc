@@ -3,17 +3,23 @@
             [tcljc.compiler.resolve :refer :all]
             [tcljc.expr :as x]
             [tinyclj.alpha.ptest :refer :all])
-  (:import (tcljc.expr Expr InvokeXref)))
+  (:import (tcljc.expr Expr InvokeXref InvokePoly)))
 
 (letfn [(xref [^InvokeXref x]
           (list 'INVOKE-XREF (-> x .kind (str) (symbol))
                 (.displayName (.owner x))
                 (.method-name x) (.lookup-descriptor x)
                 (if (.owner-interface? x) :owner-is-itf :owner-is-class)))
+        (poly [^InvokePoly x]
+          (list 'INVOKE-POLY (-> x .kind (str) (symbol))
+                (.displayName (.owner x))
+                (.method-name x)
+                (if (.owner-interface? x) :owner-is-itf :owner-is-class)))
         (inv1 [^Expr x]
           (assert (some? x))
           (cond
             (instance? InvokeXref x) (xref ^InvokeXref x)
+            (instance? InvokePoly x) (poly ^InvokePoly x)
             :else (throw (IllegalArgumentException. (str (class x))))))]
   (defn inv [xs]
     (mapv inv1 xs)))
@@ -110,7 +116,11 @@
     (is (= '[(INVOKE-XREF VIRTUAL "Class" "getName"
                           "()Ljava/lang/String;"
                           :owner-is-class)]
-           (inv-virtual Class "getName")))))
+           (inv-virtual Class "getName")))
+
+    ;; varargs call is currently an inexact invoke via MethodHandle
+    (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
+           (inv-virtual Class "getMethod" String)))))
 
 
 (deftest invoke-array-clone-test

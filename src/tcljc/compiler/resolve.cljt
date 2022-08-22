@@ -122,7 +122,6 @@
           (loop [i (dec (alength atypes))]
             (cond
               (< i start) true
-              (neg? i) true
               (assignable-to? (aget atypes i) ptype) (recur (dec i))
               :else false)))
         
@@ -136,7 +135,7 @@
                (compatible-prefix? atypes ptypes -2)
                (let [va-tp (aget ptypes (dec (alength ptypes)))]
                  (compatible-suffix? atypes (.getComponentType va-tp)
-                                     (dec (alength atypes))))))
+                                     (dec (alength ptypes))))))
         (compatible-var-array? ^boolean [^"[Ljava.lang.Class;" atypes
                                          ^"[Ljava.lang.Class;" ptypes]
           (and (= (alength atypes) (alength ptypes))
