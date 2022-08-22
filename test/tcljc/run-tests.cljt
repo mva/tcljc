@@ -10,10 +10,11 @@
 
           namespace-test fn-test variadic-test macro-test deftype-test
           set-test definterface-test closure-test line-test letfn-test
-          reify-test require-test)
+          reify-test require-test
+
+          rtiow-nocore-test)
    
    tcljc.core                      ;at least compile unused namespaces
-   tcljc.run-rtiow
    tcljc.run-core                  ;this one needs bootstrap environment
    
    [tinyclj.alpha.ptest :refer [run-scoped-tests]]))
@@ -55,15 +56,12 @@
     tcljc.line-test
     tcljc.letfn-test
     tcljc.reify-test
-    tcljc.require-test])
+    tcljc.require-test
+
+    tcljc.rtiow-nocore-test])
 
 (defn run []
-  (let [res (run-scoped-tests all-namespaces)]
-    (if (= res :success)
-      (tcljc.run-rtiow/run)
-      #_(time (dotimes [_ 1000]
-                (tcljc.run-rtiow/run)))
-      res)))
+  (run-scoped-tests all-namespaces))
 
 (defn -main [& args]
   (try

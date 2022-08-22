@@ -56,7 +56,7 @@ watch-and-test-core:
 	$(BOOTSTRAP_TCLJ) --watch -s $(TCLJ_MDIR)/tinyclj.rt -s $(TCLJ_MDIR)/tinyclj.core -s src -s test tcljc.run-core/run
 
 clean:
-	rm -rf "$(DEST_DIR)"/* "$(DEST_DIR).out" "$(DEST_DIR).test" *.class hs_err_pid*.log replay_pid*.log
+	rm -rf "$(DEST_DIR)"/* "$(DEST_DIR)".* *.class hs_err_pid*.log replay_pid*.log
 
 print-line-count:
 	find src/tcljc -name "*.cljt" | xargs wc -l | sort -n
@@ -71,9 +71,9 @@ print-javap:
 	$(JAVAC) $(JAVA_OPTS) -source 20 Hello.java
 	$(JAVAP) -v -p *.class
 
-run-rtiow-nocore: IMAGE=$(DEST_DIR).rtiow/ray.ppm
+run-rtiow-nocore: IMAGE=$(DEST_DIR).rtiow-nocore/ray.ppm
 run-rtiow-nocore:
-	$(JAVA) --module-path $(TCLJ_MDIR) --add-modules tinyclj.rt -cp $(DEST_DIR).rtiow tcljc.rtiow-nocore-ref.__ns >$(IMAGE)
+	$(JAVA) --module-path $(TCLJ_MDIR) --add-modules tinyclj.rt -cp $(DEST_DIR).rtiow-nocore tcljc.rtiow-nocore-ref.__ns >$(IMAGE)
 	md5sum $(IMAGE)
 #	xdg-open $(IMAGE)
 

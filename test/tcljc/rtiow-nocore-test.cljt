@@ -1,4 +1,4 @@
-(ns tcljc.run-rtiow
+(ns tcljc.rtiow-nocore-test
   (:require
    [tcljc.config :as cfg]
    [tcljc.classfile :as cf]
@@ -6,7 +6,8 @@
    [tcljc.expr :as x]
    [tcljc.context :as ctx]
    [tcljc.emitter :as em]
-   [tcljc.predefined :as predefined])
+   [tcljc.predefined :as predefined]
+   [tinyclj.alpha.ptest :refer [deftest]])
   (:import
    (tcljc.context FnRequireNamespace)))
 
@@ -24,11 +25,11 @@
     (.deliver-load bref ld-st)
     {"*ns*" bref}))
 
-(defn run []
+(deftest compile-rtiow-nocore-test
   (let [app-ld (cfg/app-class-loader :system app-paths)
         rt-lookup (cfg/get-rt-lookup app-ld)
         dyn-ld (cfg/dyn-class-loader app-ld [])
-        dest-dir (cfg/dest-dir "tcljc.rtiow")
+        dest-dir (cfg/dest-dir "tcljc.rtiow-nocore")
         env (em/mk-build-env app-ld dest-dir dyn-ld {})]
     (ctx/with-executor exc-nmsp
       (let [ns-str "tcljc.rtiow-nocore-ref"
@@ -43,11 +44,4 @@
                               known-ns globals ns-str
                               exc-method)]
         (-> (em/mk-first-segm env tl-ctx false)
-            (em/emit-thread provided-nmsp))
-        :success))))
-
-(defn -main [& args]
-  (try
-    (apply run args)
-    (finally
-      (shutdown-agents))))     ;can only shut down when owning the JVM
+            (em/emit-thread provided-nmsp))))))
