@@ -263,27 +263,32 @@
 (def ^:private aid-consumer-is-invoke 1)
 (def ^:private aid-consumer-is-factory 2)
 
+(defn- fn-form-id [^FnForm fn-form]
+  (when (some? fn-form) (.!fnc fn-form)))
+
 ;;; ArityId is used as aggregate key [fn-form at-idx], and it can
 ;;; carry information whether a providing arity passes environment
 ;;; bindings to an arity invoke or an fn factory invoke.
+;;; Implementation note: `fn-form`s member `!fnc` is used as the proxy
+;;; for the function's identity.
 (deftype ArityId [^FnForm fn-form
                   ^int at-idx
                   ^int category]        ;ignored for equals & hashCode
   Object
   (equals [_ o]
     (let [o ^ArityId o]
-      (and (identical? fn-form (.fn-form o))
+      (and (identical? (fn-form-id fn-form) (fn-form-id (.fn-form o)))
            (= at-idx (.at-idx o)))))
-  (hashCode [_]
-    (+ (.hashCode fn-form) at-idx))     ;very simplistic
+  (hashCode [_]                         ;very simplistic hash computation
+    (+ (java.util.Objects/hashCode (fn-form-id fn-form)) at-idx))
   (toString [_]
     (str (if (some? fn-form)
            (str (.unique-mnm fn-form) "[" at-idx "]")
            "not-in-arity")
          (case category
            #_aid-key 0 ""
-           #_aid-consumer-is-invoke 1 " :consumer-is-invoke"
-           #_aid-consumer-is-factory 2 " :consumer-is-factory"))))
+           #_aid-consumer-is-invoke 1 " :env-consumer-is-invoke"
+           #_aid-consumer-is-factory 2 " :env-consumer-is-factory"))))
 
 (defn- mk-aid-key ^ArityId [^FnForm fn-form ^int at-idx]
   (ArityId. fn-form at-idx aid-key))
@@ -495,9 +500,9 @@
   (let [fn-specs (ArrayList.)
         global-bs (ArrayList.)
         env-providers (HashMap.)]
-    ;; `env-providers` maps ArityId to a vector of arities that invoke
-    ;; this arity/construct this fn and may provide the environment
-    ;; that the arity closes over.
+    ;; `env-providers` maps ArityId to a vector of arities that either
+    ;; invoke this arity or construct this fn, and may provide the
+    ;; environment that the arity closes over.
 
     (-> (TraversalContext. !private-names env-providers fn-specs global-bs
                            (mk-aid-key nil -1))

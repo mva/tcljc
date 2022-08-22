@@ -1562,3 +1562,68 @@
                                  (g))]
                              (java.util.Objects/requireNonNull f) ;force value
                              (h "foo"))))]))))
+
+(deftest indirect-env-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "align~0" "()Ljava/lang/Object;")
+             (ICONST_2)
+             (ICONST_3)
+             (MULTIANEWARRAY "Object[][]" 2)
+             (ASTORE_0)
+             ["LOCAL 0: Object[][] grid"]
+             (ACONST_NULL)
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "align$step-at~2"
+                     "([[Ljava/lang/Object;II)Ljava/lang/Object;")
+             ["LOCAL 0: Object[][] grid"]
+             ["LOCAL 1: int i"]
+             ["LOCAL 2: int j"]
+             (ALOAD_0)
+             (ILOAD_1)
+             (AALOAD)
+             (ILOAD_2)
+             (AALOAD)
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "align$extend*~2"
+                     "([[Ljava/lang/Object;II)Ljava/lang/Object;")
+             ["LOCAL 0: Object[][] grid"]
+             ["LOCAL 1: int i"]
+             ["LOCAL 2: int j"]
+             (ALOAD_0)
+             (ILOAD_1)
+             (ILOAD_2)
+             (INVOKESTATIC . "align$step-at~2"
+                           "([[Ljava/lang/Object;II)Ljava/lang/Object;")
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "align$align-a-and-b~2"
+                     "([[Ljava/lang/Object;II)Ljava/lang/Object;")
+             ["LOCAL 0: Object[][] grid"]
+             ["LOCAL 1: int i"]
+             ["LOCAL 2: int j"]
+             (ALOAD_0)
+             (ILOAD_1)
+             (ILOAD_2)
+             (INVOKESTATIC . "align$extend*~2"
+                           "([[Ljava/lang/Object;II)Ljava/lang/Object;")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>"
+                     "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (fn* align []
+                      (let* [grid (new "[[Ljava.lang.Object;" 2 3)]
+                        (letfn* [(step-at [^int i ^int j]
+                                          (aget (aget grid i) j))
+                                 (extend* [^int i ^int j]
+                                          (step-at i j))
+                                 (align-a-and-b [^int i ^int j]
+                                                (extend* i j))])))]))))
