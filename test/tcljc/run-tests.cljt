@@ -14,8 +14,8 @@
 
           rtiow-nocore-test)
    
-   tcljc.core                      ;at least compile unused namespaces
-   tcljc.run-core                  ;this one needs bootstrap environment
+   tcljc.core                    ;at least compile unused namespaces
+   tcljc.compile-tclj-in-tclj    ;this one needs bootstrap environment
    
    [tinyclj.alpha.ptest :refer [run-scoped-tests]]))
 

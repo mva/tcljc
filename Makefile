@@ -50,10 +50,10 @@ run-main:
 # Compilation of tinyclj.core needs the bootstrap setup: place modules
 # in classpath so that they do not interfere with the compilation of
 # this special namespace.
-# test-core:
-# 	$(JAVA) --class-path $(TCLJ_MDIR)/tinyclj.rt:$(TCLJ_MDIR)/tinyclj.core:$(DEST_DIR):resources $(JAVA_OPTS) tcljc.run-core.__ns
-watch-and-test-core:
-	$(BOOTSTRAP_TCLJ) --watch -s $(TCLJ_MDIR)/tinyclj.rt -s $(TCLJ_MDIR)/tinyclj.core -s src -s test tcljc.run-core/run
+# test-tclj-in-tclj:
+# 	$(JAVA) --class-path $(TCLJ_MDIR)/tinyclj.rt:$(TCLJ_MDIR)/tinyclj.core:$(DEST_DIR):resources $(JAVA_OPTS) tcljc.compile-tclj-in-tclj.__ns
+watch-and-test-tclj-in-tclj:
+	$(BOOTSTRAP_TCLJ) --watch -s $(TCLJ_MDIR)/tinyclj.rt -s $(TCLJ_MDIR)/tinyclj.core -s src -s test tcljc.compile-tclj-in-tclj/run
 
 clean:
 	rm -rf "$(DEST_DIR)"/* "$(DEST_DIR)".* *.class hs_err_pid*.log replay_pid*.log

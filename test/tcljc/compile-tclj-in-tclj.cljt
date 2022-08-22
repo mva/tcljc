@@ -1,4 +1,4 @@
-(ns tcljc.run-core
+(ns tcljc.compile-tclj-in-tclj
   (:require
    [tcljc.config :as cfg]
    [tcljc.classfile :as cf]
@@ -12,12 +12,15 @@
                               "tinyclj.rt")
                  (cfg/path-of "../jvm-stuff/tclj-in-tclj"
                               "src/tinyclj.core")
+                 (cfg/path-of "../jvm-stuff/tclj-in-tclj"
+                              "src/tinyclj.compiler")
                  (cfg/path-of "test")]
         app-ld (cfg/app-class-loader :platform sourcev)
         dest-dir (cfg/dest-dir "tcljc.core")
         load-from-dest-dir? false
         all-nmsps [#_"tinyclj.core"
-                   "tcljc.rtiow-ref"]
+                   "tinyclj.build.all"
+                   #_"tcljc.rtiow-ref"]
 
         rt-lookup (cfg/get-rt-lookup app-ld)
         dyn-ld (cfg/dyn-class-loader app-ld (if load-from-dest-dir?
