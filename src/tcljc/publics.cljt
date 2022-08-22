@@ -6,7 +6,8 @@
    [tcljc.classfile :as cf]
    [tcljc.expr :as x]
    [tcljc.macro :as macro]
-   [tcljc.context :as ctx])
+   [tcljc.context :as ctx]
+   [tcljc.predefined :as predefined])
   (:import
    (tcljc.expr FnForm FnCode Arity ArityCode Binding BindingRef ValueRef
                IEmitPlan FnMacroFn)
@@ -203,4 +204,5 @@
     (let [arity-handles-mh (ctx/resolve-mh (.lookup-in-pkg ctx)
                                            rt/mhd-arityHandlesIfFn)]
       (reduce #(add-publics %1 %2 ctx arity-handles-mh)
-              {} (all-segments () capstone)))))
+              (predefined/initial-globals-for (.lookup-in-pkg ctx) (.ns-str ctx))
+              (all-segments () capstone)))))
