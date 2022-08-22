@@ -223,7 +223,9 @@
 
 (defn def-form ^Expr [[_ nm :as form] ^Expr v ^BindingRef macro-v tl-ctx]
   (letfn [(prior-def ^BindingRef [^Symbol nm]
-            (some-> (ctx/lookup-global nm tl-ctx) (x/root-bref)))
+            (when-some [bref (ctx/lookup-global nm tl-ctx)]
+              (when (= (.ns-str bref) (ctx/this-ns tl-ctx))
+                bref)))
           (force-macro-to-class ^BindingRef [^BindingRef prior]
             (if (and (some? prior) (x/b-macro? prior))
               ;; make sure that the old definition has been defined
