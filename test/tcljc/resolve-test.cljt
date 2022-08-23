@@ -88,7 +88,11 @@
     (is (= '[(INVOKE-XREF STATIC "Math" "max" "(FF)F" :owner-is-class)]
            (inv-static java.lang.Math "max" jb/float jb/float)))
     (is (= '[(INVOKE-XREF STATIC "Math" "max" "(DD)D" :owner-is-class)]
-           (inv-static java.lang.Math "max" jb/double jb/double)))))
+           (inv-static java.lang.Math "max" jb/double jb/double)))
+
+    ;; varargs call is currently an inexact invoke via MethodHandle
+    (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
+           (inv-static String "format" String jb/int)))))
 
 
 (deftest virtual-field-test

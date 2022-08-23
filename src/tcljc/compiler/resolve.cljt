@@ -118,11 +118,12 @@
               :else false)))
         (compatible-suffix? ^boolean [^"[Ljava.lang.Class;" atypes
                                       ^Class ptype ^int start]
-          (loop [i (dec (alength atypes))]
-            (cond
-              (< i start) true
-              (assignable-to? (aget atypes i) ptype) (recur (dec i))
-              :else false)))
+          (or (jb/object? ptype) ;FIXME... drop special case after Valhalla?
+              (loop [i (dec (alength atypes))]
+                (cond
+                  (< i start) true
+                  (assignable-to? (aget atypes i) ptype) (recur (dec i))
+                  :else false))))
         
         (compatible-fix-args? ^boolean [^"[Ljava.lang.Class;" atypes
                                         ^"[Ljava.lang.Class;" ptypes]
