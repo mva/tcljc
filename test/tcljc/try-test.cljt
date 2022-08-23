@@ -486,3 +486,51 @@
                      nil)
                    (finally
                      ((fn f [s] (.println System/out s)) "finally")))]))))
+
+(deftest retain-body-type-over-nil
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns"
+                   nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Ljava/lang/String;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "f~0" "()V"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             [L:0]
+             (LDC "foo")
+             (EXCEPTION_CATCH L:0 L:1 L:2 Exception)
+             (EXCEPTION_CATCH L:0 L:1 L:3 Throwable)
+             [L:1]
+             (GOTO L:4)
+             [L:2]
+             (ASTORE_0)
+             ["LOCAL 0: Exception _"]
+             (INVOKESTATIC . "f~0" "()V")
+             (ACONST_NULL)
+             (GOTO L:4)
+             [L:3]
+             (ASTORE_0)
+             ["LOCAL 0: Throwable _"]
+             (INVOKESTATIC . "f~0" "()V")
+             (ACONST_NULL)
+             (GOTO L:4)
+             [L:4]
+             (PUTSTATIC . "x" "Ljava/lang/String;")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* f ^void []))
+                 (def x (try
+                          "foo"
+                          (catch Exception _ (f) nil)
+                          (catch Throwable _ (f) nil)))]))))

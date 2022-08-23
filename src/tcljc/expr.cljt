@@ -166,7 +166,7 @@
 (def expr-nil-object (const jb/Object nil))
 (defn const-value-nil? ^boolean [^Expr x]
   (and (identical? jb/jvm-null (.const-value x))))
-(defn expr-nil-object? ^boolean [^Expr x]
+(defn expr-nil-object? ^boolean [^Expr x] ;see also `pushes-nil-object?`
   (and (const-value-nil? x) (jb/object? (type x))))
 
 (def expr-zero-int (const jb/int jb/jvm-int-zero))
@@ -443,6 +443,7 @@
   ([^Expr x1 ^Expr x2]
    (empty-when (and (expr-empty? x1) (expr-empty? x2)))))
 
+
 ;;; Lexically scoped block: the lifetime of locals created within the
 ;;; block ends with the end of the block.  It contains a sequence of
 ;;; Binding statements followed by a single Expr with the body.
@@ -452,10 +453,20 @@
                 ^:pass-to-super-constructor ^Object const-value]
   Expr)
 
+(defn block? ^boolean [x]
+  (instance? Block x))
+
 (defn block ^Expr [bexprs ^Expr body]
   (if (some? (seq bexprs))
     (Block. nil (type body) (conj (vec bexprs) body) nil)
     body))
+
+(defn pushes-nil-object? ^boolean [^Expr x]
+  (and (jb/object? (type x))
+       (cond
+         (const-value-nil? x) true
+         (or (progn? x) (block? x)) (recur (peek (argv x)))
+         :else false)))
 
 ;;; ------------------------------------------------------------------------
 

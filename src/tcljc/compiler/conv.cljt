@@ -166,7 +166,7 @@
     (resolve/numeric-assignable-to? (x/type from) to-tp)
     (widen-from to-tp from)
 
-    (or (and (x/expr-nil-object? from) (jb/reference? to-tp))
+    (or (and (x/pushes-nil-object? from) (jb/reference? to-tp))
         (.isAssignableFrom to-tp (x/type from)))
     (xf/coerce from to-tp)
 
@@ -227,7 +227,7 @@
   (when (x/returns? to)
     (when (or (not (x/pushes-result? from))
               (resolve/numeric-assignable-to? (x/type from) (x/type to))
-              (and (x/expr-nil-object? from)
+              (and (x/pushes-nil-object? from)
                    ;; FIXME... eliminate special treatment of boolean here?
                    (or (x/boolean? to) (x/reference? to))))
       to)))
