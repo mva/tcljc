@@ -576,6 +576,36 @@
          (asm-expr [^int x]
                    (let* [y (case* x 1 -1 -1 1 0)])))))
 
+(deftest switch-different-path-types
+  (is (= '[["LOCAL 0: byte x"]
+           (ILOAD_0)
+           (LOOKUPSWITCH L:3 [0 1 99] [L:0 L:1 L:2])
+           [L:0]
+           (ILOAD_0)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ARETURN)
+           [L:1]
+           (ILOAD_0)
+           (I2L)
+           (INVOKESTATIC Long "valueOf" "(J)Ljava/lang/Long;")
+           (ARETURN)
+           [L:2]
+           (ILOAD_0)
+           (I2S)
+           (INVOKESTATIC Short "valueOf" "(S)Ljava/lang/Short;")
+           (ARETURN)
+           [L:3]
+           (NEW IllegalArgumentException)
+           (DUP)
+           (INVOKESPECIAL IllegalArgumentException "<init>" "()V")
+           (ATHROW)]
+         (asm-expr [^byte x]
+                   (case* x
+                          0 (Integer/valueOf x)
+                          1 (Long/valueOf x)
+                          99 (Short/valueOf x)
+                          #_else (throw (IllegalArgumentException.)))))))
+
 (deftest adjacent-jump-targets
   (is (= '[["LOCAL 0: Object a"] ["LOCAL 1: Object b"]
            (ALOAD_0) (IFNULL L:4)

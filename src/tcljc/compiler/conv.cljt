@@ -232,6 +232,7 @@
                    (or (x/boolean? to) (x/reference? to))))
       to)))
 
+(def ^:private expr-some-object (x/const jb/Object "expr-some-object"))
 (defn path-join
   (^Expr [xs]
    (reduce path-join (first xs) (rest xs)))
@@ -241,7 +242,7 @@
        (path-adaptable x0 x1)
        (path-adaptable x1 x0)
        (when (and (x/reference? x0) (x/reference? x1))
-         x/expr-nil-object)
+         expr-some-object)         ;must differ from x/expr-nil-object
        (wrong/other (str "incompatible path types " (wrong/str* (x/type x0))
                          " and " (wrong/str* (x/type x1)))))))
 
