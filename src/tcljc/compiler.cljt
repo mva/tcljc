@@ -632,30 +632,34 @@
            (x/insn* jb/no-return [exc]
                     (jdk.classfile.instruction.ThrowInstruction/of))))
        (parse-case-clauses ^IPersistentVector [^Expr test clauses]
-         (loop [guardv []
-                path-idx 0
-                [g r :as clauses] (seq clauses)]
-           (cond
-             (nil? clauses)             ;case* has no default
-             [guardv (throw-no-match test)]
-             
-             (nil? (next clauses))      ;case* ends with default
-             [guardv (tail-form g)]
+         (let [tp-test (condp identical? (x/type test)
+                         jb/byte jb/int
+                         jb/short jb/int
+                         #_else (x/type test))]
+           (loop [guardv []
+                  path-idx 0
+                  [g r :as clauses] (seq clauses)]
+             (cond
+               (nil? clauses)             ;case* has no default
+               [guardv (throw-no-match test)]
+               
+               (nil? (next clauses))      ;case* ends with default
+               [guardv (tail-form g)]
 
-             :else
-             (let [path-expr (tail-form r)]
-               (recur (into
-                       guardv
-                       (map #(do (-> (compile-quote % tl-ctx)
-                                     (conv/consume (x/type test)))
-                                 (x/mk-guard path-idx path-expr %)))
-                       (if (seq? g)
-                         (do (when-not (seq g)
-                               (wrong/other "empty list of test constants"))
-                             g)
-                         [g]))
-                      (inc path-idx)
-                      (nnext clauses))))))
+               :else
+               (let [path-expr (tail-form r)]
+                 (recur (into
+                         guardv
+                         (map #(do (-> (compile-quote % tl-ctx)
+                                       (conv/consume tp-test))
+                                   (x/mk-guard path-idx path-expr %)))
+                         (if (seq? g)
+                           (do (when-not (seq g)
+                                 (wrong/other "empty list of test constants"))
+                               g)
+                           [g]))
+                        (inc path-idx)
+                        (nnext clauses)))))))
        (consume-case-paths [[^IPersistentVector guardv ^Expr dflt-path]]
          (let [all-paths (conj (x/guard-paths guardv) dflt-path)
                to-tp (x/type (conv/path-join all-paths))
