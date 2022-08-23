@@ -46,10 +46,10 @@
     (catch NoSuchFieldException _
       nil)))
 
-(letfn [(parameter-count-match? ^boolean [^int parameter-count ^Executable e]
+(letfn [(parameter-count-match? ^boolean [^int arg-count ^Executable e]
           (let [n (.getParameterCount e)]
-            (or (= n parameter-count)
-                (and (.isVarArgs e) (>= n (dec parameter-count))))))]
+            (or (= n arg-count)
+                (and (.isVarArgs e) (>= arg-count (dec n))))))]
 
   (defn methods-exact [^boolean static? ^Class owner ^String nm
                        ^"[Ljava.lang.Class;" atypes]
@@ -66,12 +66,11 @@
               (catch NoSuchMethodException _
                 nil)))))))
   
-  (defn methods-with [^boolean static? ^Class owner ^String nm
-                      ^int parameter-count]
+  (defn methods-with [^boolean static? ^Class owner ^String nm ^int arg-count]
     (filter (fn ^boolean [^Method m]
               (and (= nm (.getName m))
                    (= (Modifier/isStatic (.getModifiers m)) static?)
-                   (parameter-count-match? parameter-count m)
+                   (parameter-count-match? arg-count m)
                    (not (.isBridge m))))
             (.getMethods owner)))
 
@@ -82,9 +81,9 @@
       (catch NoSuchMethodException _
         nil)))
   
-  (defn constructors-with [^Class owner ^int parameter-count]
+  (defn constructors-with [^Class owner ^int arg-count]
     (filter (fn ^boolean [^Constructor c]
-              (parameter-count-match? parameter-count c))
+              (parameter-count-match? arg-count c))
             (.getConstructors owner))))
 
 

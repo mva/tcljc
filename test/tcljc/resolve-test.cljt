@@ -120,7 +120,9 @@
 
     ;; varargs call is currently an inexact invoke via MethodHandle
     (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
-           (inv-virtual Class "getMethod" String)))))
+           (inv-virtual Class "getMethod" String)))
+    (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
+           (inv-virtual Class "getConstructor" Class Class Class)))))
 
 
 (deftest invoke-array-clone-test
