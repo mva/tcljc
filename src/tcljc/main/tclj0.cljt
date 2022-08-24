@@ -18,7 +18,7 @@
 
 (defn run ^boolean [^Options opts]
   (options/print-options opts)
-  (wipe-dest-dir opts)
+  (wipe-dest-dir opts)       ;wipe before any classloaders are created
   (let [app-ld (cfg/app-class-loader (.parent-classloader opts) (.sourcev opts))
         load-from-dest-dir? false
         all-nmsps (options/target-ns-strs opts)

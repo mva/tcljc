@@ -8,6 +8,7 @@
    [tcljc.context :as ctx]
    [tcljc.expr :as x]
    [tcljc.predefined :as predefined]
+   [tcljc.publics :as publics]
    [tcljc.emitter.beachhead :as beachhead]
    [tcljc.emitter.namespace :as nmsp]
    [tcljc.emitter.prepare :as prepare]
@@ -190,7 +191,9 @@
 
 (defn- build-capstone ^bytes [^SegmState segm ^Namespace nmsp]
   (let [requires-xb (cf/with-xbh [xb]
-                      (let [s (str/join "," (sort (.req-strs nmsp)))]
+                      (let [s (if (nmsp/core-lib? nmsp)
+                                "" ;suppress internal details of core lib
+                                (str/join "," (sort (.req-strs nmsp))))]
                         (-> xb (.constantInstruction s) (.areturn))))]
     (cf/build
      (capstone-cld segm)
@@ -235,7 +238,7 @@
     (let [cdef (.cdef dtdef)]
       (cf/with-methods cdef (map method-cbh (.method-defs dtdef))))))
 
-(defn mk-first-segm ^SegmState [^BuildEnv env ^Ctx ctx ^boolean collect-bytesv?]
+(defn- mk-first-segm ^SegmState [^BuildEnv env ^Ctx ctx ^boolean collect-bytesv?]
   (let [rurl (ctx/this-rurl ctx)
         sourcefile (when (and cfg/enable-line-numbers (some? rurl))
                      (let [s (.getPath rurl)]
@@ -420,21 +423,23 @@
   ([^String ns-str ^IPersistentMap publics]
    (nmsp/assoc-provided (mk-provided-nmsp) ns-str publics)))
 
-;; Note: Exceptions are reported in the order in which they occur in
-;; the emitter thread.  The "compile namespace" thread can fork of an
-;; arbitrary number of futures of its own, and the emitter retrieves
-;; their result/exception in emit order.
-(defn emit-thread ^Namespace [^SegmState segm ^IPersistentMap provided-nmsp]
+(defn- init-known-ns ^void [^Ctx ctx ^IPersistentMap provided-nmsp]
   (doseq [[ns-str nmsp] provided-nmsp]
     (assert (string? ns-str))
     (assert (instance? Namespace nmsp)))
   (let [primitive-publics (-> (get provided-nmsp cfg/primitive-ns-str)
                               (nmsp/publics-of cfg/primitive-ns-str))]
-    (doto (.ctx segm)
+    (doto ctx
       ;; primitive namespace can be used without require-ing it
       (.merge-into-known-ns {cfg/primitive-ns-str primitive-publics})
-      (.put-ns-alias cfg/primitive-ns-str cfg/primitive-ns-str)))
-  
+      (.put-ns-alias cfg/primitive-ns-str cfg/primitive-ns-str))))
+
+;; Note: Exceptions are reported in the order in which they occur in
+;; the emitter thread.  The "compile namespace" thread can fork of an
+;; arbitrary number of futures of its own, and the emitter retrieves
+;; their result/exception in emit order.
+(defn- emit-namespace ^Namespace [^SegmState segm ^IPersistentMap provided-nmsp]
+  (init-known-ns (.ctx segm) provided-nmsp)
   (cfg/prepare-class-directory (.dest-dir (.env segm))
                                (ctx/this-ns (.ctx segm)))
   (let [env (.env segm)
@@ -446,7 +451,7 @@
                     (catch Throwable t ;no re-raise and wait for close-queue
                       (ctx/send-msg* (-> ctx .emit .q)
                                      ctx/msg-fatal-error t))
-                    (finally        ;there is always a `close-queue`
+                    (finally          ;there is always a `close-queue`
                       (ctx/send-msg* (-> ctx .emit .q)
                                      ctx/msg-close-queue nil))))
         c-thread (ctx/start-solo-thread
@@ -464,6 +469,57 @@
     (.join c-thread 5000l)      ;does not pick up result or exceptions
     (.join p-thread 5000l)      ;does not pick up result or exceptions
     nmsp))
+
+(defn compile-and-emit ^Namespace [^BuildEnv env ^Ctx ctx
+                                   ^boolean collect-bytesv?
+                                   ^IPersistentMap provided-nmsp]
+  (-> (mk-first-segm env ctx collect-bytesv?)
+      (emit-namespace provided-nmsp)))
+
+;;; ------------------------------------------------------------------------
+
+(defn- try-load-capstone ^Class [^BuildEnv env ^String ns-str]
+  (try
+    (Class/forName (str ns-str "." ns-class-name) false (.dyn-ld env))
+    (catch ClassNotFoundException _
+      nil)))
+
+(letfn [(extract-req-strs ^"[Ljava.lang.String;" [^Class cl]
+          (let [s (-> (.getDeclaredMethod cl rt/name-requires)
+                      ^String (.invoke nil))]
+            (if (= s "")
+              (new "[Ljava.lang.String;" 0)
+              (into-array String (str/split s #",")))))]
+  (defn- import-from-capstone ^Namespace [^Namespace nmsp ^Class capstone]
+    (init-known-ns (.ctx nmsp) (.provided-nmsp nmsp))
+    
+    ;; keep in sync with namespace/add-require-deps
+    (let [ns-str (.getPackageName capstone)
+          req-strs (extract-req-strs capstone)
+          n (count req-strs)
+          a (new objects n)
+          apublics (new "[Lclojure.lang.IPersistentMap;" n)
+          provide-nmsp (.provided-nmsp nmsp)]
+      ;; schedule namespaces in parallel
+      (dotimes [i n]
+        (let [req-str (aget req-strs i)]
+          (aset a i (or (get (.provided-nmsp nmsp) req-str)
+                        (-> (.require-namespace (.ctx nmsp))
+                            (.schedule req-str provide-nmsp))))))
+      ;; wait for and pick up namespace outcomes
+      (dotimes [i n]                    ;avoid stack frame spamming
+        (let [ns-str (aget req-strs i)]
+          (aset apublics i (-> (nmsp/nmsp-of (aget a i) ns-str)
+                               (nmsp/publics-of ns-str)))))
+      ;; collect all "require"d globals and then add any new globals
+      ;; to this namespace
+      (loop [publics-map {}, i 0]
+        (if (= i n)
+          (.merge-into-known-ns (.ctx nmsp) publics-map)
+          (let [ns-str (aget req-strs i)
+                ekns (.exported-known-ns (nmsp/nmsp-of (aget a i) ns-str))]
+            (recur (merge publics-map ekns) (inc i)))))
+      (nmsp/with-capstone nmsp capstone nil))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -511,19 +567,27 @@
               
               (fork-namespace ^Future [^String ns-str provided-nmsp]
                 (ctx/with-fork namespaces-scope
-                  (ctx/with-executor exc-method
-                    (let [globals (predefined/initial-globals-for
-                                   (.rt-lookup env) ns-str)
-                          tl-ctx (mk-ctx env require-fn
-                                         predefined/implicit-known-ns
-                                         globals ns-str exc-method)]
-                      #_(prn :namespace-start ns-str)
-                      (ctx/with-context tl-ctx (some? namespaces-scope)
-                        (try
-                          (-> (mk-first-segm env tl-ctx false)
-                              (emit-thread provided-nmsp))
-                          (finally ;signal completion to namespace loop
-                            (.put namespaces-q [ns-str]))))))))
+                  (or          ;import from dyn-ld or compile and emit
+                   (when-some [cl (try-load-capstone env ns-str)]
+                     (try
+                       (-> (mk-ctx env require-fn {} {} ns-str nil)
+                           (nmsp/mk-imported provided-nmsp)
+                           (import-from-capstone cl))
+                       (finally   ;signal completion to namespace loop
+                         (.put namespaces-q [ns-str]))))
+                   
+                   (ctx/with-executor exc-method
+                     (let [globals (predefined/initial-globals-for
+                                    (.rt-lookup env) ns-str)
+                           tl-ctx (mk-ctx env require-fn
+                                          predefined/implicit-known-ns
+                                          globals ns-str exc-method)]
+                       #_(prn :namespace-start ns-str)
+                       (ctx/with-context tl-ctx (some? namespaces-scope)
+                         (try
+                           (compile-and-emit env tl-ctx false provided-nmsp)
+                           (finally ;signal completion to namespace loop
+                             (.put namespaces-q [ns-str])))))))))
               
               (fork-all! ^int [ns-strs] ;returns number of new namespaces
                 ;; this thread owns !futs and there are no concurrent
@@ -572,6 +636,15 @@
   (let [!futs (java.util.HashMap.)]     ;single-threaded!
     (letfn [(^FnRequireNamespace require-fn [ns-str provided-nmsp]
              (or (.get !futs ns-str)
+
+                 (when-some [cl (try-load-capstone env ns-str)]
+                   (.put !futs ns-str nmsp/marker-depth-first-path)
+                   (let [x (-> (mk-ctx env require-fn {} {} ns-str nil)
+                               (nmsp/mk-imported provided-nmsp)
+                               (import-from-capstone cl))]
+                     (.put !futs ns-str x)
+                     x))
+                 
                  (let [globals (predefined/initial-globals-for (.rt-lookup env)
                                                                ns-str)
                        tl-ctx (mk-ctx env require-fn
@@ -580,8 +653,7 @@
                    (ctx/with-context tl-ctx false
                      (.put !futs ns-str nmsp/marker-depth-first-path)
                      #_(prn :namespace-start ns-str)
-                     (let [x (-> (mk-first-segm env tl-ctx false)
-                                 (emit-thread provided-nmsp))]
+                     (let [x (compile-and-emit env tl-ctx false provided-nmsp)]
                        #_(prn :namespace-end ns-str)
                        (.put !futs ns-str x)
                        x)))))]

@@ -95,30 +95,63 @@ BOOT_MOD_CORE=$(BOOT_TCLJ_MDIR)/tinyclj.core
 
 BOOT_SRC_CORE=$(BOOT_TCLJ_SRC)/tinyclj.core
 
-bootstrap-fixpoint: $(DEST_DIR).stageI2/DONE
+bootstrap-fixpoint: $(DEST_DIR).stageDI2/DONE
+bootstrap-check: $(DEST_DIR).rtiowFS/DONE
 
-# I0: Build "tcljc" using the bootstrap compiler "tclj-in-tclj".
+# Naming:
+# Bx -- output of bootstrap compiler, i.e. initial version of `tcljc`
+# Dx -- deterministic classfile output but slow compilation
+# Fx -- fast compilation but non-deterministic classfile output
+# xI -- isolated runtime, i.e. with "--parent-loader :platform"
+# xS -- shared runtime, i.e. with default "--parent-loader :system"
+
+# BS: Build "tcljc" using the bootstrap compiler "tclj-in-tclj".
 # Because their is no name collision between the compilers'
 # namespaces, the "tcljc" can be compiled like a regular application
 # using the shared runtime setup.  Once tcljc becomes its own
 # bootstrap compiler, this must be changed to the isolated runtime
 # setup.
-$(DEST_DIR).stageI0/DONE: $(wildcard $(BOOT_TCLJ_MDIR)/commit-id.txt src/tcljc/*.cljt src/tcljc/*/*.cljt)
-	rm -rf "$(dir $@)"
+$(DEST_DIR).stageBS/DONE: $(wildcard $(BOOT_TCLJ_MDIR)/commit-id.txt src/tcljc/*.cljt src/tcljc/*/*.cljt)
+	@echo; echo "### $(dir $@)"
+	@rm -rf "$(dir $@)"
 	$(BOOT_JAVA) --module-path $(BOOT_TCLJ_MDIR) $(JAVA_OPTS) -m tinyclj.compiler -d "$(dir $@)" $(BUILD_MAIN)
 	touch "$@"
 
-# I1: Build "tcljc" using the I0 compiler from PREV_DEST_DIR (aka the
-# first prerequisite's $< directory).
-$(DEST_DIR).stageI1/DONE: $(DEST_DIR).stageI0/DONE
-	rm -rf "$(dir $@)"
-	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(BOOT_MOD_CORE):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns --deterministic -d "$(dir $@)" --parent-loader :platform -s $(BOOT_MOD_RT) -s $(BOOT_SRC_CORE) -s src $(BUILD_MAIN)
+# DI1: Build "tcljc" using the initial compiler from PREV_DEST_DIR
+# (aka the first prerequisite's $< directory).
+$(DEST_DIR).stageDI1/DONE: $(DEST_DIR).stageBS/DONE
+	@echo; echo "### $(dir $@)"
+	@rm -rf "$(dir $@)"
+	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(BOOT_MOD_CORE):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns --deterministic --parent-loader :platform -d "$(dir $@)" -s $(BOOT_MOD_RT) -s $(BOOT_SRC_CORE) -s src $(BUILD_MAIN)
 	touch "$@"
 
-# I2: Build "tcljc" using the I1 compiler from PREV_DEST_DIR (aka the
-# first prerequisite's $< directory).
-$(DEST_DIR).stageI2/DONE: $(DEST_DIR).stageI1/DONE
-	rm -rf "$(dir $@)"
-	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns --deterministic -d "$(dir $@)" --parent-loader :platform -s $(BOOT_MOD_RT) -s $(BOOT_SRC_CORE) -s src $(BUILD_MAIN)
+# DI2: Build "tcljc" using the DI1 compiler from PREV_DEST_DIR (aka
+# the first prerequisite's $< directory).
+$(DEST_DIR).stageDI2/DONE: $(DEST_DIR).stageDI1/DONE
+	@echo; echo "### $(dir $@)"
+	@rm -rf "$(dir $@)"
+	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns --deterministic --parent-loader :platform -d "$(dir $@)" -s $(BOOT_MOD_RT) -s $(BOOT_SRC_CORE) -s src $(BUILD_MAIN)
 	touch "$@"
 	diff -Nrq "$(dir $<)" "$(dir $@)"
+
+#----
+
+$(DEST_DIR).stageFI1/DONE: $(DEST_DIR).stageDI2/DONE
+	@echo; echo "### $(dir $@)"
+	@rm -rf "$(dir $@)"
+	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns -d "$(dir $@)" --parent-loader :platform -s $(BOOT_MOD_RT) -s $(BOOT_SRC_CORE) -s src $(BUILD_MAIN)
+	touch "$@"
+
+$(DEST_DIR).stageFI2/DONE: $(DEST_DIR).stageFI1/DONE
+	@echo; echo "### $(dir $@)"
+	@rm -rf "$(dir $@)"
+	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns -d "$(dir $@)" --parent-loader :platform -s $(BOOT_MOD_RT) -s $(BOOT_SRC_CORE) -s src $(BUILD_MAIN)
+	touch "$@"
+
+$(DEST_DIR).rtiowFS/DONE: $(DEST_DIR).stageFI2/DONE
+	@echo; echo "### $(dir $@)"
+	@rm -rf "$(dir $@)"
+	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns -d "$(dir $@)" -s $(BOOT_SRC_CORE) -s test tcljc.rtiow-ref
+	touch "$@"
+	@$(JAVA) -cp $(BOOT_MOD_RT):$(dir $<):$(dir $@) $(JAVA_OPTS) tcljc.rtiow-ref.__ns >"$(dir $@)"ray.ppm
+	@echo "3cf6c9b9f93edb0de2bc24015c610d78  $(dir $@)ray.ppm" | md5sum -c -

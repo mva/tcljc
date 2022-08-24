@@ -40,6 +40,9 @@
                            ^Ctx ctx]
   (Namespace. env provided-nmsp ctx #{} #{} nil nil nil))
 
+(defn mk-imported ^Namespace [^Ctx ctx ^IPersistentMap provided-nmsp]
+  (mk-nmsp nil provided-nmsp ctx))
+
 (defn mk-provided ^Namespace [^String ns-str ^IPersistentMap publics]
   (Namespace. nil nil nil #{} #{} nil {ns-str publics} nil))
 
@@ -53,9 +56,9 @@
               (conj (.rpaths nmsp) rpath) (.req-strs nmsp)
               (.capstone nmsp) (.exported-known-ns nmsp) (.bytesv nmsp)))
 
-(defn- with-require ^Namespace [^Namespace nmsp ^String ns-str]
+(defn with-requires ^Namespace [^Namespace nmsp ns-strs]
   (Namespace. (.env nmsp) (.provided-nmsp nmsp) (.ctx nmsp)
-              (.rpaths nmsp) (conj (.req-strs nmsp) ns-str)
+              (.rpaths nmsp) (into (.req-strs nmsp) ns-strs)
               (.capstone nmsp) (.exported-known-ns nmsp) (.bytesv nmsp)))
 
 (defn with-capstone ^Namespace [^Namespace nmsp ^Class capstone
@@ -70,6 +73,9 @@
     (Namespace. nil nil nil ;clear `env`, `provided-nmsp`, and `ctx`
                 (.rpaths nmsp) (.req-strs nmsp) capstone kns bytesv)))
 
+(defn core-lib? ^boolean [^Namespace nmsp]
+  (cfg/core-lib? (-> nmsp .ctx .ns-str)))
+
 (defn- file-rpath ^Path [^Path parent-rpath ^String path-str]
   (let [s (str path-str cfg/source-suffix)]
     (if (str/starts-with? path-str "/")
@@ -83,7 +89,7 @@
       (get ns-str)
       (java.util.Objects/requireNonNull)))
 
-(defn- nmsp-of ^Namespace [x ^String ns-str]
+(defn nmsp-of ^Namespace [x ^String ns-str]
   (cond
     (identical? marker-depth-first-path x)
     (wrong/other (str "cyclic require via " (wrong/q (symbol ns-str))
@@ -160,8 +166,6 @@
 
 (letfn [(ns-str ^String [^Namespace nmsp]
           (-> nmsp .ctx .ns-str))
-        (core-lib? ^boolean [^Namespace nmsp]
-          (cfg/core-lib? (ns-str nmsp)))
         (core-provided-nmsp ^IPersistentMap [^Namespace nmsp ^boolean require?]
           (if (and require? (core-lib? nmsp))
             (let [force-x (ctx/send-msg (-> nmsp .ctx .emit)
@@ -174,17 +178,18 @@
           (conj statmv (-> (get globals cfg/key-force-clinit)
                            (java.util.Objects/requireNonNull))))
         (add-require-deps ^Namespace [^Namespace nmsp deps]
+          ;; keep this in sync with emitter/import-from-capstone
           (let [req-strs (grammar/required-ns-strs deps)
                 n (alength req-strs)
                 a (new objects n)
                 apublics (new "[Lclojure.lang.IPersistentMap;" n)
-                provide-ns (core-provided-nmsp nmsp (some? deps))]
+                provide-nmsp (core-provided-nmsp nmsp (some? deps))]
             ;; schedule namespaces in parallel
-            (dotimes [i (alength req-strs)]
+            (dotimes [i n]
               (let [req-str (aget req-strs i)]
                 (aset a i (or (get (.provided-nmsp nmsp) req-str)
                               (-> (.require-namespace (.ctx nmsp))
-                                  (.schedule req-str provide-ns))))))
+                                  (.schedule req-str provide-nmsp))))))
             ;; wait for and pick up namespace outcomes
             (dotimes [i n]              ;avoid stack frame spamming
               (let [ns-str (aget req-strs i)]
@@ -205,7 +210,7 @@
             (ctx/send-msg (-> nmsp .ctx .emit) ctx/msg-emit-tlf
                           (-> (reduce conj-force-clinit [] apublics)
                               (xf/progn-expr x/expr-empty)))
-            (reduce with-require nmsp req-strs)))
+            (with-requires nmsp req-strs)))
         (top-level-list-form ^Namespace [^Namespace nmsp ^Path rpath ^ISeq form]
           (let [op (first form)]
             (case op

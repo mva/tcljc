@@ -268,8 +268,7 @@
                           (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
                  tl-ctx (em/mk-ctx env req-fn known-ns bootstrap-globals ns-str
                                    exc-method)
-                 nmsp (-> (em/mk-first-segm env tl-ctx true)
-                          (em/emit-thread provided-nmsp))]
+                 nmsp (em/compile-and-emit env tl-ctx true provided-nmsp)]
              (doseq [^bytes bs (.bytesv nmsp)
                      :let [x (classdata/extract bs)]]
                (.put !render-to (classdata/class-name x) x))

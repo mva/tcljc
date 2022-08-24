@@ -43,5 +43,4 @@
             tl-ctx (em/mk-ctx env noop-require-namespace
                               known-ns globals ns-str
                               exc-method)]
-        (-> (em/mk-first-segm env tl-ctx false)
-            (em/emit-thread provided-nmsp))))))
+        (em/compile-and-emit env tl-ctx false provided-nmsp)))))
