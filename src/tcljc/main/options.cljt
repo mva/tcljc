@@ -1,0 +1,142 @@
+(ns tcljc.main.options
+  (:require
+   [tcljc.config :as cfg]
+   [tinyclj.string :as str])
+  (:import
+   (clojure.lang Keyword Symbol ISeq IPersistentVector #_ExceptionInfo)
+   (java.nio.file Path Files)))
+
+(def sourcev-if-unset (mapv cfg/path-of ["src" "resources" "test"]))
+
+(deftype Options [^Path dest-dir  ;nil means "don't store class files"
+                  ^Keyword parent-classloader
+                  ^IPersistentVector sourcev ;of Path
+                  ^ISeq targets
+
+                  ^boolean deterministic?
+                  ^long wait-cyclic-ms
+                  
+                  ^boolean watch-mode?
+                  ^int wait-after-change-ms
+                  ])
+
+(defn target-ns-str ^String [^String s]
+  ;; note: don't produce empty namespace for "/..."
+  (let [i (.indexOf s (int \/) 1)]
+    (if (neg? i)
+      s
+      (.substring s 0 i))))
+
+(defn target-invoke-fn? ^boolean [^String s]
+  ;; note: don't produce empty namespace for "/..."
+  (not (neg? (.indexOf s (int \/) 1))))
+
+(defn target-ns-strs [^Options opts]
+  (map target-ns-str (.targets opts)))
+
+(defn target-invoke-fnv [^Options opts]
+  (->> (filter target-invoke-fn? (.targets opts))
+       (mapv symbol)))
+
+(defn abort [msg]
+  (println msg)
+  (System/exit 1))
+
+
+(defn ensure-directory ^Path [^Path p]
+  (if (Files/exists p)
+    (if (Files/isDirectory p)
+      p
+      (abort (str "error: `" p "` is not a directory"))))
+  (cfg/create-directories p))
+
+(defn to-dest-dir ^Path [x]
+  (cond
+    (or (= x "") (= x ":none"))
+    nil
+
+    (nil? x)
+    (let [pwd (-> (cfg/path-of (System/getProperty "user.dir"))
+                  (.getFileName)
+                  (.toString))]
+      (-> (cfg/path-of (System/getProperty "java.io.tmpdir")
+                       (System/getProperty "user.name") "tinyclj" pwd)
+          (ensure-directory)))
+
+    :else
+    (ensure-directory (cfg/path-of x))))
+
+(defn parse
+  (^Options [args]
+   (parse {:dest-dir nil ;unless set: create and use default directory
+           :sourcev []   ;use sourcev-if-unset if this remains empty
+           :parent-loader :system
+           :deterministic? cfg/deterministic-namespace-compile? ;keep if true
+           :wait-cyclic-ms (* 5 1000l)
+           :watch-mode? false}
+          (seq args)))
+  (^Options [m [fst & argr :as args]]
+   (letfn [(to-loader [x]
+             (case x
+               ":system" :system
+               ":platform" :platform
+               #_else (abort (str "error: unknown parent classloader " x))))
+
+           (fn-to-invoke ^Symbol [^String arg]
+             (let [fn-spec (symbol arg)]
+               (if (nil? (namespace fn-spec))
+                 (symbol (name fn-spec) "-main")
+                 fn-spec)))
+           (parse-positional ^Options [m args]
+             (when (zero? (count args))
+               (abort "error: no namespace specified"))
+             (Options. (to-dest-dir (:dest-dir m))
+                       (:parent-loader m)
+                       (if (seq (:sourcev m)) (:sourcev m) sourcev-if-unset)
+                       #_targets args
+
+                       ^boolean (:deterministic? m)
+                       ^long (:wait-cyclic-ms m)
+                       ^boolean (:watch-mode? m)
+                       #_wait-after-change-ms 50))]
+     (when (some? args)
+       (cond
+         (= fst "-d")
+         (recur (assoc m :dest-dir (first argr)) (next argr))
+         
+         (= fst "-s")
+         (recur (update m :sourcev conj (cfg/path-of (first argr))) (next argr))
+         
+         (= fst "--parent-loader")
+         (recur (assoc m :parent-loader (to-loader (first argr))) (next argr))
+         
+         (= fst "--deterministic")
+         (recur (assoc m :deterministic? (object true)) argr)
+
+         (= fst "--wait-cyclic")
+         (recur (assoc m :wait-cyclic-ms
+                       (-> ^long (parse-long (first argr))
+                           (max 0)
+                           (min (quot Long/MAX_VALUE 1000))
+                           (* 1000)
+                           (object))) (next argr))
+         
+         (= fst "--watch")
+         (recur (assoc m :watch-mode? (object true)) argr)
+         
+         (= fst "--")
+         (parse-positional m argr)
+
+         (str/starts-with? fst "-")
+         (abort (str "error: unknown option " fst))
+         
+         :else (parse-positional m args))))))
+
+(defn print-options ^void [^Options opts]
+  (println :dest-dir (str (.dest-dir opts)))
+  (println :parent-classloader (.parent-classloader opts))
+  (println :sourcev (mapv str (.sourcev opts)))
+  (println :targets (.targets opts))
+  (println :deterministic? (.deterministic? opts))
+  (println :watch-mode? (.watch-mode? opts))
+  (println))

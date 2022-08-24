@@ -1,0 +1,27 @@
+(ns tcljc.main
+  (:require [tcljc.config :as cfg]
+            [tcljc.main.options :as options]
+            [tcljc.main.tclj0 :as tclj0]))
+
+(defn -main [& args]
+  (letfn [(coded-exit ^void [^boolean success]
+            (System/exit (if success 0 1)))
+          (usage ^boolean []
+            (println (str "usage: java ... [--watch] [-d <dest-dir] "
+                          "[-s <classpath>]... <main-ns>/<run>..."))
+            false)]
+    (-> (try
+          (if (contains? #{nil, "--help", "-h"} (first args))
+            (usage)
+            (if-some [opts (options/parse args)]
+              (do (cfg/set-flags! (.deterministic? opts))
+                  (if (.watch-mode? opts)
+                    (assert false) #_(tinyclj.build.tclj1/run opts)
+                    (tclj0/run opts)))
+              false))
+          (catch Throwable t
+            (.printStackTrace t)
+            false)            ;failure because of unhandled expception
+          (finally
+            (shutdown-agents))) ;can only shut down when owning the JVM
+        (coded-exit))))           ;can only exit when owning the JVM

@@ -9,7 +9,7 @@ JAVA_OPTS=--enable-preview \
   --add-exports java.base/jdk.classfile.attribute=ALL-UNNAMED \
   --add-exports java.base/jdk.classfile.impl=ALL-UNNAMED
 #JAVA_OPTS += -XX:+UseZGC -Xlog:gc
-#-Djdk.tracePinnedThreads
+#JAVA_OPTS += -Djdk.tracePinnedThreads
 TCLJ_MDIR=../jvm-stuff/bootstrap-tclj
 #TCLJ_MDIR=../jvm-stuff/tclj-in-tclj/target/distrib/mods
 #DET=--deterministic
@@ -82,3 +82,43 @@ run-rtiow:
 	$(JAVA) --module-path $(TCLJ_MDIR) --add-modules tinyclj.rt -cp $(DEST_DIR).core tcljc.rtiow-ref.__ns >$(IMAGE)
 	md5sum $(IMAGE)
 #	xdg-open $(IMAGE)
+
+########################################################################
+
+BUILD_MAIN=tcljc.main
+BOOT_JAVA=time -p $(JAVA)
+BOOT_TCLJ_MDIR=$(TCLJ_MDIR)
+BOOT_TCLJ_SRC=../jvm-stuff/tclj-in-tclj/src
+
+BOOT_MOD_RT=$(BOOT_TCLJ_MDIR)/tinyclj.rt
+BOOT_MOD_CORE=$(BOOT_TCLJ_MDIR)/tinyclj.core
+
+BOOT_SRC_CORE=$(BOOT_TCLJ_SRC)/tinyclj.core
+
+bootstrap-fixpoint: $(DEST_DIR).stageI2/DONE
+
+# I0: Build "tcljc" using the bootstrap compiler "tclj-in-tclj".
+# Because their is no name collision between the compilers'
+# namespaces, the "tcljc" can be compiled like a regular application
+# using the shared runtime setup.  Once tcljc becomes its own
+# bootstrap compiler, this must be changed to the isolated runtime
+# setup.
+$(DEST_DIR).stageI0/DONE: $(wildcard $(BOOT_TCLJ_MDIR)/commit-id.txt src/tcljc/*.cljt src/tcljc/*/*.cljt)
+	rm -rf "$(dir $@)"
+	$(BOOT_JAVA) --module-path $(BOOT_TCLJ_MDIR) $(JAVA_OPTS) -m tinyclj.compiler -d "$(dir $@)" $(BUILD_MAIN)
+	touch "$@"
+
+# I1: Build "tcljc" using the I0 compiler from PREV_DEST_DIR (aka the
+# first prerequisite's $< directory).
+$(DEST_DIR).stageI1/DONE: $(DEST_DIR).stageI0/DONE
+	rm -rf "$(dir $@)"
+	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(BOOT_MOD_CORE):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns --deterministic -d "$(dir $@)" --parent-loader :platform -s $(BOOT_MOD_RT) -s $(BOOT_SRC_CORE) -s src $(BUILD_MAIN)
+	touch "$@"
+
+# I2: Build "tcljc" using the I1 compiler from PREV_DEST_DIR (aka the
+# first prerequisite's $< directory).
+$(DEST_DIR).stageI2/DONE: $(DEST_DIR).stageI1/DONE
+	rm -rf "$(dir $@)"
+	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns --deterministic -d "$(dir $@)" --parent-loader :platform -s $(BOOT_MOD_RT) -s $(BOOT_SRC_CORE) -s src $(BUILD_MAIN)
+	touch "$@"
+	diff -Nrq "$(dir $<)" "$(dir $@)"

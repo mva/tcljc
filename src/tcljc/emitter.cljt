@@ -599,3 +599,10 @@
         (map (fn [^java.util.Map$Entry e]
                [(.getKey e) (ctx/get-result-now (.getValue e))]))
         ns-futs))
+
+(defn success? ^boolean [^IPersistentMap ns-futs ns-strs]
+  (letfn [(nmsp-exists? ^boolean [^String ns-str]
+            (when-some [x (get ns-futs ns-str)]
+              (not (instance? Throwable x))))]
+    (every? nmsp-exists? ns-strs)))
+

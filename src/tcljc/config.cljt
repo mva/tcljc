@@ -14,7 +14,15 @@
 ;;; each namespace is compiled sequentially.  In particular, macro and
 ;;; syntax quote expansions happen in deterministic order, which in
 ;;; turn means that emitted class files are identical across builds.
-(def deterministic-namespace-compile? false #_true)
+(def ^:redef deterministic-namespace-compile? false #_true)
+
+(defn set-flags! ^void [^boolean deterministic?]
+  ;; FIXME... bug in tclj-in-tclj?  and maybe also tcljc?
+  #_(set! deterministic-namespace-compile? deterministic?)
+  (-> (Class/forName "tcljc.config.__ns100")
+      (.getField "deterministic-namespace-compile?")
+      (.setBoolean nil deterministic?)))
+
 
 ;; Emit ClassFile attribute SourceFile & Code attribute LineNumberTable?
 (def enable-line-numbers true)
@@ -107,7 +115,7 @@
 
 (defn- ^Predicate file? [x]
   (Files/isRegularFile x))
-(defn- file-seq [^Path p]
+(defn file-seq [^Path p]
   (path-seq p Integer/MAX_VALUE file?))
 (defn- directory-file-seq [^Path p]
   (path-seq p 1 file?))
@@ -115,7 +123,7 @@
 (defn- class-file? ^boolean [^Path x]
   (str/ends-with? (.toString x) class-suffix))
 
-(defn- create-directories ^Path [^Path p]
+(defn create-directories ^Path [^Path p]
   (let [perm (-> (Set/of PosixFilePermission/OWNER_READ
                          PosixFilePermission/OWNER_WRITE
                          PosixFilePermission/OWNER_EXECUTE)

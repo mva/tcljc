@@ -1,0 +1,37 @@
+(ns tcljc.main.tclj0
+  (:require [tcljc.config :as cfg]
+            [tcljc.emitter :as em]
+            [tcljc.main.options :as options]
+            [tinyclj.string :as str])
+  (:import (tcljc.main.options Options)
+           (java.nio.file Path Files)))
+
+(defn- class-file? ^boolean [^Path x]
+  (str/ends-with? (.toString x) cfg/class-suffix))
+
+(defn- wipe-dest-dir [^Options opts]     ;only deletes class files
+  (when (.dest-dir opts)
+    (doseq [^Path x (cfg/file-seq (.dest-dir opts))
+            :when (class-file? x)]
+      #_(prn :wipe-dest-dir (.toString x))
+      (Files/delete x))))
+
+(defn run ^boolean [^Options opts]
+  (options/print-options opts)
+  (wipe-dest-dir opts)
+  (let [app-ld (cfg/app-class-loader (.parent-classloader opts) (.sourcev opts))
+        load-from-dest-dir? false
+        all-nmsps (options/target-ns-strs opts)
+
+        rt-lookup (cfg/get-rt-lookup app-ld)
+        dyn-sourcev (if (and load-from-dest-dir? (some? (.dest-dir opts)))
+                      [(.dest-dir opts)]
+                      [])
+        dyn-ld (cfg/dyn-class-loader app-ld dyn-sourcev)
+        provided-nmsp (em/mk-provided-nmsp)
+        env (em/mk-build-env app-ld (.dest-dir opts) dyn-ld provided-nmsp)]
+    (-> (if cfg/deterministic-namespace-compile?
+          (em/emit-namespaces-st env all-nmsps)
+          (em/emit-namespaces-mt env all-nmsps))
+        (time)
+        (em/success? all-nmsps))))

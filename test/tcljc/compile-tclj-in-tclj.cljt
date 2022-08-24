@@ -16,7 +16,7 @@
                               "src/tinyclj.compiler")
                  (cfg/path-of "test")]
         app-ld (cfg/app-class-loader :platform sourcev)
-        dest-dir (cfg/dest-dir "tcljc.core")
+        dest-dir (cfg/dest-dir "tcljc.tclj-in-tclj")
         load-from-dest-dir? false
         all-nmsps [#_"tinyclj.core"
                    "tinyclj.build.all"
