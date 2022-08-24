@@ -122,7 +122,9 @@
               (loop [i (dec (alength atypes))]
                 (cond
                   (< i start) true
-                  (assignable-to? (aget atypes i) ptype) (recur (dec i))
+                  ;; FIXME... does this require special handling of
+                  ;; primitives once the special case Object is gone?
+                  (.isAssignableFrom ptype (aget atypes i)) (recur (dec i))
                   :else false))))
         
         (compatible-fix-args? ^boolean [^"[Ljava.lang.Class;" atypes

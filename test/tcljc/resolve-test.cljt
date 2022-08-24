@@ -126,7 +126,15 @@
     (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
            (inv-virtual Class "getMethod" String)))
     (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
-           (inv-virtual Class "getConstructor" Class Class Class)))))
+           (inv-virtual Class "getConstructor" Class Class Class)))
+
+    ;; this should not match the varargs array overload, i.e. there is
+    ;; no implicit Object to ClassDesc cast for vararg elements
+    (is (= '[(INVOKE-XREF INTERFACE_VIRTUAL "ClassBuilder" "withInterfaceSymbols"
+                          "(Ljava/util/List;)Ljdk/classfile/ClassBuilder;"
+                          :owner-is-itf)]
+           (inv-virtual jdk.classfile.ClassBuilder "withInterfaceSymbols"
+                        Object)))))
 
 
 (deftest invoke-array-clone-test
