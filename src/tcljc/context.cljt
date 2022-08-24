@@ -195,8 +195,9 @@
   ;;
   ;; FIXME... might be helpful (read: no stall the compiling reify*)
   ;; to define ephemeral classes directly in the compilation thread
-  (send-msg* (if (or (= task req-macro-value)
-                     (= task req-define-class-ephemeral))
+  (send-msg* (if (and (not cfg/deterministic-namespace-compile?)
+                      (or (= task req-macro-value)
+                          (= task req-define-class-ephemeral)))
                (.q emit)
                (.s emit))
              task x))
