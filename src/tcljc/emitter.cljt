@@ -577,7 +577,7 @@
                        tl-ctx (mk-ctx env require-fn
                                       predefined/implicit-known-ns
                                       globals ns-str nil)]
-                   (ctx/with-context tl-ctx
+                   (ctx/with-context tl-ctx false
                      (.put !futs ns-str nmsp/marker-depth-first-path)
                      #_(prn :namespace-start ns-str)
                      (let [x (-> (mk-first-segm env tl-ctx false)
