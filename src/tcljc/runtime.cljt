@@ -269,16 +269,16 @@
 ;;; converting object to primitive value (currently "checked" variant):
 (def ^:private primitive-conv-method
   (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 11)
-    (aset 0 (mhd-static [RT "intCast"] int [object]))
-    (aset 1 (mhd-static [RT "longCast"] long [object]))
-    (aset 2 (mhd-static [RT "floatCast"] float [object]))
-    (aset 3 (mhd-static [RT "doubleCast"] double [object]))
+    (aset 0 (mhd-static [ClojureRT "intCast"] int [object]))
+    (aset 1 (mhd-static [ClojureRT "longCast"] long [object]))
+    (aset 2 (mhd-static [ClojureRT "floatCast"] float [object]))
+    (aset 3 (mhd-static [ClojureRT "doubleCast"] double [object]))
     (aset 4 nil)
     (aset 5 nil)
-    (aset 6 (mhd-static [RT "booleanCast"] boolean [object]))
-    (aset 7 (mhd-static [RT "charCast"] char [object]))
-    (aset 8 (mhd-static [RT "byteCast"] byte [object]))
-    (aset 9 (mhd-static [RT "shortCast"] short [object]))
+    (aset 6 (mhd-static [ClojureRT "booleanCast"] boolean [object]))
+    (aset 7 (mhd-static [ClojureRT "charCast"] char [object]))
+    (aset 8 (mhd-static [ClojureRT "byteCast"] byte [object]))
+    (aset 9 (mhd-static [ClojureRT "shortCast"] short [object]))
     (aset 10 nil)))
 
 (defn logical->conv-object-mhd ^DirectMethodHandleDesc [^Class tp]
