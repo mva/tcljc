@@ -315,10 +315,6 @@
             (let [tp-Var (var-type tl-ctx)]
               (xf/prog2-expr x (x/var-ref tp-Var (.bref x)))))]
     
-    (when-not (ctx/global? tl-ctx)
-      ;; prevent def in a function, a deftype* method, or a reify*
-      ;; method
-      (wrong/other "cannot def in this position" form))
     (wrong/check-argc 1 2 form)
     (when (or (not (symbol? nm)) (some? (namespace nm)))
       (wrong/syntax "var name must be an unqualified symbol" nm))
@@ -329,20 +325,25 @@
           (if (x/meta-flag? d :var)
             (assign-var-def-form d nm)
             (assign-member-def-form d nm)))
-      (if (x/meta-flag? nm :var)
-        (-> (var-def-fresh nm form)
-            (var-binding-then-get))
-        (do
-          (when (x/meta-flag? nm :dynamic)
-            (wrong/other "flag :dynamic requires flag :var" nm))
-          (if (some? v)
-            (let [redef? (x/meta-flag? nm :redef)]
-              (if (and (not redef?)
-                       (x/pure-global-ref? v)
-                       (not (x/b-private? ^BindingRef v)))
-                (member-def-alias nm ^BindingRef v)
-                (member-def-fresh nm redef?)))
-            (member-def-noinit nm)))))))
+      (do (when-not (ctx/global? tl-ctx)
+            ;; prevent non-assignment def in a function, a deftype*
+            ;; method, or a reify* method
+            (wrong/other "cannot def in this position" form))
+
+          (if (x/meta-flag? nm :var)
+            (-> (var-def-fresh nm form)
+                (var-binding-then-get))
+            (do
+              (when (x/meta-flag? nm :dynamic)
+                (wrong/other "flag :dynamic requires flag :var" nm))
+              (if (some? v)
+                (let [redef? (x/meta-flag? nm :redef)]
+                  (if (and (not redef?)
+                           (x/pure-global-ref? v)
+                           (not (x/b-private? ^BindingRef v)))
+                    (member-def-alias nm ^BindingRef v)
+                    (member-def-fresh nm redef?)))
+                (member-def-noinit nm))))))))
 
 (defn- consume-args
   (^IPersistentVector [^IPersistentVector acc

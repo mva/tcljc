@@ -17,8 +17,8 @@
 (def ^:redef deterministic-namespace-compile? false #_true)
 
 (defn set-flags! ^void [^boolean deterministic?]
-  ;; FIXME... bug in tclj-in-tclj?  and maybe also tcljc?
-  #_(set! deterministic-namespace-compile? deterministic?)
+  ;; FIXME... bug in tclj-in-tclj?  Clojure allows this, tcljc as well
+  #_(def deterministic-namespace-compile? deterministic?)
   (-> (Class/forName "tcljc.config.__ns100")
       (.getField "deterministic-namespace-compile?")
       (.setBoolean nil deterministic?)))
