@@ -7,6 +7,7 @@
    (jdk.classfile Classfile Classfile$Option ClassHierarchyResolver
                   ClassHierarchyResolver$ClassHierarchyInfo
                   Opcode TypeKind ClassBuilder MethodBuilder CodeBuilder Label)
+   (jdk.classfile.attribute SourceFileAttribute)
    (jdk.classfile.constantpool ConstantPoolBuilder MethodRefEntry)
    (jdk.classfile.instruction SwitchCase)
    (java.lang.constant ConstantDesc ClassDesc MethodTypeDesc MethodHandleDesc
@@ -118,6 +119,10 @@
                 #_(.println System/out ":accept ClassBuilder start")
                 ~@body
                 #_(.println System/out ":accept ClassBuilder end"))))))
+
+(defn with-source-file ^ClassBuilder [^ClassBuilder cb ^String source-file]
+  (cond-> cb source-file (.with (SourceFileAttribute/of source-file))))
+
 
 (defmacro with-mbh [sig & body]
   (assert (vector? sig))

@@ -185,7 +185,7 @@
                 (aset b i (emitfn/with-ld-st ee (env-as-field ee) forward?))))))
         (FnSpec. (.fn-form fspec) b)))))
 
-(defn- prepare-virtuals ^void [^FnSpec fspec]
+(defn- prepare-virtuals ^void [^FnSpec fspec ^String source-file]
   (let [fn-form (.fn-form fspec)
         aca (ctx/fn-body-now fn-form)
         fnc (.!fnc fn-form)
@@ -195,7 +195,8 @@
         itfs (map rt/cd-of (.itf-tags fn-form))
         this-mnm (name (or (x/fn-this-name fn-form) "fn"))
         
-        emit-plan (emitfn/mk-emit-virtuals this-class super-class itfs this-mnm
+        emit-plan (emitfn/mk-emit-virtuals this-class super-class itfs
+                                           source-file this-mnm
                                            (.super-mhd fn-form)
                                            (with-field-ld-st fspec this-class))]
     (.set-emit-plan fnc emit-plan)
@@ -205,7 +206,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn- prepare-reify ^void [^FnSpec fspec]
+(defn- prepare-reify ^void [^FnSpec fspec ^String source-file]
   (let [fn-form (.fn-form fspec)
         aca (ctx/fn-body-now fn-form)
         fnc (.!fnc fn-form)
@@ -215,7 +216,8 @@
         itfs (map rt/cd-of (.itf-tags fn-form))
         this-mnm "this"
         
-        emit-plan (emitfn/mk-emit-reify this-class super-class itfs this-mnm
+        emit-plan (emitfn/mk-emit-reify this-class super-class itfs
+                                        source-file this-mnm
                                         (.super-mhd fn-form)
                                         (with-field-ld-st fspec this-class))]
     (.set-emit-plan fnc emit-plan)
@@ -228,7 +230,8 @@
 (defn- implements-interfaces? ^boolean [^FnForm fn-form]
   (pos? (alength (.itf-tags fn-form))))
 
-(defn prepare-fns! ^void [^ClassDesc statics-owner ^IPersistentVector fn-specs]
+(defn prepare-fns! ^void [^ClassDesc statics-owner ^String source-file
+                          ^IPersistentVector fn-specs]
   (letfn [(translate-to-class? ^boolean [^FnSpec fspec]
             (or (implements-interfaces? (.fn-form fspec))
                 (let [fnc (-> fspec .fn-form .!fnc)]
@@ -249,8 +252,8 @@
     (doseq [^FnSpec fspec fn-specs]
       (if (translate-to-class? fspec)
         (if (x/fn-reify? (.fn-form fspec))
-          (prepare-reify fspec)
-          (prepare-virtuals fspec))
+          (prepare-reify fspec source-file)
+          (prepare-virtuals fspec source-file))
         (prepare-statics statics-owner fspec)))))
 
 ;;; ------------------------------------------------------------------------

@@ -310,7 +310,7 @@
     (.withMethodBody cb nm mtd flags xbh)))
 
 (defn mk-emit-virtuals ^IEmitPlan [^ClassDesc this-class ^ClassDesc super-class
-                                   itfs ^String this-mnm
+                                   itfs ^String source-file ^String this-mnm
                                    ^DirectMethodHandleDesc super-mhd
                                    ^FnSpec fspec]
   (reify
@@ -355,7 +355,8 @@
                                           Classfile/ACC_FINAL
                                           Classfile/ACC_SUPER))
                       (.withSuperclass super-class)
-                      (.withInterfaceSymbols itfs))
+                      (.withInterfaceSymbols itfs)
+                      (cf/with-source-file source-file))
 
                   (doseq [^EnvEntry ee all-ees
                           :let [ld ^LdStMember (.ld-st-instr ee)]]
@@ -416,7 +417,7 @@
     (.withMethodBody cb rt/name-meta-method mtd flags xbh)))
 
 (defn mk-emit-reify ^IEmitPlan [^ClassDesc this-class ^ClassDesc super-class
-                                itfs ^String this-mnm
+                                itfs ^String source-file ^String this-mnm
                                 ^DirectMethodHandleDesc super-mhd
                                 ^FnSpec fspec]
   (reify
@@ -452,7 +453,8 @@
                                           Classfile/ACC_FINAL
                                           Classfile/ACC_SUPER))
                       (.withSuperclass super-class)
-                      (.withInterfaceSymbols itfs))
+                      (.withInterfaceSymbols itfs)
+                      (cf/with-source-file source-file))
 
                   (doseq [^EnvEntry ee all-ees
                           :let [ld ^LdStMember (.ld-st-instr ee)]]

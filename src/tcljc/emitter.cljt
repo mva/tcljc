@@ -91,7 +91,7 @@
 
 (deftype SegmState [^BuildEnv env
                     ^Ctx ctx
-                    ^String sourcefile
+                    ^String source-file
                     
                     ^int segm-id
                     ^ClassDesc segm-cld
@@ -114,14 +114,14 @@
   (-> segm .env .dyn-chr))
 
 (defn with-summary ^SegmState [^SegmState segm ^TlfSummary summary]
-  (SegmState. (.env segm) (.ctx segm) (.sourcefile segm)
+  (SegmState. (.env segm) (.ctx segm) (.source-file segm)
               (.segm-id segm) (.segm-cld segm) (conj (.summaryv segm) summary)
               (.bytesv segm) (.prev-segment-class segm)))
 (defn with-bytes ^SegmState [^SegmState segm ^int id-delta
                              ^boolean clear-summaryv? ^bytes bs ^Class segm-cl]
   (let [bytesv' (when-some [bsv (.bytesv segm)]
                   (conj bsv bs))]
-    (SegmState. (.env segm) (.ctx segm) (.sourcefile segm)
+    (SegmState. (.env segm) (.ctx segm) (.source-file segm)
                 (+ (.segm-id segm) id-delta) (segment-cld segm id-delta)
                 (if clear-summaryv? [] (.summaryv segm)) bytesv'
                 (or segm-cl (.prev-segment-class segm)))))
@@ -164,6 +164,7 @@
          (doseq [^FnSpec fspec (.fn-specs summary)]
            (.fn-methods (-> fspec .fn-form .!fnc .emit-plan) cb)))
        (-> (.withFlags cb Classfile/ACC_PUBLIC)
+           (cf/with-source-file (.source-file segm))
            (cond-> force-clinit? (with-force-clinit))
            (.withMethodBody cf/class-initializer-name rt/mtd-void-void
                             (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
@@ -200,7 +201,7 @@
      (cf/with-cbh [cb]
        (-> (.withFlags cb Classfile/ACC_PUBLIC)
            (.withSuperclass (segment-cld segm -1))
-           
+           (cf/with-source-file (.source-file segm))
            (with-force-clinit)
            (.withMethodBody rt/name-requires rt/mtd-String-void
                             (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
@@ -209,15 +210,15 @@
            (with-main segm)))
      (segment-chr segm))))
 
-(defn- build-class ^bytes [^ClassDef cdef ^CHR dyn-chr]
+(defn- build-class ^bytes [^ClassDef cdef ^String source-file ^CHR dyn-chr]
   (.register! dyn-chr (.ch-info cdef))
   (cf/build
    (-> cdef .ch-info .thisClass)
    (cf/with-cbh [cb]
-     (.withFlags cb (.flags cdef))
-     (.withSuperclass cb (-> cdef .ch-info .superClass))
-     (.withInterfaceSymbols cb (.itfs cdef))
-     ;; FIXME... add sourcefile attribute
+     (-> (.withFlags cb (.flags cdef))
+         (.withSuperclass (-> cdef .ch-info .superClass))
+         (.withInterfaceSymbols (.itfs cdef))
+         (cf/with-source-file source-file))
      (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef)))
    dyn-chr))
 
@@ -240,12 +241,12 @@
 
 (defn- mk-first-segm ^SegmState [^BuildEnv env ^Ctx ctx ^boolean collect-bytesv?]
   (let [rurl (ctx/this-rurl ctx)
-        sourcefile (when (and cfg/enable-line-numbers (some? rurl))
-                     (let [s (.getPath rurl)]
-                       (subs s (inc (.lastIndexOf s "/")))))
+        source-file (when (and cfg/enable-line-numbers (some? rurl))
+                      (let [s (.getPath rurl)]
+                        (subs s (inc (.lastIndexOf s "/")))))
         cld (ClassDesc/of (.ns-str ctx)
                           (str ns-class-name first-segm-id))]
-    (SegmState. env ctx sourcefile first-segm-id cld
+    (SegmState. env ctx source-file first-segm-id cld
                 [] (when collect-bytesv? []) nil)))
 
 (defn- emit-segments ^Namespace [^SegmState segm]
@@ -271,7 +272,7 @@
               (with-bytes segm +1 true bs cl)))
           (write-and-define ^SegmState [^SegmState segm ^ClassDef cdef
                                         ^CompletableFuture promise]
-            (let [bs (build-class cdef (segment-chr segm))
+            (let [bs (build-class cdef (.source-file segm) (segment-chr segm))
                   this-class (-> cdef .ch-info .thisClass)
                   cl (cfg/write-and-define-class (-> segm .env .dest-dir)
                                                  (segment-lookup segm)
@@ -316,7 +317,7 @@
 
               ctx/msg-emit-tlf
               (let [^TlfSummary summary x]
-                (prepare/prepare-fns! (.segm-cld segm)
+                (prepare/prepare-fns! (.segm-cld segm) (.source-file segm)
                                       (.fn-specs summary))
                 (prepare/prepare-globals! (.segm-cld segm)
                                           (.global-bs summary))
@@ -333,13 +334,14 @@
                 (write-and-define segm ^ClassDef x promise)
                 (let [dtdef ^DeftypeDef x
                       summary (TlfSummary. (.fn-specs dtdef) nil x/expr-empty)]
-                  (prepare/prepare-fns! (.segm-cld segm) (.fn-specs dtdef))
+                  (prepare/prepare-fns! (.segm-cld segm) (.source-file segm)
+                                        (.fn-specs dtdef))
                   (-> (with-summary segm summary)
                       (write-and-define (build-deftype dtdef) promise))))
               
               ctx/req-define-class-ephemeral
               (let [cdef ^ClassDef x
-                    bs (build-class cdef (segment-chr segm))
+                    bs (build-class cdef (.source-file segm) (segment-chr segm))
                     dyn-ld (-> (segment-lookup segm)
                                .lookupClass
                                (.getClassLoader))
