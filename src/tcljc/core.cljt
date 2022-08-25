@@ -206,9 +206,7 @@
                                                    [dest-dir]
                                                    []))
              env (em/mk-build-env app-ld dest-dir dyn-ld {})]
-         (-> (if cfg/deterministic-namespace-compile?
-               (em/emit-namespaces-mt env all-nmsps)
-               (em/emit-namespaces-st env all-nmsps))
+         (-> (em/emit-namespaces env all-nmsps)
              #_(time)
              (em/summary)
              #_(prn)))))))

@@ -549,7 +549,7 @@
     (ctx/mk-ctx* initial-globals ns-str rpath rurl 
                  lookup-in-pkg require-namespace (get-apply-mh l) exc-method)))
 
-(defn emit-namespaces-mt ^IPersistentMap [^BuildEnv env ns-strs]
+(defn- emit-namespaces-mt ^IPersistentMap [^BuildEnv env ns-strs]
   (let [namespaces-q (java.util.concurrent.LinkedBlockingQueue.)
         !futs (ConcurrentHashMap.)]     ;updated by this thread only
     (ctx/with-executor namespaces-scope
@@ -632,7 +632,7 @@
         (ctx/get-result-now (.get !futs (aget a i))))) ;forces exception
     (into {} !futs)))
 
-(defn emit-namespaces-st ^IPersistentMap [^BuildEnv env ns-strs]
+(defn- emit-namespaces-st ^IPersistentMap [^BuildEnv env ns-strs]
   (let [!futs (java.util.HashMap.)]     ;single-threaded!
     (letfn [(^FnRequireNamespace require-fn [ns-str provided-nmsp]
              (or (.get !futs ns-str)
@@ -665,6 +665,11 @@
         (dotimes [i (alength a)]
           (.schedule require-fn (aget a i) (.builtin-nmsp env))))
       (into {} !futs))))
+
+(defn emit-namespaces ^IPersistentMap [^BuildEnv env ns-strs]
+  (if cfg/deterministic-namespace-compile?
+    (emit-namespaces-st env ns-strs)
+    (emit-namespaces-mt env ns-strs)))
 
 (defn summary ^IPersistentMap [^IPersistentMap ns-futs]
   (into {}
