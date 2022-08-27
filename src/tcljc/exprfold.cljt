@@ -153,113 +153,51 @@
     (Insn. nil jb/int [arg0 arg1] c
            (jdk.classfile.instruction.OperatorInstruction/of opc))))
 
-(defn pop ^Expr [^Expr arg]        ;returns `arg` if it is a statement
-  (letfn [(pop* ^Expr [^Expr arg]
-            (Insn. nil jb/void [arg] (x/empty-when (.safe-to-discard? arg))
-                   (-> (cf/by-slot-size (x/type arg) Opcode/POP Opcode/POP2)
-                       (jdk.classfile.instruction.StackInstruction/of))))
-          (undup ^Expr [^Expr arg]
-            (cond
-              (x/insn? arg) 
-              (let [insn ^Insn arg]
-                (Insn. (x/form insn) jb/void (tinyclj.core/pop (x/argv insn))
-                       (.const-value insn) (.instr insn)))
-              (x/setter? arg)
-              (let [insn ^Setter arg]
-                (Setter. (x/form insn) jb/void (tinyclj.core/pop (x/argv insn))
-                         (.const-value insn)))
-              :else (pop* arg)))]
-    (cond
-      (x/statement? arg) arg
-      (x/dup? (peek (x/argv arg))) (undup arg)
-      :else (pop* arg))))
-
 ;;; ------------------------------------------------------------------------
 
-(defn- progn* ^Expr [^IPersistentVector argv]
-  ;; pre: all but the last `argv` have been coerced to statement
-  (let [n (count argv)
-        result-idx (loop [i 0]        ;scan forward to result
-                     (cond
-                       (= i n) (dec i)
-                       (x/returns? (nth argv i)) (recur (inc i))
-                       :else i))
-        result-idx (loop [i result-idx] ;scan backward over empty
-                     (cond
-                       (neg? i) i
-                       (x/expr-empty? (nth argv i)) (recur (dec i))
-                       :else i))]
-    (Progn. nil (x/type (nth argv result-idx x/expr-empty)) argv
-            (x/empty-when (neg? result-idx)) result-idx)))
-
-(defn rewrite-returning [f ^Expr x ^Class to-tp]
-  (letfn [(rebuild ^Expr [^Expr x ^IPersistentVector argv] ;pre: (x/returns? x)
-            (-> (condp instance? x
-                  Progn
-                  (progn* argv)
-               
-                  Block
-                  (Block. (x/form x) to-tp argv nil)
-                  
-                  SplitJoin
-                  (-> (x/split&join (nth argv 0) (nth argv 1) (nth argv 2))
-                      (x/with-innermost-form (x/form x)))
-                  
-                  Switch
-                  (let [sw ^Switch x]   ;no constant folding
-                    (Switch. (x/form x) to-tp argv nil (.guardv sw)))
-               
-                  TryCatchFinally
-                  (let [tcf ^TryCatchFinally x] ;no constant folding
-                    (TryCatchFinally. (x/form x) to-tp argv nil (.handlerv tcf)))
-               
-                  LoopBody              ;no constant folding
-                  (LoopBody. (x/form x) to-tp argv nil)
-               
-                  #_else (throw (IllegalArgumentException. (str (class x)))))
-                (x/with-innermost-form (x/form x))))
+(defn- rewrite-result [f ^Expr x ^Class to-tp] ;mirrors xc/rewrite-result
+  (letfn [(rebuild ^Expr [^Expr x ^Class tp ^IPersistentVector argv]
+            (x/with-innermost-form (x/with-argv x tp argv) (x/form x)))
           (rebuild-last ^Expr [^Expr x]
             (let [xv (x/argv x)]
-              (rebuild x (conj (tinyclj.core/pop xv)
-                               (rewrite-returning f (peek xv) to-tp)))))
+              (rebuild x to-tp (conj (pop xv)
+                                     (rewrite-result f (peek xv) to-tp)))))
           (rebuild-paths ^Expr [^Expr x ^int start ^int delta-end]
             (let [v (x/argv x), end (+ (count v) delta-end)]
-              (rebuild x (vec (map-indexed (fn [^int i x]
-                                             (if (and (<= start i) (< i end))
-                                               (rewrite-returning f x to-tp)
-                                               x))
-                                           v)))))]
-    (if (x/returns? x)
-      (condp instance? x
-        ;; identity nodes may have been introduced on joined paths
-        ;; to match up their types
-        Identity (rewrite-returning f (x/nth-arg x 0) to-tp)
+              (rebuild x to-tp
+                       (vec (map-indexed (fn [^int i x]
+                                           (if (and (<= start i) (< i end))
+                                             (rewrite-result f x to-tp)
+                                             x))
+                                         v)))))]
+    (condp instance? x
+      ;; identity nodes may have been introduced on joined paths
+      ;; to match up their types
+      Identity (rewrite-result f (x/nth-arg x 0) to-tp)
 
-        ;; compare nodes are subject to expansion: rewriting Branch means
-        ;; to expand it first and then to rewrite the result
-        Branch (rewrite-returning f (x/split&join ^Branch x) to-tp)
-        
-        Progn (let [tail (peek (x/argv x))]
-                (if (and (some? tail) (x/type? (x/type x) tail))
-                  (rebuild-last x)
-                  (f x to-tp)))
+      ;; compare nodes are subject to expansion: rewriting Branch means
+      ;; to expand it first and then to rewrite the result
+      Branch (rewrite-result f (x/split&join ^Branch x) to-tp)
+      
+      Progn (let [tail (peek (x/argv x))]
+              (if (and (some? tail) (x/type? (x/type x) tail))
+                (rebuild-last x)
+                (f x to-tp)))
 
-        Block (rebuild-last x)
-        
-        SplitJoin (rebuild-paths x 1 0)
-        
-        Switch (rebuild-paths x 1 0)
+      Block (rebuild-last x)
+      
+      SplitJoin (rebuild-paths x 1 0)
+      
+      Switch (rebuild-paths x 1 0)
 
-        LoopBody (rebuild-last x)
+      LoopBody (rebuild-last x)
 
-        TryCatchFinally (if (or (jb/returns? to-tp)
-                                (x/expr-empty? (peek (x/argv x))))
-                          (rebuild-paths x 0 -1)
-                          (f x to-tp))
-        
-        #_else (f x to-tp))
-      x)))
-
+      TryCatchFinally (if (or #_(jb/returns? to-tp)
+                              (x/expr-empty? (peek (x/argv x))))
+                        (rebuild-paths x 0 -1)
+                        (f x to-tp))
+      
+      #_else (f x to-tp))))
 
 (defn checkcast ^Expr [^Expr x ^Class check-tp]
   (cond
@@ -271,7 +209,7 @@
   (letfn [(coerce-expr ^Expr [^Expr x ^Class to-tp] ;pre: `x` is not a join
             (cond
               (jb/statement? to-tp)
-              (pop x)
+              (x/pop x)
                     
               (.isAssignableFrom to-tp (x/type x))
               (x/identity to-tp x)
@@ -279,7 +217,7 @@
               :else (checkcast x to-tp)))]
     (if (x/type? to-tp x)
       x
-      (rewrite-returning coerce-expr x to-tp))))
+      (rewrite-result coerce-expr x to-tp))))
 
 (defn coerce-to-statm ^Expr [^Expr x]
   (coerce x jb/void))
@@ -289,8 +227,8 @@
 (defn progn-expr ^Expr [^IPersistentVector statmv ^Expr expr]
   (if (zero? (count statmv))
     expr
-    (progn* (conj (mapv coerce-to-statm statmv) expr))))
+    (x/progn (conj (mapv coerce-to-statm statmv) expr))))
 
 (defn prog2-expr ^Expr [^Expr statm ^Expr expr]
-  (progn* [(coerce-to-statm statm) expr]))
+  (x/progn [(coerce-to-statm statm) expr]))
 

@@ -95,16 +95,6 @@
 
 ;;; ------------------------------------------------------------------------
 
-;;; Special type of expressions that interrupt the normal flow of
-;;; control: return, recur, throw.  This is a control flow indicator.
-;;; Expressions that split/join control flow handle it specially.
-;;; Otherwise it is usually treated like `void`.
-(deftype NoReturnMarker [])
-(def no-return NoReturnMarker)
-(defn returns? ^boolean [^Class tp]
-  (not (same-class? no-return tp)))
-
-
 ;;; This type is used to mark macro and primitive function values.
 (def ^Class cl-compile-time-entity nil)
 
@@ -138,11 +128,7 @@
 ;;; operand stack, or leaves the result of its last argument on the
 ;;; stack.
 (defn pushes-result? ^boolean [^Class tp]
-  ;; `InsnUninitialized` produces negative verification type values
-  ;; representing the byte code index of a NEW instruction.  An
-  ;; invalid vtype is not allowed.  Instructions that do not return
-  ;; also have a verification type of `void`.
-  (and (returns? tp) (not (statement? tp))))
+  (not (statement? tp)))
 
 (defn throwable? ^boolean [^Class tp]   ;Throwable or subclass of it
   (.isAssignableFrom Throwable tp))

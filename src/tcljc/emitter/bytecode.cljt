@@ -6,8 +6,9 @@
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
    [tcljc.expr :as x]
-   [tcljc.context :as ctx]
    [tcljc.exprfold :as xf]
+   [tcljc.exprcode :as xc]
+   [tcljc.context :as ctx]
    [tcljc.compiler.branch :as branch])
   (:import
    (tcljc.classfile ILdStInstr LdStMember)
@@ -255,7 +256,7 @@
                 :else (throw (IllegalStateException.)))
               xb))
           
-          (branch-opcode* ^Opcode [^CodeBuilder xb ^Branch branch]
+          (branch-opcode! ^Opcode [^CodeBuilder xb ^Branch branch]
             (let [opc (.opcode branch)]
               (loop [opcd (.opcd branch)
                      left (x/nth-arg branch 0)
@@ -279,13 +280,6 @@
                   :else
                   (do (-> xb (expr-insns es left) (expr-insns es right))
                       (cf/bc2opc opc opcd))))))
-          (branch-opcode! ^Opcode [^CodeBuilder xb ^Branch branch]
-            (if (x/const-value? branch)
-              (do (if (x/const-value-true? branch)
-                    (.iconst_0 xb)
-                    (.iconst_1 xb))
-                  Opcode/IFEQ)
-              (branch-opcode* xb branch)))
           (if-then-else ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
                                       ^Expr if-true ^Expr if-false]
             (let [start-false (.newLabel xb), end-false (.newLabel xb)
@@ -293,7 +287,7 @@
               (-> (.branchInstruction xb opc start-false)
                   (expr-insns es if-true)
                   (cond-> #_xb
-                    (x/returns? if-true)
+                    (xc/returns? if-true)
                     (.branchInstruction Opcode/GOTO end-false))
                   (.labelBinding start-false)
                   (expr-insns es if-false)
@@ -308,27 +302,14 @@
           (split-join-insn* ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
                                           ^Expr if-true ^Expr if-false]
             (cond
-              (and (x/const-value-true? branch-to-true)
-                   (jb/same-class? (x/type if-true) (x/type if-false)))
-              (expr-insns xb es if-true) ;must retain "returns?" status
-              (and (x/const-value-false? branch-to-true)
-                   (jb/same-class? (x/type if-true) (x/type if-false)))
-              (expr-insns xb es if-false) ;must retain "returns?" status
-              
               (x/expr-empty? if-false)
-              (if (x/expr-empty? if-true)
-                (let [argv (x/argv branch-to-true)] ;avoid Branch recursion
-                  (-> xb 
-                      (expr-insns es (xf/coerce-to-statm (nth argv 0)))
-                      (expr-insns es (xf/coerce-to-statm (nth argv 1)))))
-                (if-then xb branch-to-true if-true)
-                #_(.ifThen xb (branch-opcode! xb branch-to-true)
-                           (expr-handler if-true)))
+              (if-then xb branch-to-true if-true)
+              #_(.ifThen xb (branch-opcode! xb branch-to-true)
+                         (expr-handler if-true))
               (x/expr-empty? if-true)
               (if-then xb (x/with-negate-cmp branch-to-true) if-false)
               #_(.ifThen xb (branch-opcode! xb (x/with-negate-cmp branch-to-true))
                          (expr-handler if-false))
-              
               :else
               (if-then-else xb  branch-to-true if-true if-false)
               #_(.ifThenElse xb (branch-opcode! xb branch-to-true)
@@ -381,7 +362,7 @@
                       (let [case-x (nth argv (inc i))]
                         (.labelBinding xb (nth labelv i))
                         (expr-insns xb es case-x)
-                        (when (and (x/returns? case-x) (< i (dec n)))
+                        (when (and (xc/returns? case-x) (< i (dec n)))
                           (.goto_ xb end-switch)))) ;omit goto for default path
                     (.labelBinding xb end-switch))
                   (recur (min lo (.caseValue sc)) (max hi (.caseValue sc))
@@ -411,31 +392,33 @@
                   finally? (not (x/expr-empty? finally-statm))
                   end-body (.newLabel xb)] ;start-body is (.startLabel xb)
               ;; first emit body and its finally; emit handlers only
-              ;; if body-expr is not empty, because EXCEPTION_CATCH
-              ;; requires a non-empty bci region
+              ;; if body-expr is not empty, because .exceptionCatch()
+              ;; requires a non-empty bytecode region
               (assert (= (count argv) (+ n 2)))
               (-> (expr-insns xb es body-expr)
                   (.labelBinding end-body))
               (let [empty-body-expr? (.isEmpty ^jdk.classfile.impl.BlockCodeBuilderImpl xb)
-                    start-handler (vec (repeatedly n #(.newLabel xb)))]
-                (when (x/returns? body-expr)
+                    startv (vec (repeatedly (inc n) #(.newLabel xb)))]
+                (when (xc/returns? body-expr)
                   (expr-insns xb es finally-statm))
                 
                 (when-not empty-body-expr?
                   (dotimes [i n]
-                    (let [handler ^TryHandler (nth handlerv i)
-                          start ^Label (nth start-handler i)]
-                      (if-some [ex (.exception handler)]
-                        (.exceptionCatch xb (.startLabel xb) end-body start
-                                         (rt/cd-of ex))
-                        (.exceptionCatchAll xb (.startLabel xb) end-body start))))
-                  (when (and (x/returns? body-expr) (x/returns? finally-statm))
+                    (let [handler ^TryHandler (nth handlerv i)]
+                      (.exceptionCatch xb (.startLabel xb) end-body
+                                       ^Label (nth startv i)
+                                       (rt/cd-of (.exception handler)))))
+                  (when finally?
+                    (.exceptionCatchAll xb (.startLabel xb) end-body
+                                        ^Label (nth startv n)))
+                  (when (and (xc/returns? body-expr)
+                             (xc/returns? finally-statm))
                     (.branchInstruction xb Opcode/GOTO (.endLabel xb)))
                   
                   (dotimes [i n]
                     (let [handler ^TryHandler (nth handlerv i)
                           catch-expr (nth argv (inc i))
-                          start (nth start-handler i)]
+                          start (nth startv i)]
                       (.labelBinding xb start)
                       (if (some? (.exception handler))
                         (let [end (.newLabel xb)]
@@ -443,15 +426,17 @@
                               (.labelBinding end))
                           ;; not empty: stores exception in local
                           (when finally?
-                            (.exceptionCatchAll xb start end
-                                                (peek start-handler)))
-                          (when (x/returns? catch-expr)
+                            (.exceptionCatchAll xb start end (peek startv)))
+                          (when (xc/returns? catch-expr)
                             (expr-insns xb es finally-statm)
-                            (when (x/returns? finally-statm)
-                              (.branchInstruction xb Opcode/GOTO (.endLabel xb)))))
-                        (do (expr-insns xb es finally-statm)
-                            (when (x/returns? finally-statm)
-                              (expr-insns xb es catch-expr))))))))))
+                            (when (xc/returns? finally-statm)
+                              (.branchInstruction xb Opcode/GOTO
+                                                  (.endLabel xb))))))))
+                  (when finally?
+                    (.labelBinding xb (nth startv n))
+                    (expr-insns xb es finally-statm)
+                    (when (xc/returns? finally-statm)
+                      (.athrow xb)))))))
           
           (loop-body-insn ^CodeBuilder [^CodeBuilder xb ^LoopBody x]
             (let [es' (with-recur-target es (.newLabel xb))]
@@ -508,9 +493,7 @@
     (line-number es xb x)
     
     (if-some [c (.const-value x)]
-      (cond-> xb
-        (not (x/expr-empty? x))
-        (.constantInstruction (rt/describe-const-expr c)))
+      (.constantInstruction xb (rt/describe-const-expr c))
       (condp instance? x
         Insn
         (simple-insn xb ^Insn x)
@@ -530,7 +513,7 @@
         (invoke-arity xb ^InvokeArity x)
         
         Progn
-        (exprv-insns xb (subvec (x/argv x) 0 (inc (.result-idx ^Progn x))))
+        (exprv-insns xb (x/argv x))
         Block
         (.block xb (exprv-handler (x/argv x)))
         
@@ -581,7 +564,7 @@
       (recur (inc i))))
   (let [es (EmitState. (.level at) (.!closes-over at) ld-this nil)]
     (line-number es xb body-expr)
-    (expr-insns xb es (xf/rewrite-returning x/return body-expr jb/no-return))))
+    (expr-insns xb es (xc/as-returning-code body-expr))))
 
 (defn emit-global-b ^void [^ClassBuilder cb ^ClassDesc segm-cld ^Binding b]
   ;; To be able to do INVOKEVIRTUAL calls on global function defs, the
@@ -676,6 +659,6 @@
                             (rt/describe-const-expr (.const-value init-x)))]
               (lazy-const! bref tpd const))))))))
 
-(defn emit-into ^void [^CodeBuilder xb ^Expr body-expr]
+(defn emit-into ^void [^CodeBuilder xb ^Expr x]
   (let [es (EmitState. x/lvl-environment nil nil nil)]
-    (expr-insns xb es body-expr)))
+    (expr-insns xb es (xc/codify x))))

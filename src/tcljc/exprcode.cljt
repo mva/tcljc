@@ -1,0 +1,202 @@
+(ns tcljc.exprcode
+  (:require
+   [tcljc.classfile :as cf]
+   [tcljc.javabase :as jb]
+   [tcljc.expr :as x]
+   [tcljc.exprfold :as xf])
+  (:import
+   (tcljc.expr Expr Insn Const Progn Block Branch SplitJoin Switch
+               LoopBody Recur TryCatchFinally Identity Setter)
+   (clojure.lang Symbol IPersistentVector))
+  (:refer-clojure :exclude [type]))
+
+;;; Special type of expressions that interrupt the normal flow of
+;;; control: return, recur, throw.  This is a control flow indicator.
+;;; Expressions that split/join control flow handle it specially.
+;;; Parsing uses `void` instead of this type to produce the source
+;;; Expr.
+(deftype NoReturnMarker [])
+(def ^:private no-return NoReturnMarker)
+(defn- returning-type? ^boolean [^Class tp]
+  (not (jb/same-class? no-return tp)))
+
+(defn returns? ^boolean [^Expr x] ;excludes macro or primitive function values
+  (returning-type? (x/type x)))
+
+(defn- rewrite-returning [^Expr x]      ;mirrors xf/rewrite-result
+  (letfn [(return ^Expr [^Expr arg]
+            (if (returns? arg)
+              (x/insn* no-return [arg]
+                       (-> (cf/type-kind (x/type arg))
+                           (jdk.classfile.instruction.ReturnInstruction/of)))
+              arg))
+          (rebuild-last ^Expr [^Expr x]
+            (let [xv (x/argv x)]
+              (x/with-argv x no-return
+                (conj (tinyclj.core/pop xv)
+                      (rewrite-returning (peek xv))))))
+          (rebuild-paths ^Expr [^Expr x ^int start ^int delta-end]
+            (let [v (x/argv x), end (+ (count v) delta-end)]
+              (x/with-argv x no-return
+                (vec (map-indexed (fn [^int i x]
+                                    (if (and (<= start i) (< i end))
+                                      (rewrite-returning x)
+                                      x))
+                                  v)))))]
+    (if (returns? x)
+      (condp instance? x
+        ;; identity nodes may have been introduced on joined paths
+        ;; to match up their types
+        Identity (rewrite-returning (x/nth-arg x 0))
+
+        ;; compare nodes are subject to expansion: rewriting Branch means
+        ;; to expand it first and then to rewrite the result
+        Branch (if (x/const-value? x)
+                 (return x)
+                 (rewrite-returning (x/split&join ^Branch x)))
+        
+        Progn (let [tail (peek (x/argv x))]
+                (if (and (some? tail) (x/type? (x/type x) tail))
+                  (rebuild-last x)
+                  (return x)))
+
+        Block (rebuild-last x)
+        
+        SplitJoin (rebuild-paths x 1 0)
+        
+        Switch (rebuild-paths x 1 0)
+
+        LoopBody (rebuild-last x)
+
+        TryCatchFinally (if (x/expr-empty? (peek (x/argv x)))
+                          (rebuild-paths x 0 -1)
+                          (return x))
+        
+        #_else (return x))
+      x)))
+
+(letfn [(transform-insn ^Expr [^Insn x]
+          (cond
+            (x/pop? x)
+            (let [arg (x/nth-arg x 0)]
+              (if (.safe-to-discard? arg)
+                x/expr-empty
+                (let [arg-argv (x/argv arg)]
+                  (if (x/dup? (peek arg-argv))
+                    (if (= (count arg-argv) 1)
+                      x/expr-empty
+                      (x/with-argv arg jb/void (pop arg-argv)))
+                    x))))
+
+            (x/throw? x)
+            (x/insn* no-return (x/argv x)
+                     (jdk.classfile.instruction.ThrowInstruction/of))
+
+            :else x))
+        (transform-progn ^Expr [^Progn x]
+          (let [argv (x/argv x)]
+            (loop [i (dec (count argv))]
+              (cond (neg? i) x/expr-empty
+                    (x/expr-empty? (nth argv i)) (recur (dec i))
+                    :else x))))
+        (transform-split-join ^Expr [^SplitJoin x]
+          (let [branch (x/nth-arg x 0)]
+            (if (x/const-value? branch)
+              (x/nth-arg x (if (x/const-value-true? branch) 1 2))
+              x)))
+        (transform-tcf ^Expr [^TryCatchFinally x]
+          (if (x/expr-empty? (x/nth-arg x 0))
+            (peek (x/argv x))
+            x))
+        (transform ^Expr [^Expr x]
+          (condp instance? x
+            Insn (transform-insn ^Insn x)
+            Progn (transform-progn ^Progn x)
+            SplitJoin (transform-split-join ^SplitJoin x)
+            TryCatchFinally (transform-tcf ^TryCatchFinally x)
+            Recur (x/with-argv x no-return (x/argv x))
+            #_else x))
+        
+        (strict-code-argv ^IPersistentVector [^IPersistentVector argv]
+          ;; Update `argv` and stop with first non-returning element,
+          ;; or return nil if there is no change.
+          (let [n (count argv)]
+            (loop [acc argv, i 0]
+              (if (= i n)
+                (when-not (identical? acc argv)
+                  acc)
+                (let [x (nth argv i), x' (codify x)]
+                  (cond
+                    (identical? x x') (recur acc (inc i))
+                    (returns? x') (recur (assoc acc (object i) x') (inc i))
+                    :else (conj (subvec acc 0 i) x')))))))
+        (non-strict-code-argv ^IPersistentVector [^IPersistentVector argv]
+          (let [n (count argv)]
+            (loop [acc argv, i 0]
+              (if (= i n)
+                (when-not (identical? acc argv)
+                  acc)
+                (let [x (nth argv i), x' (codify x)]
+                  (recur (cond-> acc
+                           (not (identical? x x')) (assoc (object i) x'))
+                         (inc i)))))))
+        (progn-no-return ^Expr [^Expr x ^IPersistentVector argv]
+          (case (count argv)
+            0 (throw (IllegalArgumentException.))
+            1 (nth argv 0)
+            #_else (Progn. (x/form x) no-return argv nil)))
+        (some-returning [[^Expr x & xr]]
+          ;; Return first returning expression if one exists, and an
+          ;; arbitrary non-returning expression otherwise.
+          (cond (returns? x) x
+                (some? xr) (recur xr)
+                :else x))
+        (codify-split-join ^Expr [^SplitJoin x ^IPersistentVector argv']
+          (let [branch (nth argv' 0)]
+            (if (returns? branch)
+              (x/with-argv x (x/type (some-returning (rest argv'))) argv')
+              branch)))
+        (codify-switch ^Expr [^Switch x ^IPersistentVector argv']
+          (let [test (nth argv' 0)]
+            (if (returns? test)
+              (x/with-argv x (x/type (some-returning (rest argv'))) argv')
+              test)))
+        (codify-tcf ^Expr [^TryCatchFinally x ^IPersistentVector argv']
+          (if (and (= (count argv') 2) (x/expr-empty? (peek argv')))
+            (nth argv' 0)
+            (x/with-argv x
+              (if (returns? (peek argv')) ;does finally return?
+                (x/type (some-returning (pop argv')))
+                no-return)
+              argv')))
+        (codify ^Expr [^Expr x]
+          ;; Assign non-returning expressions in `x` the type
+          ;; `no-return` and drop dead or effectively empty
+          ;; expressions.
+          (-> (cond
+                (zero? (x/arg-count x)) x
+
+                (x/strict-evaluation? x)
+                (if-some [argv' (strict-code-argv (x/argv x))]
+                  (if (returning-type? (x/type (peek argv')))
+                    (x/with-argv x argv') ;structure unchanged
+                    (progn-no-return x argv'))
+                  x)
+
+                :else
+                (if-some [argv' (non-strict-code-argv (x/argv x))]
+                  (condp instance? x
+                    SplitJoin (codify-split-join ^SplitJoin x argv')
+                    Switch (codify-switch ^Switch x argv')
+                    TryCatchFinally (codify-tcf ^TryCatchFinally x argv')
+                    LoopBody (x/with-argv x (x/type (nth argv' 0)) argv')
+                    #_else (throw (IllegalStateException.)))
+                  x))
+              (transform)))]
+
+  (def codify codify)
+  
+  (defn as-returning-code ^Expr [^Expr x]
+    (let [x (codify x)
+          x (rewrite-returning x)]
+      x)))

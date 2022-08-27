@@ -159,7 +159,6 @@
 (defn- jvm-adapt-to ^Expr [^Class to-tp ^Expr from] ;returns nil on failure
   (cond
     (or (x/type? to-tp from)      ;cheapest: type of `from` is `to-tp`
-        (not (x/returns? from))   ;"no return" is always compatible
         (jb/polymorphic? to-tp))
     from
     
@@ -224,13 +223,12 @@
 
 ;; Return `to` if `from` can be widened to `to`, and nil otherwise.
 (defn- path-adaptable ^Expr [^Expr to ^Expr from]
-  (when (x/returns? to)
-    (when (or (not (x/pushes-result? from))
-              (resolve/numeric-assignable-to? (x/type from) (x/type to))
-              (and (x/pushes-nil-object? from)
-                   ;; FIXME... eliminate special treatment of boolean here?
-                   (or (x/boolean? to) (x/reference? to))))
-      to)))
+  (when (or (not (x/pushes-result? from))
+            (resolve/numeric-assignable-to? (x/type from) (x/type to))
+            (and (x/pushes-nil-object? from)
+                 ;; FIXME... eliminate special treatment of boolean here?
+                 (or (x/boolean? to) (x/reference? to))))
+    to))
 
 (def ^:private expr-some-object (x/const jb/Object "expr-some-object"))
 (defn path-join
@@ -273,10 +271,7 @@
 ;;; `to-tp` is polymorphic.
 (defn consume-body ^Expr [^Expr x ^Class to-tp]
   (if (jb/polymorphic? to-tp)
-    (cond
-      (x/statement? x) x
-      (not (x/returns? x)) (x/identity jb/void x)
-      :else x)
+    x
     (consume x to-tp)))
 
 (defn consume-paths ^IPersistentVector [^Class to-tp paths]

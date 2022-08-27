@@ -444,7 +444,7 @@
     (let [values (mapv (fn ^Expr [^Binding b ^Expr arg]
                          (conv/consume arg (x/type (.bref b))))
                        bv args)]
-      (x/insn-recur jb/no-return values bv))))
+      (x/insn-recur jb/void values bv))))
 
 (defn- resolve-sym-local ^BindingRef [^Env env ^Symbol sym]
   (when (nil? (namespace sym))
@@ -628,10 +628,9 @@
            (branch/if-expr expr-test expr-true expr-false)))
 
        (throw-no-match [^Expr e]
-         (let [exc (x/invoke-xref jb/Exception [(conv/box-any-expr e)]
-                                  rt/mhd-no-matching-clause)]
-           (x/insn* jb/no-return [exc]
-                    (jdk.classfile.instruction.ThrowInstruction/of))))
+         (-> (x/invoke-xref jb/Exception [(conv/box-any-expr e)]
+                            rt/mhd-no-matching-clause)
+             (x/throw)))
        (parse-case-clauses ^IPersistentVector [^Expr test clauses]
          (let [tp-test (condp identical? (x/type test)
                          jb/byte jb/int
@@ -641,10 +640,10 @@
                   path-idx 0
                   [g r :as clauses] (seq clauses)]
              (cond
-               (nil? clauses)             ;case* has no default
+               (nil? clauses)           ;case* has no default
                [guardv (throw-no-match test)]
                
-               (nil? (next clauses))      ;case* ends with default
+               (nil? (next clauses))    ;case* ends with default
                [guardv (tail-form g)]
 
                :else
@@ -1031,21 +1030,15 @@
                ecs (mapv #(catch-form env %) cs) ;eager
                finally-statm (-> (tail-forms env ctx-finally (rest f) tl-ctx)
                                  (xf/coerce-to-statm)
-                                 (x/with-innermost-form f))
-               finally? (not (x/expr-empty? finally-statm))]
-           (if (or (some? (seq ecs)) finally?)
-             ;; have either a catch or finally             
-             (let [all-paths (cons body-expr (map second ecs))
-                   to-tp (x/type (conv/path-join all-paths))
-                   pathv (conv/consume-paths to-tp all-paths)]
-               (x/try-catch-finally
-                to-tp (nth pathv 0)
-                (cond-> (mapv (fn [[catch-ex _] catch-body]
-                                (x/try-handler catch-ex catch-body))
-                              ecs (rest pathv))
-                  finally? (conj (x/try-handler nil (x/throw x/expr-empty))))
-                finally-statm))
-             body-expr)))
+                                 (x/with-innermost-form f))]
+           (let [all-paths (cons body-expr (map second ecs))
+                 to-tp (x/type (conv/path-join all-paths))
+                 pathv (conv/consume-paths to-tp all-paths)]
+             (x/try-catch-finally to-tp (nth pathv 0)
+                                  (mapv (fn [[catch-ex _] catch-body]
+                                          (x/try-handler catch-ex catch-body))
+                                        ecs (rest pathv))
+                                  finally-statm))))
        (try-form ^Expr [form]
          (if (tcf-pos? form-ctx)
            (try-form* form)

@@ -29,19 +29,15 @@
          (asm-expr ^boolean [^boolean x]
                    (if :else x))))
   (is (= '[["LOCAL 0: boolean x"]
-           (ICONST_1)
-           (IFEQ L:0)
+           #_(ICONST_1)
+           #_(IFEQ L:0)
            (NEW IllegalArgumentException)
            (DUP)
            (INVOKESPECIAL IllegalArgumentException "<init>" "()V")
            (ATHROW)
-           [L:0]
-           (ICONST_0)
-           (IRETURN)]
-         ;; Carry both branches into the bytecode, because the if's
-         ;; return type is a boolean and therefore passed to IRETURN.
-         ;; If only the ATHROW branch is emitted, the IRETURN becomes
-         ;; unreachable.
+           #_[L:0]
+           #_(ICONST_0)
+           #_(IRETURN)]
          (asm-expr ^boolean [^boolean x]
                    (if :else (throw (IllegalArgumentException.)))))))
 
@@ -502,6 +498,9 @@
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "g~1" "(Z)V")
              ["LOCAL 0: boolean x"]
+             (ILOAD_0)
+             (IFEQ L:0)
+             [L:0]
              (INVOKESTATIC . "f~0" "()V")
              (RETURN)]
             
@@ -514,7 +513,8 @@
              (LLOAD_0)
              (LCONST_0)
              (LCMP)
-             (POP)
+             (IFGE L:0)
+             [L:0]
              (INVOKESTATIC . "f~0" "()V")
              (RETURN)]
 

@@ -25,7 +25,8 @@
 (definterface __IExpr             ;template for the abstract base type
   (form ^Object [])
   (initialize-form ^void [^Object form])
-  (safe-to-discard? ^boolean []))
+  (safe-to-discard? ^boolean [])
+  (with-argv #_Expr [^Class tp ^IPersistentVector argv]))
 
 ;; Optional field `form` is only set for expressions compiled from
 ;; source code.  If it's an ISeq with :line meta, it also provides the
@@ -71,7 +72,11 @@
     ;; visible side-effects.  If the effect of an operation is
     ;; unknown, or if it can throw an exception, then it must be
     ;; preserved.
-    (some? const-value)))
+    (some? const-value))
+  (with-argv [_ tp argv]
+    ;; Rebuild expression with a different return type or different
+    ;; arguments.
+    (throw (UnsupportedOperationException.))))
 
 (defn expr? ^boolean [x] (instance? Expr x))
 (defn type ^Class [^Expr x] (.type x))
@@ -81,6 +86,11 @@
 (defn with-innermost-form ^Expr [^Expr x form]
   (.initialize-form x form)
   x)
+(defn with-argv
+  (^Expr [^Expr x ^IPersistentVector argv]
+   (with-argv x (type x) argv))
+  (^Expr [^Expr x ^Class tp ^IPersistentVector argv]
+   (.with-argv x tp argv)))
 
 (defn same-type? ^boolean [^Expr a ^Expr b]
   (jb/same-class? (.type a) (.type b)))
@@ -99,11 +109,8 @@
   (jb/reference? (type x)))
 (defn statement? ^boolean [^Expr x]
   (jb/statement? (type x)))
-(defn returns? ^boolean [^Expr x] ;excludes macro or primitive function values
-  (jb/returns? (type x)))
 (defn pushes-result? ^boolean [^Expr x]
-  (let [tp (type x)]
-    (and (jb/returns? tp) (not (jb/statement? tp)))))
+  (jb/pushes-result? (type x)))
 
 ;;; This indicates an error regarding the type *of* an expression.
 (defn wrong-type
@@ -124,6 +131,16 @@
 
 (defn vararg-array-compatible? ^boolean [^Class parameter-type ^Expr arg]
   (.isAssignableFrom parameter-type (type arg)))
+
+;; Strict evaluation means that all arguments are evaluated before
+;; their consuming instruction is evaluated.  Conditional instructions
+;; (if, switch, or try) are non-strict in that only some of their
+;; arguments are evaluated.  Loop instruction is non-strict in the
+;; sense that its argument may be evaluated multiple times.
+(definterface INonStrictEvaluation)
+
+(defn strict-evaluation? ^boolean [^Expr x]
+  (not (instance? INonStrictEvaluation x)))
 
 ;;; ------------------------------------------------------------------------
 
@@ -198,7 +215,10 @@
                      ^String lookup-descriptor
                      ^boolean owner-interface?
                      ^boolean settable-field?]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (InvokeXref. (form this) tp argv (.const-value this) kind owner method-name
+                 lookup-descriptor owner-interface? settable-field?)))
 
 (defn invoke-xref
   (^InvokeXref [^Class type ^IPersistentVector argv ^DirectMethodHandleDesc mhd]
@@ -213,8 +233,8 @@
                 ^ClassDesc owner ^String method-name
                 ^String lookup-descriptor ^boolean owner-interface?
                 ^boolean settable-field?]
-   (InvokeXref. nil type argv const-value kind owner
-                method-name lookup-descriptor owner-interface?
+   (InvokeXref. nil type argv const-value
+                kind owner method-name lookup-descriptor owner-interface?
                 settable-field?)))
 
 (defn invoke-xref? ^boolean [^Expr x]
@@ -252,7 +272,10 @@
                         ^String invocation-name
                         ^DirectMethodHandleDesc bsm
                         ^IPersistentVector cexprs]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (InvokeDynamic. (form this) tp argv (.const-value this)
+                    invocation-name bsm cexprs)))
 
 (defn invoke-dynamic ^InvokeDynamic [^Class tp ^IPersistentVector argv
                                      ^DirectMethodHandleDesc bsm
@@ -274,7 +297,10 @@
                      ^ClassDesc owner
                      ^String method-name
                      ^boolean owner-interface?]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (InvokePoly. (form this) tp argv (.const-value this)
+                 kind owner method-name owner-interface?)))
 
 (defn invoke-poly ^InvokePoly [^Class tp ^IPersistentVector argv
                                ^Object const-value
@@ -309,10 +335,12 @@
   Expr
   (safe-to-discard? [this]
     (or (some? (.const-value ^Expr this))
-        (< (-> instr .opcode .bytecode) Classfile/IALOAD))))
+        (< (-> instr .opcode .bytecode) Classfile/IALOAD)))
+  (with-argv [this tp argv]
+    (Insn. (form this) tp argv (.const-value this) instr)))
 
-(defn insn* ^Insn [^Class type ^IPersistentVector argv ^Instruction instr]
-  (Insn. nil type argv nil instr))      ;no constant folding!
+(defn insn* ^Insn [^Class tp ^IPersistentVector argv ^Instruction instr]
+  (Insn. nil tp argv nil instr))        ;no constant folding!
 
 (defn insn? ^boolean [^Expr x]
   (instance? Insn x))
@@ -330,15 +358,17 @@
   (insn* tp [] (-> (cf/by-slot-size tp Opcode/DUP_X2 Opcode/DUP2_X2)
                    (jdk.classfile.instruction.StackInstruction/of))))
 
-(defn return ^Expr [^Expr arg ^Class to-tp] ;pre: `to-tp` is jb/no-return
-  (if (returns? arg)
-    (insn* to-tp [arg] (-> (cf/type-kind (type arg))
-                           (jdk.classfile.instruction.ReturnInstruction/of)))
-    arg))
+(defn pop ^Expr [^Expr arg]
+  (insn* jb/void [arg] (-> (cf/by-slot-size (type arg) Opcode/POP Opcode/POP2)
+                           (jdk.classfile.instruction.StackInstruction/of))))
+(defn pop? ^boolean [^Insn insn]
+  (let [opc (-> insn .instr .opcode)]
+    (or (identical? Opcode/POP opc) (identical? Opcode/POP2 opc))))
 
 (defn throw ^Expr [^Expr arg]
-  (insn* jb/no-return [arg]
-         (jdk.classfile.instruction.ThrowInstruction/of)))
+  (insn* jb/void [arg] (jdk.classfile.instruction.ThrowInstruction/of)))
+(defn throw? ^boolean [^Insn insn]
+  (identical? Opcode/ATHROW (-> insn .instr .opcode)))
 
 ;;; JVM's "checkcast" and "instanceof".
 (defn type-check ^Insn [^Expr arg ^Opcode opcode ^Class check-tp]
@@ -350,6 +380,12 @@
                     #_else (throw (IllegalArgumentException.)))]
     (insn* return-tp [arg] instr)))
 
+;; (defn prefix-tree [^Expr x]
+;;   (letfn [(op [^Expr x]
+;;             (symbol (if (insn? x)
+;;                       (-> ^Insn x .instr .opcode .name)
+;;                       (.getName (class x)))))]
+;;     (list* (op x) (str (type x)) (map prefix-tree (argv x)))))
 
 ;;; First argument invokes some kind of "get" operation, second
 ;;; argument is the value that should be passed to the corresponding
@@ -360,7 +396,9 @@
                  ^:pass-to-super-constructor ^Class type
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (Setter. (form this) tp argv (.const-value this))))
 
 (defn setter ^Setter [^Class tp ^Expr var-expr ^Expr value ^boolean static?]
   (Setter. nil tp [var-expr value (if static? (dup tp) (dup-x1 tp))] nil))
@@ -373,7 +411,9 @@
                    ^:pass-to-super-constructor ^Class type
                    ^:pass-to-super-constructor ^IPersistentVector argv
                    ^:pass-to-super-constructor ^Object const-value]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (NewArray. (form this) tp argv (.const-value this))))
 
 (defn new-array ^NewArray [^Class tp ^IPersistentVector argv]
   (NewArray. nil tp argv nil))
@@ -387,7 +427,9 @@
                    ^:pass-to-super-constructor ^Class type
                    ^:pass-to-super-constructor ^IPersistentVector argv
                    ^:pass-to-super-constructor ^Object const-value]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (Identity. (form this) tp argv (.const-value this))))
 
 (defn identity? ^boolean [x]
   (instance? Identity x))
@@ -408,40 +450,32 @@
 
 
 ;;; Representation of a `do` block: a sequence of statements followed
-;;; by an expression.  Argument at index `result-idx` provides the
-;;; type of the `progn` expression.  Unless there is a non-returning
-;;; statement, it is equal to `(dec (count argv))`.
-;;; 
-;;; No arguments represent the empty instruction with a type of `void`
-;;; and a `result-idx` of -1.
+;;; by an expression.  No arguments represent the empty instruction
+;;; with a type of `void`.
 (deftype Progn [^:pass-to-super-constructor ^Object _form
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
-                ^:pass-to-super-constructor ^Object const-value
-                ^int result-idx]
-  Expr)
+                ^:pass-to-super-constructor ^Object const-value]
+  Expr
+  (with-argv [this tp argv]
+    (Progn. (form this) tp argv (.const-value this))))
 
 (defn progn? ^boolean [x]
   (instance? Progn x))
 
-(def const-value-void
-  (ClassDesc/of "tinyclj.lang" "EmptyStatementMarker"))
-
 (def expr-empty                     ;empty expression "producing" void
-  (Progn. (list 'do) jb/void [] const-value-void -1)) ;stable non-nil form
+  (Progn. (list 'do) jb/void [] nil))   ;stable non-nil form
 (def expr-provided  ;"produces" exception of catch handler, or method argument
-  (Progn. (list 'do) jb/void [] nil -1)) ;stable non-nil form
+  (Progn. (list 'do) jb/void [] nil))   ;stable non-nil form
 
 (defn expr-empty? ^boolean [^Expr x]
-  (identical? const-value-void (.const-value x)))
+  (identical? expr-empty x))
 
-(defn empty-when [^boolean cond]
-  (when cond const-value-void))
-(defn propagate-empty
-  ([^Expr x1]
-   (empty-when (expr-empty? x1)))
-  ([^Expr x1 ^Expr x2]
-   (empty-when (and (expr-empty? x1) (expr-empty? x2)))))
+(defn progn ^Expr [^IPersistentVector argv]
+  ;; pre: all but the last `argv` have been coerced to statement
+  (if (zero? (count argv))
+    expr-empty
+    (Progn. nil (type (peek argv)) argv nil)))
 
 
 ;;; Lexically scoped block: the lifetime of locals created within the
@@ -451,7 +485,9 @@
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
                 ^:pass-to-super-constructor ^Object const-value]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (Block. (form this) tp argv (.const-value this))))
 
 (defn block? ^boolean [x]
   (instance? Block x))
@@ -488,7 +524,9 @@
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value
                  ^Opcode opcode ^int opcd]
-  Expr)
+  Expr          ;note: branch instruction itself is strictly evaluated
+  (with-argv [this tp argv]
+    (Branch. (form this) tp argv (.const-value this) opcode opcd)))
 
 (defn branch? ^boolean [^Expr x]
   (instance? Branch x))
@@ -500,16 +538,6 @@
 
 
 
-;;; Return first returning expression if one exists, and an arbitrary
-;;; non-returning expression otherwise.
-(defn- some-returning
-  ([[^Expr x & xr]]
-   (cond (returns? x) x
-         (some? xr) (recur xr)
-         :else x))
-  (^Expr [^Expr a ^Expr b]
-   (if (returns? a) a b)))
-
 ;;; Combines a `Branch` with split & join of control flow.  Takes
 ;;; three arguments `[branch-to-true if-true if-false]`.  During emit,
 ;;; the sense of the branch instructions is negated so that it targets
@@ -518,7 +546,10 @@
                     ^:pass-to-super-constructor ^Class type
                     ^:pass-to-super-constructor ^IPersistentVector argv
                     ^:pass-to-super-constructor ^Object const-value]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (SplitJoin. (form this) tp argv (.const-value this)))
+  INonStrictEvaluation)
 
 (defn split-join? ^boolean [x]
   (instance? SplitJoin x))
@@ -528,10 +559,9 @@
 ;;; the `if-false` path.
 (defn split&join
   (^Expr [^Branch branch-to-true]
-   (split&join branch-to-true expr-true expr-false))
-  (^Expr [^Branch branch-to-true ^Expr if-true ^Expr if-false]
-   (SplitJoin. nil (type (some-returning if-true if-false))
-               [branch-to-true if-true if-false]
+   (split&join branch-to-true jb/boolean expr-true expr-false))
+  (^Expr [^Branch branch-to-true ^Class tp ^Expr if-true ^Expr if-false]
+   (SplitJoin. nil tp [branch-to-true if-true if-false]
                (cond (const-value-true? branch-to-true) (.const-value if-true)
                      (const-value-false? branch-to-true) (.const-value if-false)
                      :else nil))))
@@ -572,7 +602,10 @@
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value
                  ^IPersistentVector guardv]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (Switch. (form this) tp argv (.const-value this) guardv))
+  INonStrictEvaluation)
 
 (defn switch ^Switch [^Class tp ^Expr test ^Expr dflt-path
                       ^IPersistentVector guardv]
@@ -582,29 +615,32 @@
 
 ;;; The body of a handler must take an "out of thin air" operand of
 ;;; type Throwable from the stack.
-(deftype TryHandler [^Class exception   ;non-nil for catch block
+(deftype TryHandler [^Class exception   ;never nil
                      ^Expr initial-body]) ;superseded by arg of TryCatchFinally
 (def try-handler ->TryHandler)
 
-;;; Takes 1+n+1 arguments, if n is the number of catch clauses.  First
-;;; is the main body of the try expression followed by the n bodies of
-;;; the catch blocks, then the single copy of the finally statement.
-;;; The finally statement will be emitted 1+n+1 times in total!
+;;; Takes 1+n+1 arguments, if n is the number of non-wildcard catch
+;;; clauses.  First is the main body of the try expression followed by
+;;; the n bodies of the catch blocks, then the single copy of the
+;;; finally statement.  The finally statement will be emitted 1+n+1
+;;; times in total!
 (deftype TryCatchFinally
     [^:pass-to-super-constructor ^Object _form
      ^:pass-to-super-constructor ^Class type
      ^:pass-to-super-constructor ^IPersistentVector argv
      ^:pass-to-super-constructor ^Object const-value
      handlerv]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (TryCatchFinally. (form this) tp argv (.const-value this) handlerv))
+  INonStrictEvaluation)
 
 (defn try-catch-finally ^TryCatchFinally [^Class tp ^Expr body
                                           handlers ^Expr finally]
   (let [argv (-> [body]
                  (into (map #(.initial-body ^TryHandler %)) handlers)
                  (conj finally))]
-    (TryCatchFinally. nil tp argv (propagate-empty body finally)
-                      (vec handlers))))
+    (TryCatchFinally. nil tp argv nil (vec handlers))))
 
 
 ;;; Creates a label before emitting its arguments and pushes it onto
@@ -613,10 +649,13 @@
                    ^:pass-to-super-constructor ^Class type
                    ^:pass-to-super-constructor ^IPersistentVector argv
                    ^:pass-to-super-constructor ^Object const-value]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (LoopBody. (form this) tp argv (.const-value this)))
+  INonStrictEvaluation)
 
 (defn loop-body ^Expr [^Expr body]
-  (LoopBody. nil (type body) [body] (propagate-empty body)))
+  (LoopBody. nil (type body) [body] nil))
 
 
 ;;; Parallel assignment of the arguments to their corresponding
@@ -626,12 +665,15 @@
                 ^:pass-to-super-constructor ^IPersistentVector argv
                 ^:pass-to-super-constructor ^Object const-value
                 bv]             ;vec of Binding, one for each argument
-                
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (Recur. (form this) tp argv (.const-value this) bv)))
 
 (defn insn-recur ^Recur [^Class tp ^IPersistentVector argv
                          ^IPersistentVector bv]
   (Recur. nil tp argv nil bv))
+(defn recur? ^boolean [^Expr x]
+  (instance? Recur x))
 
 ;;; ------------------------------------------------------------------------
 
@@ -869,7 +911,9 @@
                   ^:pass-to-super-constructor ^IPersistentVector argv
                   ^:pass-to-super-constructor ^Object const-value
                   ^BindingRef bref]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (Binding. (form this) tp argv (.const-value this) bref)))
 
 (defn bref ^BindingRef [^Binding b]
   (.bref b))
@@ -888,7 +932,7 @@
   ;; binding a macro or primitive function to another name has no
   ;; effect for runtime code
   (Binding. (form bref) jb/void (when (some? init-value) [init-value])
-            (empty-when (not (b-value? bref))) bref))
+            nil bref))
 
 
 ;;; A GlobalBinding marks the place of a def expression.  It cannot be
@@ -1185,7 +1229,10 @@
                  ^FnCode !fnc]
   Expr
   (safe-to-discard? [this]
-    (nil? (seq (argv this)))))
+    (nil? (seq (argv this))))
+  (with-argv [this tp argv]
+    (FnForm. (form this) tp argv (.const-value this)
+             level unique-mnm super-mhd itf-tags at-sigs body-fut !fnc)))
 
 (defn fn-reify? ^boolean [^FnForm fn-form]
   (some? (seq (argv fn-form))))
@@ -1200,7 +1247,9 @@
                   ^:pass-to-super-constructor ^Object const-value
                   ^FnForm fn-form
                   ^BindingRef bref]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (FnPatch. (form this) tp argv (.const-value this) fn-form bref)))
 
 (defn with-at-sigs ^FnForm [^FnForm fn-form ^IPersistentVector at-sigs]
   (FnForm. (form fn-form) (type fn-form) (argv fn-form) (.const-value fn-form)
@@ -1243,7 +1292,9 @@
                       ^:pass-to-super-constructor ^Object const-value
                       ^FnForm fn-form
                       ^int at-idx]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (InvokeArity. (form this) tp argv (.const-value this) fn-form at-idx)))
 
 (defn invoke-arity ^InvokeArity [^Class tp ^IPersistentVector argv
                                  ^FnForm fn-form ^int at-idx]
@@ -1452,16 +1503,10 @@
 ;;; expressions that do not return (like `throw` or `recur`).
 (defn ensure-runtime-value ^Expr [^Expr x]
   (let [tp (type x)]
-    (cond
-      (jb/compile-time-entity? tp)
+    (if (jb/compile-time-entity? tp)
       (or (value-of-macro x)
           (wrong "cannot take value of macro or primitive function" x))
-
-      (jb/returns? tp)
-      x
-
-      :else
-      (wrong "expression does not produce a value" x))))
+      x)))
 
 ;;; pre: (jb/polymorphic? (type x))
 (defn with-monomorphic-result ^Expr [^Expr x ^Class tp]

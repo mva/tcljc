@@ -37,7 +37,7 @@
           ;; adds the branches that complete it.
           ^Branch test
           (xf/icmp test x/expr-false cf/ne))
-        (x/split&join (nth pathv 0) (nth pathv 1)))))
+        (x/split&join to-tp (nth pathv 0) (nth pathv 1)))))
 
 ;;; ------------------------------------------------------------------------
 
