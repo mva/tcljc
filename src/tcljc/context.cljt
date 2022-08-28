@@ -304,10 +304,10 @@
   (let [known-ns {}
         ns-alias {}
         binding-frame (clojure.lang.Var/cloneThreadBindingFrame)
-        ;; FIXME... test with capacity of 1 to see if it deadlocks
-        capacity 32 ;for top-level forms, macro values, define class, ...
-        emit (EmitQueue. (ArrayBlockingQueue. capacity)
-                         (ArrayBlockingQueue. capacity))
+        capacity-q 32 ;for top-level forms, macro values, define class, ...
+        capacity-s 4  ;prevent compilation from reaching too far ahead
+        emit (EmitQueue. (ArrayBlockingQueue. capacity-q)
+                         (ArrayBlockingQueue. capacity-s))
         next-id-mh (resolve-mh lookup-in-pkg rt/mhd-nextID)
         private-names (ConcurrentHashMap.)]
     (Ctx. known-ns ns-alias initial-globals jb/initial-imports
