@@ -493,7 +493,9 @@
     (line-number es xb x)
     
     (if-some [c (.const-value x)]
-      (.constantInstruction xb (rt/describe-const-expr c))
+      (cond-> xb
+        (not (x/expr-empty? x))
+        (.constantInstruction (rt/describe-const-expr c)))
       (condp instance? x
         Insn
         (simple-insn xb ^Insn x)

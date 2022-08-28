@@ -13,13 +13,13 @@
   ;; this seems to require progn unwrapping for constant folding of
   ;; the if (unwrapping is disabled to prevent switch miscompilation
   ;; in code/flat-insns)
-  (is (= '[(ICONST_1)
-           (IFEQ L:0)
+  (is (= '[#_(ICONST_1)
+           #_(IFEQ L:0)
            (ICONST_2)
            (IRETURN)
-           [L:0]
-           (ICONST_4)
-           (IRETURN)]
+           #_[L:0]
+           #_(ICONST_4)
+           #_(IRETURN)]
          (asm-expr (if 123 2 4))))
   
   (is (= '[(ICONST_4) (IRETURN)]

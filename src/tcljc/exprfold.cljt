@@ -6,7 +6,8 @@
   (:import (tcljc.expr Expr Insn Const Progn Block Setter BindingRef Identity
                        LoopBody Branch SplitJoin Switch TryCatchFinally)
            (clojure.lang IPersistentVector)
-           (jdk.classfile Classfile Opcode)))
+           (jdk.classfile Classfile Opcode))
+  (:refer-clojure :exclude [pop]))
 
 (defn conv ^Expr [^Class type ^Expr arg0 ^Opcode opc]
   (letfn [(conv-1 ^Object [^int bytecode ^Number arg0]
@@ -153,6 +154,18 @@
     (Insn. nil jb/int [arg0 arg1] c
            (jdk.classfile.instruction.OperatorInstruction/of opc))))
 
+(defn pop ^Expr [^Expr arg]        ;returns `arg` if it is a statement
+  (letfn [(pop* ^Expr [^Expr arg]
+            (Insn. nil jb/void [arg] (x/empty-when (.safe-to-discard? arg))
+                   (-> (cf/by-slot-size (x/type arg) Opcode/POP Opcode/POP2)
+                       (jdk.classfile.instruction.StackInstruction/of))))
+          (undup ^Expr [^Expr x]
+            (x/with-argv x jb/void (tinyclj.core/pop (x/argv x))))]
+    (cond
+      (x/statement? arg) arg
+      (x/dup? (peek (x/argv arg))) (undup arg) 
+      :else (pop* arg))))
+
 ;;; ------------------------------------------------------------------------
 
 (defn- rewrite-result [f ^Expr x ^Class to-tp] ;mirrors xc/rewrite-result
@@ -160,7 +173,7 @@
             (x/with-innermost-form (x/with-argv x tp argv) (x/form x)))
           (rebuild-last ^Expr [^Expr x]
             (let [xv (x/argv x)]
-              (rebuild x to-tp (conj (pop xv)
+              (rebuild x to-tp (conj (tinyclj.core/pop xv)
                                      (rewrite-result f (peek xv) to-tp)))))
           (rebuild-paths ^Expr [^Expr x ^int start ^int delta-end]
             (let [v (x/argv x), end (+ (count v) delta-end)]
@@ -192,8 +205,7 @@
 
       LoopBody (rebuild-last x)
 
-      TryCatchFinally (if (or #_(jb/returns? to-tp)
-                              (x/expr-empty? (peek (x/argv x))))
+      TryCatchFinally (if (x/expr-empty? (peek (x/argv x)))
                         (rebuild-paths x 0 -1)
                         (f x to-tp))
       
@@ -209,7 +221,7 @@
   (letfn [(coerce-expr ^Expr [^Expr x ^Class to-tp] ;pre: `x` is not a join
             (cond
               (jb/statement? to-tp)
-              (x/pop x)
+              (pop x)
                     
               (.isAssignableFrom to-tp (x/type x))
               (x/identity to-tp x)

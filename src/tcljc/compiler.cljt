@@ -1017,7 +1017,7 @@
                ;; init expression is expr-provided representing the
                ;; "out of thin air" character
                bref (x/local-ref (.level env) nm tp x/b-let)
-               b (x/local-binding bref x/expr-provided)]
+               b (x/local-binding bref (x/expr-provided tp))]
            [tp (-> (x/block [b] (-> (add-local env b)
                                     (tail-forms (without-recur form-ctx)
                                                 body tl-ctx)))

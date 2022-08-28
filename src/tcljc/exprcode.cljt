@@ -76,29 +76,10 @@
       x)))
 
 (letfn [(transform-insn ^Expr [^Insn x]
-          (cond
-            (x/pop? x)
-            (let [arg (x/nth-arg x 0)]
-              (if (.safe-to-discard? arg)
-                x/expr-empty
-                (let [arg-argv (x/argv arg)]
-                  (if (x/dup? (peek arg-argv))
-                    (if (= (count arg-argv) 1)
-                      x/expr-empty
-                      (x/with-argv arg jb/void (pop arg-argv)))
-                    x))))
-
-            (x/throw? x)
+          (if (x/throw? x)
             (x/insn* no-return (x/argv x)
                      (jdk.classfile.instruction.ThrowInstruction/of))
-
-            :else x))
-        (transform-progn ^Expr [^Progn x]
-          (let [argv (x/argv x)]
-            (loop [i (dec (count argv))]
-              (cond (neg? i) x/expr-empty
-                    (x/expr-empty? (nth argv i)) (recur (dec i))
-                    :else x))))
+            x))
         (transform-split-join ^Expr [^SplitJoin x]
           (let [branch (x/nth-arg x 0)]
             (if (x/const-value? branch)
@@ -108,10 +89,9 @@
           (if (x/expr-empty? (x/nth-arg x 0))
             (peek (x/argv x))
             x))
-        (transform ^Expr [^Expr x]
+        (transform ^Expr [^Expr x]      ;adds `no-return` decorations
           (condp instance? x
             Insn (transform-insn ^Insn x)
-            Progn (transform-progn ^Progn x)
             SplitJoin (transform-split-join ^SplitJoin x)
             TryCatchFinally (transform-tcf ^TryCatchFinally x)
             Recur (x/with-argv x no-return (x/argv x))

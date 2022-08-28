@@ -358,13 +358,6 @@
   (insn* tp [] (-> (cf/by-slot-size tp Opcode/DUP_X2 Opcode/DUP2_X2)
                    (jdk.classfile.instruction.StackInstruction/of))))
 
-(defn pop ^Expr [^Expr arg]
-  (insn* jb/void [arg] (-> (cf/by-slot-size (type arg) Opcode/POP Opcode/POP2)
-                           (jdk.classfile.instruction.StackInstruction/of))))
-(defn pop? ^boolean [^Insn insn]
-  (let [opc (-> insn .instr .opcode)]
-    (or (identical? Opcode/POP opc) (identical? Opcode/POP2 opc))))
-
 (defn throw ^Expr [^Expr arg]
   (insn* jb/void [arg] (jdk.classfile.instruction.ThrowInstruction/of)))
 (defn throw? ^boolean [^Insn insn]
@@ -449,6 +442,23 @@
   (identity jb/Object x))
 
 
+(def const-value-void
+  ^Object (ClassDesc/of "tinyclj.lang" "EmptyStatementMarker"))
+
+(defn expr-empty? ^boolean [^Expr x]
+  (identical? const-value-void (.const-value x)))
+
+(defn empty-when [^boolean cond]
+  (when cond const-value-void))
+
+(defn- const-value-progn ^Object [^IPersistentVector argv]
+  #_(assert (every? statement? (tinyclj.core/pop argv)))
+  (loop [acc const-value-void, i (dec (count argv))]
+    (if (neg? i)
+      acc
+      (when-some [c (.const-value ^Expr (nth argv i))]
+        (recur (if (identical? const-value-void c) acc c) (dec i))))))
+
 ;;; Representation of a `do` block: a sequence of statements followed
 ;;; by an expression.  No arguments represent the empty instruction
 ;;; with a type of `void`.
@@ -458,24 +468,22 @@
                 ^:pass-to-super-constructor ^Object const-value]
   Expr
   (with-argv [this tp argv]
-    (Progn. (form this) tp argv (.const-value this))))
+    (Progn. (form this) tp argv (const-value-progn argv))))
 
 (defn progn? ^boolean [x]
   (instance? Progn x))
 
 (def expr-empty                     ;empty expression "producing" void
-  (Progn. (list 'do) jb/void [] nil))   ;stable non-nil form
-(def expr-provided  ;"produces" exception of catch handler, or method argument
-  (Progn. (list 'do) jb/void [] nil))   ;stable non-nil form
+  (Progn. (list 'do) jb/void [] const-value-void)) ;stable non-nil form
 
-(defn expr-empty? ^boolean [^Expr x]
-  (identical? expr-empty x))
+;;; "Produces" exception of catch handler, or method argument.  This
+;;; is an empty instruction without arguments, but it is no constant.
+(defn expr-provided ^Expr [^Class tp]
+  (Progn. (list 'do) tp [] nil))        ;stable non-nil form
 
 (defn progn ^Expr [^IPersistentVector argv]
   ;; pre: all but the last `argv` have been coerced to statement
-  (if (zero? (count argv))
-    expr-empty
-    (Progn. nil (type (peek argv)) argv nil)))
+  (Progn. nil (type (peek argv)) argv (const-value-progn argv)))
 
 
 ;;; Lexically scoped block: the lifetime of locals created within the
@@ -932,7 +940,7 @@
   ;; binding a macro or primitive function to another name has no
   ;; effect for runtime code
   (Binding. (form bref) jb/void (when (some? init-value) [init-value])
-            nil bref))
+            (empty-when (not (b-value? bref))) bref))
 
 
 ;;; A GlobalBinding marks the place of a def expression.  It cannot be
@@ -1345,7 +1353,7 @@
 
 (defn local-ref
   (^ValueRef [^int level ^Symbol simple-nm ^Class tp ^int kind]
-   (local-ref level simple-nm tp kind expr-provided))
+   (local-ref level simple-nm tp kind (expr-provided tp)))
   (^ValueRef [^int level ^Symbol simple-nm ^Class tp ^int kind
               ^Expr init-with]
    (let [f 0
