@@ -12,8 +12,7 @@
    [tcljc.compiler.branch :as branch])
   (:import
    (tcljc.classfile ILdStInstr LdStMember)
-   (tcljc.expr Expr Const Insn NewArray Identity
-               InvokeXref InvokeDynamic InvokePoly
+   (tcljc.expr Expr Const Insn NewArray InvokeXref InvokeDynamic InvokePoly
                InvokeArity Setter Progn Block Branch SplitJoin Guard Switch
                TryHandler TryCatchFinally LoopBody Recur
                Binding BindingRef AliasRef AssignDef VarRef
@@ -501,9 +500,6 @@
         (simple-insn xb ^Insn x)
         NewArray
         (new-array-insn xb ^NewArray x)
-        
-        Identity
-        (expr-insns xb es (x/nth-arg x 0))
         
         InvokeXref
         (invoke-xref xb ^InvokeXref x)

@@ -678,8 +678,7 @@
        (clause-code-expr ^Expr [^Expr e guardv]
          (let [cexprv (->> (partition-by guard-path-idx guardv)
                            (mapv clause-code-segment))]
-           (x/invoke-dynamic jb/int [(-> (conv/box-any-expr e)
-                                         (x/objectcast))]
+           (x/invoke-dynamic jb/int [(x/identity jb/Object (conv/box-any-expr e))]
                              rt/bsm-clause-code cexprv)))
        (case*-form [[_ expr & clauses :as form]]
          ;; Note: The test expression is evaluated again if a

@@ -6,7 +6,7 @@
    [tcljc.exprfold :as xf])
   (:import
    (tcljc.expr Expr Insn Const Progn Block Branch SplitJoin Switch
-               LoopBody Recur TryCatchFinally Identity Setter)
+               LoopBody Recur TryCatchFinally Setter)
    (clojure.lang Symbol IPersistentVector))
   (:refer-clojure :exclude [type]))
 
@@ -45,20 +45,15 @@
                                   v)))))]
     (if (returns? x)
       (condp instance? x
-        ;; identity nodes may have been introduced on joined paths
-        ;; to match up their types
-        Identity (rewrite-returning (x/nth-arg x 0))
-
         ;; compare nodes are subject to expansion: rewriting Branch means
         ;; to expand it first and then to rewrite the result
         Branch (if (x/const-value? x)
                  (return x)
                  (rewrite-returning (x/split&join ^Branch x)))
         
-        Progn (let [tail (peek (x/argv x))]
-                (if (and (some? tail) (x/type? (x/type x) tail))
-                  (rebuild-last x)
-                  (return x)))
+        Progn (if-some [tail (peek (x/argv x))]
+                (rebuild-last x)
+                (return x))
 
         Block (rebuild-last x)
         

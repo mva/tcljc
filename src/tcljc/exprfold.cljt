@@ -3,7 +3,7 @@
             [tcljc.javabase :as jb]
             [tcljc.runtime :as rt]
             [tcljc.expr :as x])
-  (:import (tcljc.expr Expr Insn Const Progn Block Setter BindingRef Identity
+  (:import (tcljc.expr Expr Insn Const Progn Block Setter BindingRef
                        LoopBody Branch SplitJoin Switch TryCatchFinally)
            (clojure.lang IPersistentVector)
            (jdk.classfile Classfile Opcode))
@@ -184,18 +184,13 @@
                                              x))
                                          v)))))]
     (condp instance? x
-      ;; identity nodes may have been introduced on joined paths
-      ;; to match up their types
-      Identity (rewrite-result f (x/nth-arg x 0) to-tp)
-
       ;; compare nodes are subject to expansion: rewriting Branch means
       ;; to expand it first and then to rewrite the result
       Branch (rewrite-result f (x/split&join ^Branch x) to-tp)
       
-      Progn (let [tail (peek (x/argv x))]
-              (if (and (some? tail) (x/type? (x/type x) tail))
-                (rebuild-last x)
-                (f x to-tp)))
+      Progn (if-some [tail (peek (x/argv x))]
+              (rebuild-last x)
+              (f x to-tp))
 
       Block (rebuild-last x)
       
