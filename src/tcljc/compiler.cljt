@@ -1403,7 +1403,7 @@
   (let [arg ^Expr (nth argv 0)]
     (cond
       (x/statement? arg) x/expr-nil-object
-      (x/reference? arg) (x/identity arg)
+      (x/reference? arg) arg
       :else (conv/box-expr arg))))
 
 (defn ^FnPrimitiveFn list-primitive [form argv tl-ctx]

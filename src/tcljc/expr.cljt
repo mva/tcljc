@@ -20,7 +20,7 @@
    (java.lang.invoke MethodHandles$Lookup TypeDescriptor$OfField)
    (java.lang.reflect Member Method Field)
    (java.util.concurrent Future))
-  (:refer-clojure :exclude [type identity pop]))
+  (:refer-clojure :exclude [type identity pop sequential?]))
 
 (definterface __IExpr             ;template for the abstract base type
   (form ^Object [])
@@ -123,6 +123,7 @@
 
 (defn arg-count ^int [^Expr x]
   (count (argv x)))
+;;; FIXME... introduce shortcuts arg-0 and maybe arg-m1
 (defn nth-arg
   (^Expr [^Expr x ^int i]
    (nth-arg x i nil))
@@ -360,8 +361,8 @@
 
 (defn throw ^Expr [^Expr arg]
   (insn* jb/void [arg] (jdk.classfile.instruction.ThrowInstruction/of)))
-(defn throw? ^boolean [^Insn insn]
-  (identical? Opcode/ATHROW (-> insn .instr .opcode)))
+(defn throw? ^boolean [^Expr x]
+  (and (insn? x) (identical? Opcode/ATHROW (-> ^Insn x .instr .opcode))))
 
 ;;; JVM's "checkcast" and "instanceof".
 (defn type-check ^Insn [^Expr arg ^Opcode opcode ^Class check-tp]
@@ -434,10 +435,10 @@
 ;;; by an expression.  No arguments represent the empty instruction
 ;;; with a type of `void`.
 ;;;
-;;; Most of the time, the return type is that of the last argument.
-;;; It can differ, to model an identity operation that changes the
-;;; compiler-level type without any effect on the bytecode-level's
-;;; verification type.
+;;; If there are two or more arguments, then the return type is that
+;;; of the last argument.  A single argument models an identity
+;;; operation that changes the compiler-level type without any effect
+;;; on the bytecode-level's verification type.
 (deftype Progn [^:pass-to-super-constructor ^Object _form
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
@@ -459,7 +460,10 @@
 
 (defn progn ^Expr [^IPersistentVector argv]
   ;; pre: all but the last `argv` have been coerced to statement
-  (Progn. nil (type (peek argv)) argv (const-value-progn argv)))
+  (case (count argv)
+    0 expr-empty
+    1 (nth argv 0)      ;different from the `identity` operation below
+    #_else (Progn. nil (type (peek argv)) argv (const-value-progn argv))))
 
 (defn identity
   (^Expr [^Expr arg]
@@ -469,8 +473,9 @@
 
 
 ;;; Lexically scoped block: the lifetime of locals created within the
-;;; block ends with the end of the block.  It contains a sequence of
-;;; Binding statements followed by a single Expr with the body.
+;;; block ends with the end of the block.  It contains a non-empty
+;;; sequence of Binding statements followed by a single Expr with the
+;;; body.
 (deftype Block [^:pass-to-super-constructor ^Object _form
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
@@ -487,12 +492,14 @@
     (Block. nil (type body) (conj (vec bexprs) body) nil)
     body))
 
+(defn sequential? ^boolean [^Expr x] ;does not include empty-expr or identity
+  (and (or (progn? x) (block? x)) (>= (arg-count x) 2)))
+
 (defn pushes-nil-object? ^boolean [^Expr x]
   (and (jb/object? (type x))
-       (cond
-         (const-value-nil? x) true
-         (or (progn? x) (block? x)) (recur (peek (argv x)))
-         :else false)))
+       (cond (const-value-nil? x) true
+             (sequential? x) (recur (peek (argv x)))
+             :else false)))
 
 ;;; ------------------------------------------------------------------------
 
@@ -549,7 +556,9 @@
 ;;; the `if-false` path.
 (defn split&join
   (^Expr [^Branch branch-to-true]
-   (split&join branch-to-true jb/boolean expr-true expr-false))
+   (SplitJoin. (form branch-to-true) jb/boolean
+               [branch-to-true expr-true expr-false]
+               (.const-value branch-to-true)))
   (^Expr [^Branch branch-to-true ^Class tp ^Expr if-true ^Expr if-false]
    (SplitJoin. nil tp [branch-to-true if-true if-false]
                (cond (const-value-true? branch-to-true) (.const-value if-true)
@@ -1337,14 +1346,14 @@
   (^ValueRef [^int level ^Symbol simple-nm ^Class tp ^int kind]
    (local-ref level simple-nm tp kind (expr-provided tp)))
   (^ValueRef [^int level ^Symbol simple-nm ^Class tp ^int kind
-              ^Expr init-with]
+              ^Expr init-x]
    (let [f 0
          let? (= kind b-let)
-         c (when let? (.const-value init-with))]
+         c (when let? (.const-value init-x))]
      (ValueRef. simple-nm tp [] c
                 nil (mk-flags b-value kind f level) nil
                 (when (or let? (= kind b-this-object))
-                  (root-fn-form init-with))))))
+                  (root-fn-form init-x))))))
 
 (defn global-ref ^ValueRef [^Symbol simple-nm ^String ns-str ^Class tp
                             ^boolean redef? ^boolean clojure-var?
@@ -1417,7 +1426,9 @@
                     ^:pass-to-super-constructor ^IPersistentVector argv
                     ^:pass-to-super-constructor ^Object const-value
                     ^BindingRef bref]
-  Expr)
+  Expr
+  (with-argv [this tp argv]
+    (AssignDef. (form this) tp argv (.const-value this) bref)))
 
 (defn assign-def ^AssignDef [^Expr v ^BindingRef bref]
   (AssignDef. nil jb/void [v] nil bref))
@@ -1431,7 +1442,9 @@
                  ^:pass-to-super-constructor ^Object const-value]
   Expr
   (safe-to-discard? ^boolean [_]
-    true))
+    true)
+  (with-argv [this tp argv]
+    (VarRef. (form this) tp argv (.const-value this))))
 
 (defn var-ref ^VarRef [^Class tp ^BindingRef v]
   (VarRef. nil tp [v] nil))

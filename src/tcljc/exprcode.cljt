@@ -23,155 +23,138 @@
 (defn returns? ^boolean [^Expr x] ;excludes macro or primitive function values
   (returning-type? (x/type x)))
 
-(defn- rewrite-returning [^Expr x]      ;mirrors xf/rewrite-result
-  (letfn [(return ^Expr [^Expr arg]
-            (if (returns? arg)
-              (x/insn* no-return [arg]
-                       (-> (cf/type-kind (x/type arg))
-                           (jdk.classfile.instruction.ReturnInstruction/of)))
-              arg))
-          (rebuild-last ^Expr [^Expr x]
-            (let [xv (x/argv x)]
-              (x/with-argv x no-return
-                (conj (tinyclj.core/pop xv)
-                      (rewrite-returning (peek xv))))))
-          (rebuild-paths ^Expr [^Expr x ^int start ^int delta-end]
-            (let [v (x/argv x), end (+ (count v) delta-end)]
-              (x/with-argv x no-return
-                (vec (map-indexed (fn [^int i x]
-                                    (if (and (<= start i) (< i end))
-                                      (rewrite-returning x)
-                                      x))
-                                  v)))))]
-    (if (returns? x)
-      (condp instance? x
-        ;; compare nodes are subject to expansion: rewriting Branch means
-        ;; to expand it first and then to rewrite the result
-        Branch (if (x/const-value? x)
-                 (return x)
-                 (rewrite-returning (x/split&join ^Branch x)))
-        
-        Progn (if-some [tail (peek (x/argv x))]
-                (rebuild-last x)
-                (return x))
 
-        Block (rebuild-last x)
-        
-        SplitJoin (rebuild-paths x 1 0)
-        
-        Switch (rebuild-paths x 1 0)
+(definterface IAdaptResult
+  (transform ^Expr [^Expr x]))          ;pre: (returns? x)
 
-        LoopBody (rebuild-last x)
-
-        TryCatchFinally (if (x/expr-empty? (peek (x/argv x)))
-                          (rebuild-paths x 0 -1)
-                          (return x))
-        
-        #_else (return x))
+(def adpt-identity
+  (reify IAdaptResult
+    (transform [_ x]
+      #_(assert (returns? x))
       x)))
 
-(letfn [(transform-insn ^Expr [^Insn x]
-          (if (x/throw? x)
-            (x/insn* no-return (x/argv x)
-                     (jdk.classfile.instruction.ThrowInstruction/of))
-            x))
-        (transform-split-join ^Expr [^SplitJoin x]
-          (let [branch (x/nth-arg x 0)]
-            (if (x/const-value? branch)
-              (x/nth-arg x (if (x/const-value-true? branch) 1 2))
-              x)))
-        (transform-tcf ^Expr [^TryCatchFinally x]
-          (if (x/expr-empty? (x/nth-arg x 0))
-            (peek (x/argv x))
-            x))
-        (transform ^Expr [^Expr x]      ;adds `no-return` decorations
-          (condp instance? x
-            Insn (transform-insn ^Insn x)
-            SplitJoin (transform-split-join ^SplitJoin x)
-            TryCatchFinally (transform-tcf ^TryCatchFinally x)
-            Recur (x/with-argv x no-return (x/argv x))
-            #_else x))
-        
-        (strict-code-argv ^IPersistentVector [^IPersistentVector argv]
-          ;; Update `argv` and stop with first non-returning element,
-          ;; or return nil if there is no change.
-          (let [n (count argv)]
-            (loop [acc argv, i 0]
-              (if (= i n)
-                (when-not (identical? acc argv)
-                  acc)
-                (let [x (nth argv i), x' (codify x)]
+;;; FIXME... transient vectors?  or maybe even arrays?
+(defn trace-flow ^Expr [^Expr x ^IAdaptResult adpt-res]
+  (letfn [(trace-sequential ^Expr [^Expr x] ;pre: (>= (x/arg-count x) 2)
+            (let [argv (x/argv x), n-1 (dec (count argv))]
+              (loop [acc [], i 0]
+                (let [arg (nth argv i)]
+                  (if (< i n-1)
+                    (let [arg' (trace-flow arg adpt-identity)]
+                      (if (returns? arg')
+                        (recur (conj acc arg') (inc i))
+                        (x/with-argv x no-return (conj acc arg'))))
+                    (let [arg' (trace-flow arg adpt-res)]
+                      (x/with-argv x (x/type arg') (conj acc arg'))))))))
+          (trace-instruction ^Expr [^Expr x ^IAdaptResult adpt-res]
+            (let [argv (x/argv x), n (count argv)]
+              (loop [acc [], i 0]
+                (if (< i n)
+                  (let [arg' (trace-flow (nth argv i) adpt-identity)]
+                    (if (returns? arg')
+                      (recur (conj acc arg') (inc i))
+                      (Progn. (x/form x) no-return (conj acc arg') nil)))
                   (cond
-                    (identical? x x') (recur acc (inc i))
-                    (returns? x') (recur (assoc acc (object i) x') (inc i))
-                    :else (conj (subvec acc 0 i) x')))))))
-        (non-strict-code-argv ^IPersistentVector [^IPersistentVector argv]
-          (let [n (count argv)]
-            (loop [acc argv, i 0]
-              (if (= i n)
-                (when-not (identical? acc argv)
-                  acc)
-                (let [x (nth argv i), x' (codify x)]
-                  (recur (cond-> acc
-                           (not (identical? x x')) (assoc (object i) x'))
-                         (inc i)))))))
-        (progn-no-return ^Expr [^Expr x ^IPersistentVector argv]
-          (case (count argv)
-            0 (throw (IllegalArgumentException.))
-            1 (nth argv 0)
-            #_else (Progn. (x/form x) no-return argv nil)))
-        (some-returning [[^Expr x & xr]]
-          ;; Return first returning expression if one exists, and an
-          ;; arbitrary non-returning expression otherwise.
-          (cond (returns? x) x
-                (some? xr) (recur xr)
-                :else x))
-        (codify-split-join ^Expr [^SplitJoin x ^IPersistentVector argv']
-          (let [branch (nth argv' 0)]
-            (if (returns? branch)
-              (x/with-argv x (x/type (some-returning (rest argv'))) argv')
-              branch)))
-        (codify-switch ^Expr [^Switch x ^IPersistentVector argv']
-          (let [test (nth argv' 0)]
-            (if (returns? test)
-              (x/with-argv x (x/type (some-returning (rest argv'))) argv')
-              test)))
-        (codify-tcf ^Expr [^TryCatchFinally x ^IPersistentVector argv']
-          (if (and (= (count argv') 2) (x/expr-empty? (peek argv')))
-            (nth argv' 0)
-            (x/with-argv x
-              (if (returns? (peek argv')) ;does finally return?
-                (x/type (some-returning (pop argv')))
-                no-return)
-              argv')))
-        (codify ^Expr [^Expr x]
-          ;; Assign non-returning expressions in `x` the type
-          ;; `no-return` and drop dead or effectively empty
-          ;; expressions.
-          (-> (cond
-                (zero? (x/arg-count x)) x
+                    (or (x/recur? x) (x/throw? x)) (x/with-argv x no-return acc)
+                    (zero? (x/arg-count x)) (.transform adpt-res x)
+                    :else (.transform adpt-res (x/with-argv x acc)))))))
+          (trace-paths ^"[Ltcljc.expr.Expr;" [^Expr x ^int dstart ^int dend
+                                              ^IAdaptResult adpt-res]
+            (let [argv (x/argv x)
+                  a (new "[Ltcljc.expr.Expr;" (count argv))
+                  end (+ (alength a) dend)]
+              (loop [i dstart]
+                (when (< i end)
+                  (aset a i (trace-flow (nth argv i) adpt-res))
+                  (recur (inc i))))
+              a))
+          (boolean-identities* ^Branch [^Branch b ^Expr left ^Expr right]
+            ;; Folds boolean not, so that `not-primitive` can retain
+            ;; the source code's operation.  Covers both identity and
+            ;; not of boolean constant, independent of argument order.
+            (cond
+              (x/const-value? right)
+              (if (x/branch? left)
+                (-> (if (= (= cf/eq (.opcd b)) (x/const-value-false? right))
+                      ;; either (== left false) or (not= left true)
+                      (x/with-negate-cmp ^Branch left)
+                      ;; either (not= left false) or (== left true)
+                      ^Branch left)
+                    (boolean-identities))
+                b)
 
-                (x/strict-evaluation? x)
-                (if-some [argv' (strict-code-argv (x/argv x))]
-                  (if (returning-type? (x/type (peek argv')))
-                    (x/with-argv x argv') ;structure unchanged
-                    (progn-no-return x argv'))
-                  x)
+              (x/const-value? left)
+              (recur b right left) ;no need to change `opcd`: it's eq or ne
 
-                :else
-                (if-some [argv' (non-strict-code-argv (x/argv x))]
-                  (condp instance? x
-                    SplitJoin (codify-split-join ^SplitJoin x argv')
-                    Switch (codify-switch ^Switch x argv')
-                    TryCatchFinally (codify-tcf ^TryCatchFinally x argv')
-                    LoopBody (x/with-argv x (x/type (nth argv' 0)) argv')
-                    #_else (throw (IllegalStateException.)))
-                  x))
-              (transform)))]
+              :else b))
+          (boolean-identities ^Branch [^Branch b]
+            (boolean-identities* b (x/nth-arg b 0) (x/nth-arg b 1)))
+          (first-returning-type ^Class [[^Expr x :as xs]]
+            ;; Type of first returning expression if one exists, and
+            ;; no-return otherwise.
+            (cond (nil? x) no-return
+                  (returns? x) (x/type x)
+                  :else (recur (next xs))))
+          (reassemble-tcf ^Expr [^Expr x ^"[Ltcljc.expr.Expr;" a
+                                 ^IAdaptResult adtp-res]
+            (let [tp (if (returns? (aget a (dec (alength a))))
+                       (first-returning-type (butlast a))
+                       no-return)]
+              (cond->> (x/with-argv x tp (vec a))
+                (returning-type? tp)
+                (.transform adtp-res))))
+          (trace-branching ^Expr [^Expr x]
+            (condp instance? x
+              SplitJoin
+              (let [branch (-> ^Branch (x/nth-arg x 0)
+                               (boolean-identities)
+                               (trace-instruction adpt-identity))]
+                (if (returns? branch)
+                  (let [a (doto (trace-paths x 1 0 adpt-res)
+                            (aset 0 branch))]
+                    (if (x/const-value? branch)
+                      (aget a (if (x/const-value-true? branch) 1 2))
+                      (x/with-argv x (first-returning-type (rest a)) (vec a))))
+                  branch))
+              Switch
+              (let [test (trace-instruction (x/nth-arg x 0) adpt-identity)]
+                (if (returns? test)
+                  (let [a (doto (trace-paths x 1 0 adpt-res)
+                            (aset 0 test))]
+                    (x/with-argv x (first-returning-type (rest a)) (vec a)))
+                  test))
+              TryCatchFinally
+              (let [n (x/arg-count x)
+                    finally (trace-flow (peek (x/argv x)) adpt-identity)]
+                (if (x/expr-empty? finally)
+                  (let [a (doto (trace-paths x 0 -1 adpt-res)
+                            (aset (dec n) finally))]
+                    (if (= n 2)
+                      (aget a 0)
+                      (reassemble-tcf x a adpt-identity)))
+                  (let [a (doto (trace-paths x 0 -1 adpt-identity)
+                            (aset (dec n) finally))]
+                    (reassemble-tcf x a adpt-res))))
+              LoopBody
+              (let [body (trace-flow (x/nth-arg x 0) adpt-res)]
+                (x/with-argv x (x/type body) [body]))
+              #_else
+              (throw (IllegalArgumentException.))))]
+    (if (x/strict-evaluation? x)
+      (cond
+        (x/sequential? x) (trace-sequential x)
+        (x/branch? x) (trace-branching (x/split&join ^Branch x))
+        :else (trace-instruction x adpt-res))
+      (trace-branching x))))
 
-  (def codify codify)
-  
-  (defn as-returning-code ^Expr [^Expr x]
-    (let [x (codify x)
-          x (rewrite-returning x)]
-      x)))
+(def ^:private adpt-return
+  (reify IAdaptResult
+    (transform [_ x]
+      #_(assert (returns? x))
+      (x/insn* no-return [x]
+               (-> (cf/type-kind (x/type x))
+                   (jdk.classfile.instruction.ReturnInstruction/of))))))
+
+(defn as-returning-code ^Expr [^Expr x]
+  (trace-flow x adpt-return))
+

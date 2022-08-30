@@ -298,7 +298,7 @@
               (-> (.branchInstruction xb opc end-true)
                   (expr-insns es if-true)
                   (.labelBinding end-true))))
-          (split-join-insn* ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
+          (split-join-insn ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
                                           ^Expr if-true ^Expr if-false]
             (cond
               (x/expr-empty? if-false)
@@ -313,33 +313,6 @@
               (if-then-else xb  branch-to-true if-true if-false)
               #_(.ifThenElse xb (branch-opcode! xb branch-to-true)
                              (expr-handler if-true) (expr-handler if-false))))
-          (boolean-identities* ^Branch [^Branch b ^Expr left ^Expr right]
-            ;; Folds boolean not, so that `not-primitive` can retain
-            ;; the source code's operation.  Covers both identity and
-            ;; not of boolean constant, independent of argument order.
-            (cond
-              (x/const-value? right)
-              (if (x/branch? left)
-                (-> (if (= (= cf/eq (.opcd b)) (x/const-value-false? right))
-                      ;; either (== left false) or (not= left true)
-                      (x/with-negate-cmp ^Branch left)
-                      ;; either (not= left false) or (== left true)
-                      ^Branch left)
-                    (boolean-identities))
-                b)
-
-              (x/const-value? left)
-              (recur b right left) ;no need to change `opcd`: it's eq or ne
-
-              :else b))
-          (boolean-identities ^Branch [^Branch b]
-            (boolean-identities* b (x/nth-arg b 0) (x/nth-arg b 1)))
-          (split-join-insn ^CodeBuilder [^CodeBuilder xb ^Branch branch-to-true
-                                         ^Expr if-true ^Expr if-false]
-            (let [btt (if (x/boolean? (x/nth-arg branch-to-true 0))
-                        (boolean-identities branch-to-true)
-                        branch-to-true)]
-              (split-join-insn* xb btt if-true if-false)))
           (table-insn ^CodeBuilder [^CodeBuilder xb ^Switch x]
             (let [argv (x/argv x) ;first: switch expression; peek: default path
                   labelv (vec (repeatedly (dec (count argv)) #(.newLabel xb)))
@@ -515,8 +488,6 @@
         Block
         (.block xb (exprv-handler (x/argv x)))
         
-        Branch
-        (split-join-insn xb ^Branch x x/expr-true x/expr-false)
         SplitJoin
         (split-join-insn xb ^Branch (x/nth-arg x 0) (x/nth-arg x 1) (x/nth-arg x 2))
         Switch
@@ -657,6 +628,7 @@
                             (rt/describe-const-expr (.const-value init-x)))]
               (lazy-const! bref tpd const))))))))
 
+;;; FIXME... this breaks if (trace-flow x) does not return
 (defn emit-into ^void [^CodeBuilder xb ^Expr x]
   (let [es (EmitState. x/lvl-environment nil nil nil)]
-    (expr-insns xb es (xc/codify x))))
+    (expr-insns xb es (xc/trace-flow x xc/adpt-identity))))
