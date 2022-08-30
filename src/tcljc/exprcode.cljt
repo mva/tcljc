@@ -33,31 +33,38 @@
       #_(assert (returns? x))
       x)))
 
-;;; FIXME... transient vectors?  or maybe even arrays?
 (defn trace-flow ^Expr [^Expr x ^IAdaptResult adpt-res]
   (letfn [(trace-sequential ^Expr [^Expr x] ;pre: (>= (x/arg-count x) 2)
-            (let [argv (x/argv x), n-1 (dec (count argv))]
-              (loop [acc [], i 0]
+            (let [argv (x/argv x)
+                  a (new "[Ltcljc.expr.Expr;" (count argv))
+                  n-1 (dec (alength a))]
+              (loop [i 0]
                 (let [arg (nth argv i)]
                   (if (< i n-1)
-                    (let [arg' (trace-flow arg adpt-identity)]
+                    (let [arg' (aset a i (trace-flow arg adpt-identity))]
                       (if (returns? arg')
-                        (recur (conj acc arg') (inc i))
-                        (x/with-argv x no-return (conj acc arg'))))
-                    (let [arg' (trace-flow arg adpt-res)]
-                      (x/with-argv x (x/type arg') (conj acc arg'))))))))
+                        (recur (inc i))
+                        (x/with-argv x no-return (subvec (vec a) 0 (inc i)))))
+                    (let [arg' (aset a i (trace-flow arg adpt-res))]
+                      (x/with-argv x (x/type arg') (vec a))))))))
           (trace-instruction ^Expr [^Expr x ^IAdaptResult adpt-res]
-            (let [argv (x/argv x), n (count argv)]
-              (loop [acc [], i 0]
+            (let [argv (x/argv x)
+                  a (new "[Ltcljc.expr.Expr;" (count argv))
+                  n (alength a)]
+              (loop [i 0]
                 (if (< i n)
-                  (let [arg' (trace-flow (nth argv i) adpt-identity)]
+                  (let [arg' (aset a i (trace-flow (nth argv i) adpt-identity))]
                     (if (returns? arg')
-                      (recur (conj acc arg') (inc i))
-                      (Progn. (x/form x) no-return (conj acc arg') nil)))
+                      (recur (inc i))
+                      (Progn. (x/form x) no-return (subvec (vec a) 0 (inc i))
+                              nil)))
                   (cond
-                    (or (x/recur? x) (x/throw? x)) (x/with-argv x no-return acc)
-                    (zero? (x/arg-count x)) (.transform adpt-res x)
-                    :else (.transform adpt-res (x/with-argv x acc)))))))
+                    (or (x/recur? x) (x/throw? x))
+                    (x/with-argv x no-return (vec a))
+                    (zero? (x/arg-count x))
+                    (.transform adpt-res x)
+                    :else
+                    (.transform adpt-res (x/with-argv x (vec a))))))))
           (trace-paths ^"[Ltcljc.expr.Expr;" [^Expr x ^int dstart ^int dend
                                               ^IAdaptResult adpt-res]
             (let [argv (x/argv x)
