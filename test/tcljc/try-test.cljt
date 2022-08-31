@@ -8,21 +8,19 @@
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Hello World")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (EXCEPTION_CATCH L:0 L:1 L:2 any)
-           [L:1]
+           (GOTO L:2)
+           (EXCEPTION_CATCH L:0 L:1 L:1 any)
            
-           (GETSTATIC System "out" "Ljava/io/PrintStream;")
-           (LDC "Finally...")
-           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (GOTO L:3)
-           
-           [L:2]
+           [L:1] #_catch-any
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Finally...")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (ATHROW)
 
-           [L:3]
+           [L:2] #_finally
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (RETURN)]
          (asm-expr (try
                      (.println System/out "Hello World")
@@ -36,9 +34,8 @@
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (RETURN)
            (EXCEPTION_CATCH L:0 L:1 L:1 Exception)
-           [L:1]
-           (ASTORE_0)
-           ["LOCAL 0: Exception e"]
+           
+           [L:1] (ASTORE_0) ["LOCAL 0: Exception e"]
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Catch...")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
@@ -53,35 +50,27 @@
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Hello World")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (EXCEPTION_CATCH L:0 L:1 L:2 Exception)
-           (EXCEPTION_CATCH L:0 L:1 L:4 any)
-           [L:1]
-           (GETSTATIC System "out" "Ljava/io/PrintStream;")
-           (LDC "Finally...")
-           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (GOTO L:5)
-                            
-           [L:2]
-           (ASTORE_0)
-           ["LOCAL 0: Exception e"]
+           (GOTO L:3)
+           (EXCEPTION_CATCH L:0 L:1 L:1 Exception)
+           (EXCEPTION_CATCH L:0 L:1 L:2 any)
+           
+           [L:1] (ASTORE_0) ["LOCAL 0: Exception e"]
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Catch...")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (EXCEPTION_CATCH L:2 L:3 L:4 any)
-           [L:3]
+           (GOTO L:3)
+           (EXCEPTION_CATCH L:1 L:2 L:2 any)
            
-           (GETSTATIC System "out" "Ljava/io/PrintStream;")
-           (LDC "Finally...")
-           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (GOTO L:5)
-           
-           [L:4]
+           [L:2] #_catch-any
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Finally...")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (ATHROW)
            
-           [L:5]
+           [L:3] #_finally
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (RETURN)]
          (asm-expr (try
                      (.println System/out "Hello World")
@@ -114,34 +103,32 @@
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Hello World")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (EXCEPTION_CATCH L:0 L:1 L:2 any)
-           [L:1]
+           (GOTO L:2)
+           (EXCEPTION_CATCH L:0 L:1 L:1 any)
            
+           [L:1]
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Finally 1...")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (GOTO L:3)
+           (ATHROW)
            
            [L:2]
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Finally 1...")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (ATHROW)
+           (GOTO L:4) 
+           (EXCEPTION_CATCH L:0 L:3 L:3 any)
            
-           (EXCEPTION_CATCH L:0 L:3 L:4 any)
            [L:3]
-           (GETSTATIC System "out" "Ljava/io/PrintStream;")
-           (LDC "Finally 2...")
-           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (GOTO L:5)
-           
-           [L:4]
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Finally 2...")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (ATHROW)
 
-           [L:5]
+           [L:4]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally 2...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (RETURN)]
          (asm-expr (try
                      (try
@@ -177,19 +164,19 @@
              (ILOAD_0)
              (ICONST_1)
              (IADD)
-             (EXCEPTION_CATCH L:0 L:1 L:2 any)
-             [L:1]
-             (GETSTATIC System "out" "Ljava/io/PrintStream;")
-             (LDC "Finally...")
-             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-             (GOTO L:3)
+             (GOTO L:2)
+             (EXCEPTION_CATCH L:0 L:1 L:1 any)
              
-             [L:2]
+             [L:1] #_catch-any
              (GETSTATIC System "out" "Ljava/io/PrintStream;")
              (LDC "Finally...")
              (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
              (ATHROW)
-             [L:3]
+             
+             [L:2] #_finally
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (LDC "Finally...")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
              (IRETURN)]
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -231,18 +218,19 @@
              (I2F)
              (FCONST_1)
              (FDIV)
-             (EXCEPTION_CATCH L:0 L:1 L:2 any)
-             [L:1]
-             (GETSTATIC System "out" "Ljava/io/PrintStream;")
-             (LDC "Finally...")
-             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-             (GOTO L:3)
-             [L:2]
+             (GOTO L:2)
+             (EXCEPTION_CATCH L:0 L:1 L:1 any)
+             
+             [L:1] #_catch-any
              (GETSTATIC System "out" "Ljava/io/PrintStream;")
              (LDC "Finally...")
              (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
              (ATHROW)
-             [L:3]
+             
+             [L:2] #_finally
+             (GETSTATIC System "out" "Ljava/io/PrintStream;")
+             (LDC "Finally...")
+             (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
              (FRETURN)]
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -291,16 +279,12 @@
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Hello World")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (EXCEPTION_CATCH L:0 L:1 L:2 Exception)
-           [L:1]
-           (GOTO L:3)
-
+           (GOTO L:2)
+           (EXCEPTION_CATCH L:0 L:1 L:1 Exception)
+           
+           [L:1] (ASTORE_0) ["LOCAL 0: Exception _"]
+           
            [L:2]
-           (ASTORE_0)
-           ["LOCAL 0: Exception _"]
-           (GOTO L:3)
-
-           [L:3]
            (LDC "abc")
            (ARETURN)]
          (asm-expr ^String []
@@ -328,28 +312,25 @@
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Hello World")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (EXCEPTION_CATCH L:0 L:1 L:2 Exception)
-           (EXCEPTION_CATCH L:0 L:1 L:3 any)
-           [L:1]
+           (GOTO L:3)
+           (EXCEPTION_CATCH L:0 L:1 L:1 Exception)
+           (EXCEPTION_CATCH L:0 L:1 L:2 any)
 
-           (GETSTATIC System "out" "Ljava/io/PrintStream;")
-           (LDC "Finally...")
-           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (GOTO L:4)
-           [L:2]
-           
-           (ASTORE_0)
-           ["LOCAL 0: Exception e"]
+           [L:1] (ASTORE_0) ["LOCAL 0: Exception e"]
            (ALOAD_0)
            (ATHROW)
-           (EXCEPTION_CATCH L:2 L:3 L:3 any)
-           [L:3]
+           (EXCEPTION_CATCH L:1 L:2 L:2 any)
            
+           [L:2] #_catch-any
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Finally...")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (ATHROW)
-           [L:4]
+           
+           [L:3] #_finally
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Finally...")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (RETURN)]
          (asm-expr (try
                      (.println System/out "Hello World")
@@ -366,23 +347,23 @@
            
            [L:0]
            (ACONST_NULL)
-           (EXCEPTION_CATCH L:0 L:1 L:2 any)
-           [L:1]
-           (ALOAD_0)
-           (INVOKESTATIC RT "seq" "(Ljava/lang/Object;)Lclojure/lang/ISeq;")
-           (ASTORE_1)
-           ["LOCAL 1: ISeq seq_126"]
-           #_["POP 1: seq_126"]
-           (GOTO L:3)
-
-           [L:2]
+           (GOTO L:2)
+           (EXCEPTION_CATCH L:0 L:1 L:1 any)
+           
+           [L:1] #_catch-any
            (ALOAD_0)
            (INVOKESTATIC RT "seq" "(Ljava/lang/Object;)Lclojure/lang/ISeq;")
            (ASTORE_1)
            ["LOCAL 1: ISeq seq_126"]
            #_["POP 1: seq_126"]
            (ATHROW)
-           [L:3]
+           
+           [L:2] #_finally
+           (ALOAD_0)
+           (INVOKESTATIC RT "seq" "(Ljava/lang/Object;)Lclojure/lang/ISeq;")
+           (ASTORE_1)
+           ["LOCAL 1: ISeq seq_126"]
+           #_["POP 1: seq_126"]
            (ARETURN)
            #_["POP 0: aframe"]]
          (asm-expr (let* [aframe (new objects 2)]
@@ -397,19 +378,10 @@
            (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Hello World")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (EXCEPTION_CATCH L:0 L:1 L:2 any)
-           [L:1]
-
-           (LDC "foo")
-           (INVOKESTATIC System "getenv" "(Ljava/lang/String;)Ljava/lang/String;")
-           (ASTORE_0)
-           ["LOCAL 0: String s"]
-           (GETSTATIC System "out" "Ljava/io/PrintStream;")
-           (ALOAD_0)
-           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (GOTO L:3)
-
-           [L:2]
+           (GOTO L:2)
+           (EXCEPTION_CATCH L:0 L:1 L:1 any)
+           
+           [L:1] #_catch-any
            (LDC "foo")
            (INVOKESTATIC System "getenv" "(Ljava/lang/String;)Ljava/lang/String;")
            (ASTORE_0)
@@ -418,7 +390,15 @@
            (ALOAD_0)
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (ATHROW)
-           [L:3]
+           
+           [L:2] #_finally
+           (LDC "foo")
+           (INVOKESTATIC System "getenv" "(Ljava/lang/String;)Ljava/lang/String;")
+           (ASTORE_0)
+           ["LOCAL 0: String s"]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (ALOAD_0)
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (RETURN)]
          (asm-expr (try
                      (.println System/out "Hello World")
@@ -453,31 +433,24 @@
              (GETSTATIC System "out" "Ljava/io/PrintStream;")
              (LDC "Hello World")
              (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-             (EXCEPTION_CATCH L:0 L:1 L:2 Throwable)
-             (EXCEPTION_CATCH L:0 L:1 L:4 any)
-             [L:1]
-             (LDC "finally")
-             (INVOKESTATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
-             (POP)
-             (GOTO L:5)
+             (GOTO L:3)
+             (EXCEPTION_CATCH L:0 L:1 L:1 Throwable)
+             (EXCEPTION_CATCH L:0 L:1 L:2 any)
+             
+             [L:1] (ASTORE_0) ["LOCAL 0: Throwable _"]
+             (GOTO L:3)
+             (EXCEPTION_CATCH L:1 L:2 L:2 any)
              
              [L:2]
-             (ASTORE_0)
-             ["LOCAL 0: Throwable _"]
-             (EXCEPTION_CATCH L:2 L:3 L:4 any)
-             [L:3]
-             (LDC "finally")
-             (INVOKESTATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
-             (POP)
-             (GOTO L:5)
-             
-             [L:4]
              (LDC "finally")
              (INVOKESTATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
              (POP)
              (ATHROW)
              
-             [L:5]
+             [L:3]
+             (LDC "finally")
+             (INVOKESTATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (POP)
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (try
@@ -509,23 +482,20 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              [L:0]
              (LDC "foo")
-             (EXCEPTION_CATCH L:0 L:1 L:2 Exception)
-             (EXCEPTION_CATCH L:0 L:1 L:3 Throwable)
-             [L:1]
-             (GOTO L:4)
-             [L:2]
-             (ASTORE_0)
-             ["LOCAL 0: Exception _"]
+             (GOTO L:3)
+             (EXCEPTION_CATCH L:0 L:1 L:1 Exception)
+             (EXCEPTION_CATCH L:0 L:1 L:2 Throwable)
+             
+             [L:1] (ASTORE_0) ["LOCAL 0: Exception _"]
              (INVOKESTATIC . "f~0" "()V")
              (ACONST_NULL)
-             (GOTO L:4)
+             (GOTO L:3)
+             
+             [L:2] (ASTORE_0) ["LOCAL 0: Throwable _"]
+             (INVOKESTATIC . "f~0" "()V")
+             (ACONST_NULL)
+             
              [L:3]
-             (ASTORE_0)
-             ["LOCAL 0: Throwable _"]
-             (INVOKESTATIC . "f~0" "()V")
-             (ACONST_NULL)
-             (GOTO L:4)
-             [L:4]
              (PUTSTATIC . "x" "Ljava/lang/String;")
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
