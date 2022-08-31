@@ -219,15 +219,14 @@
                 (-> (.constantInstruction xb (.load-mh-ext (aget aca 0)))
                     (cf/invoke rt/mhd-methodHandleArray1)
                     (.areturn))
-                (let [x (x/mh-invoke-inexact
-                         jb/MethodHandleArray
-                         (->> (map #(x/const jb/MethodHandle
-                                             (.load-mh-ext ^ArityCode %)) aca)
-                              (cons (x/const jb/MethodHandle
-                                             rt/mhd-methodHandleArray*)))
-                         nil)]
-                  (bytecode/emit-into xb x)
-                  (.areturn xb))))]
+                (let [mtd (rt/mtd-of rt/MethodHandleArray
+                                     (repeat (count aca) rt/MethodHandle))]
+                  (-> (reduce #(.constantInstruction ^CodeBuilder %1 %2)
+                              (.constantInstruction xb rt/mhd-methodHandleArray*)
+                              (map #(.load-mh-ext ^ArityCode %) aca))
+                      (cf/invoke rt/mhk-virtual rt/MethodHandle "invoke"
+                                 (.descriptorString mtd) false)
+                      (.areturn)))))]
     (.withMethodBody cb rt/name-dmh-method rt/mtd-dmh-method
                      (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL) xbh)))
 

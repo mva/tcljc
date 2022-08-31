@@ -2,6 +2,7 @@
   (:require
    [tcljc.config :as cfg]
    [tcljc.classfile :as cf]
+   [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
    [tcljc.wrong :as wrong]   
    [tcljc.reader :as rd]
@@ -139,17 +140,20 @@
                    (cf/with-xbh [xb] (.return_ xb))))
 
 (defn- build-segment ^bytes [^SegmState segm ^boolean force-clinit?]
-  (let [clinit-xb (cf/with-xbh [xb]
-                    (let [ns-str (segment-ns-str segm)]
-                      (when (= (.segm-id segm) first-segm-id)
-                        (-> (.constantInstruction xb ns-str)
-                            (cf/invoke rt/mhd-createNamespace)))
-                      (doseq [^TlfSummary summary (.summaryv segm)]
-                        (bytecode/emit-into xb (.top-level-form summary)))
-                      (when (cfg/core-lib? ns-str)
-                        (-> (.constantInstruction xb (segment-name segm 0))
-                            (cf/invoke rt/mhd-markCoreInitialization))))
-                    (.return_ xb))
+  (let [clinit (fn []
+                 (let [ns-str (segment-ns-str segm)]
+                   (-> []
+                       (cond-> (= (.segm-id segm) first-segm-id)
+                         (conj (x/invoke-xref
+                                jb/void [(x/const String ns-str)]
+                                rt/mhd-createNamespace)))
+                       (into (map #(.top-level-form ^TlfSummary %))
+                             (.summaryv segm))
+                       (cond-> (cfg/core-lib? ns-str)
+                         (conj (x/invoke-xref
+                                jb/void [(x/const String (segment-name segm 0))]
+                                rt/mhd-markCoreInitialization)))
+                       (x/progn*))))
         segm-cld (segment-cld segm 0)]
     (cf/build
      segm-cld
@@ -168,7 +172,8 @@
            (cond-> force-clinit? (with-force-clinit))
            (.withMethodBody cf/class-initializer-name rt/mtd-void-void
                             (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
-                            clinit-xb)))
+                            (cf/with-xbh [xb]
+                              (bytecode/emit-body xb (clinit))))))
      (segment-chr segm))))
 
 (defn with-main ^ClassBuilder [^ClassBuilder cb ^SegmState segm]

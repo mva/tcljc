@@ -516,19 +516,23 @@
         
         #_else (throw (IllegalArgumentException. (str (class x))))))))
 
-(defn emit-body ^void [^CodeBuilder xb ^ILdStInstr ld-this ^Arity at
-                       ^int first-param-no ^Expr body-expr]
-  (loop [i 0]
-    (when-not (= i (count (.paramv at)))
-      (let [bref (.bref ^Binding (nth (.paramv at) i))
-            ld-st (cf/ld-st-parameter (x/type bref) (x/mnm bref)
-                                      (+ i first-param-no))]
-        (cf/st-insn xb ld-st true)      ;register variable name
-        (.deliver-load bref ld-st))
-      (recur (inc i))))
-  (let [es (EmitState. (.level at) (.!closes-over at) ld-this nil)]
-    (line-number es xb body-expr)
-    (expr-insns xb es (xc/as-returning-code body-expr))))
+(defn emit-body
+  (^void [^CodeBuilder xb ^Expr x]
+   (let [es (EmitState. x/lvl-environment nil nil nil)]
+     (expr-insns xb es (xc/as-returning-code x))))
+  (^void [^CodeBuilder xb ^ILdStInstr ld-this ^Arity at
+          ^int first-param-no ^Expr body-expr]
+   (loop [i 0]
+     (when-not (= i (count (.paramv at)))
+       (let [bref (.bref ^Binding (nth (.paramv at) i))
+             ld-st (cf/ld-st-parameter (x/type bref) (x/mnm bref)
+                                       (+ i first-param-no))]
+         (cf/st-insn xb ld-st true)      ;register variable name
+         (.deliver-load bref ld-st))
+       (recur (inc i))))
+   (let [es (EmitState. (.level at) (.!closes-over at) ld-this nil)]
+     (line-number es xb body-expr)
+     (expr-insns xb es (xc/as-returning-code body-expr)))))
 
 (defn emit-global-b ^void [^ClassBuilder cb ^ClassDesc segm-cld ^Binding b]
   ;; To be able to do INVOKEVIRTUAL calls on global function defs, the
@@ -622,8 +626,3 @@
                   const (or (x/root-fn-const init-x)
                             (rt/describe-const-expr (.const-value init-x)))]
               (lazy-const! bref tpd const))))))))
-
-;;; FIXME... this breaks if (trace-flow x) does not return
-(defn emit-into ^void [^CodeBuilder xb ^Expr x]
-  (let [es (EmitState. x/lvl-environment nil nil nil)]
-    (expr-insns xb es (xc/trace-flow x x/adpt-identity))))
