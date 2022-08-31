@@ -192,9 +192,10 @@
     (str "coerce-" (.getName to-tp))))
 
 (defn coerce ^Expr [^Expr x ^Class to-tp]
-  (if (x/adapting? x)
-    (x/with-adapt-paths x to-tp (AdaptCoerce. to-tp))
-    (coerce* x to-tp)))
+  (cond
+    (jb/object? to-tp) x
+    (x/adapting? x) (x/with-adapt-paths x to-tp (AdaptCoerce. to-tp))
+    :else (coerce* x to-tp)))
 
 (defn coerce-static ^Expr [^Expr x ^Class to-tp]
   (cond

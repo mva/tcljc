@@ -129,6 +129,7 @@
               TryCatchFinally (trace-try-catch-finally ^TryCatchFinally x)
               LoopBody (trace-loop-body ^LoopBody x)
               #_else (throw (IllegalArgumentException.))))]
+    #_(prn :trace-flow (.toString adpt-res))
     (if (x/strict-evaluation? x)
       (cond
         (and (instance? IAdapting x) (pos? (x/arg-count x)))

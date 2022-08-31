@@ -50,6 +50,8 @@ run-main:
 # Compilation of tinyclj.core needs the bootstrap setup: place modules
 # in classpath so that they do not interfere with the compilation of
 # this special namespace.
+test-tclj-in-tclj:
+	$(BOOTSTRAP_TCLJ) -s $(TCLJ_MDIR)/tinyclj.rt -d $(DEST_DIR).compile-tclj-in-tclj -s $(TCLJ_MDIR)/tinyclj.core -s src -s test tcljc.compile-tclj-in-tclj/run
 watch-and-test-tclj-in-tclj:
 	$(BOOTSTRAP_TCLJ) --watch -s $(TCLJ_MDIR)/tinyclj.rt -d $(DEST_DIR).compile-tclj-in-tclj -s $(TCLJ_MDIR)/tinyclj.core -s src -s test tcljc.compile-tclj-in-tclj/run
 
