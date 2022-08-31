@@ -286,7 +286,7 @@
               (-> (.branchInstruction xb opc start-false)
                   (expr-insns es if-true)
                   (cond-> #_xb
-                    (xc/returns? if-true)
+                    (x/returns? if-true)
                     (.branchInstruction Opcode/GOTO end-false))
                   (.labelBinding start-false)
                   (expr-insns es if-false)
@@ -334,7 +334,7 @@
                       (let [case-x (nth argv (inc i))]
                         (.labelBinding xb (nth labelv i))
                         (expr-insns xb es case-x)
-                        (when (and (xc/returns? case-x) (< i (dec n)))
+                        (when (and (x/returns? case-x) (< i (dec n)))
                           (.goto_ xb end-switch)))) ;omit goto for default path
                     (.labelBinding xb end-switch))
                   (recur (min lo (.caseValue sc)) (max hi (.caseValue sc))
@@ -371,7 +371,7 @@
                   (.labelBinding end-body))
               (let [empty-body-expr? (.isEmpty ^jdk.classfile.impl.BlockCodeBuilderImpl xb)
                     startv (vec (repeatedly (inc n) #(.newLabel xb)))]
-                (when (xc/returns? body-expr)
+                (when (x/returns? body-expr)
                   (expr-insns xb es finally-statm))
                 
                 (when-not empty-body-expr?
@@ -383,8 +383,8 @@
                   (when finally?
                     (.exceptionCatchAll xb (.startLabel xb) end-body
                                         ^Label (nth startv n)))
-                  (when (and (xc/returns? body-expr)
-                             (xc/returns? finally-statm))
+                  (when (and (x/returns? body-expr)
+                             (x/returns? finally-statm))
                     (.branchInstruction xb Opcode/GOTO (.endLabel xb)))
                   
                   (dotimes [i n]
@@ -399,15 +399,15 @@
                           ;; not empty: stores exception in local
                           (when finally?
                             (.exceptionCatchAll xb start end (peek startv)))
-                          (when (xc/returns? catch-expr)
+                          (when (x/returns? catch-expr)
                             (expr-insns xb es finally-statm)
-                            (when (xc/returns? finally-statm)
+                            (when (x/returns? finally-statm)
                               (.branchInstruction xb Opcode/GOTO
                                                   (.endLabel xb))))))))
                   (when finally?
                     (.labelBinding xb (nth startv n))
                     (expr-insns xb es finally-statm)
-                    (when (xc/returns? finally-statm)
+                    (when (x/returns? finally-statm)
                       (.athrow xb)))))))
           
           (loop-body-insn ^CodeBuilder [^CodeBuilder xb ^LoopBody x]
@@ -631,4 +631,4 @@
 ;;; FIXME... this breaks if (trace-flow x) does not return
 (defn emit-into ^void [^CodeBuilder xb ^Expr x]
   (let [es (EmitState. x/lvl-environment nil nil nil)]
-    (expr-insns xb es (xc/trace-flow x xc/adpt-identity))))
+    (expr-insns xb es (xc/trace-flow x x/adpt-identity))))

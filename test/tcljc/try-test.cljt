@@ -273,23 +273,9 @@
                            (.println System/out "Hello World")))
                        "abc"))))
   
-  (is (= '[[L:0]
-           (ACONST_NULL)
-           (EXCEPTION_CATCH L:0 L:1 L:2 any)
-           [L:1]
-           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Hello World")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (GOTO L:3)
-           
-           [L:2]
-           (GETSTATIC System "out" "Ljava/io/PrintStream;")
-           (LDC "Hello World")
-           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-           (ATHROW)
-           
-           [L:3]
-           (POP)
            (LDC "abc")
            (ARETURN)]
          (asm-expr ^String []
@@ -467,7 +453,6 @@
              (GETSTATIC System "out" "Ljava/io/PrintStream;")
              (LDC "Hello World")
              (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
-             (ACONST_NULL)
              (EXCEPTION_CATCH L:0 L:1 L:2 Throwable)
              (EXCEPTION_CATCH L:0 L:1 L:4 any)
              [L:1]
@@ -479,7 +464,6 @@
              [L:2]
              (ASTORE_0)
              ["LOCAL 0: Throwable _"]
-             (ACONST_NULL)
              (EXCEPTION_CATCH L:2 L:3 L:4 any)
              [L:3]
              (LDC "finally")
@@ -494,7 +478,6 @@
              (ATHROW)
              
              [L:5]
-             (POP)
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (try

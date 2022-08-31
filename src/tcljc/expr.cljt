@@ -20,13 +20,13 @@
    (java.lang.invoke MethodHandles$Lookup TypeDescriptor$OfField)
    (java.lang.reflect Member Method Field)
    (java.util.concurrent Future))
-  (:refer-clojure :exclude [type identity pop sequential?]))
+  (:refer-clojure :exclude [type identity pop]))
 
 (definterface __IExpr             ;template for the abstract base type
   (form ^Object [])
   (initialize-form ^void [^Object form])
   (safe-to-discard? ^boolean [])
-  (with-argv #_Expr [^Class tp ^IPersistentVector argv]))
+  (with-code #_Expr [^Class tp ^IPersistentVector argv]))
 
 ;; Optional field `form` is only set for expressions compiled from
 ;; source code.  If it's an ISeq with :line meta, it also provides the
@@ -73,9 +73,12 @@
     ;; unknown, or if it can throw an exception, then it must be
     ;; preserved.
     (some? const-value))
-  (with-argv [_ tp argv]
-    ;; Rebuild expression with a different return type or different
-    ;; arguments.
+  (with-code [_ tp argv]
+    ;; Replace arguments with their code attribute adaptions, which
+    ;; means that non-returning instructions have been marked and
+    ;; unreachable code has been eliminated.  Must preserve the
+    ;; original type or change it to `no-return`.  Clears the
+    ;; `adpt-paths` member of adapting expressions.
     (throw (UnsupportedOperationException.))))
 
 (defn expr? ^boolean [x] (instance? Expr x))
@@ -86,11 +89,6 @@
 (defn with-innermost-form ^Expr [^Expr x form]
   (.initialize-form x form)
   x)
-(defn with-argv
-  (^Expr [^Expr x ^IPersistentVector argv]
-   (with-argv x (type x) argv))
-  (^Expr [^Expr x ^Class tp ^IPersistentVector argv]
-   (.with-argv x tp argv)))
 
 (defn same-type? ^boolean [^Expr a ^Expr b]
   (jb/same-class? (.type a) (.type b)))
@@ -133,15 +131,78 @@
 (defn vararg-array-compatible? ^boolean [^Class parameter-type ^Expr arg]
   (.isAssignableFrom parameter-type (type arg)))
 
+
+;;; Special type of expressions that interrupt the normal flow of
+;;; control: return, recur, throw.  This is a control flow indicator.
+;;; Expressions that split/join control flow handle it specially.
+;;; Parsing uses `void` instead of this type to produce the source
+;;; Expr.
+(deftype NoReturnMarker [])
+(def no-return NoReturnMarker)
+(defn returning-type? ^boolean [^Class tp]
+  (not (jb/same-class? no-return tp)))
+(defn returns? ^boolean [^Expr x] ;excludes macro or primitive function values
+  (returning-type? (type x)))
+
+
+;;; Provides a small piece of adaption logic that is run lazily as
+;;; part of `tcljc.exprcode/trace-flow`.  Method `apply-to-instr`
+;;; takes an opaque returning expression, that is it should not
+;;; navigate into the expression's structure.  The result is again
+;;; treated as opaque, but is can be non-returning.
+(definterface IAdaptResult
+  (apply-to-instr ^Expr [^Expr x]))
+(def adpt-identity
+  (reify IAdaptResult
+    (apply-to-instr [_ x]
+      x)
+    (toString [_]
+      "identity")))
+
+(deftype CompAdaptResult [^IAdaptResult then-adpt ^IAdaptResult adpt]
+  IAdaptResult
+  (apply-to-instr [_ x]
+    (let [x (.apply-to-instr adpt x)]
+      (if (returns? x)
+        (.apply-to-instr then-adpt x)
+        x)))
+  (toString [_]
+    (str then-adpt " ∘ " adpt)))
+(defn comp-adapt ^IAdaptResult [^IAdaptResult then-adpt ^IAdaptResult adpt]
+  (cond
+    (identical? adpt-identity adpt) then-adpt
+    (identical? adpt-identity then-adpt) adpt
+    :else (CompAdaptResult. then-adpt adpt)))
+
+
 ;; Strict evaluation means that all arguments are evaluated before
 ;; their consuming instruction is evaluated.  Conditional instructions
 ;; (if, switch, or try) are non-strict in that only some of their
 ;; arguments are evaluated.  Loop instruction is non-strict in the
 ;; sense that its argument may be evaluated multiple times.
-(definterface INonStrictEvaluation)
-
+(definterface INonStrictEvaluation)     ;implies IAdapting
 (defn strict-evaluation? ^boolean [^Expr x]
   (not (instance? INonStrictEvaluation x)))
+
+
+;;; Lazily adaptable branching or sequential expressions.  The
+;;; compiler translates such an expression to its source-level
+;;; representation, plus adaption information that bridges the gap to
+;;; the code representation during `tcljc.exprcode/trace-flow`.
+(definterface IAdapting
+  (with-adapt-paths ^Expr [^Class tp ^IAdaptResult then-adpt-paths]))
+(defn adapting? ^boolean [^Expr x]
+  (or (instance? INonStrictEvaluation x)                   ;branching
+      (and (instance? IAdapting x) (pos? (arg-count x))))) ;sequential
+(defn with-adapt-paths ^Expr [^Expr x ^Class tp ^IAdaptResult then-adpt-paths]
+  (if (type? tp x)
+    x
+    (.with-adapt-paths ^IAdapting x tp then-adpt-paths)))
+(defn with-code
+  (^Expr [^Expr x ^IPersistentVector argv]
+   (with-code x (type x) argv))
+  (^Expr [^Expr x ^Class tp ^IPersistentVector argv]
+   (.with-code x tp argv)))
 
 ;;; ------------------------------------------------------------------------
 
@@ -165,7 +226,6 @@
   (^boolean [^Expr x ^Object const-value]
    (.equals const-value (.const-value x))))
 (defn constant-desc ^ConstantDesc [^Expr x]
-  (assert (some? (.const-value x)))
   (-> (.const-value x)
       (rt/recover-primitive (type x))
       (rt/describe-const-expr)))
@@ -217,7 +277,7 @@
                      ^boolean owner-interface?
                      ^boolean settable-field?]
   Expr
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (InvokeXref. (form this) tp argv (.const-value this) kind owner method-name
                  lookup-descriptor owner-interface? settable-field?)))
 
@@ -274,7 +334,7 @@
                         ^DirectMethodHandleDesc bsm
                         ^IPersistentVector cexprs]
   Expr
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (InvokeDynamic. (form this) tp argv (.const-value this)
                     invocation-name bsm cexprs)))
 
@@ -299,7 +359,7 @@
                      ^String method-name
                      ^boolean owner-interface?]
   Expr
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (InvokePoly. (form this) tp argv (.const-value this)
                  kind owner method-name owner-interface?)))
 
@@ -337,7 +397,7 @@
   (safe-to-discard? [this]
     (or (some? (.const-value ^Expr this))
         (< (-> instr .opcode .bytecode) Classfile/IALOAD)))
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (Insn. (form this) tp argv (.const-value this) instr)))
 
 (defn insn* ^Insn [^Class tp ^IPersistentVector argv ^Instruction instr]
@@ -378,8 +438,18 @@
 ;;   (letfn [(op [^Expr x]
 ;;             (symbol (if (insn? x)
 ;;                       (-> ^Insn x .instr .opcode .name)
-;;                       (.getName (class x)))))]
-;;     (list* (op x) (str (type x)) (map prefix-tree (argv x)))))
+;;                       (.getName (class x)))))
+;;           (type-hint ^Symbol [^Class tp]
+;;             (cond
+;;               (jb/compile-time-entity? tp)
+;;               (symbol "^compile-time-entity")
+;;               (returning-type? tp)
+;;               (let [s (.getName tp), i (.lastIndexOf s (int \.))]
+;;                 (symbol (str "^" (.substring s (inc i)))))
+;;               :else (symbol "^no-return")))]
+;;     (if (const? x)
+;;       (list (type-hint (type x)) (str (.const-value x)))
+;;       (list* (type-hint (type x)) (op x) (map prefix-tree (argv x))))))
 
 ;;; First argument invokes some kind of "get" operation, second
 ;;; argument is the value that should be passed to the corresponding
@@ -391,7 +461,7 @@
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value]
   Expr
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (Setter. (form this) tp argv (.const-value this))))
 
 (defn setter ^Setter [^Class tp ^Expr var-expr ^Expr value ^boolean static?]
@@ -406,7 +476,7 @@
                    ^:pass-to-super-constructor ^IPersistentVector argv
                    ^:pass-to-super-constructor ^Object const-value]
   Expr
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (NewArray. (form this) tp argv (.const-value this))))
 
 (defn new-array ^NewArray [^Class tp ^IPersistentVector argv]
@@ -442,34 +512,40 @@
 (deftype Progn [^:pass-to-super-constructor ^Object _form
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
-                ^:pass-to-super-constructor ^Object const-value]
+                ^:pass-to-super-constructor ^Object const-value
+                ^IAdaptResult adpt-paths] ;nil if less than two arguments
   Expr
-  (with-argv [this tp argv]
-    (Progn. (form this) tp argv (const-value-progn argv))))
+  (with-code [this tp argv]
+    (Progn. (form this) tp argv (const-value-progn argv) nil))
+  IAdapting
+  (with-adapt-paths [this tp then-adpt-paths]
+    (Progn. (form this) tp (argv this) (.const-value this)
+            (comp-adapt then-adpt-paths adpt-paths))))
 
 (defn progn? ^boolean [x]
   (instance? Progn x))
 
 (def expr-empty                     ;empty expression "producing" void
-  (Progn. (list 'do) jb/void [] const-value-void)) ;stable non-nil form
+  (Progn. (list 'do) jb/void [] const-value-void nil)) ;stable non-nil form
 
 ;;; "Produces" exception of catch handler, or method argument.  This
 ;;; is an empty instruction without arguments, but it is no constant.
 (defn expr-provided ^Expr [^Class tp]
-  (Progn. (list 'do) tp [] nil))        ;stable non-nil form
+  (Progn. (list 'do) tp [] nil nil))    ;stable non-nil form
 
-(defn progn ^Expr [^IPersistentVector argv]
+(defn progn* ^Expr [^IPersistentVector argv]
   ;; pre: all but the last `argv` have been coerced to statement
   (case (count argv)
     0 expr-empty
     1 (nth argv 0)      ;different from the `identity` operation below
-    #_else (Progn. nil (type (peek argv)) argv (const-value-progn argv))))
+    #_else (Progn. nil (type (peek argv)) argv (const-value-progn argv)
+                   adpt-identity)))
 
 (defn identity
   (^Expr [^Expr arg]
    (identity (type arg) arg))
   (^Expr [^Class tp ^Expr arg]
-   (Progn. nil tp [arg] (.const-value arg))))
+   (Progn. nil tp [arg] (.const-value arg) adpt-identity)))
 
 
 ;;; Lexically scoped block: the lifetime of locals created within the
@@ -479,27 +555,31 @@
 (deftype Block [^:pass-to-super-constructor ^Object _form
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
-                ^:pass-to-super-constructor ^Object const-value]
+                ^:pass-to-super-constructor ^Object const-value
+                ^IAdaptResult adpt-paths]
   Expr
-  (with-argv [this tp argv]
-    (Block. (form this) tp argv (.const-value this))))
+  (with-code [this tp argv]
+    (Block. (form this) tp argv (.const-value this) nil))
+  IAdapting
+  (with-adapt-paths [this tp then-adpt-paths]
+    (Block. (form this) tp (argv this) (.const-value this)
+            (comp-adapt then-adpt-paths adpt-paths))))
 
 (defn block? ^boolean [x]
   (instance? Block x))
 
 (defn block ^Expr [bexprs ^Expr body]
   (if (some? (seq bexprs))
-    (Block. nil (type body) (conj (vec bexprs) body) nil)
+    (Block. nil (type body) (conj (vec bexprs) body) nil adpt-identity)
     body))
 
-(defn sequential? ^boolean [^Expr x] ;does not include empty-expr or identity
-  (and (or (progn? x) (block? x)) (>= (arg-count x) 2)))
-
-(defn pushes-nil-object? ^boolean [^Expr x]
-  (and (jb/object? (type x))
-       (cond (const-value-nil? x) true
-             (sequential? x) (recur (peek (argv x)))
-             :else false)))
+(letfn [(sequential? ^boolean [^Expr x] ;does not include empty-expr
+          (and (or (progn? x) (block? x)) (pos? (arg-count x))))]
+  (defn pushes-nil-object? ^boolean [^Expr x]
+    (and (jb/object? (type x))
+         (cond (const-value-nil? x) true
+               (sequential? x) (recur (peek (argv x)))
+               :else false))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -522,7 +602,7 @@
                  ^:pass-to-super-constructor ^Object const-value
                  ^Opcode opcode ^int opcd]
   Expr          ;note: branch instruction itself is strictly evaluated
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (Branch. (form this) tp argv (.const-value this) opcode opcd)))
 
 (defn branch? ^boolean [^Expr x]
@@ -542,11 +622,16 @@
 (deftype SplitJoin [^:pass-to-super-constructor ^Object _form
                     ^:pass-to-super-constructor ^Class type
                     ^:pass-to-super-constructor ^IPersistentVector argv
-                    ^:pass-to-super-constructor ^Object const-value]
+                    ^:pass-to-super-constructor ^Object const-value
+                    ^IAdaptResult adpt-paths]
   Expr
-  (with-argv [this tp argv]
-    (SplitJoin. (form this) tp argv (.const-value this)))
-  INonStrictEvaluation)
+  (with-code [this tp argv]
+    (SplitJoin. (form this) tp argv (.const-value this) nil))
+  INonStrictEvaluation
+  IAdapting
+  (with-adapt-paths [this tp then-adpt-paths]
+    (SplitJoin. (form this) tp (argv this) (.const-value this)
+                (comp-adapt then-adpt-paths adpt-paths))))
 
 (defn split-join? ^boolean [x]
   (instance? SplitJoin x))
@@ -558,12 +643,12 @@
   (^Expr [^Branch branch-to-true]
    (SplitJoin. (form branch-to-true) jb/boolean
                [branch-to-true expr-true expr-false]
-               (.const-value branch-to-true)))
+               (.const-value branch-to-true) adpt-identity))
   (^Expr [^Branch branch-to-true ^Class tp ^Expr if-true ^Expr if-false]
-   (SplitJoin. nil tp [branch-to-true if-true if-false]
-               (cond (const-value-true? branch-to-true) (.const-value if-true)
-                     (const-value-false? branch-to-true) (.const-value if-false)
-                     :else nil))))
+   (let [c (cond (const-value-true? branch-to-true) (.const-value if-true)
+                 (const-value-false? branch-to-true) (.const-value if-false)
+                 :else nil)]
+     (SplitJoin. nil tp [branch-to-true if-true if-false] c adpt-identity))))
 
 
 
@@ -600,16 +685,21 @@
                  ^:pass-to-super-constructor ^Class type
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value
-                 ^IPersistentVector guardv]
+                 ^IPersistentVector guardv
+                 ^IAdaptResult adpt-paths]
   Expr
-  (with-argv [this tp argv]
-    (Switch. (form this) tp argv (.const-value this) guardv))
-  INonStrictEvaluation)
+  (with-code [this tp argv]
+    (Switch. (form this) tp argv (.const-value this) guardv nil))
+  INonStrictEvaluation
+  IAdapting
+  (with-adapt-paths [this tp then-adpt-paths]
+    (Switch. (form this) tp (argv this) (.const-value this)
+             guardv (comp-adapt then-adpt-paths adpt-paths))))
 
 (defn switch ^Switch [^Class tp ^Expr test ^Expr dflt-path
                       ^IPersistentVector guardv]
   (let [argv (-> [test] (into (guard-paths guardv)) (conj dflt-path))]
-    (Switch. nil tp argv nil guardv)))
+    (Switch. nil tp argv nil guardv adpt-identity)))
 
 
 ;;; The body of a handler must take an "out of thin air" operand of
@@ -628,18 +718,23 @@
      ^:pass-to-super-constructor ^Class type
      ^:pass-to-super-constructor ^IPersistentVector argv
      ^:pass-to-super-constructor ^Object const-value
-     handlerv]
+     handlerv
+     ^IAdaptResult adpt-paths]
   Expr
-  (with-argv [this tp argv]
-    (TryCatchFinally. (form this) tp argv (.const-value this) handlerv))
-  INonStrictEvaluation)
+  (with-code [this tp argv]
+    (TryCatchFinally. (form this) tp argv (.const-value this) handlerv nil))
+  INonStrictEvaluation
+  IAdapting
+  (with-adapt-paths [this tp then-adpt-paths]
+    (TryCatchFinally. (form this) tp (argv this) (.const-value this)
+                      handlerv (comp-adapt then-adpt-paths adpt-paths))))
 
 (defn try-catch-finally ^TryCatchFinally [^Class tp ^Expr body
                                           handlers ^Expr finally]
   (let [argv (-> [body]
                  (into (map #(.initial-body ^TryHandler %)) handlers)
                  (conj finally))]
-    (TryCatchFinally. nil tp argv nil (vec handlers))))
+    (TryCatchFinally. nil tp argv nil (vec handlers) adpt-identity)))
 
 
 ;;; Creates a label before emitting its arguments and pushes it onto
@@ -647,14 +742,19 @@
 (deftype LoopBody [^:pass-to-super-constructor ^Object _form
                    ^:pass-to-super-constructor ^Class type
                    ^:pass-to-super-constructor ^IPersistentVector argv
-                   ^:pass-to-super-constructor ^Object const-value]
+                   ^:pass-to-super-constructor ^Object const-value
+                   ^IAdaptResult adpt-paths]
   Expr
-  (with-argv [this tp argv]
-    (LoopBody. (form this) tp argv (.const-value this)))
-  INonStrictEvaluation)
+  (with-code [this tp argv]
+    (LoopBody. (form this) tp argv (.const-value this) nil))
+  INonStrictEvaluation
+  IAdapting
+  (with-adapt-paths [this tp then-adpt-paths]
+    (LoopBody. (form this) tp (argv this) (.const-value this)
+               (comp-adapt then-adpt-paths adpt-paths))))
 
 (defn loop-body ^Expr [^Expr body]
-  (LoopBody. nil (type body) [body] nil))
+  (LoopBody. nil (type body) [body] nil adpt-identity))
 
 
 ;;; Parallel assignment of the arguments to their corresponding
@@ -665,7 +765,7 @@
                 ^:pass-to-super-constructor ^Object const-value
                 bv]             ;vec of Binding, one for each argument
   Expr
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (Recur. (form this) tp argv (.const-value this) bv)))
 
 (defn insn-recur ^Recur [^Class tp ^IPersistentVector argv
@@ -911,7 +1011,7 @@
                   ^:pass-to-super-constructor ^Object const-value
                   ^BindingRef bref]
   Expr
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (Binding. (form this) tp argv (.const-value this) bref)))
 
 (defn bref ^BindingRef [^Binding b]
@@ -1229,7 +1329,7 @@
   Expr
   (safe-to-discard? [this]
     (nil? (seq (argv this))))
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (FnForm. (form this) tp argv (.const-value this)
              level unique-mnm super-mhd itf-tags at-sigs body-fut !fnc)))
 
@@ -1247,7 +1347,7 @@
                   ^FnForm fn-form
                   ^BindingRef bref]
   Expr
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (FnPatch. (form this) tp argv (.const-value this) fn-form bref)))
 
 (defn with-at-sigs ^FnForm [^FnForm fn-form ^IPersistentVector at-sigs]
@@ -1292,7 +1392,7 @@
                       ^FnForm fn-form
                       ^int at-idx]
   Expr
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (InvokeArity. (form this) tp argv (.const-value this) fn-form at-idx)))
 
 (defn invoke-arity ^InvokeArity [^Class tp ^IPersistentVector argv
@@ -1427,7 +1527,7 @@
                     ^:pass-to-super-constructor ^Object const-value
                     ^BindingRef bref]
   Expr
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (AssignDef. (form this) tp argv (.const-value this) bref)))
 
 (defn assign-def ^AssignDef [^Expr v ^BindingRef bref]
@@ -1443,7 +1543,7 @@
   Expr
   (safe-to-discard? ^boolean [_]
     true)
-  (with-argv [this tp argv]
+  (with-code [this tp argv]
     (VarRef. (form this) tp argv (.const-value this))))
 
 (defn var-ref ^VarRef [^Class tp ^BindingRef v]

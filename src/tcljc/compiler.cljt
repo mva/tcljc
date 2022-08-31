@@ -1352,7 +1352,7 @@
                  (x/primitive? x)
                  (x/wrong-type (str "cannot cast to " (wrong/q tag)) x)
                  
-                 :else (xf/coerce x tag)))
+                 :else (xf/coerce-static x tag)))
 
              :else x)))]             ;`x` can be a compile-time entity
     

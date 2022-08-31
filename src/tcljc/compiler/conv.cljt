@@ -124,7 +124,7 @@
 
 (defn primitive-unbox-expr ^Expr [^Class to-tp ^Expr arg]
   (let [box-tp (jb/logical->box to-tp)
-        typed-x (xf/checkcast arg box-tp)]
+        typed-x (xf/coerce arg box-tp)]
     (x/invoke-xref to-tp [typed-x] (rt/logical->accessor-mhd to-tp))))
 
 (defn primitive-conv-from-object ^Expr [^Class to-tp ^Expr arg]

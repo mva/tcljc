@@ -2,69 +2,50 @@
   (:require
    [tcljc.classfile :as cf]
    [tcljc.javabase :as jb]
-   [tcljc.expr :as x]
-   [tcljc.exprfold :as xf])
+   [tcljc.expr :as x])
   (:import
    (tcljc.expr Expr Insn Const Progn Block Branch SplitJoin Switch
-               LoopBody Recur TryCatchFinally Setter)
+               LoopBody Recur TryCatchFinally Setter IAdaptResult IAdapting)
    (clojure.lang Symbol IPersistentVector))
   (:refer-clojure :exclude [type]))
 
-;;; Special type of expressions that interrupt the normal flow of
-;;; control: return, recur, throw.  This is a control flow indicator.
-;;; Expressions that split/join control flow handle it specially.
-;;; Parsing uses `void` instead of this type to produce the source
-;;; Expr.
-(deftype NoReturnMarker [])
-(def ^:private no-return NoReturnMarker)
-(defn- returning-type? ^boolean [^Class tp]
-  (not (jb/same-class? no-return tp)))
-
-(defn returns? ^boolean [^Expr x] ;excludes macro or primitive function values
-  (returning-type? (x/type x)))
-
-
-(definterface IAdaptResult
-  (transform ^Expr [^Expr x]))          ;pre: (returns? x)
-
-(def adpt-identity
-  (reify IAdaptResult
-    (transform [_ x]
-      #_(assert (returns? x))
-      x)))
-
 (defn trace-flow ^Expr [^Expr x ^IAdaptResult adpt-res]
-  (letfn [(trace-sequential ^Expr [^Expr x] ;pre: (>= (x/arg-count x) 2)
+  (letfn [(trace-sequential ^Expr [^Expr x ^IAdaptResult adpt-res]
+            ;; pre: (pos? (x/arg-count x))
             (let [argv (x/argv x)
                   a (new "[Ltcljc.expr.Expr;" (count argv))
-                  n-1 (dec (alength a))]
+                  n-1 (dec (alength a))
+                  adpt-last (x/comp-adapt adpt-res (if (x/progn? x)
+                                                     (.adpt-paths ^Progn x)
+                                                     (.adpt-paths ^Block x)))]
               (loop [i 0]
                 (let [arg (nth argv i)]
                   (if (< i n-1)
-                    (let [arg' (aset a i (trace-flow arg adpt-identity))]
-                      (if (returns? arg')
+                    (let [arg' (aset a i (trace-flow arg x/adpt-identity))]
+                      (if (x/returns? arg')
                         (recur (inc i))
-                        (x/with-argv x no-return (subvec (vec a) 0 (inc i)))))
-                    (let [arg' (aset a i (trace-flow arg adpt-res))]
-                      (x/with-argv x (x/type arg') (vec a))))))))
+                        (x/with-code x x/no-return (subvec (vec a) 0 (inc i)))))
+                    (let [arg' (aset a i (trace-flow arg adpt-last))
+                          tp (if (x/returns? arg') (x/type x) x/no-return)]
+                      (x/with-code x tp (vec a))))))))
           (trace-instruction ^Expr [^Expr x ^IAdaptResult adpt-res]
             (let [argv (x/argv x)
                   a (new "[Ltcljc.expr.Expr;" (count argv))
                   n (alength a)]
               (loop [i 0]
                 (if (< i n)
-                  (let [arg' (aset a i (trace-flow (nth argv i) adpt-identity))]
-                    (if (returns? arg')
+                  (let [arg' (aset a i (trace-flow (nth argv i) x/adpt-identity))]
+                    (if (x/returns? arg')
                       (recur (inc i))
-                      (Progn. (x/form x) no-return (subvec (vec a) 0 (inc i))
-                              nil)))
+                      (Progn. (x/form x) x/no-return (subvec (vec a) 0 (inc i))
+                              nil nil)))
                   (cond
                     (or (x/recur? x) (x/throw? x))
-                    (x/with-argv x no-return (vec a))
+                    (x/with-code x x/no-return (vec a))
                     (zero? (x/arg-count x))
-                    (.transform adpt-res x)
+                    (.apply-to-instr adpt-res x)
                     :else
-                    (.transform adpt-res (x/with-argv x (vec a))))))))
+                    (.apply-to-instr adpt-res (x/with-code x (vec a))))))))
           (trace-paths ^"[Ltcljc.expr.Expr;" [^Expr x ^int dstart ^int dend
                                               ^IAdaptResult adpt-res]
             (let [argv (x/argv x)
@@ -96,72 +77,80 @@
               :else b))
           (boolean-identities ^Branch [^Branch b]
             (boolean-identities* b (x/nth-arg b 0) (x/nth-arg b 1)))
-          (first-returning-type ^Class [[^Expr x :as xs]]
-            ;; Type of first returning expression if one exists, and
-            ;; no-return otherwise.
-            (cond (nil? x) no-return
-                  (returns? x) (x/type x)
-                  :else (recur (next xs))))
-          (reassemble-tcf ^Expr [^Expr x ^"[Ltcljc.expr.Expr;" a
-                                 ^IAdaptResult adtp-res]
-            (let [tp (if (returns? (aget a (dec (alength a))))
-                       (first-returning-type (butlast a))
-                       no-return)]
-              (cond->> (x/with-argv x tp (vec a))
-                (returning-type? tp)
-                (.transform adtp-res))))
+          (returning-type ^Class [^Expr x xs]
+            ;; `no-return` if none of the expressions returns, and
+            ;; `(type x)` otherwise
+            (loop [xs (seq xs)]
+              (cond (nil? xs) x/no-return
+                    (x/returns? (first xs)) (x/type x)
+                    :else (recur (next xs)))))
+          (trace-split-join ^Expr [^SplitJoin x]
+            (let [branch (-> ^Branch (x/nth-arg x 0)
+                             (boolean-identities)
+                             (trace-instruction x/adpt-identity))]
+              (if (x/returns? branch)
+                (let [adpt-paths (x/comp-adapt adpt-res (.adpt-paths x))
+                      a (doto (trace-paths x 1 0 adpt-paths)
+                          (aset 0 branch))]
+                  (if (x/const-value? branch)
+                    (aget a (if (x/const-value-true? branch) 1 2))
+                    (x/with-code x (returning-type x (rest a)) (vec a))))
+                branch)))
+          (trace-switch ^Expr [^Switch x]
+            (let [test (trace-instruction (x/nth-arg x 0) x/adpt-identity)]
+              (if (x/returns? test)
+                (let [adpt-paths (x/comp-adapt adpt-res (.adpt-paths x))
+                      a (doto (trace-paths x 1 0 adpt-paths)
+                          (aset 0 test))]
+                  (x/with-code x (returning-type x (rest a)) (vec a)))
+                test)))
+          (trace-try-catch-finally ^Expr [^TryCatchFinally x]
+            (let [n (x/arg-count x)
+                  finally (trace-flow (peek (x/argv x)) x/adpt-identity)]
+              (if (x/expr-empty? finally)
+                (let [adpt-paths (x/comp-adapt adpt-res (.adpt-paths x))
+                      a (doto (trace-paths x 0 -1 adpt-paths)
+                          (aset (dec n) finally))]
+                  (x/with-code x (returning-type x (butlast a)) (vec a)))
+                (let [a (doto (trace-paths x 0 -1 (.adpt-paths x))
+                          (aset (dec n) finally))]
+                  (if (x/returns? finally)
+                    (->> (x/with-code x (returning-type x (butlast a)) (vec a))
+                         (.apply-to-instr adpt-res))
+                    (x/with-code x x/no-return (vec a)))))))
+          (trace-loop-body ^Expr [^LoopBody x]
+            (let [adpt-paths (x/comp-adapt adpt-res (.adpt-paths x))
+                  body (trace-flow (x/nth-arg x 0) adpt-paths)]
+              (x/with-code x (x/type body) [body])))
           (trace-branching ^Expr [^Expr x]
             (condp instance? x
-              SplitJoin
-              (let [branch (-> ^Branch (x/nth-arg x 0)
-                               (boolean-identities)
-                               (trace-instruction adpt-identity))]
-                (if (returns? branch)
-                  (let [a (doto (trace-paths x 1 0 adpt-res)
-                            (aset 0 branch))]
-                    (if (x/const-value? branch)
-                      (aget a (if (x/const-value-true? branch) 1 2))
-                      (x/with-argv x (first-returning-type (rest a)) (vec a))))
-                  branch))
-              Switch
-              (let [test (trace-instruction (x/nth-arg x 0) adpt-identity)]
-                (if (returns? test)
-                  (let [a (doto (trace-paths x 1 0 adpt-res)
-                            (aset 0 test))]
-                    (x/with-argv x (first-returning-type (rest a)) (vec a)))
-                  test))
-              TryCatchFinally
-              (let [n (x/arg-count x)
-                    finally (trace-flow (peek (x/argv x)) adpt-identity)]
-                (if (x/expr-empty? finally)
-                  (let [a (doto (trace-paths x 0 -1 adpt-res)
-                            (aset (dec n) finally))]
-                    (if (= n 2)
-                      (aget a 0)
-                      (reassemble-tcf x a adpt-identity)))
-                  (let [a (doto (trace-paths x 0 -1 adpt-identity)
-                            (aset (dec n) finally))]
-                    (reassemble-tcf x a adpt-res))))
-              LoopBody
-              (let [body (trace-flow (x/nth-arg x 0) adpt-res)]
-                (x/with-argv x (x/type body) [body]))
-              #_else
-              (throw (IllegalArgumentException.))))]
+              SplitJoin (trace-split-join ^SplitJoin x)
+              Switch (trace-switch ^Switch x)
+              TryCatchFinally (trace-try-catch-finally ^TryCatchFinally x)
+              LoopBody (trace-loop-body ^LoopBody x)
+              #_else (throw (IllegalArgumentException.))))]
     (if (x/strict-evaluation? x)
       (cond
-        (x/sequential? x) (trace-sequential x)
-        (x/branch? x) (trace-branching (x/split&join ^Branch x))
+        (and (instance? IAdapting x) (pos? (x/arg-count x)))
+        (trace-sequential x adpt-res)
+        
+        (x/branch? x)
+        (trace-branching (x/split&join ^Branch x))
+
         :else (trace-instruction x adpt-res))
       (trace-branching x))))
 
-(def ^:private adpt-return
+(def ^:private adpt-return-from-method
   (reify IAdaptResult
-    (transform [_ x]
-      #_(assert (returns? x))
-      (x/insn* no-return [x]
+    (apply-to-instr [_ x]
+      (x/insn* x/no-return [x]
                (-> (cf/type-kind (x/type x))
-                   (jdk.classfile.instruction.ReturnInstruction/of))))))
+                   (jdk.classfile.instruction.ReturnInstruction/of))))
+    (toString [_]
+      "return")))
 
 (defn as-returning-code ^Expr [^Expr x]
-  (trace-flow x adpt-return))
-
+  #_(prn :as-returning-code-in (x/prefix-tree x))
+  (let [res (trace-flow x adpt-return-from-method)]
+    #_(prn :as-returning-code-out (x/prefix-tree res))
+    res))

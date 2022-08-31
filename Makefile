@@ -97,19 +97,17 @@ bootstrap-fixpoint: $(DEST_DIR).stageDI2/DONE
 bootstrap-check: $(DEST_DIR).rtiowFS/DONE
 
 # Naming:
-# Bx -- output of bootstrap compiler, i.e. initial version of `tcljc`
 # Dx -- deterministic classfile output but slow compilation
 # Fx -- fast compilation but non-deterministic classfile output
 # xI -- isolated runtime, i.e. with "--parent-loader :platform"
 # xS -- shared runtime, i.e. with default "--parent-loader :system"
 
-# BS: Build "tcljc" using the bootstrap compiler "tclj-in-tclj".
-# Because their is no name collision between the compilers'
-# namespaces, the "tcljc" can be compiled like a regular application
-# using the shared runtime setup.  Once tcljc becomes its own
-# bootstrap compiler, this must be changed to the isolated runtime
-# setup.
-$(DEST_DIR).stageBS/DONE: $(wildcard $(BOOT_TCLJ_MDIR)/commit-id.txt src/tcljc/*.cljt src/tcljc/*/*.cljt)
+# Zero: Build "tcljc" using the bootstrap compiler "tclj-in-tclj".
+# Because there is no name collision between the compilers' namespaces
+# currently, "tcljc" can be compiled like a regular application using
+# the shared runtime setup.  Once tcljc becomes its own bootstrap
+# compiler, this must be changed to the isolated runtime setup.
+$(DEST_DIR).stageZero/DONE: $(wildcard $(BOOT_TCLJ_MDIR)/commit-id.txt src/tcljc/*.cljt src/tcljc/*/*.cljt)
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
 	$(BOOT_JAVA) --module-path $(BOOT_TCLJ_MDIR) $(JAVA_OPTS) -m tinyclj.compiler -d "$(dir $@)" $(BUILD_MAIN)
@@ -117,7 +115,7 @@ $(DEST_DIR).stageBS/DONE: $(wildcard $(BOOT_TCLJ_MDIR)/commit-id.txt src/tcljc/*
 
 # DI1: Build "tcljc" using the initial compiler from PREV_DEST_DIR
 # (aka the first prerequisite's $< directory).
-$(DEST_DIR).stageDI1/DONE: $(DEST_DIR).stageBS/DONE
+$(DEST_DIR).stageDI1/DONE: $(DEST_DIR).stageZero/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
 	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(BOOT_MOD_CORE):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns --deterministic --parent-loader :platform -d "$(dir $@)" -s $(BOOT_MOD_RT) -s $(BOOT_SRC_CORE) -s src $(BUILD_MAIN)
