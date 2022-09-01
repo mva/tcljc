@@ -1,4 +1,4 @@
-(ns tcljc.exprcode
+(ns tcljc.emitter.exprcode
   (:require
    [tcljc.classfile :as cf]
    [tcljc.javabase :as jb]

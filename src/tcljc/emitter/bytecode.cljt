@@ -7,9 +7,8 @@
    [tcljc.runtime :as rt]
    [tcljc.expr :as x]
    [tcljc.exprfold :as xf]
-   [tcljc.exprcode :as xc]
    [tcljc.context :as ctx]
-   [tcljc.compiler.branch :as branch])
+   [tcljc.emitter.exprcode :as xc])
   (:import
    (tcljc.classfile ILdStInstr LdStMember)
    (tcljc.expr Expr Const Insn NewArray InvokeXref InvokeDynamic InvokePoly
@@ -347,9 +346,10 @@
                 
                 1 ;switch expression + single guard value + default path
                 (let [case-value (object (.gint ^Guard (nth guardv 0)))
-                      test (xf/icmp (nth argv 0) (x/const jb/int case-value)
-                                    cf/eq)
-                      if-x (branch/if-expr test (nth argv 1) (nth argv 2))]
+                      if-x (-> (xf/icmp (nth argv 0) (x/const jb/int case-value)
+                                        cf/eq)
+                               (x/split&join (x/type x)
+                                             (nth argv 1) (nth argv 2)))]
                   (expr-insns xb es if-x))
 
                 #_else (table-insn xb x))))

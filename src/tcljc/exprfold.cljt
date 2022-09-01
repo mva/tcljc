@@ -3,8 +3,7 @@
    [tcljc.classfile :as cf]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
-   [tcljc.expr :as x]
-   [tcljc.exprcode :as xc])
+   [tcljc.expr :as x])
   (:import
    (tcljc.expr Expr IAdaptResult Insn Const Progn Block Setter BindingRef
                LoopBody Branch SplitJoin Switch TryCatchFinally)
@@ -112,7 +111,7 @@
     (Insn. nil type [arg0 arg1] (bits-const)
            (jdk.classfile.instruction.OperatorInstruction/of opc))))
 
-(defn icmp ^Expr [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
+(defn icmp ^Branch [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
   (let [c (when-some [c0 (.const-value arg0)]
             (when-some [c1 (.const-value arg1)]
               (let [n0 ^int c0, n1 ^int c1]
@@ -125,7 +124,7 @@
                                    #_le 5 (<= n0 n1))))))]
     (Branch. nil jb/boolean [arg0 arg1] c Opcode/IF_ICMPEQ cmp-opcd)))
 
-(defn acmp ^Expr [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
+(defn acmp ^Branch [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
   (let [c (when-some [c0 (rt/null-value-pred (.const-value arg0))]
             (when-some [c1 (rt/null-value-pred (.const-value arg1))]
               (let [c0 ^boolean c0, c1 ^boolean c1]
