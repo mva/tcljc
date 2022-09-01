@@ -15,9 +15,9 @@
             (let [argv (x/argv x)
                   a (new "[Ltcljc.expr.Expr;" (count argv))
                   n-1 (dec (alength a))
-                  adpt-last (x/comp-adapt adpt-res (if (x/progn? x)
-                                                     (.adpt-paths ^Progn x)
-                                                     (.adpt-paths ^Block x)))]
+                  adpt-last (.after adpt-res (if (x/progn? x)
+                                               (.adpt-paths ^Progn x)
+                                               (.adpt-paths ^Block x)))]
               (loop [i 0]
                 (let [arg (nth argv i)]
                   (if (< i n-1)
@@ -90,7 +90,7 @@
                              (boolean-identities)
                              (trace-instruction x/adpt-identity))]
               (if (x/returns? branch)
-                (let [adpt-paths (x/comp-adapt adpt-res (.adpt-paths x))
+                (let [adpt-paths (.after adpt-res (.adpt-paths x))
                       a (doto (trace-paths x 1 0 adpt-paths)
                           (aset 0 branch))]
                   (if (x/const-value? branch)
@@ -100,7 +100,7 @@
           (trace-switch ^Expr [^Switch x]
             (let [test (trace-instruction (x/nth-arg x 0) x/adpt-identity)]
               (if (x/returns? test)
-                (let [adpt-paths (x/comp-adapt adpt-res (.adpt-paths x))
+                (let [adpt-paths (.after adpt-res (.adpt-paths x))
                       a (doto (trace-paths x 1 0 adpt-paths)
                           (aset 0 test))]
                   (x/with-code x (returning-type x a 1 0) (vec a)))
@@ -109,7 +109,7 @@
             (let [n (x/arg-count x)
                   finally (trace-flow (peek (x/argv x)) x/adpt-identity)]
               (if (x/expr-empty? finally)
-                (let [adpt-paths (x/comp-adapt adpt-res (.adpt-paths x))
+                (let [adpt-paths (.after adpt-res (.adpt-paths x))
                       a (doto (trace-paths x 0 -1 adpt-paths)
                           (aset (dec n) finally))]
                   (x/with-code x (returning-type x a 0 -1) (vec a)))
@@ -120,7 +120,7 @@
                          (.apply-to-instr adpt-res))
                     (x/with-code x x/no-return (vec a)))))))
           (trace-loop-body ^Expr [^LoopBody x]
-            (let [adpt-paths (x/comp-adapt adpt-res (.adpt-paths x))
+            (let [adpt-paths (.after adpt-res (.adpt-paths x))
                   body (trace-flow (x/nth-arg x 0) adpt-paths)]
               (x/with-code x (x/type body) [body])))
           (trace-branching ^Expr [^Expr x]
@@ -130,7 +130,7 @@
               TryCatchFinally (trace-try-catch-finally ^TryCatchFinally x)
               LoopBody (trace-loop-body ^LoopBody x)
               #_else (throw (IllegalArgumentException.))))]
-    #_(prn :trace-flow (.toString adpt-res))
+    #_(prn :trace-flow #_(meta (x/form x)) (.toString adpt-res))
     (if (x/strict-evaluation? x)
       (cond
         (and (instance? IAdapting x) (pos? (x/arg-count x)))
@@ -142,12 +142,16 @@
         :else (trace-instruction x adpt-res))
       (trace-branching x))))
 
-(def ^:private adpt-return-from-method
+(def ^:private adpt-return-from-method  ;terminating adapter
   (reify IAdaptResult
     (apply-to-instr [_ x]
       (x/insn* x/no-return [x]
                (-> (cf/type-kind (x/type x))
                    (jdk.classfile.instruction.ReturnInstruction/of))))
+    (after [this before]
+      (x/adpt-comp this before))
+    (safe-instructions? [_]
+      true)
     (toString [_]
       "return")))
 

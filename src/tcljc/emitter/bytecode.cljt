@@ -348,8 +348,8 @@
                 (let [case-value (object (.gint ^Guard (nth guardv 0)))
                       if-x (-> (xf/icmp (nth argv 0) (x/const jb/int case-value)
                                         cf/eq)
-                               (x/split&join (x/type x)
-                                             (nth argv 1) (nth argv 2)))]
+                               (x/split&join (x/type x) (nth argv 1)
+                                             (nth argv 2) (.adpt-paths x)))]
                   (expr-insns xb es if-x))
 
                 #_else (table-insn xb x))))

@@ -8,7 +8,7 @@
    [tcljc.compiler.resolve :as resolve]
    [tcljc.exprfold :as xf])
   (:import
-   (tcljc.expr Expr Progn)
+   (tcljc.expr Expr Progn IAdaptResult)
    (clojure.lang IPersistentVector)
    (jdk.classfile Opcode)
    (java.lang.reflect Executable)))
@@ -147,32 +147,51 @@
   (cond (jb/numeric? tp) (widen-from tp x/expr-zero-byte)
         (jb/same-class? jb/boolean tp) x/expr-false
         (jb/same-class? jb/char tp) x/expr-zero-char
-
+        (jb/statement? tp) x/expr-empty
         ;; anything else that produces a value is currently a
         ;; reference type
-        (jb/pushes-result? tp) (x/const tp nil)
-
-        :else x/expr-empty))  ;void or no-return (also mapped to void)
+        :else (x/const tp nil)))
 
 ;;; ------------------------------------------------------------------------
 
 (defn- jvm-adapt-to ^Expr [^Class to-tp ^Expr from] ;returns nil on failure
-  (cond
+  (cond                           ;mirrors `jvm-assignable-to?` below
     (or (x/type? to-tp from)      ;cheapest: type of `from` is `to-tp`
         (jb/polymorphic? to-tp))
     from
     
-    (resolve/numeric-assignable-to? (x/type from) to-tp)
-    (widen-from to-tp from)
-
-    (or (and (x/pushes-nil-object? from) (jb/reference? to-tp))
-        (.isAssignableFrom to-tp (x/type from)))
+    (or (.isAssignableFrom to-tp (x/type from))
+        (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
     (xf/coerce from to-tp)
 
     (jb/statement? to-tp)
     (xf/coerce-to-statm from)
+
+    ;; weaker condition than `resolve/numeric-assignable-to?`:
+    (and (jb/primitive? to-tp)
+         (not (jb/same-class? jb/boolean to-tp))
+         (x/pushes-result? from))
+    (widen-from to-tp from)
     
     :else nil))
+
+(defn jvm-assignable-to? ^boolean [^Expr from ^Class to-tp]
+  (cond                           ;mirrors `jvm-adapt-to` above
+    (or (x/type? to-tp from)      ;cheapest: type of `from` is `to-tp`
+        (jb/polymorphic? to-tp))
+    true
+    
+    (or (.isAssignableFrom to-tp (x/type from))
+        (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
+    true
+
+    (jb/statement? to-tp)
+    true
+    
+    (resolve/numeric-assignable-to? (x/type from) to-tp)
+    true
+
+    :else false))
 
 ;;; Keep in sync with `assignable-to?` below.
 (defn- adapt-for-assign ^Expr [^Expr from ^Class to-tp]
@@ -194,9 +213,6 @@
                 :else nil))
 
         (x/wrong-type (str "cannot assign to " (wrong/q to-tp)) from))))
-
-(defn jvm-assignable-to? ^boolean [^Expr from ^Class to-tp]
-  (some? (jvm-adapt-to to-tp from)))
 
 ;;; Must mirror logic of `adapt-for-assign` above.
 (defn assignable-to? ^boolean [^Expr from ^Class to-tp]
@@ -274,5 +290,18 @@
     x
     (consume x to-tp)))
 
-(defn consume-paths ^IPersistentVector [^Class to-tp paths]
-  (mapv #(adapt-for-path % to-tp) paths))
+
+(deftype AdaptForPath [^Class to-tp]
+  IAdaptResult
+  (apply-to-instr [_ x]
+    (adapt-for-path x to-tp))
+  (after [this before]
+    (if (and (instance? AdaptForPath before)
+             (.isAssignableFrom to-tp (.to-tp ^AdaptForPath before)))
+      this
+      (x/adpt-comp this before)))
+  (safe-instructions? [_]
+    true)
+  (toString [_]
+    (str "afp-" (.getName to-tp))))
+(def adpt-for-path ->AdaptForPath)

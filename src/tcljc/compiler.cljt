@@ -660,15 +660,6 @@
                            [g]))
                         (inc path-idx)
                         (nnext clauses)))))))
-       (consume-case-paths [[^IPersistentVector guardv ^Expr dflt-path]]
-         (let [all-paths (conj (x/guard-paths guardv) dflt-path)
-               to-tp (x/type (conv/path-join all-paths))
-               pathv (conv/consume-paths to-tp all-paths)]
-           [to-tp
-            (mapv (fn ^Guard [^Guard g]
-                    (x/with-path-expr g (nth pathv (.path-idx g))))
-                  guardv)
-            (peek pathv)]))
        (guard-path-idx ^int [^Guard g]
          (.path-idx g))
        (clause-code-segment [gs]
@@ -686,8 +677,13 @@
          ;; the wrapping macro should pass in a let binding as `expr`.
          (wrong/check-argc-min 1 form)
          (let [test (expr-form expr)
-               [to-tp guardv dflt-path] (-> (parse-case-clauses test clauses)
-                                            (consume-case-paths))]
+               [guardv ^Expr dflt-path] (parse-case-clauses test clauses)
+               all-pathv (conj (x/guard-paths guardv) dflt-path)
+               to-tp (x/type (conv/path-join all-pathv))
+               guardv (mapv (fn ^Guard [^Guard g]
+                              (x/with-path-expr g
+                                (nth all-pathv (.path-idx g))))
+                            guardv)]
            ;; check for duplicate values in guards
            (->> (map #(.gvalue ^Guard %) guardv)
                 (reduce (fn [seen x]
@@ -697,12 +693,13 @@
                           (conj seen x))
                         #{}))
            (if (conv/computational-int? test) ;switch over int
-             (->> (mapv x/with-guard-int-value guardv)
-                  (x/switch to-tp test dflt-path))
+             (x/switch to-tp test dflt-path (mapv x/with-guard-int-value guardv)
+                       (conv/adpt-for-path to-tp))
              ;; else: hashmap lookup followed by switch over encoder index
-             (->> (partition-by guard-path-idx guardv)
-                  (mapv #(x/with-guard-path-idx (first %)))
-                  (x/switch to-tp (clause-code-expr test guardv) dflt-path)))))
+             (x/switch to-tp (clause-code-expr test guardv) dflt-path
+                       (->> (partition-by guard-path-idx guardv)
+                            (mapv #(x/with-guard-path-idx (first %))))
+                       (conv/adpt-for-path to-tp)))))
        
        (let*-form ^Expr [[_ bindings-vec & body :as form]]
          (let [[env bexprs] (bindings env bindings-vec x/b-let)]
@@ -1031,13 +1028,13 @@
                                  (xf/coerce-to-statm)
                                  (x/with-innermost-form f))]
            (let [all-paths (cons body-expr (map second ecs))
-                 to-tp (x/type (conv/path-join all-paths))
-                 pathv (conv/consume-paths to-tp all-paths)]
-             (x/try-catch-finally to-tp (nth pathv 0)
+                 to-tp (x/type (conv/path-join all-paths))]
+             (x/try-catch-finally to-tp body-expr
                                   (mapv (fn [[catch-ex _] catch-body]
                                           (x/try-handler catch-ex catch-body))
-                                        ecs (rest pathv))
-                                  finally-statm))))
+                                        ecs (rest all-paths))
+                                  finally-statm
+                                  (conv/adpt-for-path to-tp)))))
        (try-form ^Expr [form]
          (if (tcf-pos? form-ctx)
            (try-form* form)

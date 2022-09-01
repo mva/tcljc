@@ -30,14 +30,13 @@
 
 (defn if-expr ^Expr [^Expr test ^Expr if-true ^Expr if-false]
   (let [test (conv-to-boolean test)
-        to-tp (x/type (conv/path-join if-true if-false))
-        pathv (conv/consume-paths to-tp (list if-true if-false))]
+        to-tp (x/type (conv/path-join if-true if-false))]
     (-> (if (x/branch? test)
           ;; If `test` is a branch instruction, then the new if just
           ;; adds the branches that complete it.
           ^Branch test
           (xf/icmp test x/expr-false cf/ne))
-        (x/split&join to-tp (nth pathv 0) (nth pathv 1)))))
+        (x/split&join to-tp if-true if-false (conv/adpt-for-path to-tp)))))
 
 ;;; ------------------------------------------------------------------------
 

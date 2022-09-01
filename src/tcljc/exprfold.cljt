@@ -187,6 +187,12 @@
   IAdaptResult
   (apply-to-instr [_ x]
     (coerce* x to-tp))
+  (after [this before]
+    (if (and (jb/statement? to-tp) (.safe-instructions? before))
+      this
+      (x/adpt-comp this before)))
+  (safe-instructions? [_]
+    (or (jb/statement? to-tp) (jb/object? to-tp)))
   (toString [_]
     (str "coerce-" (.getName to-tp))))
 

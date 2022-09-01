@@ -151,28 +151,41 @@
 ;;; navigate into the expression's structure.  The result is again
 ;;; treated as opaque, but is can be non-returning.
 (definterface IAdaptResult
-  (apply-to-instr ^Expr [^Expr x]))
+  (apply-to-instr ^Expr [^Expr x])
+  (after ^IAdaptResult [^IAdaptResult before])
+  (safe-instructions? ^boolean []))     ;emitted code never throws
 (def adpt-identity
   (reify IAdaptResult
     (apply-to-instr [_ x]
       x)
+    (after [_ before]
+      before)
+    (safe-instructions? [_]
+      true)
     (toString [_]
       "identity")))
 
-(deftype CompAdaptResult [^IAdaptResult then-adpt ^IAdaptResult adpt]
+(deftype AdaptComposition [^IAdaptResult adpt-after ^IAdaptResult adpt-before]
   IAdaptResult
   (apply-to-instr [_ x]
-    (let [x (.apply-to-instr adpt x)]
+    (let [x (.apply-to-instr adpt-before x)]
       (if (returns? x)
-        (.apply-to-instr then-adpt x)
+        (.apply-to-instr adpt-after x)
         x)))
+  (after [this before]
+    (let [x (.after adpt-before before)]
+      (if (identical? x adpt-before)
+        this
+        (AdaptComposition. adpt-after x))))
+  (safe-instructions? [_]
+    (and (.safe-instructions? adpt-before) (.safe-instructions? adpt-after)))
   (toString [_]
-    (str then-adpt " ∘ " adpt)))
-(defn comp-adapt ^IAdaptResult [^IAdaptResult then-adpt ^IAdaptResult adpt]
-  (cond
-    (identical? adpt-identity adpt) then-adpt
-    (identical? adpt-identity then-adpt) adpt
-    :else (CompAdaptResult. then-adpt adpt)))
+    (str adpt-after " ∘ " adpt-before)))
+(defn adpt-comp ^IAdaptResult [^IAdaptResult adpt-after
+                               ^IAdaptResult adpt-before]
+  (if (identical? adpt-identity adpt-before)
+    adpt-after
+    (AdaptComposition. adpt-after adpt-before)))
 
 
 ;; Strict evaluation means that all arguments are evaluated before
@@ -520,7 +533,7 @@
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
     (Progn. (form this) tp (argv this) (.const-value this)
-            (comp-adapt then-adpt-paths adpt-paths))))
+            (.after then-adpt-paths adpt-paths))))
 
 (defn progn? ^boolean [x]
   (instance? Progn x))
@@ -563,7 +576,7 @@
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
     (Block. (form this) tp (argv this) (.const-value this)
-            (comp-adapt then-adpt-paths adpt-paths))))
+            (.after then-adpt-paths adpt-paths))))
 
 (defn block? ^boolean [x]
   (instance? Block x))
@@ -631,7 +644,7 @@
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
     (SplitJoin. (form this) tp (argv this) (.const-value this)
-                (comp-adapt then-adpt-paths adpt-paths))))
+                (.after then-adpt-paths adpt-paths))))
 
 (defn split-join? ^boolean [x]
   (instance? SplitJoin x))
@@ -644,11 +657,12 @@
    (SplitJoin. (form branch-to-true) jb/boolean
                [branch-to-true expr-true expr-false]
                (.const-value branch-to-true) adpt-identity))
-  (^Expr [^Branch branch-to-true ^Class tp ^Expr if-true ^Expr if-false]
+  (^Expr [^Branch branch-to-true ^Class tp ^Expr if-true ^Expr if-false
+          ^IAdaptResult adpt-paths]
    (let [c (cond (const-value-true? branch-to-true) (.const-value if-true)
                  (const-value-false? branch-to-true) (.const-value if-false)
                  :else nil)]
-     (SplitJoin. nil tp [branch-to-true if-true if-false] c adpt-identity))))
+     (SplitJoin. nil tp [branch-to-true if-true if-false] c adpt-paths))))
 
 
 
@@ -694,12 +708,12 @@
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
     (Switch. (form this) tp (argv this) (.const-value this)
-             guardv (comp-adapt then-adpt-paths adpt-paths))))
+             guardv (.after then-adpt-paths adpt-paths))))
 
 (defn switch ^Switch [^Class tp ^Expr test ^Expr dflt-path
-                      ^IPersistentVector guardv]
+                      ^IPersistentVector guardv ^IAdaptResult adpt-paths]
   (let [argv (-> [test] (into (guard-paths guardv)) (conj dflt-path))]
-    (Switch. nil tp argv nil guardv adpt-identity)))
+    (Switch. nil tp argv nil guardv adpt-paths)))
 
 
 ;;; The body of a handler must take an "out of thin air" operand of
@@ -727,14 +741,14 @@
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
     (TryCatchFinally. (form this) tp (argv this) (.const-value this)
-                      handlerv (comp-adapt then-adpt-paths adpt-paths))))
+                      handlerv (.after then-adpt-paths adpt-paths))))
 
-(defn try-catch-finally ^TryCatchFinally [^Class tp ^Expr body
-                                          handlers ^Expr finally]
+(defn try-catch-finally ^TryCatchFinally [^Class tp ^Expr body handlers
+                                          ^Expr finally ^IAdaptResult adpt-paths]
   (let [argv (-> [body]
                  (into (map #(.initial-body ^TryHandler %)) handlers)
                  (conj finally))]
-    (TryCatchFinally. nil tp argv nil (vec handlers) adpt-identity)))
+    (TryCatchFinally. nil tp argv nil (vec handlers) adpt-paths)))
 
 
 ;;; Creates a label before emitting its arguments and pushes it onto
@@ -751,7 +765,7 @@
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
     (LoopBody. (form this) tp (argv this) (.const-value this)
-               (comp-adapt then-adpt-paths adpt-paths))))
+               (.after then-adpt-paths adpt-paths))))
 
 (defn loop-body ^Expr [^Expr body]
   (LoopBody. nil (type body) [body] nil adpt-identity))
