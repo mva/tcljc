@@ -231,7 +231,7 @@
              (filter-dominators))))
 
   (defn invoke-virtual ^Expr [^Class owner ^Method m ^IPersistentVector argv]
-    (let [owner-cd (rt/describe-class owner)
+    (let [owner-cd (if (jb/array? owner) rt/object (rt/describe-class owner))
           k (if (.isInterface owner)
               rt/mhk-interface-virtual
               rt/mhk-virtual)]

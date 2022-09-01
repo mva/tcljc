@@ -26,3 +26,12 @@
            (ARETURN)]
          (asm-expr [^"[[I" x] (.clone x)))))
 
+(deftest clone-then-toString-test
+  (is (= '[["LOCAL 0: int[] x"]
+           (ALOAD_0)
+           (INVOKEVIRTUAL "int[]" "clone" "()Ljava/lang/Object;")
+           (CHECKCAST "int[]")
+           (INVOKEVIRTUAL Object "toString" "()Ljava/lang/String;")
+           (ARETURN)]
+         (asm-expr [^ints x] (.toString (.clone x))))))
+
