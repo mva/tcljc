@@ -77,13 +77,14 @@
               :else b))
           (boolean-identities ^Branch [^Branch b]
             (boolean-identities* b (x/nth-arg b 0) (x/nth-arg b 1)))
-          (returning-type ^Class [^Expr x xs]
+          (returning-type ^Class [^Expr x ^"[Ltcljc.expr.Expr;" a
+                                  ^int dstart ^int dend]
             ;; `no-return` if none of the expressions returns, and
             ;; `(type x)` otherwise
-            (loop [xs (seq xs)]
-              (cond (nil? xs) x/no-return
-                    (x/returns? (first xs)) (x/type x)
-                    :else (recur (next xs)))))
+            (loop [i (dec (+ (alength a) dend))]
+              (cond (< i dstart) x/no-return
+                    (x/returns? (aget a i)) (x/type x)
+                    :else (recur (dec i)))))
           (trace-split-join ^Expr [^SplitJoin x]
             (let [branch (-> ^Branch (x/nth-arg x 0)
                              (boolean-identities)
@@ -94,7 +95,7 @@
                           (aset 0 branch))]
                   (if (x/const-value? branch)
                     (aget a (if (x/const-value-true? branch) 1 2))
-                    (x/with-code x (returning-type x (rest a)) (vec a))))
+                    (x/with-code x (returning-type x a 1 0) (vec a))))
                 branch)))
           (trace-switch ^Expr [^Switch x]
             (let [test (trace-instruction (x/nth-arg x 0) x/adpt-identity)]
@@ -102,7 +103,7 @@
                 (let [adpt-paths (x/comp-adapt adpt-res (.adpt-paths x))
                       a (doto (trace-paths x 1 0 adpt-paths)
                           (aset 0 test))]
-                  (x/with-code x (returning-type x (rest a)) (vec a)))
+                  (x/with-code x (returning-type x a 1 0) (vec a)))
                 test)))
           (trace-try-catch-finally ^Expr [^TryCatchFinally x]
             (let [n (x/arg-count x)
@@ -111,11 +112,11 @@
                 (let [adpt-paths (x/comp-adapt adpt-res (.adpt-paths x))
                       a (doto (trace-paths x 0 -1 adpt-paths)
                           (aset (dec n) finally))]
-                  (x/with-code x (returning-type x (butlast a)) (vec a)))
+                  (x/with-code x (returning-type x a 0 -1) (vec a)))
                 (let [a (doto (trace-paths x 0 -1 (.adpt-paths x))
                           (aset (dec n) finally))]
                   (if (x/returns? finally)
-                    (->> (x/with-code x (returning-type x (butlast a)) (vec a))
+                    (->> (x/with-code x (returning-type x a 0 -1) (vec a))
                          (.apply-to-instr adpt-res))
                     (x/with-code x x/no-return (vec a)))))))
           (trace-loop-body ^Expr [^LoopBody x]
