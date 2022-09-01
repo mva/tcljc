@@ -354,54 +354,47 @@
 
                 #_else (table-insn xb x))))
 
-          (try-catch-finally* ^void [^CodeBuilder$BlockCodeBuilder xb
-                                     ^TryCatchFinally x]
-            (let [handlerv (.handlerv x)
-                  n (count handlerv)
-                  argv (x/argv x)
-                  body-expr ^Expr (nth argv 0)
-                  finally-statm ^Expr (peek argv)
-                  c-labelv (vec (repeatedly n #(.newLabel xb)))
-                  cf-label (when-not (x/expr-empty? finally-statm)
-                             (.newLabel xb))
-                  f-label (if cf-label (.newLabel xb) (.endLabel xb))] 
-              ;; First emit body, and then emit handlers only if
-              ;; body-expr is not empty. `exceptionCatch()` throws
-              ;; when given an empty bytecode region.
-              (assert (= (count argv) (+ n 2)))
+          (try-catch* ^boolean [^CodeBuilder$BlockCodeBuilder xb
+                                ^TryCatchFinally x ^Label f-label]
+            (let [body-expr (x/nth-arg x 0)]
               (expr-insns xb es body-expr)
-              (when-not (.isEmpty ^jdk.classfile.impl.BlockCodeBuilderImpl xb)
-                (when (x/returns? body-expr)
-                  (.branchInstruction xb Opcode/GOTO f-label))
-                (let [end-body (.newLabel xb)] ;start-body is (.startLabel xb)
+              (if (.isEmpty ^jdk.classfile.impl.BlockCodeBuilderImpl xb)
+                true             ;no output means finally is reachable
+                (let [handlerv (.handlerv x)
+                      n (count handlerv)
+                      c-labelv (vec (repeatedly n #(.newLabel xb)))
+                      end-body (.newLabel xb)]
+                  (assert (= (x/arg-count x) (+ n 2)))
+                  (when (x/returns? body-expr)
+                    (.branchInstruction xb Opcode/GOTO f-label))
                   (.labelBinding xb end-body)
                   (dotimes [i n]
                     (let [handler ^TryHandler (nth handlerv i)]
                       (.exceptionCatch xb (.startLabel xb) end-body
                                        ^Label (nth c-labelv i)
-                                       (rt/cd-of (.exception handler)))))
-                  (when cf-label
-                    (.exceptionCatchAll xb (.startLabel xb) end-body cf-label)))
-                
-                (dotimes [i n]
-                  ;; catch is never empty: stores exception in local
-                  (let [handler ^TryHandler (nth handlerv i)
-                        catch-expr (nth argv (inc i))
-                        c-label (nth c-labelv i)]
-                    (-> (.labelBinding xb c-label)
-                        (expr-insns es catch-expr)
-                        (cond-> (and (x/returns? catch-expr)
-                                     (or (< i (dec n)) (some? cf-label)))
-                          (.branchInstruction Opcode/GOTO f-label)))
-                    (when cf-label
-                      (let [end (.newLabel xb)]
-                        (-> (.labelBinding xb end)
-                            (.exceptionCatchAll c-label end cf-label))))))
-                (when cf-label
-                  (-> (.labelBinding xb cf-label)
-                      (expr-insns es finally-statm)
-                      (cond-> (x/returns? finally-statm) (.athrow)))))
-              (when cf-label
+                                       (rt/cd-of (.exception handler))))
+                    (let [catch-expr (x/nth-arg x (inc i))]
+                      (-> (.labelBinding xb (nth c-labelv i))
+                          (expr-insns es catch-expr)
+                          (cond-> (x/returns? catch-expr)
+                            (.branchInstruction Opcode/GOTO f-label)))))
+                  (boolean (some x/returns? (butlast (x/argv x))))))))
+          (try-catch-finally* ^void [^CodeBuilder$BlockCodeBuilder xb
+                                     ^TryCatchFinally x]
+            (let [finally-statm ^Expr (peek (x/argv x))
+                  f-label (.newLabel xb)
+                  f-reachable? (try-catch* xb x f-label)]
+              (when-not (.isEmpty ^jdk.classfile.impl.BlockCodeBuilderImpl xb)
+                (when-not (x/expr-empty? finally-statm)
+                  (let [end-of-finally (.newLabel xb)
+                        cf-label (.newLabel xb)]
+                    (-> (.labelBinding xb end-of-finally)
+                        (.exceptionCatchAll (.startLabel xb) end-of-finally
+                                            cf-label)
+                        (.labelBinding cf-label)
+                        (expr-insns es finally-statm)
+                        (cond-> (x/returns? finally-statm) (.athrow))))))
+              (when f-reachable?
                 (-> (.labelBinding xb f-label)
                     (expr-insns es finally-statm)))))
           
