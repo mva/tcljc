@@ -8,7 +8,7 @@
    [tinyclj.string :as str])
   (:import
    (tcljc.expr BindingRef FnForm)
-   (clojure.lang Symbol IPersistentVector IPersistentMap)
+   (clojure.lang Symbol Keyword IPersistentVector IPersistentMap)
    (java.nio.file Path)
    (java.lang.constant ClassDesc ConstantDesc)
    (java.lang.invoke MethodHandles$Lookup MethodHandle)
@@ -417,25 +417,32 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defmacro with-executor [exc & body]
-  (assert (symbol? exc))
-  `(let [~exc (Executors/newVirtualThreadPerTaskExecutor)]
-     (try
-       ~@body
-       (finally
-         (.shutdown ~exc)
-         (when-not (.awaitTermination ~exc 5 TimeUnit/MINUTES)
-           (throw (TimeoutException.)))))))
+(letfn [(get-sexpr [^Keyword kw ^IPersistentMap m]
+          (java.util.Objects/requireNonNull (get m kw) (str kw)))]
+  (defn- binding-sym ^Symbol [m] (get-sexpr :binding-sym m))
+  (defn- local-context-sexpr [m] (get-sexpr :local-context m))
+  (defn- other-thread-sexpr [m] (get-sexpr :other-thread? m))
+  (defn- executor-sexpr [m] (get-sexpr :executor m)))
 
-(defmacro with-context [local-ctx other-thread? & body]
+(defmacro with-executor [m & body]
+  (let [exc-sym (binding-sym m)]
+    `(let [~exc-sym (Executors/newVirtualThreadPerTaskExecutor)]
+       (try
+         ~@body
+         (finally
+           (.shutdown ~exc-sym)
+           (when-not (.awaitTermination ~exc-sym 5 TimeUnit/MINUTES)
+             (throw (TimeoutException.))))))))
+
+(defmacro with-context [m & body]
   ;; FIXME... currently this is just a no-op with regard to actually
   ;; setting the context
   `(do
-     (when ~other-thread?
+     (when ~(other-thread-sexpr m)
        ;; compiler code running in unit tests should use the *out*
        ;; and *err* bound by ptest:
        (clojure.lang.Var/resetThreadBindingFrame
-        (.binding-frame (tl-ctx* ~local-ctx))))
+        (.binding-frame (tl-ctx* ~(local-context-sexpr m)))))
      
      ~@body)
   #_
@@ -446,29 +453,30 @@
        (finally
          (.set ctx prev-ctx#)))))
 
-(defmacro with-fork-or-on-thread [exc other-thread? & body]
+(defmacro with-fork-or-on-thread [m & body]
   `(let [task# (fn ^Callable task [] ~@body)]
-     (if ~other-thread?
-       (.submit ~exc task#)
+     (if ~(other-thread-sexpr m)
+       (.submit ~(executor-sexpr m) task#)
        ^Future (CompletableFuture/completedFuture (.call task#)))))
 
-(defmacro with-fork [exc & body]
-  `(let [exc# ~exc
+(defmacro with-fork [m & body]
+  `(let [exc# ~(executor-sexpr m)
          other-thread?# (some? exc#)]
-     (with-fork-or-on-thread exc# other-thread?#
+     (with-fork-or-on-thread {:executor exc#, :other-thread? other-thread?#}
        ~@body)))
 
-(defmacro with-fork+context [exc local-ctx & body]
+(defmacro with-fork+context [m & body]
   ;; force context computation in outside thread
-  `(let [local-ctx# ~local-ctx
-         exc# ~exc
+  `(let [local-ctx# ~(local-context-sexpr m)
+         exc# ~(executor-sexpr m)
          other-thread?# (some? exc#)]
-     (with-fork-or-on-thread exc#  other-thread?#
-       (with-context local-ctx# other-thread?# ~@body))))
+     (with-fork-or-on-thread {:executor exc#, :other-thread?  other-thread?#}
+       (with-context {:local-context local-ctx#, :other-thread? other-thread?#}
+         ~@body))))
 
 
-(defmacro start-solo-thread [tl-ctx & body]
-  `(let [frame# (.binding-frame (tl-ctx* ~tl-ctx))]
+(defmacro start-solo-thread [m & body]
+  `(let [frame# (.binding-frame (tl-ctx* ~(local-context-sexpr m)))]
      (-> (fn ^Runnable task-with-ctx []
            ;; compiler code running in unit tests should use the *out*
            ;; and *err* bound by ptest:

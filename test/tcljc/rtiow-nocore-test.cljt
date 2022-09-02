@@ -31,7 +31,9 @@
         dyn-ld (cfg/dyn-class-loader app-ld [])
         dest-dir (cfg/dest-dir "tcljc.rtiow-nocore")
         env (em/mk-build-env app-ld dest-dir dyn-ld {})]
-    (ctx/with-executor exc-nmsp
+    (ctx/with-executor
+      {:binding-sym exc-nmsp
+       :parent-fn compile-rtiow-nocore-test}
       (let [ns-str "tcljc.rtiow-nocore-ref"
             provided-nmsp (em/mk-provided-nmsp)
             known-ns (assoc predefined/implicit-known-ns

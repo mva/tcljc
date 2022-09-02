@@ -452,7 +452,7 @@
   (let [env (.env segm)
         ctx (.ctx segm)
         p-thread (ctx/start-solo-thread
-                  ctx
+                  {:local-context ctx}
                   (try
                     (preparer-thread (.emit ctx) (HashSet.))
                     (catch Throwable t ;no re-raise and wait for close-queue
@@ -462,7 +462,7 @@
                       (ctx/send-msg* (-> ctx .emit .q)
                                      ctx/msg-close-queue nil))))
         c-thread (ctx/start-solo-thread
-                  ctx
+                  {:local-context ctx}
                   (try
                     (let [nsd (nmsp/compile-thread env provided-nmsp ctx)]
                       ;; regular completion: pass back result in first
@@ -559,7 +559,9 @@
 (defn- emit-namespaces-mt ^IPersistentMap [^BuildEnv env ns-strs]
   (let [namespaces-q (java.util.concurrent.LinkedBlockingQueue.)
         !futs (ConcurrentHashMap.)]     ;updated by this thread only
-    (ctx/with-executor namespaces-scope
+    (ctx/with-executor
+      {:binding-sym namespaces-scope
+       :parent-fn emit-namespaces-mt}
       (letfn [(^FnRequireNamespace require-fn [ns-str provided-nmsp]
                (or
                 ;; First peek into the current namespace map, and
@@ -573,7 +575,8 @@
                   (ctx/wait-for-result 1 cf))))
               
               (fork-namespace ^Future [^String ns-str provided-nmsp]
-                (ctx/with-fork namespaces-scope
+                (ctx/with-fork
+                  {:executor namespaces-scope}
                   (or          ;import from dyn-ld or compile and emit
                    (when-some [cl (try-load-capstone env ns-str)]
                      (try
@@ -583,14 +586,18 @@
                        (finally   ;signal completion to namespace loop
                          (.put namespaces-q [ns-str]))))
                    
-                   (ctx/with-executor exc-method
+                   (ctx/with-executor
+                     {:binding-sym exc-method
+                      :parent-fn emit-namespaces-mt/fork-namespace}
                      (let [globals (predefined/initial-globals-for
                                     (.rt-lookup env) ns-str)
                            tl-ctx (mk-ctx env require-fn
                                           predefined/implicit-known-ns
                                           globals ns-str exc-method)]
                        #_(prn :namespace-start ns-str)
-                       (ctx/with-context tl-ctx (some? namespaces-scope)
+                       (ctx/with-context
+                         {:local-context tl-ctx
+                          :other-thread? (some? namespaces-scope)}
                          (try
                            (compile-and-emit env tl-ctx false provided-nmsp)
                            (finally ;signal completion to namespace loop
@@ -657,7 +664,9 @@
                        tl-ctx (mk-ctx env require-fn
                                       predefined/implicit-known-ns
                                       globals ns-str nil)]
-                   (ctx/with-context tl-ctx false
+                   (ctx/with-context
+                     {:local-context tl-ctx
+                      :other-thread? false}
                      (.put !futs ns-str nmsp/marker-depth-first-path)
                      #_(prn :namespace-start ns-str)
                      (let [x (compile-and-emit env tl-ctx false provided-nmsp)]

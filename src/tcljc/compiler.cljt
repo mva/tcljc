@@ -542,7 +542,9 @@
          ;; smallest unit of work a single arity's body, there is
          ;; little use in moving each arity into a future of its own.
          (let [tl-ctx' (ctx/locked tl-ctx)
-               body-fut (ctx/with-fork+context (ctx/exc-method tl-ctx) tl-ctx'
+               body-fut (ctx/with-fork+context
+                          {:executor (ctx/exc-method tl-ctx)
+                           :local-context tl-ctx'}
                           (let [n (count (.at-sigs fn-form))
                                 aca (new "[Ltcljc.expr.ArityCode;" n)]
                             (dotimes [i n]
@@ -904,7 +906,9 @@
            ;; Moving method compilation to other threads does not help
            ;; much, because compilation can only progress once this
            ;; class has been defined.
-           (ctx/with-context method-ctx false
+           (ctx/with-context
+             {:local-context method-ctx
+              :other-thread? false}
              (let [field-brefs (sigclass/dtp-field-brefs this-class field-sig
                                                          method-ctx)
                    env (add-fields env field-brefs)
@@ -964,7 +968,9 @@
                ;; trees.  It becomes visible for example when invoking
                ;; a method on the receiver.
                tl-ctx' (ctx/locked tl-ctx)
-               body-fut (ctx/with-fork+context (ctx/exc-method tl-ctx) tl-ctx'
+               body-fut (ctx/with-fork+context
+                          {:executor (ctx/exc-method tl-ctx)
+                           :local-context tl-ctx'}
                           (let [n (count atv)
                                 aca (new "[Ltcljc.expr.ArityCode;" n)]
                             (dotimes [i n]

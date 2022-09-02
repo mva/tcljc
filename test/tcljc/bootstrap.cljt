@@ -254,7 +254,9 @@
                        ^"[Ljava.lang.String;" (into-array String))
          provided-nmsp (em/mk-provided-nmsp cfg/core-lib {cfg/key-force-clinit
                                                           x/expr-empty})]
-     (ctx/with-executor exc-nmsp
+     (ctx/with-executor
+       {:binding-sym exc-nmsp
+        :parent-fn bootstrap/nmsp}
        ;; manual unrolled reduce to reduce stack trace noise; during
        ;; development, `emit-namespace` will die uncountable times
        (loop [known-ns predefined/implicit-known-ns
