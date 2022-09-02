@@ -348,20 +348,6 @@
                   (-> (with-summary segm summary)
                       (write-and-define (build-deftype dtdef) promise))))
               
-              ctx/req-define-class-ephemeral
-              (let [cdef ^ClassDef x
-                    bs (build-class cdef (.source-file segm) (segment-chr segm))
-                    dyn-ld (-> (segment-lookup segm)
-                               .lookupClass
-                               (.getClassLoader))
-                    ;; use a one shot class loader derived from `dyn-ld`
-                    ld (cfg/class-loader-instance dyn-ld "tclj-eph" nil)
-                    m (.getDeclaredMethod (class ld) "ephemeralClass"
-                                          (.arrayType Byte/TYPE))]
-                (ctx/with-complete promise
-                  (.invoke m ld (doto (new objects 1) (aset 0 bs))))
-                segm)
-
               ctx/req-flush-namespace-segment
               (let [segm (write-segment segm true)
                     force-x (x/invoke-force-clinit (.prev-segment-class segm))]

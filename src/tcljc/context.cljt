@@ -145,15 +145,10 @@
 (def req-define-class 1)
 ;;; Issued after compiling a `definterface*` or a `deftype*`.
 
-(def req-define-class-ephemeral 2)
-;;; Define class into a one-shot class loader of its own.
-;;; FIXME... enable compilation thread to define its own ephemerals,
-;;; because this request drains the pipeline when used by reify*
-
-(def req-flush-s-queue 3)
+(def req-flush-s-queue 2)
 ;;; Returns when there are no outstanding messages in the `s` queue.
 
-(def req-flush-namespace-segment 4)
+(def req-flush-namespace-segment 3)
 ;;; Returns when all namespace code accumulated upto this point has
 ;;; been defined into the class loader.  That is, the namespace code
 ;;; has become both visible and possibly active.  The value being
@@ -174,9 +169,8 @@
     #_msg-emit-tlf -1 "msg-emit-tlf"
     #_req-macro-value 0 "req-macro-value"
     #_req-define-class 1 "req-define-class"
-    #_req-define-class-ephemeral 2 "req-define-class-ephemeral"
-    #_req-flush-s-queue 3 "req-flush-s-queue"
-    #_req-flush-namespace-segment 4 "req-flush-namespace-segment"))
+    #_req-flush-s-queue 2 "req-flush-s-queue"
+    #_req-flush-namespace-segment 3 "req-flush-namespace-segment"))
 (defn task-id ^String [^Msg msg]
   (task-id* (.task msg)))
 
@@ -208,8 +202,7 @@
   ;; FIXME... might be helpful (read: no stall the compiling reify*)
   ;; to define ephemeral classes directly in the compilation thread
   (send-msg* (if (and (not cfg/deterministic-namespace-compile?)
-                      (or (= task req-macro-value)
-                          (= task req-define-class-ephemeral)))
+                      (= task req-macro-value))
                (.q emit)
                (.s emit))
              task x))

@@ -891,6 +891,22 @@
                ac (parse-method env at etp tl-ctx)]
            (MethodDef. (.at ac) Classfile/ACC_PUBLIC
                        (.this-bref ac) (.body-expr ac))))
+       (create-ephemeral-class ^Class [^ClassDef cdef]
+         (let [bs (cf/build
+                   (-> cdef .ch-info .thisClass)
+                   (cf/with-cbh [cb]
+                     (-> (.withFlags cb (.flags cdef))
+                         (.withSuperclass (-> cdef .ch-info .superClass))
+                         (.withInterfaceSymbols (.itfs cdef)))
+                     (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef))))
+               dyn-ld (-> (ctx/lookup-in-pkg tl-ctx)
+                          .lookupClass
+                          (.getClassLoader))
+               ;; use a one shot class loader derived from `dyn-ld`
+               ld (cfg/class-loader-instance dyn-ld "tclj-eph" nil)
+               m (.getDeclaredMethod (class ld) "ephemeralClass"
+                                     (.arrayType Byte/TYPE))]
+           (.invoke m ld (doto (new objects 1) (aset 0 bs)))))
        (dtp-class-def ^DeftypeDef [^Env env short-sym fq-sym binary-sym
                                    field-sig opts methods]
          (let [this-class (ClassDesc/of (name binary-sym))
@@ -901,7 +917,7 @@
                ;; Construct ephemeral type instance that is only valid
                ;; inside this deftype* and derive the deftype's
                ;; compilation context from it.
-               etp (send-msg (.emit ctx) ctx/req-define-class-ephemeral cdef)
+               etp (create-ephemeral-class cdef)
                method-ctx (ctx/locked-in-class ctx etp)]
            
            ;; Moving method compilation to other threads does not help
@@ -952,8 +968,7 @@
                eph-cdef (sigclass/eph-reify-class-def this-class itf-vector tl-ctx)
                
                ctx (ctx/tl-ctx* tl-ctx)
-               etp ^Class (send-msg (.emit ctx) ctx/req-define-class-ephemeral
-                                    eph-cdef)
+               etp (create-ephemeral-class eph-cdef)
                
                atv (reduce (fn [acc form]
                              (let [at-idx (count acc)

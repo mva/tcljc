@@ -187,21 +187,14 @@
                                                cfg/class-suffix))))
           (ConcurrentHashMap.))))
 
-(defn build ^bytes [^ClassDesc this-class ^Consumer cbh
-                    ^ClassHierarchyResolver dyn-chr]
-  (let [options [(Classfile$Option/patchDeadCode false)
-                 (Classfile$Option/classHierarchyResolver dyn-chr)]]
-    (Classfile/build this-class ^java.util.Collection options cbh)
-    #_(catch Throwable ex
-        (.println System/err (str :build-failed " " (.descriptorString this-class)))
-        (.println System/err (str (.getMessage ex) " // suppressed: " (alength (.getSuppressed ex))))
-        (.printStackTrace ex)
-        (let [a (.getSuppressed ex)]
-          (dotimes [i (alength a)]
-            (.println System/err (str "suppressed #" i))
-            (.printStackTrace (aget a i))))
-        (.println System/err)
-        (throw ex))))
+(defn build
+  (^bytes [^ClassDesc this-class ^Consumer cbh] ;for ephemeral classes
+   (Classfile/build this-class cbh))
+  (^bytes [^ClassDesc this-class ^Consumer cbh
+           ^ClassHierarchyResolver dyn-chr]
+   (let [options [(Classfile$Option/patchDeadCode false)
+                  (Classfile$Option/classHierarchyResolver dyn-chr)]]
+     (Classfile/build this-class ^java.util.Collection options cbh))))
 
 ;;; ------------------------------------------------------------------------
 
