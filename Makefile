@@ -81,6 +81,9 @@ run-rtiow:
 	md5sum $(IMAGE)
 #	xdg-open $(IMAGE)
 
+threadlog:
+	$(TCLJ) -d :none -s test tcljc.threadlog/-main
+
 ########################################################################
 
 BUILD_MAIN=tcljc.main

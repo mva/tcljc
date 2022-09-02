@@ -85,6 +85,7 @@
 (defn type ^Class [^Expr x] (.type x))
 (defn argv ^IPersistentVector [^Expr x] (._args x))
 (defn form ^Object [^Expr x] (.form x))
+(defn line ^Integer [^Expr x] (get (meta (form x)) :line))
 
 (defn with-innermost-form ^Expr [^Expr x form]
   (.initialize-form x form)

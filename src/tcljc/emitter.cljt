@@ -255,7 +255,11 @@
                 [] (when collect-bytesv? []) nil)))
 
 (defn- emit-segments ^Namespace [^SegmState segm]
-  (letfn [(all-fn-code [^SegmState segm]
+  (letfn [(take-msg ^Msg [^BlockingQueue q]
+            (ctx/with-log-task {:label (str (segment-ns-str segm) "/e-thread/"
+                                            "take-BLOCKING")}
+              (.take q)))
+          (all-fn-code [^SegmState segm]
             (->>  (.summaryv segm)
                   (mapcat #(.fn-specs ^TlfSummary %))
                   (map #(-> ^FnSpec % .fn-form .!fnc))))
@@ -375,53 +379,59 @@
             (when (ctx/needs-response? (.task msg))
               (.completeExceptionally ^CompletableFuture (.promise msg) t))
             (when-not (ctx/close-queue? msg)
-              (recur q t (.take q))))]
+              (recur q t (take-msg q))))]
 
-    (let [msg ^Msg (-> segm .ctx .emit .q (.take))
+    (let [msg (take-msg (-> segm .ctx .emit .q))
           p (.promise msg)]
       (if (= (.task msg) ctx/msg-close-queue)
         (-> segm (write-segment false) (write-capstone (.x msg)))
-        (-> (try
-              (let [segm (complete-req! segm (.task msg) (.x msg) p)]
-                (assert (or (nil? p) (.isDone p)))
-                segm)
-              (catch Throwable t
-                (drain-queue (-> segm .ctx .emit .q) t msg)
-                (throw t)))
+        (-> (ctx/with-log-task {:label (str (segment-ns-str segm) "/e-thread/"
+                                            (ctx/task-id msg))}
+              (try
+                (let [segm (complete-req! segm (.task msg) (.x msg) p)]
+                  (assert (or (nil? p) (.isDone p)))
+                  segm)
+                (catch Throwable t
+                  (drain-queue (-> segm .ctx .emit .q) t msg)
+                  (throw t))))
             (recur))))))
 
-(defn- preparer-thread [^EmitQueue emit ^HashSet !private-names]
-  (letfn [(collect-fn-specs [acc ^MethodDef mdef]
+(defn- preparer-thread [^String ns-str ^EmitQueue emit ^HashSet !private-names]
+  (letfn [(take-msg ^Msg [^BlockingQueue q]
+            (ctx/with-log-task {:label (str ns-str "/p-thread/take-BLOCKING")}
+              (.take q)))
+          (collect-fn-specs [acc ^MethodDef mdef]
             (let [body (.body-expr mdef)
                   summary (prepare/collect-fn-info !private-names body)]
               (into acc (.fn-specs summary))))]
-    (let [msg ^Msg (.take (.s emit))]
-      (condp = (.task msg)
-        ctx/msg-emit-tlf
-        (let [summary (prepare/collect-fn-info !private-names (.x msg))]
-          (.put (.q emit) (Msg. (.task msg) summary (.promise msg))))
+    (let [msg (take-msg (.s emit))]
+      (ctx/with-log-task {:label (str ns-str "/p-thread/" (ctx/task-id msg))}
+        (condp = (.task msg)
+          ctx/msg-emit-tlf
+          (let [summary (prepare/collect-fn-info !private-names (.x msg))]
+            (.put (.q emit) (Msg. (.task msg) summary (.promise msg))))
 
-        ctx/req-define-class
-        (condp instance? (.x msg)
-          ClassDef
-          (.put (.q emit) msg)
+          ctx/req-define-class
+          (condp instance? (.x msg)
+            ClassDef
+            (.put (.q emit) msg)
+            
+            DeftypeDef
+            (let [dtdef ^DeftypeDef (.x msg)
+                  fn-specs (reduce collect-fn-specs [] (.method-defs dtdef))]
+              (.put (.q emit) (Msg. (.task msg)
+                                    (x/with-fn-specs dtdef fn-specs)
+                                    (.promise msg))))
+
+            #_else (throw (IllegalStateException.))) 
           
-          DeftypeDef
-          (let [dtdef ^DeftypeDef (.x msg)
-                fn-specs (reduce collect-fn-specs [] (.method-defs dtdef))]
-            (.put (.q emit) (Msg. (.task msg)
-                                  (x/with-fn-specs dtdef fn-specs)
-                                  (.promise msg))))
-
-          #_else (throw (IllegalStateException.))) 
-        
-        ctx/req-flush-s-queue
-        (.complete (.promise msg) nil)
-        
-        #_else (.put (.q emit) msg))
+          ctx/req-flush-s-queue
+          (.complete (.promise msg) nil)
+          
+          #_else (.put (.q emit) msg)))
       
       (when-not (ctx/close-queue? msg)
-        (recur emit !private-names)))))
+        (recur ns-str emit !private-names)))))
 
 
 (defn mk-provided-nmsp
@@ -452,9 +462,10 @@
   (let [env (.env segm)
         ctx (.ctx segm)
         p-thread (ctx/start-solo-thread
-                  {:local-context ctx}
+                  {:local-context ctx
+                   :label (str (segment-ns-str segm) "/p-thread/total")}
                   (try
-                    (preparer-thread (.emit ctx) (HashSet.))
+                    (preparer-thread (.ns-str ctx) (.emit ctx) (HashSet.))
                     (catch Throwable t ;no re-raise and wait for close-queue
                       (ctx/send-msg* (-> ctx .emit .q)
                                      ctx/msg-fatal-error t))
@@ -462,7 +473,8 @@
                       (ctx/send-msg* (-> ctx .emit .q)
                                      ctx/msg-close-queue nil))))
         c-thread (ctx/start-solo-thread
-                  {:local-context ctx}
+                  {:local-context ctx
+                   :label (str (segment-ns-str segm) "/c-thread/total")}
                   (try
                     (let [nsd (nmsp/compile-thread env provided-nmsp ctx)]
                       ;; regular completion: pass back result in first
@@ -576,7 +588,8 @@
               
               (fork-namespace ^Future [^String ns-str provided-nmsp]
                 (ctx/with-fork
-                  {:executor namespaces-scope}
+                  {:executor namespaces-scope
+                   :label (str ns-str "/e-thread/total")}
                   (or          ;import from dyn-ld or compile and emit
                    (when-some [cl (try-load-capstone env ns-str)]
                      (try

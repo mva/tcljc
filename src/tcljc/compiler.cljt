@@ -27,7 +27,7 @@
                PrimitiveFnRef FnPrimitiveFn FnMacroFn
                DeftypeDef MethodDef)
    (clojure.lang Symbol Var ISeq IPersistentVector IPersistentMap IMeta IObj
-                 ExceptionInfo)
+                 ExceptionInfo Delay)
    (jdk.classfile Classfile Opcode)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
                        DynamicConstantDesc)
@@ -211,15 +211,16 @@
         (some? meta-x) (set-meta meta-x)
         dynamic? (set-dynamic)))))
 
-(deftype DelayedMacroFn [^MethodHandle apply-mh
-                         ^EmitQueue emit
-                         ^BindingRef mimpl
-                         ^:unsynchronized-mutable ^Object f]
+(defn- send-msg ^Object [^EmitQueue emit ^int task ^Object x]
+  (ctx/with-log-task
+    {:label (str "tinyclj.*/c-thread/send-msg-BLOCKING-" (ctx/task-id* task))}
+    (ctx/send-msg emit task x)))
+
+(deftype DelayedMacroFn [^Delay f, ^MethodHandle apply-mh]
   FnMacroFn
   (expand [_ env form]
-    (let [x (or f (set! f (ctx/send-msg emit ctx/req-macro-value mimpl)))]
-      ;; pass nil as `env` for now
-      (macro/apply-macro apply-mh f form nil))))
+    ;; pass nil as `env` for now
+    (macro/apply-macro apply-mh (force f) form nil)))
 
 (defn def-form ^Expr [[_ nm :as form] ^Expr v ^BindingRef macro-v tl-ctx]
   (letfn [(prior-def ^BindingRef [^Symbol nm]
@@ -231,10 +232,8 @@
               ;; make sure that the old definition has been defined
               ;; into some prior namespace segment, and treat the
               ;; redefinition as a fresh macro
-              (let [macro-fn (.macro-fn ^MacroRef prior)
-                    mimpl (.mimpl ^DelayedMacroFn macro-fn)]
-                (ctx/send-msg (-> tl-ctx (ctx/tl-ctx*) .emit)
-                              ctx/req-macro-value mimpl)
+              (let [macro-fn (.macro-fn ^MacroRef prior)]
+                (force (.f ^DelayedMacroFn macro-fn))
                 nil)
               prior))
           
@@ -251,8 +250,9 @@
             (if (x/meta-flag? nm :macro)
               (let [bref (x/with-macro-value bref macro-v) ;then baked into mfn
                     ctx (ctx/tl-ctx* tl-ctx)
-                    mfn (DelayedMacroFn. (.apply-mh ctx) (.emit ctx)
-                                         bref nil)
+                    mfn (-> (delay
+                              (send-msg (.emit ctx) ctx/req-macro-value bref))
+                            (DelayedMacroFn. (.apply-mh ctx)))
                     mref (x/macro-ref nm ns-str mfn macro-v bref)]
                 (.update-macro-count ctx +1)
                 (ctx/put-global (name nm) mref tl-ctx)
@@ -544,7 +544,9 @@
          (let [tl-ctx' (ctx/locked tl-ctx)
                body-fut (ctx/with-fork+context
                           {:executor (ctx/exc-method tl-ctx)
-                           :local-context tl-ctx'}
+                           :local-context tl-ctx'
+                           :label (str (.unique-mnm fn-form)
+                                       ":" (x/line fn-form))}
                           (let [n (count (.at-sigs fn-form))
                                 aca (new "[Ltcljc.expr.ArityCode;" n)]
                             (dotimes [i n]
@@ -899,8 +901,7 @@
                ;; Construct ephemeral type instance that is only valid
                ;; inside this deftype* and derive the deftype's
                ;; compilation context from it.
-               etp (ctx/send-msg (.emit ctx) ctx/req-define-class-ephemeral
-                                 cdef)
+               etp (send-msg (.emit ctx) ctx/req-define-class-ephemeral cdef)
                method-ctx (ctx/locked-in-class ctx etp)]
            
            ;; Moving method compilation to other threads does not help
@@ -926,8 +927,8 @@
                                   [acc xs]))
                cdef (dtp-class-def env short-sym fq-sym binary-sym
                                    field-sig opts methods)
-               cl (ctx/send-msg (.emit (ctx/tl-ctx* tl-ctx))
-                                ctx/req-define-class cdef)]
+               cl (send-msg (.emit (ctx/tl-ctx* tl-ctx)) ctx/req-define-class
+                            cdef)]
            x/expr-empty))
 
        (reify*-form ^Expr [[_ itf-vector & methods :as form]]
@@ -951,8 +952,8 @@
                eph-cdef (sigclass/eph-reify-class-def this-class itf-vector tl-ctx)
                
                ctx (ctx/tl-ctx* tl-ctx)
-               etp ^Class (ctx/send-msg (.emit ctx)
-                                        ctx/req-define-class-ephemeral eph-cdef)
+               etp ^Class (send-msg (.emit ctx) ctx/req-define-class-ephemeral
+                                    eph-cdef)
                
                atv (reduce (fn [acc form]
                              (let [at-idx (count acc)
@@ -970,7 +971,8 @@
                tl-ctx' (ctx/locked tl-ctx)
                body-fut (ctx/with-fork+context
                           {:executor (ctx/exc-method tl-ctx)
-                           :local-context tl-ctx'}
+                           :local-context tl-ctx'
+                           :label (str unique-mnm ":" (-> form (meta) :line))}
                           (let [n (count atv)
                                 aca (new "[Ltcljc.expr.ArityCode;" n)]
                             (dotimes [i n]
@@ -987,8 +989,8 @@
          (let [cdef (sigclass/itf-class-def (ctx/this-ns tl-ctx)
                                             (.get-imports (ctx/tl-ctx* tl-ctx))
                                             form)
-               cl (ctx/send-msg (.emit (ctx/tl-ctx* tl-ctx))
-                                ctx/req-define-class cdef)]
+               cl (send-msg (.emit (ctx/tl-ctx* tl-ctx)) ctx/req-define-class
+                            cdef)]
            x/expr-empty))
 
        (catch-form? ^boolean [x]
@@ -1373,13 +1375,13 @@
               (x/ensure-runtime-outcome)
               (conv/consume jb/void))
         mc-post (.update-macro-count ctx 0)]
-    (ctx/send-msg (.emit ctx) ctx/msg-emit-tlf x)
+    (send-msg (.emit ctx) ctx/msg-emit-tlf x)
     (when (not= mc-pre mc-post)
       ;; After a macro, delay further compilation until the macro's
       ;; top-level form has made it into the emit queue.  This means
       ;; that its effect's are visible to all future `req-macro-value`
       ;; requests.
-      (ctx/send-msg (.emit ctx) ctx/req-flush-s-queue nil))))
+      (send-msg (.emit ctx) ctx/req-flush-s-queue nil))))
 
 ;;; ------------------------------------------------------------------------
 

@@ -254,29 +254,39 @@
 
 ;;; ------------------------------------------------------------------------
 
+(def nano-time-zero (System/nanoTime))
+(defn fmt-duration ^String [^long nanos]
+  (let [ms (/ nanos 1000000.0)]
+    (String/format java.util.Locale/ROOT "%5.2f" (object ms))))
+(defn fmt-instance ^String [^long inst]
+  (let [ms (/ (- inst nano-time-zero) 1000000.0)]
+    (String/format java.util.Locale/ROOT "%7.2f" (object ms))))
+
 (def ^:private *logger* (agent {}))
 
-(defn- print-log [a ^Long tid ^clojure.lang.Keyword indent ^String s]
-  (let [n ^int (get a tid (object 0))
-        pad (.repeat "  " (cond-> n (= indent ::indent-) (dec)))]
-    (.println System/out (String/format "%4d %s" tid (str pad s)))
-    (condp = indent
-      ::indent+ (assoc a tid (object (inc n)))
-      ::indent- (assoc a tid (object (dec n)))
-      #_else a)))
+(defn- print-log [a ^String s]
+  (.println System/out s)
+  a)
 
-(defn- log* [^clojure.lang.Keyword indent & parts]
-  (let [tid (.threadId (Thread/currentThread))]
-    (send-off *logger* print-log tid indent (str/join " " parts))))
+(defn log-info ^void [label & parts]
+  (let [now (System/nanoTime)
+        s (str (fmt-instance now) " (info) "
+               label " " (str/join " " parts)
+               " [tid=" (.threadId (Thread/currentThread)) "]")]
+    (send-off *logger* print-log s)))
 
-(defn log [& parts]
-  (apply log* ::current-indent parts))
+(defn log-start ^long [label & parts]
+  (let [now (System/nanoTime)
+        s (str (fmt-instance now) " (start) "
+               label " " (str/join " " parts)
+               " [tid=" (.threadId (Thread/currentThread)) "]")]
+    (send-off *logger* print-log s)
+    now))
 
-;; (defmacro with-enter-exit [msg & body]
-;;   `(let [msg# ~msg]
-;;      (try
-;;        (log ::indent+ :enter msg#)
-;;        ~@body
-;;        (finally
-;;          (log ::indent- :exit msg#)))))
-
+(defn log-end ^long [^long start label & parts]
+  (let [now (System/nanoTime)
+        s (str (fmt-instance now) " (" (fmt-duration (- now start)) ") "
+               label " " (str/join " " parts)
+               " [tid=" (.threadId (Thread/currentThread)) "]")]
+    (send-off *logger* print-log s)
+    now))

@@ -1,0 +1,20 @@
+(ns tcljc.threadlog
+  (:require [tinyclj.string :as str]
+            [tinyclj.alpha.pp :as pp]))
+
+(defn sum ^double [^Double acc ^double n]
+  (if acc
+    (+ (.doubleValue acc) n)
+    n))
+(defn -main []
+  (let [fname "/tmp/log"]
+    (pp/prn
+     (->> (slurp fname)
+          (str/split-lines)
+          (filter #(re-find #"[0-9]\) tinyclj\." %)) ;omit (start) lines
+          (reduce (fn [acc l]
+                    (let [[_ d k] (re-find #"\(([0-9 .]+)\) ([^ ]+) " l)
+                          duration (Double/parseDouble d)
+                          kpath (str/split k #"/")]
+                      (update-in acc kpath sum (object duration))))
+                  {})))))

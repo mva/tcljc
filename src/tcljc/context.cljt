@@ -167,6 +167,18 @@
   (= (.task msg) msg-close-queue))
 (defn needs-response? ^boolean [^int task]
   (>= task 0))
+(defn task-id* ^String [^int task]
+  (case task
+    #_msg-fatal-error -3 "msg-fatal-error"
+    #_msg-close-queue -2 "msg-close-queue"
+    #_msg-emit-tlf -1 "msg-emit-tlf"
+    #_req-macro-value 0 "req-macro-value"
+    #_req-define-class 1 "req-define-class"
+    #_req-define-class-ephemeral 2 "req-define-class-ephemeral"
+    #_req-flush-s-queue 3 "req-flush-s-queue"
+    #_req-flush-namespace-segment 4 "req-flush-namespace-segment"))
+(defn task-id ^String [^Msg msg]
+  (task-id* (.task msg)))
 
 ;;; The queue connecting the compile to the emit thread has two parts.
 ;;; Part `q` is consumed directly by the emit thread.  Part `s` is a
@@ -417,12 +429,24 @@
 
 ;;; ------------------------------------------------------------------------
 
+(def enable-task-log false)
+
 (letfn [(get-sexpr [^Keyword kw ^IPersistentMap m]
           (java.util.Objects/requireNonNull (get m kw) (str kw)))]
   (defn- binding-sym ^Symbol [m] (get-sexpr :binding-sym m))
   (defn- local-context-sexpr [m] (get-sexpr :local-context m))
   (defn- other-thread-sexpr [m] (get-sexpr :other-thread? m))
-  (defn- executor-sexpr [m] (get-sexpr :executor m)))
+  (defn- executor-sexpr [m] (get-sexpr :executor m))
+  (defn- label-sexpr [m] (get m :label "<no-label>")))
+
+(defmacro with-log-task [m & body]
+  (if enable-task-log
+    `(let [label# ~(label-sexpr m)
+           start# (cfg/log-start label#)
+           res# (do ~@body)]
+       (cfg/log-end start# label#)
+       res#)
+    (list* 'do body)))
 
 (defmacro with-executor [m & body]
   (let [exc-sym (binding-sym m)]
@@ -454,7 +478,7 @@
          (.set ctx prev-ctx#)))))
 
 (defmacro with-fork-or-on-thread [m & body]
-  `(let [task# (fn ^Callable task [] ~@body)]
+  `(let [task# (fn ^Callable task [] (with-log-task ~m ~@body))]
      (if ~(other-thread-sexpr m)
        (.submit ~(executor-sexpr m) task#)
        ^Future (CompletableFuture/completedFuture (.call task#)))))
@@ -462,7 +486,10 @@
 (defmacro with-fork [m & body]
   `(let [exc# ~(executor-sexpr m)
          other-thread?# (some? exc#)]
-     (with-fork-or-on-thread {:executor exc#, :other-thread? other-thread?#}
+     (with-fork-or-on-thread
+       {:executor exc#
+        :other-thread? other-thread?#
+        :label ~(label-sexpr m)}
        ~@body)))
 
 (defmacro with-fork+context [m & body]
@@ -470,7 +497,10 @@
   `(let [local-ctx# ~(local-context-sexpr m)
          exc# ~(executor-sexpr m)
          other-thread?# (some? exc#)]
-     (with-fork-or-on-thread {:executor exc#, :other-thread?  other-thread?#}
+     (with-fork-or-on-thread
+       {:executor exc#
+        :other-thread?  other-thread?#
+        :label ~(label-sexpr m)}
        (with-context {:local-context local-ctx#, :other-thread? other-thread?#}
          ~@body))))
 
@@ -481,5 +511,6 @@
            ;; compiler code running in unit tests should use the *out*
            ;; and *err* bound by ptest:
            (clojure.lang.Var/resetThreadBindingFrame frame#)
-           ~@body)
+           (with-log-task ~m
+             ~@body))
          (Thread/startVirtualThread))))
