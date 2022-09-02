@@ -1597,7 +1597,9 @@
 (defn ^FnPrimitiveFn equiv [form [arg0 arg1] tl-ctx]
   (letfn [(equiv-if-identical? ^boolean [^Expr x]
             (let [tp (x/type x)]
-              (jb/same-classname? rt/clnm-keyword tp)))]
+              (or (jb/same-class? Class tp)
+                  (.isAssignableFrom java.lang.Enum tp)
+                  (jb/same-classname? rt/clnm-keyword tp))))]
     (wrong/check-argc 2 form)
     (cond
       (and (conv/computational-int? arg0)

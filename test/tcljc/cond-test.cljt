@@ -646,38 +646,57 @@
 (deftest negate-boolean-value
   (is (= '[["LOCAL 0: boolean x"]
            (ILOAD_0)
-           (IFNE L:0)
-           (ICONST_1)
-           (IRETURN)
-           [L:0]
-           (ICONST_0)
-           (IRETURN)]
+           (IFNE L:0) (ICONST_1) (IRETURN)
+           [L:0] (ICONST_0) (IRETURN)]
          (asm-expr ^boolean [^boolean x]
                    (not x)))))
 
 (deftest equiv-with-keyword
   (is (= '[["LOCAL 0: Object x"]
-           (LDC [:bsm-quote
-                 "keyword"
-                 "Lclojure/lang/Keyword;"
-                 ["foo"]])
+           (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["foo"]])
            (ALOAD_0)
-           (IF_ACMPNE L:0)
-           (ICONST_1)
-           (IRETURN)
-           [L:0]
-           (ICONST_0)
-           (IRETURN)]
+           (IF_ACMPNE L:0) (ICONST_1) (IRETURN)
+           [L:0] (ICONST_0) (IRETURN)]
          (asm-expr [x] (= :foo x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["foo"]])
+           (IF_ACMPNE L:0) (ICONST_1) (IRETURN)
+           [L:0] (ICONST_0) (IRETURN)]
+         (asm-expr [x] (= x :foo))))
   (is (= '[["LOCAL 0: Keyword x"]
            (ALOAD_0)
-           (IFNONNULL L:0)
-           (ICONST_1)
-           (IRETURN)
-           [L:0]
-           (ICONST_0)
-           (IRETURN)]
+           (IFNONNULL L:0) (ICONST_1) (IRETURN)
+           [L:0] (ICONST_0) (IRETURN)]
          (asm-expr [^clojure.lang.Keyword x] (= nil x))))
   (is (= '[(ICONST_0)
            (IRETURN)]
          (asm-expr (= nil :foo)))))
+
+(deftest equiv-with-enum
+  (is (= '[["LOCAL 0: Object x"]
+           (GETSTATIC Thread$State "WAITING" "Ljava/lang/Thread$State;")
+           (ALOAD_0)
+           (IF_ACMPNE L:0) (ICONST_1) (IRETURN)
+           [L:0] (ICONST_0) (IRETURN)]
+         (asm-expr [x] (= Thread$State/WAITING x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (GETSTATIC Thread$State "WAITING" "Ljava/lang/Thread$State;")
+           (IF_ACMPNE L:0) (ICONST_1) (IRETURN)
+           [L:0] (ICONST_0) (IRETURN)]
+         (asm-expr [x] (= x Thread$State/WAITING)))))
+
+(deftest equiv-with-class
+  (is (= '[["LOCAL 0: Object x"]
+           (LDC String)
+           (ALOAD_0)
+           (IF_ACMPNE L:0) (ICONST_1) (IRETURN)
+           [L:0] (ICONST_0) (IRETURN)]
+         (asm-expr [x] (= java.lang.String x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (LDC String)
+           (IF_ACMPNE L:0) (ICONST_1) (IRETURN)
+           [L:0] (ICONST_0) (IRETURN)]
+         (asm-expr [x] (= x java.lang.String)))))
