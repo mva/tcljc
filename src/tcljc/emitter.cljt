@@ -259,10 +259,10 @@
             (ctx/with-log-task {:label (str (segment-ns-str segm) "/e-thread/"
                                             "take-BLOCKING")}
               (.take q)))
+          (summary->fncs [^TlfSummary summary]
+            (map #(-> ^FnSpec % .fn-form .!fnc) (.fn-specs summary)))
           (all-fn-code [^SegmState segm]
-            (->>  (.summaryv segm)
-                  (mapcat #(.fn-specs ^TlfSummary %))
-                  (map #(-> ^FnSpec % .fn-form .!fnc))))
+            (mapcat summary->fncs (.summaryv segm)))
           (write-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
             (if-some [bs (.fn-class (.emit-plan fnc) (segment-chr segm))]
               (let [this ^ClassDesc (.ld-clx fnc)
@@ -331,9 +331,9 @@
                 (prepare/prepare-globals! (.segm-cld segm)
                                           (.global-bs summary))
                 (let [segm (with-summary segm summary)
-                      dyn-chr (segment-chr segm)]
-                  (doseq [^FnCode fnc (all-fn-code segm)
-                          :let [ep (.emit-plan fnc)]]
+                      dyn-chr (segment-chr segm)
+                      fncs (summary->fncs summary)]
+                  (doseq [^FnCode fnc fncs :let [ep (.emit-plan fnc)]]
                     (when-some [ch-info (.fn-class-hierarchy-info ep)]
                       (.register! dyn-chr ch-info)))
                   segm))
