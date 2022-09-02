@@ -1,7 +1,5 @@
 JAVA=$(HOME)/local/jdk-classfile/bin/java
-# Note: currently need the impl package for
-# j.cf.impl.LabelResolver.labelToBci().  tclj-in-tclj generates a
-# faulty invoke with an owner of LabelResolver instead of CodeModel
+# Note: currently need the impl package for BlockCodeBuilderImpl.isEmpty()
 JAVA_OPTS=--enable-preview \
   --add-exports java.base/jdk.classfile=ALL-UNNAMED \
   --add-exports java.base/jdk.classfile.constantpool=ALL-UNNAMED \
