@@ -175,25 +175,6 @@
     
     :else nil))
 
-(defn jvm-assignable-to? ^boolean [^Expr from ^Class to-tp]
-  (cond                           ;mirrors `jvm-adapt-to` above
-    (or (x/type? to-tp from)      ;cheapest: type of `from` is `to-tp`
-        (jb/polymorphic? to-tp))
-    true
-    
-    (or (.isAssignableFrom to-tp (x/type from))
-        (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
-    true
-
-    (jb/statement? to-tp)
-    true
-    
-    (resolve/numeric-assignable-to? (x/type from) to-tp)
-    true
-
-    :else false))
-
-;;; Keep in sync with `assignable-to?` below.
 (defn- adapt-for-assign ^Expr [^Expr from ^Class to-tp]
   (let [from-cl (x/type from)
         to-cl to-tp]
@@ -213,14 +194,6 @@
                 :else nil))
 
         (x/wrong-type (str "cannot assign to " (wrong/q to-tp)) from))))
-
-;;; Must mirror logic of `adapt-for-assign` above.
-(defn assignable-to? ^boolean [^Expr from ^Class to-tp]
-  (or (jvm-assignable-to? from to-tp)
-      (x/statement? from)
-      (and (jb/reference? to-tp)
-           (or (jb/object? (x/type from))
-               (jb/jvm-assignable-to? (x/type from) to-tp)))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -275,7 +248,7 @@
 
 ;;; Transform `x` into a type that is assignment compatible to type
 ;;; `to-tp`.  If `to-tp` is jb/polymorphic?, this function delegates
-;;; to `comsume-poly`.
+;;; to `consume-poly`.
 ;;; 
 ;;; pre: `x` is a runtime value & not polymorphic.
 (defn consume ^Expr [^Expr x ^Class to-tp]
