@@ -489,10 +489,10 @@
   ;; force context computation in outside thread
   `(let [local-ctx# ~(local-context-sexpr m)
          exc# ~(executor-sexpr m)
-         other-thread?# (some? exc#)]
+         other-thread?# (and (some? exc#) ~(other-thread-sexpr m))]
      (with-fork-or-on-thread
        {:executor exc#
-        :other-thread?  other-thread?#
+        :other-thread? other-thread?#
         :label ~(label-sexpr m)}
        (with-context {:local-context local-ctx#, :other-thread? other-thread?#}
          ~@body))))

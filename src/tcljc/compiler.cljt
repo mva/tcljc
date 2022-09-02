@@ -545,6 +545,7 @@
                body-fut (ctx/with-fork+context
                           {:executor (ctx/exc-method tl-ctx)
                            :local-context tl-ctx'
+                           :other-thread? true #_(ctx/global? tl-ctx)
                            :label (str (.unique-mnm fn-form)
                                        ":" (x/line fn-form))}
                           (let [n (count (.at-sigs fn-form))
@@ -987,6 +988,7 @@
                body-fut (ctx/with-fork+context
                           {:executor (ctx/exc-method tl-ctx)
                            :local-context tl-ctx'
+                           :other-thread? true #_(ctx/global? tl-ctx)
                            :label (str unique-mnm ":" (-> form (meta) :line))}
                           (let [n (count atv)
                                 aca (new "[Ltcljc.expr.ArityCode;" n)]
