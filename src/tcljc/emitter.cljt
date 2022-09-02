@@ -259,10 +259,6 @@
             (ctx/with-log-task {:label (str (segment-ns-str segm) "/e-thread/"
                                             "take-BLOCKING")}
               (.take q)))
-          (summary->fncs [^TlfSummary summary]
-            (map #(-> ^FnSpec % .fn-form .!fnc) (.fn-specs summary)))
-          (all-fn-code [^SegmState segm]
-            (mapcat summary->fncs (.summaryv segm)))
           (write-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
             (if-some [bs (.fn-class (.emit-plan fnc) (segment-chr segm))]
               (let [this ^ClassDesc (.ld-clx fnc)
@@ -271,10 +267,16 @@
                                                    this bs)]
                 (with-bytes segm 0 false bs nil))
               segm))
+          (write-fn-classes ^SegmState [^SegmState segm ^TlfSummary summary]
+            (let [segm (with-summary segm summary)
+                  dyn-chr (segment-chr segm)
+                  fncs (map #(-> ^FnSpec % .fn-form .!fnc) (.fn-specs summary))]
+              (doseq [^FnCode fnc fncs :let [ep (.emit-plan fnc)]]
+                (when-some [ch-info (.fn-class-hierarchy-info ep)]
+                  (.register! dyn-chr ch-info)))
+              (reduce write-fn-class segm fncs)))
           (write-segment ^SegmState [^SegmState segm ^boolean force-clinit?]
-            (let [segm ^SegmState (reduce write-fn-class
-                                          segm (all-fn-code segm))
-                  bs (build-segment segm force-clinit?)
+            (let [bs (build-segment segm force-clinit?)
                   cl (cfg/write-and-define-class (-> segm .env .dest-dir)
                                                  (segment-lookup segm)
                                                  (segment-cld segm 0) bs)]
@@ -330,13 +332,7 @@
                                       (.fn-specs summary))
                 (prepare/prepare-globals! (.segm-cld segm)
                                           (.global-bs summary))
-                (let [segm (with-summary segm summary)
-                      dyn-chr (segment-chr segm)
-                      fncs (summary->fncs summary)]
-                  (doseq [^FnCode fnc fncs :let [ep (.emit-plan fnc)]]
-                    (when-some [ch-info (.fn-class-hierarchy-info ep)]
-                      (.register! dyn-chr ch-info)))
-                  segm))
+                (write-fn-classes segm summary))
               
               ctx/req-define-class
               (if (instance? ClassDef x)
@@ -345,7 +341,7 @@
                       summary (TlfSummary. (.fn-specs dtdef) nil x/expr-empty)]
                   (prepare/prepare-fns! (.segm-cld segm) (.source-file segm)
                                         (.fn-specs dtdef))
-                  (-> (with-summary segm summary)
+                  (-> (write-fn-classes segm summary)
                       (write-and-define (build-deftype dtdef) promise))))
               
               ctx/req-flush-namespace-segment
