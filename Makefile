@@ -151,6 +151,6 @@ $(DEST_DIR).rtiowFS/DONE: $(DEST_DIR).stageFI2/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
 	$(BOOT_JAVA) -cp $(BOOT_MOD_RT):$(dir $<) $(JAVA_OPTS) $(BUILD_MAIN).__ns -d "$(dir $@)" -s $(BOOT_SRC_CORE) -s test tcljc.rtiow-ref
-	touch "$@"
-	@$(JAVA) -cp $(BOOT_MOD_RT):$(dir $<):$(dir $@) $(JAVA_OPTS) tcljc.rtiow-ref.__ns >"$(dir $@)"ray.ppm
+	$(JAVA) -cp $(BOOT_MOD_RT):$(dir $<):$(dir $@) $(JAVA_OPTS) tcljc.rtiow-ref.__ns >"$(dir $@)"ray.ppm
 	@echo "3cf6c9b9f93edb0de2bc24015c610d78  $(dir $@)ray.ppm" | md5sum -c -
+	touch "$@"
