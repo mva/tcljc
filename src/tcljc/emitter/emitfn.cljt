@@ -145,7 +145,7 @@
 
     (fn-class-hierarchy-info [_]
       nil)
-    (fn-class [_ dyn-chr]
+    (fn-cbh [_]
       nil)
     (fn-methods [this cb]
       (let [aca (arity-code-array fspec)
@@ -341,45 +341,43 @@
     (fn-class-hierarchy-info [_]
       (jdk.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
        this-class false super-class))
-    (fn-class [_ dyn-chr]
+    (fn-cbh [_]
       (let [aca (arity-code-array fspec)
             ld-this (cf/ld-st-receiver this-class this-mnm)
             final-ees (final-entries fspec)
             patched-ees (patched-entries fspec)
-            all-ees (concat final-ees patched-ees)
+            all-ees (concat final-ees patched-ees)]
+        (cf/with-cbh [cb]
+          (-> cb
+              (.withFlags (bit-or Classfile/ACC_PUBLIC
+                                  Classfile/ACC_FINAL
+                                  Classfile/ACC_SUPER))
+              (.withSuperclass super-class)
+              (.withInterfaceSymbols itfs)
+              (cf/with-source-file source-file))
 
-            cbh (cf/with-cbh [cb]
-                  (-> cb
-                      (.withFlags (bit-or Classfile/ACC_PUBLIC
-                                          Classfile/ACC_FINAL
-                                          Classfile/ACC_SUPER))
-                      (.withSuperclass super-class)
-                      (.withInterfaceSymbols itfs)
-                      (cf/with-source-file source-file))
-
-                  (doseq [^EnvEntry ee all-ees
-                          :let [ld ^LdStMember (.ld-st-instr ee)]]
-                    (.withField cb (cf/member-nm ld) (cf/member-tp ld)
-                                (cond-> Classfile/ACC_PRIVATE
-                                  (not (.forward-ref? ee))
-                                  (bit-or Classfile/ACC_FINAL))))
+          (doseq [^EnvEntry ee all-ees
+                  :let [ld ^LdStMember (.ld-st-instr ee)]]
+            (.withField cb (cf/member-nm ld) (cf/member-tp ld)
+                        (cond-> Classfile/ACC_PRIVATE
+                          (not (.forward-ref? ee))
+                          (bit-or Classfile/ACC_FINAL))))
                   
-                  (dotimes [i (alength aca)]
-                    (let [ac (aget aca i)]
-                      (classes/bridge-method cb (.load-mh-ext ac)
-                                             (.load-mh-impl ac))
-                      (virtual-mdef-impl cb fspec ld-this ac)))
+          (dotimes [i (alength aca)]
+            (let [ac (aget aca i)]
+              (classes/bridge-method cb (.load-mh-ext ac)
+                                     (.load-mh-impl ac))
+              (virtual-mdef-impl cb fspec ld-this ac)))
                   
-                  (arity-or-null-method cb (.fn-form fspec))
-                  (dmh-method cb aca)
-                  (when (seq patched-ees)
-                    (constructor-impl cb super-mhd super-param-ldv all-ees))
-                  (constructor-impl cb super-mhd super-param-ldv final-ees)
-                  (create-fn-method cb this-class final-ees)
-                  (when (seq patched-ees)
-                    (patch-fn-method cb patched-ees))
-                  (with-meta-method cb this-class all-ees))]
-        (cf/build this-class cbh dyn-chr)))
+          (arity-or-null-method cb (.fn-form fspec))
+          (dmh-method cb aca)
+          (when (seq patched-ees)
+            (constructor-impl cb super-mhd super-param-ldv all-ees))
+          (constructor-impl cb super-mhd super-param-ldv final-ees)
+          (create-fn-method cb this-class final-ees)
+          (when (seq patched-ees)
+            (patch-fn-method cb patched-ees))
+          (with-meta-method cb this-class all-ees))))
     (fn-methods [_ cb]
       cb)
     
@@ -436,7 +434,7 @@
     (fn-class-hierarchy-info [_]
       (jdk.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
        this-class false super-class))
-    (fn-class [_ dyn-chr]
+    (fn-cbh [_]
       (let [aca (arity-code-array fspec)
             
             all-ees (let [nm "__meta"
@@ -444,37 +442,35 @@
                           bref (x/field-ref (symbol nm) tp false)
                           field-ld (cf/ld-st-virtual this-class nm rt/map)]
                       (cons (EnvEntry. bref bref nil field-ld false)
-                            (final-entries fspec)))
-            
-            cbh (cf/with-cbh [cb]
-                  (-> cb
-                      (.withFlags (bit-or Classfile/ACC_PUBLIC
-                                          Classfile/ACC_FINAL
-                                          Classfile/ACC_SUPER))
-                      (.withSuperclass super-class)
-                      (.withInterfaceSymbols itfs)
-                      (cf/with-source-file source-file))
+                            (final-entries fspec)))]
+        (cf/with-cbh [cb]
+          (-> cb
+              (.withFlags (bit-or Classfile/ACC_PUBLIC
+                                  Classfile/ACC_FINAL
+                                  Classfile/ACC_SUPER))
+              (.withSuperclass super-class)
+              (.withInterfaceSymbols itfs)
+              (cf/with-source-file source-file))
 
-                  (doseq [^EnvEntry ee all-ees
-                          :let [ld ^LdStMember (.ld-st-instr ee)]]
-                    (.withField cb (cf/member-nm ld) (cf/member-tp ld)
-                                (cond-> Classfile/ACC_PRIVATE
-                                  (not (.forward-ref? ee))
-                                  (bit-or Classfile/ACC_FINAL))))
+          (doseq [^EnvEntry ee all-ees
+                  :let [ld ^LdStMember (.ld-st-instr ee)]]
+            (.withField cb (cf/member-nm ld) (cf/member-tp ld)
+                        (cond-> Classfile/ACC_PRIVATE
+                          (not (.forward-ref? ee))
+                          (bit-or Classfile/ACC_FINAL))))
                   
-                  (dotimes [i (alength aca)]
-                    (let [ac (aget aca i)
-                          this-mnm (-> ac .at .this-name (cfg/munge-name))
-                          ld-this (cf/ld-st-receiver this-class this-mnm)]
-                      (classes/bridge-method cb (.load-mh-ext ac)
-                                             (.load-mh-impl ac))
-                      (virtual-mdef-impl cb fspec ld-this ac)))
+          (dotimes [i (alength aca)]
+            (let [ac (aget aca i)
+                  this-mnm (-> ac .at .this-name (cfg/munge-name))
+                  ld-this (cf/ld-st-receiver this-class this-mnm)]
+              (classes/bridge-method cb (.load-mh-ext ac)
+                                     (.load-mh-impl ac))
+              (virtual-mdef-impl cb fspec ld-this ac)))
                   
-                  (constructor-impl cb super-mhd [] all-ees)
-                  (create-reify-method cb this-class all-ees)
-                  (with-meta-method cb this-class (rest all-ees))
-                  (meta-method cb (first all-ees)))]
-        (cf/build this-class cbh dyn-chr)))
+          (constructor-impl cb super-mhd [] all-ees)
+          (create-reify-method cb this-class all-ees)
+          (with-meta-method cb this-class (rest all-ees))
+          (meta-method cb (first all-ees)))))
     (fn-methods [_ cb]
       cb)
     

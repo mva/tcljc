@@ -1205,7 +1205,7 @@
   
   (fn-methods ^ClassBuilder [^ClassBuilder cb])
   (fn-class-hierarchy-info ^ClassHierarchyResolver$ClassHierarchyInfo [])
-  (fn-class ^bytes [^CHR dyn-chr])
+  (fn-cbh ^java.util.function.Consumer []) ;input for Classfile/build
   
   (invoke-arity-with-self? ^boolean [])
   (arity-env ^IPersistentVector [^CodeBuilder xb ^IProvidedValue bref-mapper

@@ -28,7 +28,7 @@
 
     (fn-class-hierarchy-info [_]
       (throw (IllegalStateException.)))
-    (fn-class [_ dyn-chr]
+    (fn-cbh [_]
       (throw (IllegalStateException.)))
     (fn-methods [this cb]
       (throw (IllegalStateException.)))

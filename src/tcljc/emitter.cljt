@@ -260,11 +260,12 @@
                                             "take-BLOCKING")}
               (.take q)))
           (write-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
-            (if-some [bs (.fn-class (.emit-plan fnc) (segment-chr segm))]
-              (let [this ^ClassDesc (.ld-clx fnc)
+            (if-some [cbh (.fn-cbh (.emit-plan fnc) )]
+              (let [this-class ^ClassDesc (.ld-clx fnc)
+                    bs (cf/build this-class cbh (segment-chr segm))
                     cl (cfg/write-and-define-class (-> segm .env .dest-dir)
                                                    (segment-lookup segm)
-                                                   this bs)]
+                                                   this-class bs)]
                 (with-bytes segm 0 false bs nil))
               segm))
           (write-fn-classes ^SegmState [^SegmState segm ^TlfSummary summary]
