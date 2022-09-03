@@ -16,7 +16,7 @@
 ;;; each namespace is compiled sequentially.  In particular, macro and
 ;;; syntax quote expansions happen in deterministic order, which in
 ;;; turn means that emitted class files are identical across builds.
-(def ^:redef deterministic-namespace-compile? false #_fork-work?)
+(def ^:redef deterministic-namespace-compile? (not fork-work?) #_true)
 
 (defn set-flags! ^void [^boolean deterministic?]
   ;; FIXME... bug in tclj-in-tclj?  Clojure allows this, tcljc as well
