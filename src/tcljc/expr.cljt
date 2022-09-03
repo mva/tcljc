@@ -335,8 +335,8 @@
     (MethodHandleDesc/of (.kind x) (.owner x) (.method-name x)
                          (.lookup-descriptor x))))
 
-(defn invoke-force-clinit ^Expr [^Class cl]
-  (invoke-xref jb/void [] nil rt/mhk-static (rt/cd-of cl) rt/name-force-clinit
+(defn invoke-force-clinit ^Expr [^ClassDesc owner]
+  (invoke-xref jb/void [] nil rt/mhk-static owner rt/name-force-clinit
                "()V" false false))
 
 

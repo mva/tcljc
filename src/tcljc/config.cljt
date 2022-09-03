@@ -10,11 +10,13 @@
    (java.util Set)
    (java.util.function Predicate)))
 
+(def fork-work? true)
+
 ;;; If true, then namespaces are visited in depth first order, and
 ;;; each namespace is compiled sequentially.  In particular, macro and
 ;;; syntax quote expansions happen in deterministic order, which in
 ;;; turn means that emitted class files are identical across builds.
-(def ^:redef deterministic-namespace-compile? false #_true)
+(def ^:redef deterministic-namespace-compile? false #_fork-work?)
 
 (defn set-flags! ^void [^boolean deterministic?]
   ;; FIXME... bug in tclj-in-tclj?  Clojure allows this, tcljc as well

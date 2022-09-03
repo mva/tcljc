@@ -182,7 +182,8 @@
                 (add-macro* acc nm pdf mimpl nil)))
             (add-method [acc ^Method m]
               (if (= (.getName m) rt/name-force-clinit)
-                (assoc acc cfg/key-force-clinit (x/invoke-force-clinit cl))
+                (let [cld (rt/describe-class cl)]
+                  (assoc acc cfg/key-force-clinit (x/invoke-force-clinit cld)))
                 (if-some [nm (when (zero? (.getParameterCount m)) ;skip main
                                (global-nm m))]
                   (if-some [pdf (public-def-info m)]

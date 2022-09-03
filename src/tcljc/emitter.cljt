@@ -99,7 +99,8 @@
                     ^IPersistentVector summaryv ;of TlfSummary
                     
                     ^IPersistentVector bytesv ;nil if bytes are not tracked
-                    ^Class prev-segment-class])
+                    ^ClassDesc prev-segm-cld
+                    fn-class-futv])     ;vector of Future of bytes
 
 (defn- segment-lookup ^MethodHandles$Lookup [^SegmState segm]
   (-> segm .ctx .lookup-in-pkg))
@@ -117,7 +118,8 @@
 (defn with-summary ^SegmState [^SegmState segm ^TlfSummary summary]
   (SegmState. (.env segm) (.ctx segm) (.source-file segm)
               (.segm-id segm) (.segm-cld segm) (conj (.summaryv segm) summary)
-              (.bytesv segm) (.prev-segment-class segm)))
+              (.bytesv segm) (.prev-segm-cld segm)
+              (.fn-class-futv segm)))
 (defn with-bytes ^SegmState [^SegmState segm ^int id-delta
                              ^boolean clear-summaryv? ^bytes bs ^Class segm-cl]
   (let [bytesv' (when-some [bsv (.bytesv segm)]
@@ -125,7 +127,21 @@
     (SegmState. (.env segm) (.ctx segm) (.source-file segm)
                 (+ (.segm-id segm) id-delta) (segment-cld segm id-delta)
                 (if clear-summaryv? [] (.summaryv segm)) bytesv'
-                (or segm-cl (.prev-segment-class segm)))))
+                (if segm-cl (rt/describe-class segm-cl) (.prev-segm-cld segm))
+                (.fn-class-futv segm))))
+(defn- with-fn-class-fut ^SegmState [^SegmState segm ^Future fut]
+  (SegmState. (.env segm) (.ctx segm) (.source-file segm)
+              (.segm-id segm) (.segm-cld segm) (.summaryv segm)
+              (.bytesv segm) (.prev-segm-cld segm)
+              (conj (.fn-class-futv segm) fut)))
+(defn- with-collect-fn-classes ^SegmState [^SegmState segm]
+  (let [bytesv' (if-some [bytesv (.bytesv segm)]
+                  (into (.bytesv segm) (map ctx/wait-for-result)
+                        (.fn-class-futv segm))
+                  (run! ctx/wait-for-result (.fn-class-futv segm)))]
+    (SegmState. (.env segm) (.ctx segm) (.source-file segm)
+                (.segm-id segm) (.segm-cld segm)
+                (.summaryv segm) bytesv' (.prev-segm-cld segm) [])))
 
 (defn- capstone-cld ^ClassDesc [^SegmState segm]
   (ClassDesc/of (-> segm .ctx .ns-str) ns-class-name))
@@ -252,32 +268,47 @@
         cld (ClassDesc/of (.ns-str ctx)
                           (str ns-class-name first-segm-id))]
     (SegmState. env ctx source-file first-segm-id cld
-                [] (when collect-bytesv? []) nil)))
+                [] (when collect-bytesv? []) nil [])))
 
-(defn- emit-segments ^Namespace [^SegmState segm]
+(defn- emit-segments ^Namespace [^SegmState segm ^ExecutorService build-exc]
   (letfn [(take-msg ^Msg [^BlockingQueue q]
             (ctx/with-log-task {:label (str (segment-ns-str segm) "/e-thread/"
                                             "take-BLOCKING")}
               (.take q)))
-          (write-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
-            (if-some [cbh (.fn-cbh (.emit-plan fnc) )]
+          (fn-class-future ^Future [^SegmState segm ^FnCode fnc ^Consumer cbh]
+            (ctx/with-fork-or-on-thread
+              {:executor build-exc
+               :other-thread? cfg/fork-work?
+               :label (str (segment-ns-str segm) "/x-thread/fn-class")}
               (let [this-class ^ClassDesc (.ld-clx fnc)
-                    bs (cf/build this-class cbh (segment-chr segm))
-                    cl (cfg/write-and-define-class (-> segm .env .dest-dir)
-                                                   (segment-lookup segm)
-                                                   this-class bs)]
-                (with-bytes segm 0 false bs nil))
+                    bs (cf/build this-class cbh (segment-chr segm))]
+                (cfg/write-and-define-class (-> segm .env .dest-dir)
+                                            (segment-lookup segm)
+                                            this-class bs)
+                ;; return bytes (not class!) once the class has been
+                ;; defined into the classloader
+                bs)))
+          (schedule-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
+            (if-some [cbh (.fn-cbh (.emit-plan fnc))]
+              (with-fn-class-fut segm (fn-class-future segm fnc cbh))
               segm))
-          (write-fn-classes ^SegmState [^SegmState segm ^TlfSummary summary]
+          (schedule-fn-classes ^SegmState [^SegmState segm ^TlfSummary summary]
             (let [segm (with-summary segm summary)
                   dyn-chr (segment-chr segm)
                   fncs (map #(-> ^FnSpec % .fn-form .!fnc) (.fn-specs summary))]
               (doseq [^FnCode fnc fncs :let [ep (.emit-plan fnc)]]
                 (when-some [ch-info (.fn-class-hierarchy-info ep)]
                   (.register! dyn-chr ch-info)))
-              (reduce write-fn-class segm fncs)))
+              (reduce schedule-fn-class segm fncs)))
           (write-segment ^SegmState [^SegmState segm ^boolean force-clinit?]
+            ;; Note: There is no point to move the segment class into
+            ;; a future, because it is immediately required -- either
+            ;; for a macro value or for namespace completion.
             (let [bs (build-segment segm force-clinit?)
+                  ;; macros from this segment class can be invoked
+                  ;; once it is defined: make sure there are no
+                  ;; pending dependencies
+                  segm (with-collect-fn-classes segm)
                   cl (cfg/write-and-define-class (-> segm .env .dest-dir)
                                                  (segment-lookup segm)
                                                  (segment-cld segm 0) bs)]
@@ -319,7 +350,7 @@
                                       (.fn-specs summary))
                 (prepare/prepare-globals! (.segm-cld segm)
                                           (.global-bs summary))
-                (write-fn-classes segm summary))
+                (schedule-fn-classes segm summary))
               
               ctx/req-define-class
               (if (instance? ClassDef x)
@@ -328,12 +359,12 @@
                       summary (TlfSummary. (.fn-specs dtdef) nil x/expr-empty)]
                   (prepare/prepare-fns! (.segm-cld segm) (.source-file segm)
                                         (.fn-specs dtdef))
-                  (-> (write-fn-classes segm summary)
+                  (-> (schedule-fn-classes segm summary)
                       (write-and-define (build-deftype dtdef) promise))))
               
               ctx/req-flush-namespace-segment
               (let [segm (write-segment segm true)
-                    force-x (x/invoke-force-clinit (.prev-segment-class segm))]
+                    force-x (x/invoke-force-clinit (.prev-segm-cld segm))]
                 (.complete promise force-x)
                 segm)
               
@@ -354,16 +385,16 @@
           p (.promise msg)]
       (if (= (.task msg) ctx/msg-close-queue)
         (-> segm (write-segment false) (write-capstone (.x msg)))
-        (-> (ctx/with-log-task {:label (str (segment-ns-str segm) "/e-thread/"
-                                            (ctx/task-id msg))}
-              (try
-                (let [segm (complete-req! segm (.task msg) (.x msg) p)]
-                  (assert (or (nil? p) (.isDone p)))
-                  segm)
-                (catch Throwable t
-                  (drain-queue (-> segm .ctx .emit .q) t msg)
-                  (throw t))))
-            (recur))))))
+        (recur (ctx/with-log-task {:label (str (segment-ns-str segm)
+                                               "/e-thread/" (ctx/task-id msg))}
+                 (try
+                   (let [segm (complete-req! segm (.task msg) (.x msg) p)]
+                     (assert (or (nil? p) (.isDone p)))
+                     segm)
+                   (catch Throwable t
+                     (drain-queue (-> segm .ctx .emit .q) t msg)
+                     (throw t))))
+               build-exc)))))
 
 (defn- preparer-thread [^String ns-str ^EmitQueue emit ^HashSet !private-names]
   (letfn [(take-msg ^Msg [^BlockingQueue q]
@@ -453,7 +484,8 @@
                       (ctx/send-msg (.emit ctx) ctx/msg-fatal-error t))
                     (finally          ;there is always a `close-queue`
                       (ctx/send-msg (.emit ctx) ctx/msg-close-queue nil))))
-        nmsp (emit-segments segm)]
+        nmsp (ctx/with-executor {:binding-sym build-exc}
+               (emit-segments segm build-exc))]
     (.join c-thread 5000l)      ;does not pick up result or exceptions
     (.join p-thread 5000l)      ;does not pick up result or exceptions
     nmsp))
