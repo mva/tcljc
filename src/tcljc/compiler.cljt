@@ -250,8 +250,9 @@
             (if (x/meta-flag? nm :macro)
               (let [bref (x/with-macro-value bref macro-v) ;then baked into mfn
                     ctx (ctx/tl-ctx* tl-ctx)
-                    mfn (-> (delay
-                              (send-msg (.emit ctx) ctx/req-macro-value bref))
+                    mfn (-> (delay (or (ctx/try-load-bref ctx bref) ;optimistic
+                                       (send-msg (.emit ctx)
+                                                 ctx/req-macro-value bref)))
                             (DelayedMacroFn. (.apply-mh ctx)))
                     mref (x/macro-ref nm ns-str mfn macro-v bref)]
                 (.update-macro-count ctx +1)

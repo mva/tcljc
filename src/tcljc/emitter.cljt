@@ -299,32 +299,18 @@
                   segm (with-bytes segm 0 true bs cl)]
               (nmsp/with-capstone nmsp cl (.bytesv segm))))
           
-          (try-load-bref ^Object [^SegmState segm ^BindingRef bref]
-            (when (.realized? bref)
-              (let [global-mh (try
-                                (let [l (-> segm .ctx .lookup-in-pkg)]
-                                  (.mh-if-global (x/deref-load bref) l))
-                                (catch ClassNotFoundException _
-                                  nil))]
-                (when (some? global-mh)
-                  (if (nil? (.apply-mh (.ctx segm)))
-                    ;; compiler and application share runtime?
-                    ;; careful, this is a very brittle method type!
-                    ^tinyclj.lang.StaticFnMh (.invokeExact global-mh)
-                    (.invoke global-mh))))))
           (complete-req! ^SegmState [^SegmState segm ^int task x
                                      ^CompletableFuture promise]
             (condp = task
               ctx/req-macro-value
-              ;; note: "flush class" requests are issued in arbitrary order
-              ;; by namespace threads
-              (let [bref ^BindingRef x]
-                (if-some [f (try-load-bref segm bref)] ;first try
-                  (do (.complete promise f)
-                      segm)
-                  (let [segm (write-segment segm false)] ;second and last try
-                    (.complete promise (try-load-bref segm bref))
-                    segm)))
+              ;; Note: "flush class" requests are issued in arbitrary
+              ;; order by namespace threads.
+              (let [bref ^BindingRef x
+                    segm (write-segment segm false)]
+                ;; Upstream code issuing this request has already
+                ;; done its own `try-load-bref` without success.
+                (.complete promise (ctx/try-load-bref (.ctx segm) bref))
+                segm)
 
               ctx/msg-emit-tlf
               (let [^TlfSummary summary x]

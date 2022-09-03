@@ -422,6 +422,19 @@
 (defn exc-method ^ExecutorService [tl-ctx]
   (.exc-method (tl-ctx* tl-ctx)))
 
+(defn try-load-bref ^Object [^Ctx ctx ^BindingRef bref]
+  (when (.realized? bref)
+    (let [global-mh (try
+                      (.mh-if-global (x/deref-load bref) (.lookup-in-pkg ctx))
+                      (catch ClassNotFoundException _
+                        nil))]
+      (when (some? global-mh)
+        (if (nil? (.apply-mh ctx))
+          ;; compiler and application share runtime?
+          ;; careful, this is a very brittle method type!
+          ^tinyclj.lang.StaticFnMh (.invokeExact global-mh)
+          (.invoke global-mh))))))
+
 ;;; ------------------------------------------------------------------------
 
 (def enable-task-log false)
