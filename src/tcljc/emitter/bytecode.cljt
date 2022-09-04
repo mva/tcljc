@@ -18,7 +18,7 @@
                FnForm ArityCode Arity FnPatch IEmitPlan IProvidedValue)
    (clojure.lang Symbol IPersistentVector IMeta)
    (jdk.classfile Classfile ClassfileBuilder ClassBuilder CodeBuilder
-                  FieldBuilder CodeBuilder$BlockCodeBuilder Opcode Label
+                  FieldBuilder Opcode Label
                   Annotation AnnotationElement AnnotationValue Signature)
    (jdk.classfile.instruction SwitchCase)
    (jdk.classfile.attribute ConstantValueAttribute SignatureAttribute
@@ -354,49 +354,52 @@
 
                 #_else (table-insn xb x))))
 
-          (try-catch* ^boolean [^CodeBuilder$BlockCodeBuilder xb
-                                ^TryCatchFinally x ^Label f-label]
-            (let [body-expr (x/nth-arg x 0)]
+          (try-catch* ^boolean [^CodeBuilder xb ^TryCatchFinally x
+                                ^Label start-body ^Label f-label]
+            (let [body-expr (x/nth-arg x 0)
+                  handlerv (.handlerv x)
+                  n (count handlerv)
+                  c-labelv (vec (repeatedly n #(.newLabel xb)))
+                  end-body (.newLabel xb)]
+              (assert (= (x/arg-count x) (+ n 2)))
               (expr-insns xb es body-expr)
-              (if (.isEmpty ^jdk.classfile.impl.BlockCodeBuilderImpl xb)
-                true             ;no output means finally is reachable
-                (let [handlerv (.handlerv x)
-                      n (count handlerv)
-                      c-labelv (vec (repeatedly n #(.newLabel xb)))
-                      end-body (.newLabel xb)]
-                  (assert (= (x/arg-count x) (+ n 2)))
-                  (when (x/returns? body-expr)
-                    (.branchInstruction xb Opcode/GOTO f-label))
-                  (.labelBinding xb end-body)
-                  (dotimes [i n]
-                    (let [handler ^TryHandler (nth handlerv i)]
-                      (.exceptionCatch xb (.startLabel xb) end-body
-                                       ^Label (nth c-labelv i)
-                                       (rt/cd-of (.exception handler))))
-                    (let [catch-expr (x/nth-arg x (inc i))]
-                      (-> (.labelBinding xb (nth c-labelv i))
-                          (expr-insns es catch-expr)
-                          (cond-> (x/returns? catch-expr)
-                            (.branchInstruction Opcode/GOTO f-label)))))
-                  (boolean (some x/returns? (butlast (x/argv x))))))))
-          (try-catch-finally* ^void [^CodeBuilder$BlockCodeBuilder xb
-                                     ^TryCatchFinally x]
+              (when (x/returns? body-expr)
+                (.branchInstruction xb Opcode/GOTO f-label))
+              (.labelBinding xb end-body)
+              ;; here holds: the body's bytecode region [start-body,
+              ;; end-body[ is not empty, because it holds either
+              ;; ATHROW, xRETURN, or the "GOTO f-label"
+              (dotimes [i n]
+                (let [handler ^TryHandler (nth handlerv i)]
+                  (.exceptionCatch xb start-body end-body
+                                   ^Label (nth c-labelv i)
+                                   (rt/cd-of (.exception handler))))
+                (let [catch-expr (x/nth-arg x (inc i))]
+                  (-> (.labelBinding xb (nth c-labelv i))
+                      (expr-insns es catch-expr)
+                      (cond-> (x/returns? catch-expr)
+                        (.branchInstruction Opcode/GOTO f-label)))))
+              (boolean (some x/returns? (butlast (x/argv x))))))
+          (try-catch-finally ^CodeBuilder [^CodeBuilder xb ^TryCatchFinally x]
             (let [finally-statm ^Expr (peek (x/argv x))
+                  start-body (.newLabel xb)
                   f-label (.newLabel xb)
-                  f-reachable? (try-catch* xb x f-label)]
-              (when-not (.isEmpty ^jdk.classfile.impl.BlockCodeBuilderImpl xb)
-                (when-not (x/expr-empty? finally-statm)
-                  (let [end-of-finally (.newLabel xb)
-                        cf-label (.newLabel xb)]
-                    (-> (.labelBinding xb end-of-finally)
-                        (.exceptionCatchAll (.startLabel xb) end-of-finally
-                                            cf-label)
-                        (.labelBinding cf-label)
-                        (expr-insns es finally-statm)
-                        (cond-> (x/returns? finally-statm) (.athrow))))))
-              (when f-reachable?
-                (-> (.labelBinding xb f-label)
-                    (expr-insns es finally-statm)))))
+                  f-reachable? (-> (.labelBinding xb start-body)
+                                   (try-catch* x start-body f-label))]
+              ;; here holds: the try-catch's bytecode region
+              ;; [start-body, end-tc[ is not empty, it holds
+              ;; at least the try body (see above)
+              (when-not (x/expr-empty? finally-statm)
+                (let [end-tc (.newLabel xb)
+                      ca-label (.newLabel xb)]
+                  (-> (.labelBinding xb end-tc)
+                      (.exceptionCatchAll start-body end-tc ca-label)
+                      (.labelBinding ca-label)
+                      (expr-insns es finally-statm)
+                      (cond-> (x/returns? finally-statm) (.athrow)))))
+              (cond-> xb
+                f-reachable? (-> (.labelBinding f-label)
+                                 (expr-insns es finally-statm)))))
           
           (loop-body-insn ^CodeBuilder [^CodeBuilder xb ^LoopBody x]
             (let [es' (with-recur-target es (.newLabel xb))]
@@ -481,8 +484,7 @@
         Switch
         (switch-insn xb ^Switch x)
         TryCatchFinally
-        (.block xb (cf/with-xbh [xb]
-                     (try-catch-finally* xb ^TryCatchFinally x)))
+        (try-catch-finally xb ^TryCatchFinally x)
         
         BindingRef
         (binding-ref xb ^BindingRef x)

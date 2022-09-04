@@ -12,7 +12,6 @@
    (jdk.classfile TypeKind Opcode Instruction FieldModel
                   Classfile ClassBuilder CodeBuilder
                   ClassHierarchyResolver$ClassHierarchyInfo)
-   (jdk.classfile.constantpool MethodRefEntry)
    (jdk.classfile.instruction ConstantInstruction FieldInstruction)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
                        DirectMethodHandleDesc$Kind MethodHandleDesc

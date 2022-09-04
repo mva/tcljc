@@ -238,12 +238,27 @@
                                        (.println System/out "Finally...")))
                                    3)))]))))
 
-;; Note: Not all constructs are reduced to "the" empty expression.  If
-;; an exception handler covers an empty bytecode region after bytecode
-;; emit like (EXCEPTION_CATCH L:0 L:0 L:2 any), then this handler must
-;; be omitted from the class file.
+;; Note (1): Not all constructs are reduced to "the" empty expression.
+;; If an exception handler covers an empty bytecode region after
+;; bytecode emit like (EXCEPTION_CATCH L:0 L:0 L:2 any), then this
+;; handler must be omitted from the class file.
+;;
+;; Note (2): The current setup guarantees that the try block's region
+;; is never empty (it holds at least a xRETURN or a GOTO), which
+;; implies that the try-catch region is also never empty.  This means
+;; that the two isEmpty() checks can be avoided, but with the "cost"
+;; that an empty try block is not omitted entirely.
 (deftest try-empty-body
-  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+  (is (= '[[L:0]
+           (GOTO L:2)
+           (EXCEPTION_CATCH L:0 L:1 L:1 any)
+           [L:1]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ATHROW)
+           [L:2]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Hello World")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (LDC "abc")
@@ -254,7 +269,16 @@
                            (.println System/out "Hello World")))
                        "abc"))))
   
-  (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
+  (is (= '[[L:0]
+           (GOTO L:2)
+           (EXCEPTION_CATCH L:0 L:1 L:1 any)
+           [L:1]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
+           (LDC "Hello World")
+           (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
+           (ATHROW)
+           [L:2]
+           (GETSTATIC System "out" "Ljava/io/PrintStream;")
            (LDC "Hello World")
            (INVOKEVIRTUAL PrintStream "println" "(Ljava/lang/String;)V")
            (LDC "abc")

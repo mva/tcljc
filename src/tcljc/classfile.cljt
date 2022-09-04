@@ -8,7 +8,6 @@
                   ClassHierarchyResolver$ClassHierarchyInfo
                   Opcode TypeKind ClassBuilder MethodBuilder CodeBuilder Label)
    (jdk.classfile.attribute SourceFileAttribute)
-   (jdk.classfile.constantpool ConstantPoolBuilder MethodRefEntry)
    (jdk.classfile.instruction SwitchCase)
    (java.lang.constant ConstantDesc ClassDesc MethodTypeDesc MethodHandleDesc
                        DirectMethodHandleDesc DirectMethodHandleDesc$Kind)
