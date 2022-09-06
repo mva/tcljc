@@ -46,9 +46,8 @@
 (defn- replacement-symbol [current-replacement to-be-replaced-sym]
   (or current-replacement ;keep entry that has been added concurrently
       (let [nm (name to-be-replaced-sym)]
-        (-> (.substring nm 0 (dec (.length nm)))
-            (str  "__" (clojure.lang.RT/nextID) "__auto__")
-            (symbol)))))
+        (symbol nil (-> (.substring nm 0 (dec (.length nm)))
+                        (str  "__" (clojure.lang.RT/nextID) "__auto__"))))))
 
 ;;; Assume the compiler's `clojure.lang.RT/nextID` can be used here,
 ;;; instead of the application's one.  Most of the time the two are
@@ -80,7 +79,7 @@
 
 (defn- encode-symbol [^SyntaxQuoteState sqs sym]
   (letfn [(resolve-class-name ^String [^String nm]
-            (if-some [tp (ctx/lookup-type (symbol nm) (.ctx sqs))]
+            (if-some [tp (ctx/lookup-type (symbol nil nm) (.ctx sqs))]
               (.getName tp)
               (when-not (neg? (.indexOf nm (int \.)))
                 nm)))

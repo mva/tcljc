@@ -439,7 +439,7 @@
             
             all-ees (let [nm "__meta"
                           tp clojure.lang.IPersistentMap ;only used as name
-                          bref (x/field-ref (symbol nm) tp false)
+                          bref (x/field-ref (symbol nil nm) tp false)
                           field-ld (cf/ld-st-virtual this-class nm rt/map)]
                       (cons (EnvEntry. bref bref nil field-ld false)
                             (final-entries fspec)))]

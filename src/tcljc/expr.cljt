@@ -451,17 +451,17 @@
 
 ;; (defn prefix-tree [^Expr x]
 ;;   (letfn [(op [^Expr x]
-;;             (symbol (if (insn? x)
+;;             (symbol nil (if (insn? x)
 ;;                       (-> ^Insn x .instr .opcode .name)
 ;;                       (.getName (class x)))))
 ;;           (type-hint ^Symbol [^Class tp]
 ;;             (cond
 ;;               (jb/compile-time-entity? tp)
-;;               (symbol "^compile-time-entity")
+;;               (symbol nil "^compile-time-entity")
 ;;               (returning-type? tp)
 ;;               (let [s (.getName tp), i (.lastIndexOf s (int \.))]
-;;                 (symbol (str "^" (.substring s (inc i)))))
-;;               :else (symbol "^no-return")))]
+;;                 (symbol nil (str "^" (.substring s (inc i)))))
+;;               :else (symbol nil "^no-return")))]
 ;;     (if (const? x)
 ;;       (list (type-hint (type x)) (str (.const-value x)))
 ;;       (list* (type-hint (type x)) (op x) (map prefix-tree (argv x))))))

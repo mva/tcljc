@@ -123,7 +123,7 @@
                     redef? (not (Modifier/isFinal mods))
                     init-x (when-not redef?
                              (constant-init-x tp mods (.get f nil)))
-                    bref (x/global-ref (symbol nm) (ns-str)
+                    bref (x/global-ref (symbol nil nm) (ns-str)
                                        tp redef? false init-x)
                     ld-st (cf/ld-st-static cld (.getName f) (rt/cd-of tp))]
                 (.deliver-load bref ld-st)
@@ -132,13 +132,13 @@
               (let [tp (.getType f)
                     mods (.getModifiers f)
                     redef? (not (Modifier/isFinal mods))
-                    bref (x/global-ref (symbol nm) (ns-str)
+                    bref (x/global-ref (symbol nil nm) (ns-str)
                                        var-tp redef? true nil)
                     ld-st (cf/ld-st-static cld (.getName f) (rt/cd-of tp))]
                 (.deliver-load bref ld-st)
                 (put! acc nm bref)))
             (add-alias* [acc ^String nm ^BindingRef alias-for]
-              (let [aref (x/alias-ref x/lvl-global (symbol nm) (ns-str)
+              (let [aref (x/alias-ref x/lvl-global (symbol nil nm) (ns-str)
                                       alias-for x/b-def)]
                 (.deliver-load aref (x/deref-load alias-for))
                 (put! acc nm aref)))
@@ -161,7 +161,7 @@
             (method-bref ^ValueRef [acc ^Method m ^String nm]
               (let [tp (.getReturnType m)
                     init-x (constant-init-x tp 0 (.invoke m nil))
-                    bref (x/global-ref (symbol nm) (ns-str)
+                    bref (x/global-ref (symbol nil nm) (ns-str)
                                        tp false false init-x)
                     ld-st (cf/ld-st-method cld (.getName m) (rt/cd-of tp))]
                 (.deliver-load bref ld-st)
@@ -170,7 +170,7 @@
                          ^BindingRef mvalue]
               (let [f (aget pdf 1)
                     mfn (ImportedMacroFn. (.apply-mh ctx) f)
-                    mref (x/macro-ref (symbol nm) (ns-str) mfn mvalue mimpl)]
+                    mref (x/macro-ref (symbol nil nm) (ns-str) mfn mvalue mimpl)]
                 (put! acc nm mref)))
             (add-macro [acc ^String nm ^objects pdf ^ValueRef mimpl]
               (if-some [sym-str (aget pdf 2)]

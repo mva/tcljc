@@ -137,10 +137,10 @@
 
 (defn import-symbol-short ^Symbol [^Class cl]
   (let [s (.getName cl), i (.lastIndexOf s (tinyclj.core/int \.))]
-    (symbol (.substring s (inc i)))))
+    (symbol nil (.substring s (inc i)))))
 ;; (defn import-symbol-long ^Symbol [^Class cl]
 ;;   (let [s (.getName cl)]
-;;     (symbol s)))
+;;     (symbol nil s)))
 
 (def initial-imports
   (let [m (java.util.HashMap.)]
@@ -161,8 +161,8 @@
     ;; entity
     (doseq [^Class cl [boolean byte short char int float long double]
             :let [nm (.getSimpleName cl)]]
-      (.put m (symbol nm) cl)
-      (.put m (symbol (str nm "s")) (.arrayType cl)))
+      (.put m (symbol nil nm) cl)
+      (.put m (symbol nil (str nm "s")) (.arrayType cl)))
     (into {} m)))
 
 (defn computational-const ^Object [^Object x]

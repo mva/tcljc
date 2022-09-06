@@ -22,13 +22,13 @@
                   (x/primitive-fn-ref nm cfg/primitive-ns-str pfn))
             m)
           (put-nary [m ^Symbol nm ^FnPrimitiveFn pfn ^Expr id ^int min-argc]
-            (let [nm* (symbol (str (name nm) "-nary"))
+            (let [nm* (symbol nil (str (name nm) "-nary"))
                   pfn* (compiler/nary-numeric min-argc id pfn)]
               (-> (put-prim m nm pfn)
                   (put-prim nm* pfn*))))
           (put-nary-cmp [m ^Symbol nm ^FnPrimitiveFn pfn]
             (-> (put-prim m nm pfn)
-                (put-prim (symbol (str (name nm) "-nary"))
+                (put-prim (symbol nil (str (name nm) "-nary"))
                           (compiler/nary-cmp pfn))))]
     (-> (HashMap.)
 
@@ -90,7 +90,7 @@
     {cfg/primitive-ns-str globals}))
 
 (letfn [(assoc-syntax-quote [m]
-          (let [sym (symbol (name sq/sym-syntax-quote))
+          (let [sym (symbol nil (name sq/sym-syntax-quote))
                 mfn (fn ^FnMacroFn syntax-quote-macro [env form]
                       (sq/syntax-quote form ^Ctx env))]
             (assoc m (name sq/sym-syntax-quote)

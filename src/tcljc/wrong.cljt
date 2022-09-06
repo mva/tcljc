@@ -115,7 +115,7 @@
       (unresolved "class not found " sym sym))))
 (defn no-class-def-found ^ExceptionInfo [^NoClassDefFoundError e]
   (let [nm (.replace (ex-message e) \/ \.)]
-    (mk-e (str "failed to load class " (q (symbol nm))))))
+    (mk-e (str "failed to load class " (q (symbol nil nm))))))
 
 
 ;;; If body raises an ExceptionInfo, then push seq `form` onto its

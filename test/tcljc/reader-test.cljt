@@ -525,7 +525,7 @@
 (defn deterministic-gensyms [form]
   (let [gensym-map (atom {})]
     (letfn [(add-replacement [m sym prefix suffix]
-              (let [sym' (symbol (str prefix "$" (inc (count m)) "$" suffix))]
+              (let [sym' (symbol nil (str prefix "$" (inc (count m)) "$" suffix))]
                 (assoc m sym sym')))
             (replacement [x]
               (cond
@@ -548,7 +548,7 @@
 
                 (string? x)
                 (if-some [[_ p s] (re-matches #"^(LOCAL \d+: .* )(.+)$" x)]
-                  (str p (-> s (symbol) (replacement)))
+                  (str p (-> (symbol nil s) (replacement)))
                   x)
 
                 :else x))]

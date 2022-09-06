@@ -56,7 +56,7 @@
 (defn prefixed-symbol ^Symbol [form ^Symbol prefix]
   (let [sym (wrong/ensure-simple-sym form)]
     (if (some? prefix)
-      (symbol (str prefix "." (name sym)))
+      (symbol nil (str prefix "." (name sym)))
       sym)))
 
 (defn import-clause [forms]
@@ -180,7 +180,7 @@
    (let [[ns-sym :as deps] (parse-ns-form form)]
      (if (= (str ns-sym) ns-str)
        (cons ns-sym (massage-refer-clojure deps))
-       (wrong/other (str "ns name mismatch, expected " (wrong/q (symbol ns-str))
+       (wrong/other (str "ns name mismatch, expected " (wrong/q (symbol nil ns-str))
                          " but got " (wrong/q ns-sym)))))))
 
 (defn required-ns-strs ^"[Ljava.lang.String;" [deps]

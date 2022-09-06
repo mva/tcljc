@@ -56,7 +56,7 @@
             (if (= cld owner-cld)
               '.
               (let [s (.displayName cld)]
-                (symbol s))))
+                (symbol nil s))))
           (escape-char ^String [^String c]
             (String/format "\\u%04x" (object (int (.charAt c 0)))))]
     (switch-on-type
@@ -73,7 +73,7 @@
              
      java.lang.constant.DirectMethodHandleDesc
      (or (get named-mhd const nil)
-         [(-> const .kind .name (symbol))
+         [(symbol nil (-> const .kind .name))
           (owner-name (.owner const))
           (const-desc (.methodName const))
           (const-desc (.lookupDescriptor const))])
@@ -91,15 +91,15 @@
   (condp instance? tp
     ClassDesc
     (let [cd ^ClassDesc tp]
-      (cond-> (.displayName cd)
-        (not (.isArray cd)) (symbol)))
+      (cond->> (.displayName cd)
+        (not (.isArray cd)) (symbol nil)))
     ClassEntry
     (recur (.asSymbol ^ClassEntry tp))
     #_else (throw (IllegalArgumentException. (str (class tp))))))
 
 (defn- instruction-data [insn ^ClassDesc owner-cld ^HashMap label-names]
   (letfn [(opcode ^Symbol [^CodeElement insn]
-            (-> insn .opcode .name (symbol)))
+            (symbol nil (-> insn .opcode .name)))
           (owner-name [^ClassEntry owner] ;returns symbol or string
             (if (= owner-cld (.asSymbol owner))
               '.
@@ -285,7 +285,7 @@
       (loop [cnt 0, [elem :as elems] (seq elements)]
         (when (some? elems)
           (recur (if-some [label (targeted-label elem)]
-                   (do (.put label-names label (symbol (str "L:" cnt)))
+                   (do (.put label-names label (symbol nil (str "L:" cnt)))
                        (inc cnt))
                    cnt)
                  (next elems))))
@@ -319,7 +319,7 @@
         
         (class-access [^AccessFlags fs]
           (reduce (fn [acc ^AccessFlag fl]
-                    (cond-> acc (.has fs fl) (conj (symbol (.name fl)))))
+                    (cond-> acc (.has fs fl) (conj (symbol nil (.name fl)))))
                   []
                   [AccessFlag/PUBLIC AccessFlag/FINAL AccessFlag/INTERFACE
                    AccessFlag/ABSTRACT AccessFlag/SYNTHETIC
@@ -338,7 +338,7 @@
                           '(nil "java/lang/Object" nil))))
 
         (rt-vis-annotations [^RuntimeVisibleAnnotationsAttribute attr]
-          (list* (symbol (.attributeName attr))
+          (list* (symbol nil (.attributeName attr))
                  (map annotation (.annotations attr))))
         (method-element [elem]
           (switch-on-type
@@ -351,7 +351,7 @@
            (rt-vis-annotations elem)))
         (method-access [^AccessFlags fs]
           (reduce (fn [acc ^AccessFlag fl]
-                    (cond-> acc (.has fs fl) (conj (symbol (.name fl)))))
+                    (cond-> acc (.has fs fl) (conj (symbol nil (.name fl)))))
                   []
                   [AccessFlag/PUBLIC AccessFlag/PRIVATE AccessFlag/PROTECTED
                    AccessFlag/STATIC AccessFlag/FINAL AccessFlag/SYNCHRONIZED
@@ -382,18 +382,18 @@
            nil
            
            jdk.classfile.attribute.ConstantValueAttribute
-           (list (symbol (.attributeName elem))
+           (list (symbol nil (.attributeName elem))
                  (constant-desc (.constant elem) nil))
 
            jdk.classfile.attribute.SignatureAttribute
-           (list (symbol (.attributeName elem))
+           (list (symbol nil (.attributeName elem))
                  (.stringValue (.signature elem)))
 
            RuntimeVisibleAnnotationsAttribute
            (rt-vis-annotations elem)))
         (field-access [^AccessFlags fs]
           (reduce (fn [acc ^AccessFlag fl]
-                    (cond-> acc (.has fs fl) (conj (symbol (.name fl)))))
+                    (cond-> acc (.has fs fl) (conj (symbol nil (.name fl)))))
                   []
                   [AccessFlag/PUBLIC AccessFlag/PRIVATE AccessFlag/PROTECTED
                    AccessFlag/STATIC AccessFlag/FINAL AccessFlag/VOLATILE

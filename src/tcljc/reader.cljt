@@ -424,8 +424,7 @@
 (def ^:private max-fnlit-param 255)
 
 (defn- replacement-sym [^int idx]
-  (-> (str (if (zero? idx) "rest" (str "p" idx)) "__fnlit__")
-      (symbol)))
+  (symbol nil (str (if (zero? idx) "rest" (str "p" idx)) "__fnlit__")))
 
 (defn- update-tag-count ^void [^ArrayList arg-env ^int idx tag ^int delta]
   (let [m (-> (.get arg-env idx)

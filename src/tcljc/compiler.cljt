@@ -813,9 +813,9 @@
              (if (nil? (next ms))
                (first ms)
                (-> (str "multiple " member-label "s matching ")
-                   (wrong/unresolved-interop (symbol nm) (invoke-ex-data))))
+                   (wrong/unresolved-interop (symbol nil nm) (invoke-ex-data))))
              (-> (str "no " member-label " matching ")
-                 (wrong/unresolved-interop (symbol nm) (invoke-ex-data))))))
+                 (wrong/unresolved-interop (symbol nil nm) (invoke-ex-data))))))
        (dot-form-static ^Expr [^Class owner ^String nm arg-forms]
          (let [argv (expr-forms arg-forms)
                atypes (argument-types argv)
@@ -951,7 +951,7 @@
          ;; produced by a macro
          (assert (vector? field-sig))
 
-         (let [short-sym (symbol (name fq-sym))
+         (let [short-sym (symbol nil (name fq-sym))
                [opts methods] (loop [acc {}, [x :as xs] opts+specs]
                                 (if (keyword? x)
                                   (recur (assoc acc x (second xs)) (nnext xs))
@@ -1215,7 +1215,7 @@
                        mhd tl-ctx))
        (resolve-static-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
          (let [ns-part (namespace sym)]
-           (if-some [tp (ctx/get-type (symbol ns-part) tl-ctx)]
+           (if-some [tp (ctx/get-type (symbol nil ns-part) tl-ctx)]
              (dot-form-static tp (name sym) ())
              (wrong-unresolved-nmsp ns-part sym))))
        (compile-atom ^Expr [form]
@@ -1327,7 +1327,7 @@
                    (dot-form-virtual (expr-form inst) (subs nm 1) formr)))
              
              (and (nil? (namespace x)) (ends-with-dot? nm))
-             (new-form (list* 'new (symbol (subs nm 0 (dec (count nm))))
+             (new-form (list* 'new (symbol nil (subs nm 0 (dec (count nm))))
                               (rest form)))
 
              :else nil)))
@@ -1335,8 +1335,8 @@
          ;; pre: (some? (namespace op-form))
          ;; post: never returns nil
          (let [ns-part (namespace op-form)]
-           (if-some [x (classname-expr (symbol ns-part) tl-ctx)]
-             (dot-form (list* '. (.const-value x) (symbol (name op-form))
+           (if-some [x (classname-expr (symbol nil ns-part) tl-ctx)]
+             (dot-form (list* '. (.const-value x) (symbol nil (name op-form))
                               (rest form)))
              (wrong-unresolved-nmsp ns-part op-form))))
        (compile-list ^Expr [^ISeq form]

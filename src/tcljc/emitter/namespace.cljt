@@ -92,7 +92,7 @@
 (defn nmsp-of ^Namespace [x ^String ns-str]
   (cond
     (identical? marker-depth-first-path x)
-    (wrong/other (str "cyclic require via " (wrong/q (symbol ns-str))
+    (wrong/other (str "cyclic require via " (wrong/q (symbol nil ns-str))
                       " and this namespace"))
     
     (instance? Future x)
@@ -102,7 +102,7 @@
         (catch java.util.concurrent.ExecutionException e ;unwrap
           (throw (or (.getCause e) ^Throwable e)))
         (catch TimeoutException e     ;may not be repeatable!
-          (wrong/mk-e (str "Wait for require " (wrong/q (symbol ns-str))
+          (wrong/mk-e (str "Wait for require " (wrong/q (symbol nil ns-str))
                            " timed out.  Maybe a cyclic import?  "
                            "Use --deterministic for better feedback.")))))
 
@@ -129,12 +129,12 @@
         (let [excl-set (set excl)]
           (doseq [[nm-str def] req-defs
                   :when (string? nm-str)
-                  :let [nm (symbol nm-str)]
+                  :let [nm (symbol nil nm-str)]
                   :when (not (contains? excl-set nm))]
             (put-req nm def)))
         (doseq [[nm-str def] req-defs
                 :when (string? nm-str)]
-          (put-req (symbol nm-str) def)))
+          (put-req (symbol nil nm-str) def)))
       (doseq [nm incl]
         (if-some [bref (get req-defs (name nm))]
           (put-req nm bref)
@@ -239,7 +239,7 @@
            
               in-ns
               (let [[arg & argr] (grammar/strip-quotes (rest form))
-                    ns-sym (symbol (ns-str nmsp))]
+                    ns-sym (symbol nil (ns-str nmsp))]
                 (if (and (nil? argr) (= arg ns-sym))
                   nmsp
                   (wrong/other (str "in-ns argument does not match current "

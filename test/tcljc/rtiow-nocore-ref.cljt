@@ -144,8 +144,8 @@
 
 (defmacro deftype [tagname fields & opts+specs]
   (let [interfaces '[clojure.lang.IType]
-        class-name (symbol (str *ns* "." tagname))
-        factory-name (symbol (str "->" tagname))]
+        class-name (symbol nil (str *ns* "." tagname))
+        factory-name (symbol nil (str "->" tagname))]
     (list 'do
           (list 'deftype* (symbol (name (ns-name *ns*)) (name tagname))
                 class-name 
@@ -156,7 +156,7 @@
                 (cons 'new (cons class-name fields))))))
 
 (defmacro definterface [name & sigs]
-  (let [class-name (symbol (str *ns* "." name))]
+  (let [class-name (symbol nil (str *ns* "." name))]
     (list 'do
           (cons 'definterface* (cons name sigs))
           (list 'import* class-name))))

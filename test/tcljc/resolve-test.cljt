@@ -6,12 +6,12 @@
   (:import (tcljc.expr Expr InvokeXref InvokePoly)))
 
 (letfn [(xref [^InvokeXref x]
-          (list 'INVOKE-XREF (-> x .kind (str) (symbol))
+          (list 'INVOKE-XREF (symbol nil (-> x .kind (str)))
                 (.displayName (.owner x))
                 (.method-name x) (.lookup-descriptor x)
                 (if (.owner-interface? x) :owner-is-itf :owner-is-class)))
         (poly [^InvokePoly x]
-          (list 'INVOKE-POLY (-> x .kind (str) (symbol))
+          (list 'INVOKE-POLY (symbol nil (-> x .kind (str)))
                 (.displayName (.owner x))
                 (.method-name x)
                 (if (.owner-interface? x) :owner-is-itf :owner-is-class)))

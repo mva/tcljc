@@ -37,7 +37,7 @@
 
 
 (def core-lib "tinyclj.core")
-;; (def core-lib-sym (symbol core-lib))
+;; (def core-lib-sym (symbol nil core-lib))
 (defn core-lib? ^boolean [^String ns-str] (= core-lib ns-str))
 
 (def primitive-ns-str "tinyclj.lang.primitive")
