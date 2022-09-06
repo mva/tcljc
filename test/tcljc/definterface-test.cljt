@@ -81,17 +81,8 @@
             
             [(METHOD [PUBLIC STATIC FINAL] "apply-binary-int" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
-                   [[STATIC . "apply-binary-int~3" "(Lpkg/ns0/FnBinaryInt;II)I"]]])
+                   [[INTERFACE_VIRTUAL FnBinaryInt "fn2" "(II)I"]]])
              (ARETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "apply-binary-int~3" "(Lpkg/ns0/FnBinaryInt;II)I")
-             ["LOCAL 0: FnBinaryInt f"]
-             ["LOCAL 1: int a"]
-             ["LOCAL 2: int b"]
-             (ALOAD_0)
-             (ILOAD_1)
-             (ILOAD_2)
-             (INVOKEINTERFACE FnBinaryInt "fn2" "(II)I" :itf)
-             (IRETURN)]
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
@@ -100,7 +91,7 @@
              (INVOKESTATIC . "add-int" "()Lpkg/ns0/add-int;")
              (ICONST_1)
              (ICONST_1)
-             (INVOKESTATIC . "apply-binary-int~3" "(Lpkg/ns0/FnBinaryInt;II)I")
+             (INVOKEINTERFACE FnBinaryInt "fn2" "(II)I" :itf)
              (PUTSTATIC . "two" "I")
              
              (RETURN)]]

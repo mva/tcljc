@@ -811,41 +811,51 @@
                    (wrong/unresolved-interop (symbol nm) (invoke-ex-data))))
              (-> (str "no " member-label " matching ")
                  (wrong/unresolved-interop (symbol nm) (invoke-ex-data))))))
-       (dot-form* ^Expr [^Expr cl-or-inst ^String nm arg-forms]
+       (dot-form-static ^Expr [^Class owner ^String nm arg-forms]
          (let [argv (expr-forms arg-forms)
                atypes (argument-types argv)
                fields-only? (.startsWith nm "-")
-               nm (cond-> nm fields-only? (.substring 1))]
-           (if-some [owner (x/classname-type cl-or-inst)]
-             (let [member-label (cond
-                                  fields-only? "static field"
-                                  (pos? (alength atypes)) "static method"
-                                  :else "static member")]
-               (if-some [ms (when-not fields-only?
-                              (seq (resolve/static-methods owner nm atypes)))]
-                 (let [m ^Method (pick-member ms member-label owner nm atypes)
-                       argv (consume-args [] argv m)]
-                   (resolve/invoke-static owner m argv))
-                 (let [f (-> (resolve/static-fields owner nm atypes)
-                             ^Field (pick-member member-label owner nm atypes))]
-                   (resolve/load-static owner f []))))
-             (let [owner (x/type cl-or-inst)
-                   member-label (cond
-                                  fields-only? "virtual field"
-                                  (pos? (alength atypes)) "virtual method"
-                                  :else "virtual member")]
-               (if-some [ms (when-not fields-only?
-                              (seq (resolve/virtual-methods owner nm atypes)))]
-                 (let [m ^Method (pick-member ms member-label owner nm atypes)
-                       argv (consume-args [cl-or-inst] argv m)]
-                   (resolve/invoke-virtual owner m argv))
-                 (if (and (not fields-only?)
-                          (resolve/array-clone? owner nm atypes))
-                   (-> (resolve/invoke-array-clone owner cl-or-inst)
-                       (xf/checkcast owner))
-                   (let [f (-> (resolve/virtual-fields owner nm atypes)
-                               ^Field (pick-member member-label owner nm atypes))]
-                     (resolve/load-virtual owner f [cl-or-inst]))))))))
+               nm (cond-> nm fields-only? (.substring 1))
+               member-label (cond
+                              fields-only? "static field"
+                              (pos? (alength atypes)) "static method"
+                              :else "static member")]
+           (if-some [ms (when-not fields-only?
+                          (seq (resolve/static-methods owner nm atypes)))]
+             (let [m ^Method (pick-member ms member-label owner nm atypes)]
+               (->> (consume-args [] argv m)
+                    (resolve/invoke-static owner m)))
+             (let [fs (resolve/static-fields owner nm atypes)
+                   f ^Field (pick-member fs member-label owner nm atypes)]
+               (->> []
+                    (resolve/load-static owner f))))))
+       (dot-form-virtual ^Expr [^Expr cl-or-inst ^String nm arg-forms]
+         (let [argv (expr-forms arg-forms)
+               atypes (argument-types argv)
+               fields-only? (.startsWith nm "-")
+               nm (cond-> nm fields-only? (.substring 1))
+               owner (x/type cl-or-inst)
+               member-label (cond
+                              fields-only? "virtual field"
+                              (pos? (alength atypes)) "virtual method"
+                              :else "virtual member")]
+           (if-some [ms (when-not fields-only?
+                          (seq (resolve/virtual-methods owner nm atypes)))]
+             (let [m ^Method (pick-member ms member-label owner nm atypes)]
+               (->> (consume-args [cl-or-inst] argv m)
+                    (resolve/invoke-virtual owner m)))
+             (if (and (not fields-only?)
+                      (resolve/array-clone? owner nm atypes))
+               (-> (resolve/invoke-array-clone owner cl-or-inst)
+                   (xf/checkcast owner))
+               (let [fs (resolve/virtual-fields owner nm atypes)
+                     f ^Field (pick-member fs member-label owner nm atypes)]
+                 (->> [cl-or-inst]
+                      (resolve/load-virtual owner f)))))))
+       (dot-form* ^Expr [^Expr cl-or-inst ^String nm arg-forms]
+         (if-some [owner (x/classname-type cl-or-inst)]
+           (dot-form-static owner nm arg-forms)
+           (dot-form-virtual cl-or-inst nm arg-forms)))
        (dot-form ^Expr [[_ owner member-or-list & xr :as form]]
          (wrong/check-argc-min 2 form)
          (let [cl-or-inst (expr-form owner)]
@@ -1203,7 +1213,7 @@
        (resolve-static-member ^Expr [^Symbol sym]
          (when-some [ns-part (namespace sym)]
            (if-some [tp (ctx/get-type (symbol ns-part) tl-ctx)]
-             (dot-form* (x/const jb/Class tp) (name sym) ())
+             (dot-form-static tp (name sym) ())
              (wrong-unresolved-nmsp ns-part sym))))
        (compile-atom ^Expr [form]
          (if (instance? IMeta form)
@@ -1305,8 +1315,7 @@
                                        (list '. form member))
                                      inst formr)))
                (do (wrong/check-argc-min 1 form)
-                   (dot-form* (x/identity (expr-form inst)) ;force instance
-                              (subs nm 1) formr)))
+                   (dot-form-virtual (expr-form inst) (subs nm 1) formr)))
              
              (and (nil? (namespace x)) (ends-with-dot? nm))
              (new-form (list* 'new (symbol (subs nm 0 (dec (count nm))))
