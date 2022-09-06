@@ -138,7 +138,6 @@
 
 
 (deftest invoke-array-clone-test
-  (is (array-clone? (.arrayType String) "clone" (acl)))
   (is (= '[(INVOKE-XREF VIRTUAL "String[]" "clone"
                         "()Ljava/lang/Object;"
                         :owner-is-class)]

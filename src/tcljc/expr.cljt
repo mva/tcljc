@@ -109,6 +109,8 @@
   (jb/statement? (type x)))
 (defn pushes-result? ^boolean [^Expr x]
   (jb/pushes-result? (type x)))
+(defn array? ^boolean [^Expr x]
+  (jb/array? (type x)))
 
 ;;; This indicates an error regarding the type *of* an expression.
 (defn wrong-type
@@ -1419,7 +1421,7 @@
 (defn fix-vararg-array
   ([op+argv]                       ;generic `MethodHandle.invoke` call
    (let [arg (peek op+argv)]
-     (if (and (some? arg) (jb/array? (type arg)))
+     (if (and (some? arg) (array? arg))
        ;; we don't know whether the array is passed to a vararg here
        (conj (tinyclj.core/pop op+argv) (identity jb/Object arg))
        op+argv)))
@@ -1427,7 +1429,7 @@
    (if (= (at-n at) (dec (count op+argv)))
      (let [paramt (at-parameter-type at (dec (at-n at)))
            arg (peek op+argv)]
-       (if (and (jb/array? (type arg))
+       (if (and (array? arg)
                 (vararg-array-compatible? paramt arg))
          (conj (tinyclj.core/pop op+argv) (identity jb/Object arg))
          op+argv))

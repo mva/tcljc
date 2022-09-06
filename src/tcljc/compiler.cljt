@@ -816,42 +816,40 @@
                atypes (argument-types argv)
                fields-only? (.startsWith nm "-")
                nm (cond-> nm fields-only? (.substring 1))
-               member-label (cond
-                              fields-only? "static field"
-                              (pos? (alength atypes)) "static method"
-                              :else "static member")]
+               member-label (cond fields-only? "static field"
+                                  (pos? (alength atypes)) "static method"
+                                  :else "static member")
+               argv-prefix []]
            (if-some [ms (when-not fields-only?
                           (seq (resolve/static-methods owner nm atypes)))]
              (let [m ^Method (pick-member ms member-label owner nm atypes)]
-               (->> (consume-args [] argv m)
+               (->> (consume-args argv-prefix argv m)
                     (resolve/invoke-static owner m)))
              (let [fs (resolve/static-fields owner nm atypes)
                    f ^Field (pick-member fs member-label owner nm atypes)]
-               (->> []
-                    (resolve/load-static owner f))))))
-       (dot-form-virtual ^Expr [^Expr cl-or-inst ^String nm arg-forms]
-         (let [argv (expr-forms arg-forms)
-               atypes (argument-types argv)
-               fields-only? (.startsWith nm "-")
-               nm (cond-> nm fields-only? (.substring 1))
-               owner (x/type cl-or-inst)
-               member-label (cond
-                              fields-only? "virtual field"
-                              (pos? (alength atypes)) "virtual method"
-                              :else "virtual member")]
-           (if-some [ms (when-not fields-only?
-                          (seq (resolve/virtual-methods owner nm atypes)))]
-             (let [m ^Method (pick-member ms member-label owner nm atypes)]
-               (->> (consume-args [cl-or-inst] argv m)
-                    (resolve/invoke-virtual owner m)))
-             (if (and (not fields-only?)
-                      (resolve/array-clone? owner nm atypes))
-               (-> (resolve/invoke-array-clone owner cl-or-inst)
-                   (xf/checkcast owner))
+               (resolve/load-static owner f argv-prefix)))))
+       (dot-form-virtual ^Expr [^Expr inst ^String nm arg-forms]
+         (if (resolve/array-clone? inst nm arg-forms)
+           (let [owner (x/type inst)]
+             (-> (resolve/invoke-array-clone owner inst)
+                 (xf/checkcast owner)))
+           (let [argv (expr-forms arg-forms)
+                 atypes (argument-types argv)
+                 fields-only? (.startsWith nm "-")
+                 nm (cond-> nm fields-only? (.substring 1))
+                 owner (x/type inst)
+                 member-label (cond fields-only? "virtual field"
+                                    (pos? (alength atypes)) "virtual method"
+                                    :else "virtual member")
+                 argv-prefix [inst]]
+             (if-some [ms (when-not fields-only?
+                            (seq (resolve/virtual-methods owner nm atypes)))]
+               (let [m ^Method (pick-member ms member-label owner nm atypes)]
+                 (->> (consume-args argv-prefix argv m)
+                      (resolve/invoke-virtual owner m)))
                (let [fs (resolve/virtual-fields owner nm atypes)
                      f ^Field (pick-member fs member-label owner nm atypes)]
-                 (->> [cl-or-inst]
-                      (resolve/load-virtual owner f)))))))
+                 (resolve/load-virtual owner f argv-prefix))))))
        (dot-form* ^Expr [^Expr cl-or-inst ^String nm arg-forms]
          (if-some [owner (x/classname-type cl-or-inst)]
            (dot-form-static owner nm arg-forms)
@@ -1653,7 +1651,7 @@
 ;;; ------------------------------------------------------------------------
 
 (defn- ensure-array ^Expr [^Expr x]
-  (if (jb/array? (x/type x))
+  (if (x/array? x)
     x
     (x/wrong-type "expect array expression" x)))
 

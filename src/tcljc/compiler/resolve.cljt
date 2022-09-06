@@ -255,9 +255,8 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn array-clone? ^boolean [^Class owner ^String nm
-                             ^"[Ljava.lang.Class;" atypes]
-  (and (.isArray owner) (= "clone" nm) (zero? (alength atypes))))
+(defn array-clone? ^boolean [^Expr inst ^String nm arg-forms]
+  (and (x/array? inst) (= "clone" nm) (nil? (seq arg-forms))))
 
 (defn invoke-array-clone ^Expr [^Class owner ^Expr arg]
   (x/invoke-xref jb/Object [arg] nil rt/mhk-virtual
