@@ -27,14 +27,14 @@
                PrimitiveFnRef FnPrimitiveFn FnMacroFn
                DeftypeDef MethodDef)
    (clojure.lang Symbol Var ISeq IPersistentVector IPersistentMap IMeta IObj
-                 ExceptionInfo Delay)
+                 ExceptionInfo)
    (jdk.classfile Classfile Opcode)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
                        DynamicConstantDesc)
    (java.lang.invoke MethodHandle MethodHandles$Lookup)
    (java.lang.reflect Constructor Method Field Executable)
-   (java.util.concurrent Future BlockingQueue)
-   (java.util.function Consumer)
+   (java.util.concurrent Future BlockingQueue Semaphore)
+   (java.util.function Consumer Supplier)
    (java.util.regex Pattern))
   (:refer-clojure :exclude [type]))
 
@@ -216,11 +216,18 @@
     {:label (str "tinyclj.*/c-thread/send-msg-BLOCKING-" (ctx/task-id* task))}
     (ctx/send-msg emit task x)))
 
-(deftype DelayedMacroFn [^Delay f, ^MethodHandle apply-mh]
+(deftype DelayedMacroFn [^Supplier f
+                         ^MethodHandle apply-mh
+                         ^Semaphore sem
+                         ^:volatile-mutable ^Object value]
   FnMacroFn
   (expand [_ env form]
-    ;; pass nil as `env` for now
-    (macro/apply-macro apply-mh (force f) form nil)))
+    (let [mfn (or value (do (.acquire sem)
+                            (try
+                              (or value (set! value (.get f)))
+                              (finally (.release sem)))))]
+      ;; pass nil as `env` for now
+      (macro/apply-macro apply-mh mfn form nil))))
 
 (defn def-form ^Expr [[_ nm :as form] ^Expr v ^BindingRef macro-v tl-ctx]
   (letfn [(prior-def ^BindingRef [^Symbol nm]
@@ -250,10 +257,12 @@
             (if (x/meta-flag? nm :macro)
               (let [bref (x/with-macro-value bref macro-v) ;then baked into mfn
                     ctx (ctx/tl-ctx* tl-ctx)
-                    mfn (-> (delay (or (ctx/try-load-bref ctx bref) ;optimistic
-                                       (send-msg (.emit ctx)
-                                                 ctx/req-macro-value bref)))
-                            (DelayedMacroFn. (.apply-mh ctx)))
+                    mfn (-> (fn ^Supplier delayed-macro-value []
+                              (or (ctx/try-load-bref ctx bref) ;optimistic
+                                  (send-msg (.emit ctx)
+                                            ctx/req-macro-value bref)))
+                            (DelayedMacroFn. (.apply-mh ctx) (Semaphore. 1)
+                                             nil))
                     mref (x/macro-ref nm ns-str mfn macro-v bref)]
                 (.update-macro-count ctx +1)
                 (ctx/put-global (name nm) mref tl-ctx)
