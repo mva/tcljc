@@ -1106,7 +1106,7 @@
      ^objects !closes-over
      ;; Map of [closed-over-binding-ref, local-alias-ref].  Copied to
      ;; the Env member during compilation, and populated by
-     ;; `resolve-sym-local` with the bindings this arity closes over
+     ;; `resolve-sname-local` with the bindings this arity closes over
      ;; directly.  The closed over binding can be the name of a
      ;; constant or an alias referring e.g. to a a global, in which
      ;; case it should be replaced with a direct reference later.

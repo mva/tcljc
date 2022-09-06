@@ -381,22 +381,21 @@
   (or (lookup-type tp tl-ctx)
       (wrong/class-not-found tp)))
 
-;; Look up name, which can be an unqualified global of this namespace,
-;; or a namespace qualified name resolved via `known-ns`.  If the
+;; Look up namespace qualified name resolved via `known-ns`.  If the
 ;; namespace part refers to a known namespace, then the simple name
-;; must exist -- an error is signaled otherwise.  Nil is returned if a
-;; simple name is not found, or if the namespace part is unknown.
+;; must exist -- an error is signaled otherwise.  Nil is returned if
+;; the namespace part is unknown.
 (letfn [(lookup-global* [^Ctx ctx ^String ns ^String nm]
-          (if (nil? ns)
-            (.valAt (.get-globals ctx) nm nil)
-            (let [resolved-ns-nm (.valAt (.get-ns-alias-map ctx) ns ns)]
-              (if (.equals (.ns-str ctx) resolved-ns-nm)
-                (or (.valAt (.get-globals ctx) nm nil) ;same as for (nil? ns)
-                    (wrong/unresolved resolved-ns-nm (symbol nm)))
-                (when-some [publics (.valAt (.get-known-ns ctx) resolved-ns-nm nil)]
-                  (or (.valAt ^IPersistentMap publics nm nil)
-                      (wrong/unresolved resolved-ns-nm (symbol nm))))))))] 
-  (defn lookup-global ^BindingRef [^Symbol nm tl-ctx]
+          (let [resolved-ns-nm (.valAt (.get-ns-alias-map ctx) ns ns)]
+            (if (.equals (.ns-str ctx) resolved-ns-nm)
+              (or (.valAt (.get-globals ctx) nm nil) ;same as for (nil? ns)
+                  (wrong/unresolved resolved-ns-nm (symbol nm)))
+              (when-some [publics (.valAt (.get-known-ns ctx) resolved-ns-nm nil)]
+                (or (.valAt ^IPersistentMap publics nm nil)
+                    (wrong/unresolved resolved-ns-nm (symbol nm)))))))]
+  (defn lookup-sname-global ^BindingRef [^Symbol nm tl-ctx]
+    (.valAt (.get-globals (tl-ctx* tl-ctx)) (name nm) nil))
+  (defn lookup-qname-global ^BindingRef [^Symbol nm tl-ctx]
     (lookup-global* (tl-ctx* tl-ctx) (namespace nm) (name nm))))
 
 (defn put-global ^BindingRef [^String nm ^BindingRef x tl-ctx]

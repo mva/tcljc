@@ -224,7 +224,7 @@
 
 (defn def-form ^Expr [[_ nm :as form] ^Expr v ^BindingRef macro-v tl-ctx]
   (letfn [(prior-def ^BindingRef [^Symbol nm]
-            (when-some [bref (ctx/lookup-global nm tl-ctx)]
+            (when-some [bref (ctx/lookup-sname-global nm tl-ctx)]
               (when (= (.ns-str bref) (ctx/this-ns tl-ctx))
                 bref)))
           (force-macro-to-class ^BindingRef [^BindingRef prior]
@@ -447,20 +447,26 @@
                        bv args)]
       (x/insn-recur jb/void values bv))))
 
-(defn- resolve-sym-local ^BindingRef [^Env env ^Symbol sym]
-  (when (nil? (namespace sym))
-    (when-some [x ^BindingRef (get (.locals env) (name sym))]
-      (if (< x/lvl-global (x/b-level x) (.level env))
-        (or (util/sim-get (.!closes-over env) x)
-            (util/sim-put-absent! (.!closes-over env) x
-                                  (x/closure-alias (.level env) sym x)))
-        x))))
+(defn- resolve-sname-local ^BindingRef [^Env env ^Symbol sym]
+  (when-some [x ^BindingRef (get (.locals env) (name sym))]
+    (if (< x/lvl-global (x/b-level x) (.level env))
+      (or (util/sim-get (.!closes-over env) x)
+          (util/sim-put-absent! (.!closes-over env) x
+                                (x/closure-alias (.level env) sym x)))
+      x)))
 
-(defn- resolve-sym-global ^Expr [^Symbol sym tl-ctx]
-  (if-some [x (ctx/lookup-global sym tl-ctx)]
-    x
-    (when (nil? (namespace sym))
-      (classname-expr sym tl-ctx))))
+(defn- resolve-sname-global ^Expr [^Symbol sym tl-ctx]
+  (or (ctx/lookup-sname-global sym (ctx/tl-ctx* tl-ctx))
+      (classname-expr sym tl-ctx)))
+
+(defn- resolve-qname-global ^Expr [^Symbol sym tl-ctx]
+  (ctx/lookup-qname-global sym tl-ctx))
+
+(defn- ensure-resolve-global ^Expr [^Symbol sym tl-ctx]
+  (or (if (namespace sym)
+        (resolve-qname-global sym tl-ctx)
+        (resolve-sname-global sym tl-ctx))
+      (wrong-unresolved sym)))
 
 (defn- expand-macro [^MacroRef x form tl-ctx]
   ;; Note: Macro in an isolated runtime setup is much more expensive
@@ -729,8 +735,7 @@
                  (expand-once [[op-sym :as form]] ;pre: `form` is `seq?`
                    ;; internal error if `op-sym` in not a symbol referring to
                    ;; a macro; this code follows the logic of `compile-list`
-                   (let [x (or (resolve-sym-global op-sym tl-ctx)
-                               (wrong-unresolved op-sym))
+                   (let [x (ensure-resolve-global op-sym tl-ctx)
                          m ^MacroRef (x/root-bref ^BindingRef x)]
                      (expand-macro m form tl-ctx)))
                  (expand-fn [form]
@@ -783,8 +788,8 @@
 
        (var-form [[_ arg :as form]]
          (wrong/check-argc 1 form)
-         (let [v ^BindingRef (or (resolve-sym-global (wrong/ensure-sym arg) tl-ctx)
-                                 (wrong-unresolved arg))]
+         (let [arg (wrong/ensure-sym arg)
+               v ^BindingRef (ensure-resolve-global arg tl-ctx)]
            (when (not (x/b-def-var? v))
              (wrong/other "not a ^:var def" arg))
            (x/var-ref (var-type tl-ctx) v)))
@@ -1208,8 +1213,8 @@
        (collection-form ^Expr [^String tp-nm elems ^DirectMethodHandleDesc mhd]
          (coll-literal tp-nm (map conv/consume-poly (expr-forms elems))
                        mhd tl-ctx))
-       (resolve-static-member ^Expr [^Symbol sym]
-         (when-some [ns-part (namespace sym)]
+       (resolve-static-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
+         (let [ns-part (namespace sym)]
            (if-some [tp (ctx/get-type (symbol ns-part) tl-ctx)]
              (dot-form-static tp (name sym) ())
              (wrong-unresolved-nmsp ns-part sym))))
@@ -1217,10 +1222,13 @@
          (if (instance? IMeta form)
            (-> (cond
                  (symbol? form) ;close to 90% hit rate for "is a symbol"
-                 (or (resolve-sym-local env form)
-                     (resolve-sym-global form tl-ctx)
-                     (resolve-static-member form)
-                     (wrong-unresolved form))
+                 (if (namespace form)
+                   (or (resolve-qname-global form tl-ctx)
+                       (resolve-static-member form)
+                       (wrong-unresolved form))
+                   (or (resolve-sname-local env form)
+                       (resolve-sname-global form tl-ctx)
+                       (wrong-unresolved form)))
                  
                  (var? form) ;can come out of macro expansion, like Class
                  (compile-list (list 'var (.toSymbol ^Var form)))
@@ -1251,9 +1259,12 @@
          (when (symbol? nm)
            (when (x/meta-flag? nm :macro)
              (when-some [mv-form (get (meta nm) :macro-value)]
-               (-> (or (resolve-sym-global (wrong/ensure-sym mv-form) tl-ctx)
-                       (wrong-unresolved mv-form))
-                   ^BindingRef (x/ensure-runtime-value))))))
+               (let [mv-form (wrong/ensure-sym mv-form)]
+                 (-> (or (if (namespace mv-form)
+                           (resolve-qname-global mv-form tl-ctx)
+                           (resolve-sname-global mv-form tl-ctx))
+                         (wrong-unresolved mv-form))
+                     ^BindingRef (x/ensure-runtime-value)))))))
        (init-value-of-def ^Expr [form]  ;nil if init is not specified
          (when-some [xs (nthnext form 2)]
            ;; accepts anything, including macros or primitive functions
@@ -1321,22 +1332,24 @@
 
              :else nil)))
        (compile-static-dot-form ^Expr [^Symbol op-form form]
-         ;; pre: called when local & global resolve of op-form failed
+         ;; pre: (some? (namespace op-form))
          ;; post: never returns nil
-         (if-some [ns-part (namespace op-form)]
+         (let [ns-part (namespace op-form)]
            (if-some [x (classname-expr (symbol ns-part) tl-ctx)]
              (dot-form (list* '. (.const-value x) (symbol (name op-form))
                               (rest form)))
-             (wrong-unresolved-nmsp ns-part op-form))
-           (wrong-unresolved op-form)))
+             (wrong-unresolved-nmsp ns-part op-form))))
        (compile-list ^Expr [^ISeq form]
          (let [op-form (first form)]
            (if (symbol? op-form)
              (or (compile-list-special op-form form)
                  (compile-dotted-symbol op-form form)
-                 (let [x (or (resolve-sym-local env op-form)
-                             (resolve-sym-global op-form tl-ctx)
-                             (compile-static-dot-form op-form form))]
+                 (let [x (if (nil? (namespace op-form))
+                           (or (resolve-sname-local env op-form)
+                               (resolve-sname-global op-form tl-ctx)
+                               (wrong-unresolved op-form))
+                           (or (resolve-qname-global op-form tl-ctx)
+                               (compile-static-dot-form op-form form)))]
                    (cond
                      (or (x/invoke-xref? x) (x/invoke-poly? x))
                      x                  ;dot form (Foo/bar ...)
