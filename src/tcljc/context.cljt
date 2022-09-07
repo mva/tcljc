@@ -195,14 +195,6 @@
     (.put q (Msg. task x nil))))
 
 (defn send-msg ^Object [^EmitQueue emit ^int task ^Object x]
-  ;; deftype* and definterface* are synchronous operations and
-  ;; compilation does not progress beyond them until their class is
-  ;; defined.  For this reason ephemeral classes created during
-  ;; compilation of deftype* or reify* cannot refer to in-progress
-  ;; classes, and can (and must) go directly to `q`.
-  ;;
-  ;; FIXME... might be helpful (read: no stall the compiling reify*)
-  ;; to define ephemeral classes directly in the compilation thread
   (send-msg* (if (and (not cfg/deterministic-namespace-compile?)
                       (= task req-macro-value))
                (.q emit)
