@@ -114,7 +114,7 @@
     (let [t (rd/tokenize txt)]
       (prn :chars (dec (.length (.cs t))))
       (prn :tokens (alength (.tokens t)))
-      (prn :deltas (.size (.deltas t))))
+      (prn :discard-marks (.size (.discard-marks t))))
 
     #_
     (let [xs1 (slurp+read+doall-tclj path)

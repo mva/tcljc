@@ -21,7 +21,7 @@
         (.toString sb)))))
 
 (defn tag-name [^int tk]
-  (nth [:unused-empty-0 :open-delim-1 :open-delim-2 :close-delim
+  (nth [:open-discard :open-delim-1 :open-delim-2 :close-delim
         :token :number :text :text-nl] tk))
 
 (defn token-seq [^Tokens t]
@@ -90,12 +90,12 @@
          (tokens "(nil nil)"))))
 
 (deftest discard-tokens
-  (is (= [[:open-delim-2 "#_"] [:number "1"]]
+  (is (= [[:open-discard "#_"] [:number "1"]]
          (tokens "#_1")))
-  (is (= [[:open-delim-2 "#_"] [:number "1"]
-          [:open-delim-2 "#_"] [:number "2"]]
+  (is (= [[:open-discard "#_"] [:number "1"]
+          [:open-discard "#_"] [:number "2"]]
          (tokens "#_1#_2")))
-  (is (= [[:open-delim-2 "#_"] [:open-delim-2 "#_"] [:number "1"]
+  (is (= [[:open-discard "#_"] [:open-discard "#_"] [:number "1"]
           [:text " "] [:number "2"]]
          (tokens "#_#_1 2"))))
 
@@ -147,32 +147,6 @@
   (is (identical? () (read1 "()")))
   (is (identical? () (read1 "( )")))
   (is (identical? () (read1 "(\n)"))))
-
-(deftest lazy-list-test
-  (letfn [(generate-list [^int n]
-            (let [sym-cnt (quot n 2)
-                  whitespace-cnt (dec sym-cnt)
-                  exp-tk-cnt (+ sym-cnt whitespace-cnt 2)
-                  exp (repeat sym-cnt 'a)
-                  input (str exp)
-                  t (rd/tokenize input)
-                  d0 (rd/tk-delta 0 (.tokens t) (.deltas t))]
-              (is (= exp-tk-cnt (.tokens d0)))
-              (is (= exp-tk-cnt (.chars d0))) ;all tokens have length 1
-              (is (= 0 (.newlines d0)))
-              (let [out (read1 (str exp))]
-                (is (= exp out))
-                out)))]
-    
-    (let [out (generate-list rd/eager-list-limit)] ;65 tokens
-      (is (identical? clojure.lang.LazySeq (class (rest out))))
-      ;; seq can be large but still effectively empty; note: str does
-      ;; not expand LazySeq automatically and uses object notation
-      ;; "c.l.LazySeq@..." instead
-      (is (identical? () (read1 (str "(#_" (seq out) ")")))))
-    
-    (let [out (generate-list (dec rd/eager-list-limit))] ;63 tokens
-      (is (identical? clojure.lang.PersistentList (class out))))))
 
 (deftest integer-value-test
   ;; test for expected box type: match against Integer only
