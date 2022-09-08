@@ -91,7 +91,7 @@
 (def clnm-set "clojure.lang.IPersistentSet")
 (def clnm-seq "clojure.lang.ISeq")
 (def clnm-list clnm-seq)
-(def clnm-obj "clojure.lang.IObj")
+(def clnm-iobj "clojure.lang.IObj")
 
 (def symbol (ClassDesc/of clnm-symbol))
 (def keyword (ClassDesc/of clnm-keyword))
@@ -101,7 +101,7 @@
 (def ^:private seq (ClassDesc/of clnm-seq))
 (def ^:private list seq)
 (def pattern (ClassDesc/of "java.util.regex.Pattern"))
-(def obj (ClassDesc/of clnm-obj))
+(def iobj (ClassDesc/of clnm-iobj))
 
 (defn keyword? ^boolean [^Class cl]     ;`cl` is usually an application class
   ;; FIXME... identifying the application class is cheaper during
@@ -210,7 +210,7 @@
 ;; (def mt-StaticFnMh-void (mt (MethodTypeDesc/of d/cd-StaticFnMh (aclds))))
 
 ;;; used for coll-literal implementation (e.g. as part of compile-quote):
-(def mhd-with-meta (mhd-static [Literal "with_meta"] object [object map]))
+(def mhd-with-meta (mhd-static [Literal "with_meta"] iobj [iobj map]))
 (def mhd-vector (mhd-static [Literal "vector"] vector [objects]))
 (def mhd-map (mhd-static [Literal "map"] map [objects]))
 (def mhd-set (mhd-static [Literal "set"] set [objects]))
