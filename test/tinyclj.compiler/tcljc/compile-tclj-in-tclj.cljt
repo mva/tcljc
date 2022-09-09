@@ -14,7 +14,7 @@
                               "src/tinyclj.core")
                  (cfg/path-of "../jvm-stuff/tclj-in-tclj"
                               "src/tinyclj.compiler")
-                 (cfg/path-of "test")]
+                 (cfg/path-of "test/tinyclj.compiler")]
         app-ld (cfg/app-class-loader :platform sourcev)
         dest-dir (cfg/dest-dir "tcljc.tclj-in-tclj")
         load-from-dest-dir? false

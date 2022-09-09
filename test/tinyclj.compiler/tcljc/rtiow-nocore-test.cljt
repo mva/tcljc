@@ -13,7 +13,7 @@
 
 (def ^:private app-paths
   [#_(cfg/path-of "../jvm-stuff/bootstrap-tclj/tinyclj.rt")
-   (cfg/path-of "test")])
+   (cfg/path-of "test/tinyclj.compiler")])
 
 (defn- ^FnRequireNamespace noop-require-namespace [ns-str provided-nmsp]
   nil)
