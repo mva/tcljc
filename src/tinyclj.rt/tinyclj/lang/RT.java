@@ -20,10 +20,6 @@ public final class RT {
     }
   }
 
-  public static boolean isNotZero (int x) {
-    return (x != 0);
-  }
-
   public static int booleanToZeroOne (boolean x) {
     return x ? 1 : 0;
   }
