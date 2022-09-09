@@ -30,7 +30,7 @@
    (jdk.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.nio.file Path)
    (java.lang.constant ClassDesc MethodTypeDesc)
-   (java.lang.invoke MethodHandles$Lookup MethodHandle)
+   (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
    (java.util Map HashMap HashSet)
    (java.util.concurrent Future CompletableFuture ConcurrentHashMap
                          BlockingQueue ExecutorService)
@@ -554,7 +554,6 @@
 (defn mk-ctx ^Ctx [^BuildEnv env
                    ^FnRequireNamespace require-namespace
                                  
-                   ^IPersistentMap known-ns
                    ^IPersistentMap initial-globals
                    ^String ns-str
                                  
@@ -568,6 +567,16 @@
         lookup-in-pkg (beachhead/mk-lookup-in-pkg l (.dyn-ld env) ns-str)]
     (ctx/mk-ctx* initial-globals ns-str rpath rurl 
                  lookup-in-pkg require-namespace (get-apply-mh l) exc-method)))
+
+(defn- mk-ctx-import ^Ctx [^BuildEnv env
+                           ^FnRequireNamespace require-namespace
+                           ^Class capstone]
+  (let [ns-str (.getPackageName capstone)
+        rpath (cfg/nmsp-rpath ns-str)
+        l (.rt-lookup env)
+        lookup-in-pkg (.in (MethodHandles/publicLookup) capstone)]
+    (ctx/mk-ctx* {} ns-str rpath nil
+                 lookup-in-pkg require-namespace (get-apply-mh l) nil)))
 
 (defn- emit-namespaces-mt ^IPersistentMap [^BuildEnv env ns-strs]
   (let [namespaces-q (java.util.concurrent.LinkedBlockingQueue.)
@@ -594,7 +603,7 @@
                   (or          ;import from dyn-ld or compile and emit
                    (when-some [cl (try-load-capstone env ns-str)]
                      (try
-                       (-> (mk-ctx env require-fn {} {} ns-str nil)
+                       (-> (mk-ctx-import env require-fn cl)
                            (nmsp/mk-imported provided-nmsp)
                            (import-from-capstone cl))
                        (finally   ;signal completion to namespace loop
@@ -605,9 +614,8 @@
                       :parent-fn emit-namespaces-mt/fork-namespace}
                      (let [globals (predefined/initial-globals-for
                                     (.rt-lookup env) ns-str)
-                           tl-ctx (mk-ctx env require-fn
-                                          predefined/implicit-known-ns
-                                          globals ns-str exc-method)]
+                           tl-ctx (mk-ctx env require-fn globals ns-str
+                                          exc-method)]
                        #_(prn :namespace-start ns-str)
                        (ctx/with-context
                          {:local-context tl-ctx
@@ -667,7 +675,7 @@
 
                  (when-some [cl (try-load-capstone env ns-str)]
                    (.put !futs ns-str nmsp/marker-depth-first-path)
-                   (let [x (-> (mk-ctx env require-fn {} {} ns-str nil)
+                   (let [x (-> (mk-ctx env require-fn {} ns-str nil)
                                (nmsp/mk-imported provided-nmsp)
                                (import-from-capstone cl))]
                      (.put !futs ns-str x)
@@ -675,9 +683,7 @@
                  
                  (let [globals (predefined/initial-globals-for (.rt-lookup env)
                                                                ns-str)
-                       tl-ctx (mk-ctx env require-fn
-                                      predefined/implicit-known-ns
-                                      globals ns-str nil)]
+                       tl-ctx (mk-ctx env require-fn globals ns-str nil)]
                    (ctx/with-context
                      {:local-context tl-ctx
                       :other-thread? false}

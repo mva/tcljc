@@ -268,7 +268,7 @@
                               exc-nmsp)
                  req-fn (fn ^FnRequireNamespace provided [ns-str provided-nmsp]
                           (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
-                 tl-ctx (em/mk-ctx env req-fn known-ns bootstrap-globals ns-str
+                 tl-ctx (em/mk-ctx env req-fn bootstrap-globals ns-str
                                    exc-method)
                  nmsp (em/compile-and-emit env tl-ctx true provided-nmsp)]
              (doseq [^bytes bs (.bytesv nmsp)

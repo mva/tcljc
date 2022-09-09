@@ -219,7 +219,7 @@
      
               ^String ns-str
               ^Path rpath
-              ^java.net.URL rurl
+              ^java.net.URL rurl    ;nil when importing capstone class
               ^MethodHandles$Lookup lookup-in-pkg
               ^FnRequireNamespace require-namespace
 

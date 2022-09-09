@@ -36,13 +36,10 @@
        :parent-fn compile-rtiow-nocore-test}
       (let [ns-str "tcljc.rtiow-nocore-ref"
             provided-nmsp (em/mk-provided-nmsp)
-            known-ns (assoc predefined/implicit-known-ns
-                            cfg/core-lib {cfg/key-force-clinit x/expr-empty})
             
             exc-method (when-not cfg/deterministic-namespace-compile?
                          exc-nmsp)
             globals (core-ns-globals rt-lookup)
-            tl-ctx (em/mk-ctx env noop-require-namespace
-                              known-ns globals ns-str
+            tl-ctx (em/mk-ctx env noop-require-namespace globals ns-str
                               exc-method)]
         (em/compile-and-emit env tl-ctx false provided-nmsp)))))
