@@ -1,0 +1,455 @@
+(ns tinyclj.alpha.ptest__align
+  (:require [tinyclj.alpha.ptest__term :as term]
+            [tinyclj.alpha.ptest__pp :as pp])
+  (:import (tinyclj.alpha.ptest__pp Doc)
+           (clojure.lang IPersistentVector)))
+
+;;; Aligns small(!) nested data structures for the purpose of
+;;; visualization.  All meta data is stripped from the input
+;;; beforehand.
+;;; 
+;;; The sequence alignment algorithm is the most basic one, and is of
+;;; O(n*m) if `n` and `m` is the size of the input.  There are no
+;;; improvements, like using Dijkstra's shortest path, memoizing
+;;; already computed alignments, stripping shared prefix and suffix
+;;; sequences, and so on.
+;;;
+;;; Lists and vectors are not considered equivalent.  That means that
+;;; while a test like `(is (= () []))` would be successful, the
+;;; alignment would not match up `()` against `[]`.
+;;;
+;;; Set elements and map entries are sorted before trying to align
+;;; them.  If the natural sort fails, then it is replaced with one
+;;; using the elements' `pr-str` representation.
+;;;
+;;; For a more complete implementation, see
+;;; https://github.com/lambdaisland/clj-diff and in particular check
+;;; out its README's notes and references.
+;;;
+;;; "An O(NP) Sequence Comparison Algorithm" by Sun Wu, Udi Manber,
+;;; Gene Myers and Webb Miller
+;;; http://portal.acm.org/citation.cfm?id=96223
+;;;
+;;; "Diff Strategies by Neil Fraser"
+;;; http://neil.fraser.name/writing/diff/
+
+(def ^:private arr-root 0)
+(def ^:private arr-list 1)
+(def ^:private arr-vector 2)
+(def ^:private arr-set 3)
+(def ^:private arr-map 4)
+(def ^:private arr-entry 5)
+
+(def part-of-a 2r10)
+(def part-of-b 2r01)
+(def ^:private part-of-both 2r11)
+
+(deftype Arr [^int render-class
+              ^boolean alignment?
+              ^objects data             ;array of Step if alignment
+              ^int cost])
+
+(defn- arr? ^boolean [x]
+  (instance? Arr x))
+
+(defn- arr-length ^int [^Arr a]
+  (alength (.data a)))
+
+(defn arr-data [^Arr a ^int i]
+  (aget (.data a) i))
+
+(defn- arr-same-class? ^boolean [^Arr a ^Arr b]
+  (= (.render-class a) (.render-class b)))
+
+(defn- alignable? ^boolean [a b]
+  (and (arr? a) (arr? b) (arr-same-class? a b)))
+
+(defn- cost ^int [x]
+  (if (arr? x)
+    (.cost ^Arr x)
+    1))
+
+
+(deftype Step [^int idx ^int mask ^int cost ^Object x #_Step prefix])
+
+(defn- mk-arr ^Arr [^int render-class ^clojure.lang.ISeq data]
+  (letfn [(cost* ^int [^objects objs]
+            (loop [acc 1, i (dec (alength objs))]
+              (if (neg? i)
+                acc
+                (recur (+ acc (cost (aget objs i)) ) (dec i)))))]
+    (let [objs ^objects (into-array Object data)]
+      (Arr. render-class false objs (cost* objs)))))
+
+(defn- mk-alignment ^Arr [^int render-class ^Step rpath]
+  (let [steps (new "[Ltinyclj.alpha.ptest__align.Step;" (inc (.idx rpath)))]
+    (loop [s rpath]
+      (when (>= (.idx s) 0)
+        (aset steps (.idx s) s)
+        (recur (.prefix s))))
+    (Arr. render-class true steps (.cost rpath))))
+
+(defn- al-steps ^"[Ltinyclj.alpha.ptest__align.Step;" [^Arr al]
+  ^"[Ltinyclj.alpha.ptest__align.Step;" (.data al))
+
+
+(defn- equal? ^boolean [a b]          ;list is *never* equal to vector
+  (letfn [(data-equal ^boolean [^objects a ^objects b]
+            (loop [i (dec (alength a))]
+              (cond
+                (neg? i) true
+                (equal? (aget a i) (aget b i)) (recur (dec i))
+                :else false)))
+          (arr-equal ^boolean [^Arr a ^Arr b]
+            (and (= (alength (.data a)) (alength (.data b)))
+                 (arr-same-class? a b)
+                 (data-equal (.data a) (.data b))))]
+    (if (arr? a)
+      (if (arr? b) (arr-equal a b) false)
+      (if (arr? b) false (= a b)))))
+
+(defn- safe-sort [xs]
+  (try
+    (sort xs)
+    (catch ClassCastException _         ;hacky & fragile
+      (sort-by pr-str xs))))
+
+(defn- safe-sort-by-key [m]
+  (try
+    (sort-by key m)
+    (catch ClassCastException _         ;hacky & fragile
+      (sort-by #(pr-str (key %)) m))))
+
+(defn arrify ^Arr [x]            ;pre: sets and map keys are sortable
+  (letfn [(mk-arr-entry ^Arr [^java.util.Map$Entry e]
+            (mk-arr arr-entry (list (arr* (key e)) (arr* (val e)))))
+          (arr* ^Object [x]
+            (cond
+              (vector? x) (->> (seq x)
+                               (map arr*)
+                               (mk-arr arr-vector))
+              (set? x) (->> (safe-sort x)
+                            (map arr*)
+                            (mk-arr arr-set))
+              (map? x) (->> (safe-sort-by-key x)
+                            (map mk-arr-entry)
+                            (mk-arr arr-map))
+              (seq? x) (->> x
+                            (map arr*)
+                            (mk-arr arr-list))
+              :else x))]
+    (mk-arr arr-root (list (arr* x)))))
+
+
+;;; `invalid-cost` is so large, that it is guaranteed to never improve
+;;; an existing alignment path.  Still, twice it's value will not
+;;; overflow the range of an int.
+(def ^:private invalid-cost (quot Integer/MAX_VALUE 2))
+(def ^:private invalid-step (Step. -1 2r00 invalid-cost nil nil))
+(def ^:private init-step (Step. -1 2r00 0 nil nil))
+
+;;; FIXME... memorize (align a b) calls?
+(defn align ^Arr [^Arr a ^Arr b]
+  (let [grid (new "[[Ltinyclj.alpha.ptest__align.Step;" (inc (arr-length a)))]
+    (letfn [(step-at ^Step [^int i ^int j]
+              (if (zero? (+ i j))
+                init-step
+                (or (aget grid i j) invalid-step)))
+            (min-step ^Step [^Step a ^Step b]
+              (if (< (.cost b) (.cost a)) b a)) ;return `a` if cost is equal
+            (data-cost ^int [^Arr a ^int i]
+              (if (neg? i) invalid-cost (cost (arr-data a i))))
+            (extend* ^Step [^int i ^int j ^int mask x ^int cost-x]
+              (let [prefix (step-at i j)]
+                (Step. (inc (.idx prefix)) mask (+ (.cost prefix) cost-x)
+                       x prefix)))
+            (extend ^Step [^int i ^int j ^int mask x]
+              (extend* i j mask x (cost x)))
+            
+            (insert-from-a ^Step [^int i ^int j]
+              (if (pos? i)
+                (extend (dec i) j part-of-a (arr-data a (dec i)))
+                invalid-step))
+            (insert-from-b ^Step [^int i ^int j]
+              (if (pos? j)
+                (extend i (dec j) part-of-b (arr-data b (dec j)))
+                invalid-step))
+            (align-a-and-b ^Step [^int i ^int j]
+              (if (and (pos? i) (pos? j))
+                (let [xa (arr-data a (dec i)), xb (arr-data b (dec j))]
+                  (cond
+                    (equal? xa xb)
+                    ;; assign zero cost to matching pairs, regardless
+                    ;; of the size of the matched element
+                    (extend* (dec i) (dec j) part-of-both xa 0)
+
+                    (alignable? xa xb)
+                    (extend (dec i) (dec j) part-of-both (align xa xb))
+
+                    :else invalid-step))
+                invalid-step))]
+      
+      (dotimes [i (alength grid)]
+        (let [row (new "[Ltinyclj.alpha.ptest__align.Step;"
+                       (inc (arr-length b)))]
+          (aset grid i row)
+          (dotimes [j (alength row)]
+            (aset row j (-> (step-at i j)
+                            (min-step (insert-from-b i j))
+                            (min-step (insert-from-a i j))
+                            (min-step (align-a-and-b i j)))))
+          ;; clear row that will never be accessed again;
+          ;; alternatively, extend the `i` loop to maintain just two
+          ;; rows, `row` and `row-m1`, and drop `grid` altogether
+          (when (pos? i)
+            (aset grid (dec i) nil))))
+      (mk-alignment (.render-class a)
+                    (step-at (arr-length a) (arr-length b))))))
+
+;;; ------------------------------------------------------------------------
+
+(deftype Pairing [^int mask ^String s])
+(defn- pairing ^Pairing [^int mask ^String s]
+  (Pairing. mask s))
+(defn- pairing? ^boolean [x]
+  (instance? Pairing x))
+(def ^:private pairing-both-blank (pairing part-of-both " "))
+(def ^:private pairing-both-comma (pairing part-of-both ", "))
+
+(defn alignment-pairings [^Arr al]
+  (letfn [(open-pairing ^Pairing [^int mask ^int render-class]
+            (pairing mask (case render-class
+                            #_arr-list 1 "("
+                            #_arr-vector 2 "["
+                            #_arr-set 3 "#{"
+                            #_arr-map 4 "{"
+                            #_else "")))
+          (close-pairing ^Pairing [^int mask ^int render-class]
+            (pairing mask (case render-class
+                            #_arr-list 1 ")"
+                            #_arr-vector 2 "]"
+                            (#_arr-set 3 #_arr-map 4) "}"
+                            #_else "")))
+          (arr-pairings [^int mask ^Arr x]
+            (-> []
+                (conj (open-pairing mask (.render-class x)))
+                (into (map #(value-pairings mask %)) (.data x))
+                (conj (close-pairing mask (.render-class x)))))
+          (value-pairings [^int mask x]
+            (if (arr? x)
+              (if (.alignment? ^Arr x)
+                (alignment-pairings x)
+                (arr-pairings mask x))
+              (pairing mask (pr-str x))))]
+
+    ;; very similar to `arr-pairings`, but it's delimiters always
+    ;; appear on both sides, and its value's on whatever sides are
+    ;; indicated
+    (-> []
+        (conj (open-pairing part-of-both (.render-class al)))
+        (into (map #(value-pairings (.mask ^Step %) (.x ^Step %))) (.data al))
+        (conj (close-pairing part-of-both (.render-class al))))))
+
+;;; ------------------------------------------------------------------------
+
+(defn halign-pairings [ps]
+  (letfn [(expand-pairing [^Pairing p]
+            (case (.mask p)
+              #_part-of-a 2r10 [(.s p) nil]
+              #_part-of-b 2r01 [nil (.s p)]
+              #_part-of-both 2r11 [(.s p) (.s p)]))
+          (flatten-into [acc x]
+            (if (pairing? x)
+              (conj! acc (expand-pairing x))
+              (reduce flatten-into acc x)))]
+    (-> (transient []) (flatten-into ps) (persistent!))))
+
+(defn- map-v? ^boolean [^IPersistentVector v]
+  (= (.s ^Pairing (nth v 0)) "{"))
+
+(defn valign-pairings [ps]
+  (let [a (StringBuilder.), b (StringBuilder.)]
+    (letfn [(append-to ^void [^StringBuilder sb ^int mask ^Pairing p]
+              (.append sb (if (zero? (bit-and mask (.mask p)))
+                            (.repeat " " (.length (.s p)))
+                            (.s p))))
+            (append-p ^void [^Pairing p]
+              (append-to a part-of-a p)
+              (append-to b part-of-b p))
+            (append-v ^void [^IPersistentVector v]
+              (let [n (count v), entries? (map-v? v)]
+                (dotimes [i n]
+                  (let [x (nth v i)]
+                    (when (and (> i 1) (not= i (dec n)))
+                      (append-p (if entries?
+                                  pairing-both-comma
+                                  pairing-both-blank)))
+                    (append x)))))
+            (append ^void [x]
+              (if (pairing? x)
+                (append-p x)
+                (append-v x)))]
+      (append ps)
+      [(.toString a) (.toString b)])))
+
+;;; ------------------------------------------------------------------------
+
+(definterface FnSideStyle
+  ;; Takes an array of [mask doc] pairs of an alignment, and returns a
+  ;; seq of `Doc` representing the indicated side.
+  (apply [^int this-side-mask ^ints masks
+          ^"[Ltinyclj.alpha.ptest__pp.Doc;" docs]))
+
+(defn alignment-doc ^Doc [^FnSideStyle style ^int this-side-mask ^Arr al]
+  (letfn [(open-text ^Doc [^int render-class]
+            (case render-class
+              #_arr-list 1 pp/lparen
+              #_arr-vector 2 pp/lbrack
+              #_arr-set 3 pp/lbrace-set
+              #_arr-map 4 pp/lbrace
+              #_else pp/text-empty))
+          (close-text ^Doc [^int render-class]
+            (case render-class
+              #_arr-list 1 pp/rparen
+              #_arr-vector 2 pp/rbrack
+              (#_arr-set 3 #_arr-map 4) pp/rbrace
+              #_else pp/text-empty))
+          (sep-comma? ^boolean [^int render-class]
+            (= render-class arr-map))
+          
+          (doc-arr ^Doc [^Arr x ds]
+            (let [rc (.render-class x)
+                  d0 (pp/dgroup* (open-text rc) (sep-comma? rc) (close-text rc)
+                                 ds)]
+              (if (and (= rc arr-list)
+                       (> (arr-length x) 1)
+                       (<= (pp/width (first ds)) (quot (pp/width d0) 4)))
+                ;; note: this packs [opening delimiter, first element,
+                ;; space, second element] into a single line
+                (pp/dgroup* (pp/aggr (open-text rc) (first ds) pp/sep-space)
+                            false (close-text rc) (rest ds))
+                d0)))
+          (doc-alignment ^Doc [^Arr al]
+            (let [steps (al-steps al)
+                  masks (new ints (alength steps))
+                  docs (pp/mk-array* (alength steps))]
+              (dotimes [i (alength steps)]
+                (aset masks i (.mask (aget steps i))))
+              (dotimes [i (alength steps)]
+                (aset docs i (doc (.x (aget steps i)))))
+              (doc-arr al (.apply style this-side-mask masks docs))))
+          (doc ^Doc [x]
+            (if (arr? x)
+              (if (.alignment? ^Arr x)
+                (doc-alignment x)
+                (doc-arr x (map doc (.data ^Arr x))))
+              (pp/doc-dup x)))]
+    
+    (doc-alignment al)))
+
+;;; ------------------------------------------------------------------------
+
+(defn ^FnSideStyle plain-text-spaced [this-side-mask masks docs]
+  (let [a (pp/mk-array* (alength docs))]
+    (dotimes [i (alength a)]
+      (let [doc (aget docs i), doc-mask (aget masks i)]
+        (aset a i
+              (if (zero? (bit-and this-side-mask doc-mask))
+                (pp/pad-to pp/text-empty doc)
+                doc))))
+    a))
+
+(def ^:private style-not-in-b (pp/text term/fg-red 0))
+(def ^:private style-not-in-a (pp/text term/fg-blue 0))
+(def ^:private style-revert (pp/text term/fg-default 0))
+
+(defn- side-style [^int this-side-mask]
+  (if (= this-side-mask part-of-a)
+    style-not-in-b
+    style-not-in-a))
+
+(defn ^FnSideStyle color-exclusive-spaced [this-side-mask masks docs]
+  (let [a (pp/mk-array* (alength docs))
+        style (side-style this-side-mask)]
+    (dotimes [i (alength a)]
+      (let [doc (aget docs i), doc-mask (aget masks i)]
+        (aset a i
+              (cond
+                (zero? (bit-and this-side-mask doc-mask))
+                (pp/pad-to pp/text-empty doc)
+
+                (not= doc-mask part-of-both)
+                (pp/styled doc style style-revert)
+                
+                :else doc))))
+    a))
+
+(defn ^FnSideStyle color-exclusive-compact [this-side-mask masks docs]
+  (letfn [(end-of-exclusives ^int [^int i]
+            (if (or (= i (alength masks)) (= (aget masks i) part-of-both))
+              i
+              (recur (inc i))))
+          (collect-side-docs [^int mask ^int i ^int j]
+            (loop [acc [], i i]
+              (if (= i j)
+                acc
+                (recur (cond-> acc (= (aget masks i) mask) (conj (aget docs i)))
+                       (inc i)))))]
+    (let [style (side-style this-side-mask)]
+      (loop [acc [], i 0]
+        (cond
+          (= i (alength masks))
+          acc
+
+          (= (aget masks i) part-of-both)
+          (recur (conj acc (aget docs i)) (inc i))
+
+          :else
+          (let [j (end-of-exclusives i)
+                this (-> this-side-mask
+                         (collect-side-docs i j))
+                other (-> (bit-xor part-of-both this-side-mask)
+                          (collect-side-docs i j))]
+            (recur (into acc
+                         (map (fn ^Doc [^int idx]
+                                (let [this-doc (nth this idx pp/text-empty)
+                                      other-doc (nth other idx pp/text-empty)]
+                                  (-> (pp/styled this-doc style style-revert)
+                                      (pp/pad-to other-doc)))))
+                         (range (max (count this) (count other))))
+                   j)))))))
+
+
+(def side-by-side-gap 4)
+(def ^:private side-by-side-width (quot (- term/page-width side-by-side-gap) 2))
+
+(defn- doc-string ^String [^int page-width ^tinyclj.alpha.ptest__pp.Doc doc]
+  (pp/lines-str (pp/pretty1* page-width doc)))
+
+(defn print-cea [^String msg ^String exp ^String act]
+  (println (term/dim "   cause:") msg)
+  (println (term/dim "expected:") exp)
+  (println (term/dim "  actual:") act))
+
+(defn print-a-b [^String msg a b]
+  (let [prefix-length 10                ;"expected:_" / "__actual:_"
+        style (if term/enable-color-output
+                color-exclusive-compact #_color-exclusive-spaced
+                plain-text-spaced)
+        al (align (arrify a) (arrify b))
+        doc-a (alignment-doc style part-of-a al)
+        doc-b (alignment-doc style part-of-b al)]
+    (assert (= (pp/width doc-a) (pp/width doc-b)))
+    (if (<= (pp/width doc-a) (- term/page-width prefix-length))
+      (print-cea msg
+                 (doc-string term/page-width doc-a)
+                 (doc-string term/page-width doc-b))
+      (let [lines-a (pp/pretty1* side-by-side-width doc-a)
+            lines-b (pp/pretty1* side-by-side-width doc-b)]
+        (assert (= (count lines-a) (count lines-b)))
+        (println (term/dim "cause:") msg)
+        (println (str (term/dim "expected: ")
+                      (.repeat " " (- side-by-side-width
+                                      (- prefix-length side-by-side-gap)))
+                      (term/dim "actual: ")))
+        (println (pp/side-by-side-str side-by-side-gap lines-a lines-b))))))

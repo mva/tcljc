@@ -1,0 +1,456 @@
+(ns tinyclj.alpha.ptest__pp
+  (:import (clojure.lang IMeta IPersistentMap IPersistentVector)
+           (java.util ArrayList Map$Entry)
+           (java.util.regex Pattern))
+  (:refer-clojure :exclude [empty format]))
+
+;;; based on Kiselyov, Peyton-Jones, and Sabry: "Lazy v. Yield:
+;;; Incremental, Linear Pretty-printing"
+;;; http://www.cs.indiana.edu/~sabry/papers/yield-pp.pdf which in turn
+;;; builds upon the Derek C. Oppen's paper "Prettyprinting" (1980)
+;;; https://www.cs.tufts.edu/~nr/cs257/archive/derek-oppen/prettyprinting.pdf
+
+(deftype Doc [^int tag ^Object _data ^int _width])
+
+(defn- txt ^String [^Doc doc]
+  (._data doc))
+
+(defn- children ^"[Ltinyclj.alpha.ptest__pp.Doc;" [^Doc doc]
+  (._data doc))
+
+(defn width
+  (^int [^Doc doc]
+   (._width doc))
+  (^int [^Doc doc ^int reserve]
+   (+ (width doc) reserve)))
+
+(defn- width*
+  (^int [^"[Ltinyclj.alpha.ptest__pp.Doc;" docs]
+   (width* 0 (dec (alength docs)) docs))
+  (^int [^int acc ^int i ^"[Ltinyclj.alpha.ptest__pp.Doc;" docs]
+   (if (neg? i)
+     acc
+     (recur (+ acc (width (aget docs i))) (dec i) docs))))
+
+(defn- mk-doc
+  (^Doc [^int tag ^"[Ltinyclj.alpha.ptest__pp.Doc;" children]
+   (mk-doc tag children (width* children)))
+  (^Doc [^int tag ^"[Ltinyclj.alpha.ptest__pp.Doc;" children ^int width]
+   (Doc. tag children width)))
+
+(defn mk-array* ^"[Ltinyclj.alpha.ptest__pp.Doc;" [^int n]
+  (new "[Ltinyclj.alpha.ptest__pp.Doc;" n))
+
+
+
+;;; A text node is added verbatim to the output string.  It should not
+;;; contain any control characters, in particular no tab or newline
+;;; characters.  The display width can be provided, with the string
+;;; length being the default.  The means a text can have embedded
+;;; escape codes, e.g. to colorize text, without messing up the
+;;; layout.
+(def ^:private tag-text 0)
+(defn text
+  (^Doc [^String txt]
+   (text txt (.length txt)))
+  (^Doc [^String txt ^int width]
+   (Doc. tag-text txt width)))
+
+(def text-empty (text ""))
+(def ^:private text-hard-space (text " "))
+(def ^:private text-nil (text "nil"))
+(def ^:private text-meta (text "^"))
+(def lparen (text "("))
+(def rparen (text ")"))
+(def lbrack (text "["))
+(def rbrack (text "]"))
+(def lbrace (text "{"))
+(def rbrace (text "}"))
+(def lbrace-set (text "#{"))
+
+;;; An aggregate is the concatenation of two or more child nodes.  It
+;;; has no effect on the layout.  Its horizontal extent is the sum of
+;;; its child nodes' width.
+;;; 
+;;; The factory function maps less than two children to non-aggregate
+;;; nodes.
+(def ^:private tag-aggr 2)
+(defn aggr ^Doc [& ^"[Ltinyclj.alpha.ptest__pp.Doc;" children]
+  (case (alength children)
+    0 text-empty
+    1 (aget children 0)
+    #_else (mk-doc tag-aggr children)))
+(defn- pair ^Doc [^Doc left ^Doc right]
+  (aggr left text-hard-space right))
+
+;;; Output layout is decided by delimited group nodes.  A dgroup
+;;; selects whether all its element separators are written inline, or
+;;; every one ends the current line of output.  Its horizontal width
+;;; is is the sum of the width of its child nodes.  Groups have a
+;;; fixed format: open delimiter, element nodes interposed with the
+;;; seperator, and finally a close delimiter.
+;;;
+;;; Separators indent to the column after the opening delimiter when
+;;; they are emitted as newlines.
+;;; 
+;;; The factory function maps zero children to an aggregate node.
+(def ^:private tag-dgroup 3)
+(def sep-space (text " "))
+(def ^:private sep-comma-space (text ", "))
+(defn dgroup* ^Doc [^Doc open ^boolean comma? ^Doc close elem-docs]
+  (if-some [s (seq elem-docs)]
+    (let [sep (if comma? sep-comma-space sep-space)
+          ds (into-array Doc (list* open sep close s))
+          w (+ (width* ds) (* (- (alength ^objects ds) 5) (width sep)))]
+      (mk-doc tag-dgroup ds w))
+    ;; Degenerate group without any elements.  Note: Doing the same
+    ;; for a one element dgroup does not work, because then formatting
+    ;; of the element would not happen with the closing delimiter's
+    ;; width as reserved suffix space.
+    (aggr open close)))         
+
+;;; Like `tag-aggr`, but has always three children [<set-style-text>
+;;; <doc> <set-default-text>].  `pretty1` keeps track of the styles
+;;; that are active at the end of the line, so that `side-by-side-str`
+;;; can enable/disable styles around a side's line fragment.  Note:
+;;; Nesting of styles affecting the same property does not work,
+;;; because there is no tracking of e.g. the currently set foreground
+;;; color.
+(def ^:private tag-styled 4)
+(defn styled ^Doc [^Doc doc ^Doc set-style ^Doc set-default]
+  (assert (= tag-text (.tag set-style)))
+  (assert (= tag-text (.tag set-default)))
+  (if (identical? text-empty doc)
+    doc
+    (mk-doc tag-styled (doto (mk-array* 3)
+                         (aset 0 set-style)
+                         (aset 1 doc)
+                         (aset 2 set-default)))))
+
+;;; Takes two documents, `doc` and `pad`, and emits `doc` with
+;;; additional padding so that its extent is no less than `pad`.  This
+;;; is used to mark extra space in aligned sequences, so that elements
+;;; are matched up properly.
+(def ^:private tag-pad-to 5)
+(defn pad-to ^Doc [^Doc doc ^Doc pad]
+  (if (identical? text-empty pad)
+    doc
+    (mk-doc tag-pad-to (doto (mk-array* 2) (aset 0 doc) (aset 1 pad)))))
+
+
+(letfn
+    [(coll-space ^Doc [^Doc begin xs ^Doc end]
+       (dgroup* begin false end (map doc xs)))
+     (coll-comma-space ^Doc [^Doc begin xs ^Doc end]
+       (dgroup* begin true end (map doc xs)))
+     
+     (cntrl? ^boolean [^char c]
+       (or (< (int c) (int \u0020)) (= c \u007f)))
+     (escape-char ^String [^Character c]
+       (let [args (doto (new objects 1)
+                    (aset 0 (object (int ^char c))))]
+         (String/format "\\u%04x" args)))
+     (text-string ^Doc [^String s]
+       (let [sb (StringBuilder. "\"")]
+         (loop [i 0]
+           (if (= i (.length s))
+             (do (.append sb "\"") (text (.toString sb)))
+             (let [c (.charAt s i)]
+               (if (or (= c \\) (= c \") (cntrl? c))
+                 (let [c* (object c)]
+                   (.append sb (or (get char-escape-string c*)
+                                   (escape-char c*))))
+                 (.append sb c))
+               (recur (inc i)))))))
+     (text-pattern ^Doc [^Pattern p]    ;see core_print.clj
+       (let [s (.pattern p)
+             sb (StringBuilder. "#\"")]
+         (loop [i 0, qmode false]
+           (if (= i (.length s))
+             (do (.append sb "\"") (text (.toString sb)))
+             (let [c (.charAt s i)]
+               (case c
+                 \\ (let [c2 (.charAt s (inc i))]
+                      (.append sb \\)
+                      (.append sb c2)
+                      (recur (+ i 2) (if qmode (not= c2 \E) (= c2 \Q))))
+                 \" (do (if qmode
+                          (.append sb "\\E\\\"\\Q")
+                          (.append sb "\\\""))
+                        (recur (inc i) qmode))
+                 (do (.append sb c)
+                     (recur (inc i) qmode))))))))
+     (text-char ^Doc [^Character c]
+       (if-some [nm (char-name-string c)]
+         (text (str "\\" nm))
+         (if (cntrl? ^char c)
+           (text (escape-char c))
+           (text (str "\\" c)))))
+     
+     (text-double ^Doc [^double n]
+       (cond
+         (= Double/POSITIVE_INFINITY n) (text "##Inf")
+         (= Double/NEGATIVE_INFINITY n) (text "##-Inf")
+         (Double/isNaN n) (text "##NaN")
+         :else (text (str n))))
+     (text-float ^Doc [^float n]
+       (if (or (= Float/POSITIVE_INFINITY n)
+               (= Float/NEGATIVE_INFINITY n)
+               (Float/isNaN n))
+         (throw (IllegalArgumentException. "not a regular float value"))
+         (text (str n "f"))))
+     (doc-imeta-value ^Doc [^IMeta form]
+       ;; note: map & set have non-deterministic order
+       (cond
+         (symbol? form) (text (str form))
+         (seq? form) (coll-space lparen (seq form) rparen)
+         (vector? form) (coll-space lbrack (seq form) rbrack)
+         (map? form) (coll-comma-space lbrace (seq form) rbrace)
+         (set? form) (coll-space lbrace-set (seq form) rbrace)
+         :else (throw (IllegalArgumentException. (str (class form))))))
+     (meta-value ^Object [^IPersistentMap m]
+       (if (= (count m) 1)
+         (let [[k v] (first m)]
+           (cond
+             (and (identical? :tag k) (or (symbol? v) (string? v))) v
+             (and (keyword? k) (true? v)) k
+             :else m))
+         m))
+     (doc-imeta-form ^Doc [^IMeta form]
+       (if-some [m (meta form)]
+         (pair (aggr text-meta (doc (meta-value m)))
+               (doc-imeta-value form))
+         (doc-imeta-value form)))
+
+     (doc ^Doc [form]
+       (cond
+         (instance? IMeta form)
+         (doc-imeta-form form)
+         
+         (instance? Map$Entry form)     ;FIXME... use dgroup instead?
+         (pair (doc (key form)) (doc (val form)))
+
+         :else
+         (cond
+           (nil? form) text-nil
+           (instance? Long form) (text (str form "l"))
+           (instance? Double form) (text-double ^double form)
+           (instance? Float form) (text-float ^float form)
+           (string? form) (text-string form)
+           (char? form) (text-char form)
+           (instance? Pattern form) (text-pattern form)
+           :else (text (str form)))))]
+
+    (defn doc-dup ^Doc [form]
+      (doc form))
+  
+    (defn doc-dup* ^Doc [forms]
+      (coll-space text-empty (seq forms) text-empty)))
+
+;;; ------------------------------------------------------------------------
+
+(defn doc-as-data  [^Doc doc]
+  (letfn [(aggr [^Doc doc tag]
+            (into [tag (width doc)] (map doc-as-data) (children doc)))]
+    (case (.tag doc)
+      #_tag-text 0 [:text (width doc) (txt doc)]
+      #_tag-aggr 2 (aggr doc :aggr)
+      #_tag-dgroup 3 (aggr doc :dgroup)
+      #_tag-styled 4 (aggr doc :styled))))
+
+;; (defn doc-summary  [^Doc doc]
+;;   (letfn [(aggr [^Doc doc tag]
+;;             [tag (width doc)])]
+;;     (case (.tag doc)
+;;       #_tag-text 0 [:text (width doc) (txt doc)]
+;;       #_tag-aggr 2 (aggr doc :aggr)
+;;       #_tag-dgroup 3 (aggr doc :dgroup)
+;;       #_tag-styled 4 (aggr doc :styled))))
+
+;;; Emit `doc` as a single long line.  Not pretty, but very simple.
+(defn pretty0 ^StringBuilder [^StringBuilder sb ^Doc doc]
+  (letfn [(emit ^void [^Doc doc]
+            (case (.tag doc)
+              #_tag-text 0 (.append sb (txt doc))
+              
+              (#_tag-aggr 2, #_tag-styled 4)
+              (run! emit (children doc))
+
+              #_tag-dgroup 3
+              (let [cs (children doc)]
+                (->> (concat (list (aget cs 0))
+                             (interpose (aget cs 1) (drop 3 cs))
+                             (list (aget cs 2)))
+                     (run! emit)))
+              #_tag-pad-to 5
+              (emit (aget (children doc) 0))))]
+    (emit doc)
+    sb))
+
+;;; ------------------------------------------------------------------------
+
+(deftype Ctx [^int indent ^String set-style ^String set-default #_Ctx parent])
+(deftype Line [^String text ^int width-left ^Ctx eol])
+(def ^:private initial-ctx (Ctx. 0 "" "" nil))
+(def ^:private last-ctx (Ctx. -1 nil "" nil))
+
+(defn- more? ^boolean [^Line l]
+  (not (identical? last-ctx (.eol l))))
+
+(defn pretty1* 
+  (^IPersistentVector [^int page-width ^Doc doc]
+   (let [acc (ArrayList.)            ;accumulates lines
+         sb (StringBuilder.)         ;accumulates text of current line
+         width-left (pretty1* acc sb page-width page-width 0 initial-ctx doc)]
+     (.add acc (Line. (.toString sb) width-left last-ctx))
+     (into [] acc)))
+  (^int [^ArrayList acc ^StringBuilder sb ^int page-width
+         ^int width-left ^int reserve ^Ctx ctx ^Doc doc]
+   (letfn [(set-indentation ^Ctx [^Ctx ctx ^int indent]
+             (Ctx. indent (.set-style ctx) (.set-default ctx) (.parent ctx)))
+           (push-style ^Ctx [^Ctx parent ^Doc doc]
+             (let [ds (children doc)]
+               (Ctx. (.indent parent) (txt (aget ds 0)) (txt (aget ds 2))
+                     parent)))
+           
+           (format-aggr ^int [^int width-left ^int reserve ^Ctx ctx ^Doc doc]
+             (let [ds (children doc)]
+               (loop [width-left width-left, i 0]
+                 (if (< i (dec (alength ds)))
+                   (recur (format width-left reserve ctx (aget ds i))
+                          (inc i))
+                   (format width-left 0 ctx (aget ds i))))))
+
+           (append-nl ^int [^int width-left ^Ctx ctx ^Doc sep]
+             (.append sb (.substring (txt sep) 0 (dec (width sep))))
+             (.add acc (Line. (.toString sb) width-left ctx))
+             (.setLength sb 0)          ;clear text accumulator
+             (- page-width (.indent ctx)))
+           (reserve-sep ^int [^Doc doc]
+             (.length (txt doc)))
+           (append-sep ^int [^int width-left ^boolean fit? ^Ctx ctx ^Doc sep]
+             ;; note: rewrite-to-blank creates additional sep instances
+             (if fit?
+               (do (.append sb (txt sep)) (- width-left (width sep)))
+               (append-nl width-left ctx sep)))
+           (format-dgroup ^int [^int width-left ^int reserve ^Ctx ctx ^Doc doc]
+             (let [fit? (<= (width doc reserve) width-left)
+                   ds (children doc)
+                   open (aget ds 0)
+                   width-left (format width-left 0 ctx open)
+                   ctx (set-indentation ctx (- page-width width-left))
+                   sep (aget ds 1)
+                   sep-res (reserve-sep sep)
+                   
+                   ;; try to pack tail elements of a list into lines,
+                   ;; even if the list as a whole does not fit
+                   pack-gap (if (> (width open) 2) ;something like "(X "?
+                              (+ (width sep) sep-res)
+                              (quot Integer/MAX_VALUE 2))]
+               (loop [wl width-left, i 3]
+                 (if (< i (dec (alength ds)))
+                   (let [w+ (width (aget ds (inc i))
+                                   (cond-> pack-gap
+                                     (= i (- (alength ds) 2)) (+ reserve)))
+                         wl (format wl sep-res ctx (aget ds i))]
+                     (recur (append-sep wl (or fit? (<= w+ wl)) ctx sep)
+                            (inc i)))
+                   (let [close (aget ds 2)]
+                     (-> (format wl (width close reserve) ctx (aget ds i))
+                         (format 0 ctx close)))))))
+
+           (format-pad-to ^int [^int width-left ^int reserve ^Ctx ctx
+                                ^Doc doc ^Doc pad]
+             (let [ ;; first, append `doc` as usual
+                   lines-0 (.size acc)
+                   wl (format width-left reserve ctx doc)
+                   ;; second, render `pad` into temporary buffers;
+                   ;; FIXME... wasteful: the eventual content of the
+                   ;; buffers is not used, only their size
+                   acc-p (ArrayList.)
+                   sb-p (StringBuilder.)
+                   wl-p (pretty1* acc-p sb-p page-width
+                                  width-left reserve ctx pad)
+                   ;; append lines so that `acc` matches pad's line count
+                   n (- (+ lines-0 (.size acc-p)) (.size acc))
+                   wl (loop [wl wl, i n]
+                        (if (pos? i)
+                          (recur (append-nl wl ctx sep-space) (dec i))
+                          wl))
+
+                   ;; "width of pad" minus "width of doc": positive if
+                   ;; pad's last line is longer than doc's last line
+                   m (- wl wl-p)]
+               ;; if necessary, add blanks to match pad's last line
+               (if (or (neg? n) (<= m 0))
+                 wl ;`pad` has less lines than `doc` or nothing to add
+                 (do (.append sb (.repeat " " m))
+                     wl-p))))
+           
+           ;; Returns remaining width after `doc` has been emitted.
+           ;; `reserve` is the remaining width that should be available
+           ;; to the right of `doc`, for closing delimiters and
+           ;; possibly a comma.
+           (format ^int [^int width-left ^int reserve ^Ctx ctx ^Doc doc]
+             (case (.tag doc)
+               #_tag-text 0
+               (do (.append sb (txt doc))
+                   (- width-left (width doc)) )
+               #_tag-aggr 2
+               (format-aggr width-left reserve ctx doc)
+               #_tag-dgroup 3
+               (format-dgroup width-left reserve ctx doc)
+               #_tag-styled 4
+               (format-aggr width-left reserve (push-style ctx doc) doc)
+               #_tag-pad-to 5
+               (let [ds (children doc)]
+                 (format-pad-to width-left reserve ctx
+                                (aget ds 0) (aget ds 1)))))]
+     
+     (format width-left reserve ctx doc))))
+
+(defn- padding ^String [^int n]         ;FIXME... do some memoizing here?
+  (.repeat " " n))
+
+(defn lines-str ^String [^IPersistentVector lv]
+  (let [sb (StringBuilder.)]
+    (when (pos? (count lv))
+      (loop [ctx initial-ctx, i 0]
+        (let [l ^Line (nth lv i)]
+          (.append sb (padding (.indent ctx)))
+          (.append sb (.text l))
+          (when (more? l)
+            (.append sb \newline)
+            (recur (.eol l) (inc i))))))
+    (.toString sb)))
+
+(defn side-by-side-str ^String [^int gap
+                                ^IPersistentVector la
+                                ^IPersistentVector lb]
+  ;; pre: (= (count la) (count lb))
+  (let [sb (StringBuilder.)]
+    (letfn [(set-default ^void [^Ctx ctx]
+              (when (some? ctx)
+                (.append sb (.set-default ctx))
+                (recur (.parent ctx))))
+            (set-style ^void [^Ctx ctx]
+              (when (some? ctx)
+                (set-style (.parent ctx))
+                (.append sb (.set-style ctx))))
+            (append-side ^void [^int n ^Ctx ctx ^String text ^Ctx eol]
+              (.append sb (padding (+ n (.indent ctx))))
+              (set-style ctx)
+              (.append sb text)
+              (set-default eol))]
+      
+      (when (pos? (count la))
+        (loop [ctx-a initial-ctx, ctx-b initial-ctx, i 0]
+          (let [a ^Line (nth la i), b ^Line (nth lb i)]
+            (append-side 0
+                         ctx-a (.text a) (.eol a))
+            (append-side (+ (max 0 (.width-left a)) gap)
+                         ctx-b (.text b) (.eol b))
+            (when (more? a)
+              (.append sb \newline)
+              (recur (.eol a) (.eol b) (inc i)))))))
+    (.toString sb)))

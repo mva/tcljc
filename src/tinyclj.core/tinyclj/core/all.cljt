@@ -1,0 +1,27 @@
+(ns tinyclj.core.all
+  (:require             ;all exports of tinyclj.core/module-info.java
+   ;; tinyclj.core namespaces
+   tinyclj.core
+   tinyclj.core.protocols
+   tinyclj.string
+   tinyclj.uuid
+   tinyclj.math
+   tinyclj.java.io
+
+   ;; rest of core library not required by tinyclj.core
+   tinyclj.edn
+   tinyclj.set
+   tinyclj.test
+   tinyclj.stacktrace
+   tinyclj.walk
+   tinyclj.template
+   tinyclj.instant      ;Clojure loads/requires this from clojure.core
+   tinyclj.xml
+   tinyclj.zip
+   
+   ;; unsupported set of experimental namespaces
+   tinyclj.alpha.ptest__term
+   tinyclj.alpha.ptest__align
+   tinyclj.alpha.ptest__pp
+   tinyclj.alpha.ptest
+   tinyclj.alpha.pp))

@@ -1,0 +1,71 @@
+(ns tinyclj.alpha.ptest__term)
+
+;;; Should styled text be used or not?  Currently checks for a
+;;; non-empty COLORTERM environment variable to enable colored output.
+;;; (The non-nil value of System.console() does not seem to be
+;;; affected by redirection to file or pipe.)
+(def enable-color-output (if-some [s (System/getenv "COLORTERM")]
+                           (pos? (.length s))
+                           false))
+
+;; To pick up the terminal width, the shell must export COLUMNS into
+;; the program's environment.  Additionally, this cannot pick up
+;; changes to the terminal's size after program startup.  For an ioctl
+;; based approach which may report the actual size, see
+;; https://man7.org/linux/man-pages/man4/tty_ioctl.4.htm
+(def page-width #_16
+  (if-some [n (some-> (System/getenv "COLUMNS") (parse-long))]
+    (max 8 (int n))
+    80))
+
+;;; ------------------------------------------------------------------------
+
+(def ^:private esc \u001b)
+(def ^:private terminator \m)
+;; (def reset (str esc "[0" terminator))
+
+;;; https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_(Select_Graphic_Rendition)_parameters
+;;; https://en.wikipedia.org/wiki/ANSI_escape_code#3-bit_and_4-bi
+
+(def int-bright (str esc "[1" terminator)) ;bold or increased intensity
+(def int-faint (str esc "[2" terminator)) ;faint or decreased intensity
+(def int-normal (str esc "[22" terminator)) ;neither bold nor faint
+
+(def fg-red (str esc "[31" terminator))
+(def fg-green (str esc "[32" terminator))
+(def fg-blue (str esc "[34" terminator))
+(def fg-white (str esc "[37" terminator))
+(def fg-default (str esc "[39" terminator))
+
+(def bg-red (str esc "[41" terminator))
+(def bg-green (str esc "[42" terminator))
+(def bg-blue (str esc "[44" terminator))
+(def bg-white (str esc "[47" terminator))
+(def bg-default (str esc "[49" terminator))
+
+(defmacro wrap-style [s on off]
+  (if enable-color-output
+    `(str ~on ~s ~off)
+    `(str ~s)))
+(defmacro wrap-intensity [s int]
+  `(wrap-style ~s ~int int-normal))
+(defmacro wrap-fg [s col]
+  `(wrap-style ~s ~col fg-default))
+(defmacro wrap-bg [s col]
+  `(wrap-style ~s ~col bg-default))
+
+(defn error ^String [^String s]
+  (-> s (wrap-fg fg-red)))
+(defn error-header ^String [^String color ^String plain]
+  (if enable-color-output
+    (-> color (wrap-fg fg-white) (wrap-bg bg-red))
+    plain))
+(defn success ^String [^String s]
+  (-> s (wrap-fg fg-green)))
+
+(defn quote ^String [^String s]
+  (-> s (wrap-intensity int-bright)))
+(defn highlight ^String [^String s]
+  (-> s (wrap-intensity int-bright)))
+(defn dim ^String [^String s]
+  (-> s (wrap-intensity int-faint)))

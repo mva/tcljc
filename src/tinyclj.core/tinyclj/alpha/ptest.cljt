@@ -1,0 +1,394 @@
+(ns tinyclj.alpha.ptest ;small subset of clojure.test -- partial but parallel
+  (:require
+   [tinyclj.alpha.ptest__term :as term]
+   [tinyclj.alpha.ptest__align :as align])
+  (:import
+   (clojure.lang Symbol Keyword Namespace Var ExceptionInfo
+                 IPersistentVector IPersistentMap)
+   (java.io StringWriter)
+   (java.util ArrayList)
+   (java.util.concurrent Future ExecutorService TimeUnit)
+   (java.util.function IntPredicate)))
+
+;;; FIXME... separate public interface of this namespace from its
+;;; implementation?
+
+(def ^:private single-threaded false)
+
+;;; Disables all of the pretty printing machinery when false.  Highly
+;;; recommended when tinkering with the printer logic, because this
+;;; can obfuscate the output of unit tests in unpredictable ways.
+(def ^:private pretty-print-expected-actual true)
+
+
+(defmacro deftest [nm & body]
+  (assert (symbol? nm))
+  (let [m {:var true, :test true, :line (:line (meta &form))}]
+    ;; Meta map has :test to identify test vars, and :line number to
+    ;; sort the vars into source code order.
+    `(defn ~(vary-meta nm merge m) ^void []
+       ~@body)))
+
+
+(deftype TestContext [^Symbol namespace
+                      ^Symbol name
+                      ^IntPredicate select ;enable `is` based on line number
+                      ^StringWriter output ;target of *out* and *err*
+                      ^ArrayList outcomes  ;receives `is` outcomes
+                      ^int line])    ;line number of `deftest` or `is`
+                      
+
+;;; An `Outcome` records the outcome of an `is` form, or reports an
+;;; exception raised outside of any `is`.
+(deftype Outcome [^int line             ;line number of `is` or `deftest` form
+                  ^boolean pass?        ;if neither ERROR nor FAIL
+                  ^int out-start        ;negative if outside of `is`
+                  ^int out-end
+                  ^Throwable ex         ;always set if error
+                  ^String msg           ;set if failure, nil otherwise
+                  ^Object expected
+                  ^Object actual])
+
+(defn- output-pos ^int [^TestContext ctx]
+  (-> ctx .output (.getBuffer) (.length)))
+
+(defn pass? ^boolean [^Outcome oc]
+  (.pass? oc))
+(defn fail? ^boolean [^Outcome oc]
+  (some? (.msg oc)))
+(defn error? ^boolean [^Outcome oc]
+  (and (some? (.ex oc)) (not (fail? oc))))
+
+(defn- output-seen ^int [^TestContext ctx]
+  (let [a (.outcomes ctx)]
+    (if (.isEmpty a)
+      0
+      (.out-end ^Outcome (.get a (dec (.size a)))))))
+
+;;; An error is any unexpected exception outside or within an `is`
+;;; form.
+(defn outcome-error ^void [^TestContext ctx ^Throwable ex]
+  ;; note: `out-start` is negative if outside an `is` form
+  (.add (.outcomes ctx)
+        (Outcome. (.line ctx) false (output-seen ctx) (output-pos ctx)
+                  ex nil nil nil)))
+
+(defn outcome-fail ^void [^TestContext ctx ^Throwable ex
+                          ^String msg expected actual]
+  (.add (.outcomes ctx)
+        (Outcome. (.line ctx) false (output-seen ctx) (output-pos ctx)
+                  ex msg expected actual)))
+
+(defn outcome-pass ^void [^TestContext ctx]
+  (.add (.outcomes ctx)
+        (Outcome. (.line ctx) true (output-seen ctx) (output-pos ctx)
+                  nil nil nil nil)))
+
+
+(def ^:private ^:var ^:dynamic ^TestContext *ctx* nil)
+
+(defn this-test-context-if-selected ^TestContext [^int line] ;called from `is`
+  (if-some [ctx *ctx*]
+    (when (.test (.select ctx) line)
+      (TestContext. (.namespace ctx) (.name ctx) (.select ctx)
+                    (.output ctx) (.outcomes ctx) line))
+    (throw (IllegalStateException. "no test context"))))
+
+(defn get-test-context ^TestContext []  ;to get namespace & test var
+  (when-some [ctx *ctx*]
+    (TestContext. (.namespace ctx) (.name ctx) nil nil nil -1)))
+
+;;; ------------------------------------------------------------------------
+
+;;; Don't call this when materializing a lazy seq.  Use
+;;; -Djdk.tracePinnedThreads to see where the monitors are taken.
+;;; Single collection `mapv` is fine (it's a reduce), but e.g. `map`
+;;; of a function doing a `get-future` is not.
+(defn get-future [x]
+  (if (instance? Future x)
+    (.get ^Future x 5 TimeUnit/HOURS) ;timeout earlier than with-executor
+    x))
+
+(defmacro with-fork [exc & body]
+  (if single-threaded
+    `(do (object ~@body))
+    `(.submit ~exc (fn ^Callable forked-callable [] ~@body))))
+
+(defmacro with-executor [exc & body]
+  (assert (symbol? exc))
+  `(let [~exc (java.util.concurrent.Executors/newVirtualThreadPerTaskExecutor)]
+     (try
+       (let [res# (do ~@body)]
+         (.shutdown ~exc)
+         (when-not (.awaitTermination ~exc 6 TimeUnit/HOURS)
+           (throw (java.util.concurrent.TimeoutException.)))
+         res#)
+       (finally
+         ;; if body throws, do shutdown before re-raising the original
+         ;; exception; if body succeeds, the second shutdown has no
+         ;; effect
+         (.shutdown ~exc)))))
+
+;;; ------------------------------------------------------------------------
+
+(defmacro equiv-test ^void [ctx [_ exp act :as form]]
+  (assert (= (count form) 3))
+  `(try
+     (let [exp# ~exp, act# ~act]
+       (if (= exp# act#)
+         (outcome-pass ~ctx)
+         (outcome-fail ~ctx nil "expected not equivalent to actual value"
+                       (object exp#) (object act#))))
+     (catch Throwable t#
+       (outcome-error ~ctx t#))))
+
+(defmacro boolean-test ^void [ctx form]
+  `(try
+     (let [form# ~form]
+       (if form#
+         (outcome-pass ~ctx)
+         (outcome-fail ~ctx nil "expression evaluates to false"
+                       (object true) (object form#))))
+     (catch Throwable t#
+       (outcome-error ~ctx t#))))
+
+(defmacro thrown-msg-test [ctx class re form]
+  (assert (symbol? class))
+  `(try
+     ~form
+     (outcome-fail ~ctx nil "no exception was raised"
+                   (object ~class) nil)
+     ~(if (nil? re)
+        `(catch ~class _
+           (outcome-pass ~ctx))
+        `(catch ~class e#
+           (let [m# (.getMessage e#), re# ~re]
+             (if (re-find re# m#)
+               (outcome-pass ~ctx)
+               (outcome-fail ~ctx e# "unexpected exception message"
+                             (object re#) m#)))))
+     (catch Throwable t#
+       (outcome-fail ~ctx t# "unexpected exception type"
+                     ~class (class t#)))))
+
+(defmacro is [form]
+  (let [ctx (gensym "__ctx")
+        line (-> &form (meta) :line)]
+    (assert (some? line) "form of `is` macro has no :line meta")
+    `(when-some [~ctx (this-test-context-if-selected ~line)]
+       ~(case (when (seq? form) (first form))
+          (= tinyclj.core/= tinyclj.lang.primitive/equiv-nary)
+          `(equiv-test ~ctx ~form)
+          
+          (thrown? tinyclj.alpha.ptest/thrown?)
+          `(thrown-msg-test ~ctx ~(second form) nil ~@(nthrest form 2))
+          
+          (thrown-with-msg? tinyclj.alpha.ptest/thrown-with-msg?)
+          `(thrown-msg-test ~ctx ~@(rest form))
+          
+          #_else `(boolean-test ~ctx ~form)))))
+
+;;; ------------------------------------------------------------------------
+
+(deftype Report [^int tests
+                 ^int pass
+                 ^int fail
+                 ^int error
+                 
+                 scope             ;Var, Namespace, or nil
+                 ^String output    ;*out* and *err* if scope is Var
+                 ^IPersistentVector details]) ;of Outcome or Report
+
+(defn test-report? ^boolean [x]
+  (and (instance? Report x) (instance? Var (.scope ^Report x))))
+(defn nmsp-report? ^boolean [x]
+  (and (instance? Report x) (instance? Namespace (.scope ^Report x))))
+
+(defn- assert-count ^int [^Report r]
+  ;; actually "count of `is` forms plus any exceptions outside of `is`"
+  (+ (.error r) (.fail r) (.pass r)))
+
+(defn- exit-status ^clojure.lang.Keyword [^Report r]
+  (if (zero? (.error r) )
+    (if (zero? (.fail r)) :success :fail)
+    :error))
+
+(defn- line-count ^int [^String s]
+  (loop [n 0, i 0]
+    (let [j (.indexOf s (int \newline) i)]
+      (if (neg? j)
+        (+ n (int (< i (.length s))))
+        (recur (inc n) (inc j))))))
+
+;;; Don't call this when materializing a lazy seq.
+(defn- nmsp-report ^Report [^Namespace ns-obj xs]
+  (loop [tests 0,
+         pass 0, fail 0, error 0, lines 0,
+         details (transient []),
+         [x & xr :as xs] (seq xs)]
+    (if (some? xs)
+      (let [r ^Report (get-future x)]
+        (recur (+ tests (.tests r))
+               (+ pass (.pass r)) (+ fail (.fail r)) (+ error (.error r))
+               (+ lines (line-count (.output r)))
+               (conj! details r) xr))
+      (Report. tests pass fail error ns-obj
+               (if (pos? lines)
+                 (str ", " lines " lines of output") ;for print-nmsp-report
+                 "")
+               (persistent! details)))))
+
+(defn- line-number ^Integer [^Var v]
+  (-> v (meta) :line))
+
+(defn- output? ^boolean [^Outcome oc]
+  (and (<= 0 (.out-start oc)) (< (.out-start oc) (.out-end oc))))
+
+(defn outcome-output ^String [^Report r ^Outcome oc]
+  (when (output? oc)
+    (.substring (.output r) (.out-start oc) (.out-end oc))))
+
+
+(defn- ^IntPredicate select-all [_]
+  true)
+
+(defn- run-test-var ^Report [^IntPredicate select ^Var v]
+  (let [line ^int (line-number v)
+        ctx (TestContext. (-> v .ns .name) (.sym v)
+                          (if (.test select line) select-all select)
+                          (StringWriter.) (ArrayList.) line)]
+    (try
+      ;; note: the unit tests of this namespace call this function
+      ;; recursively, i.e. there really must be a binding that
+      ;; establishes a nested context and restores the parent context
+      (binding [*out* (.output ctx), *err* (.output ctx), *ctx* ctx]
+        (@v)
+        (flush))
+      (catch Throwable t
+        (outcome-error ctx t)))
+
+    ;; summarize outcomes
+    (let [outcomes (.outcomes ctx)]
+      (loop [pass 0, fail 0, error 0, ocs (transient []), i 0]
+        (if (= i (.size outcomes))
+          (Report. 1 pass fail error v
+                   (.toString (.output ctx)) (persistent! ocs))
+          (let [oc ^Outcome (.get outcomes i)]
+            (recur (+ pass (int (pass? oc)))
+                   (+ fail (int (fail? oc)))
+                   (+ error (int (error? oc)))
+                   (conj! ocs oc) (inc i))))))))
+
+(defn- run-nmsp-tests [^IntPredicate select ^Symbol nmsp]
+  ;; Note: Forking of a virtual thread for every `deftest` in the
+  ;; namespace can be overkill.  The alternative is to use a single
+  ;; virtual thread per namespace, without subdividing the load
+  ;; further.
+  (let [ns-obj (the-ns nmsp)]
+    (with-executor exc
+      (->> (vals (ns-interns ns-obj))   ;all vars of the namespace
+           (filter #(-> % (meta) :test (true?)))
+           (sort-by line-number) ;bring vars into source code order
+           ;;note: eager mapv produces all test futures
+           (mapv #(with-fork exc (run-test-var select %)))
+           (nmsp-report ns-obj)))))
+
+(def ^:private header-pass (term/success "PASS"))
+(def ^:private header-fail (term/error-header " FAIL " "*FAIL*"))
+(def ^:private header-error (term/error-header " ERROR " "*ERROR*"))
+(defn- run-namespaces [nmsps]
+  (with-executor exc
+    (->> nmsps
+         ;;note: eager mapv produces all namespace futures
+         (mapv #(with-fork exc (run-nmsp-tests select-all %))))))
+
+(letfn [(print-stacktrace ^void [^Throwable t]
+          (when (some? t)
+            (.printStackTrace t)
+            (println)))
+        (print-fail ^void [^Outcome oc]
+          (if pretty-print-expected-actual
+            (align/print-a-b (.msg oc)
+                             (.expected oc)
+                             (.actual oc))
+            (align/print-cea (.msg oc)
+                             (pr-str (.expected oc))
+                             (pr-str (.actual oc))))
+          (print-stacktrace (.ex oc))
+          (println))
+        (print-outcome ^void [^Var v ^String output ^Outcome oc]
+          (when (or (not (.pass? oc)) (output? oc))
+            (let [prefix (cond
+                           (pass? oc) header-pass
+                           (fail? oc) (str header-fail " at")
+                           (error? oc) (str header-error " at")
+                           :else (throw (IllegalStateException.)))
+                  line-suffix (when (>= (.line oc) 0)
+                                (str ":" (term/highlight (str (.line oc)))))]
+              (println prefix (str (.ns v) "/" (.sym v) line-suffix))
+              (when (output? oc)
+                (println (term/dim "---- output start ----"))
+                (println (.substring output (.out-start oc) (.out-end oc)))
+                (println (term/dim "----- output end -----"))))
+            (cond
+              (pass? oc) (println)
+              (fail? oc) (print-fail oc)
+              (error? oc) (print-stacktrace (.ex oc)))))
+        
+        (print-test-report ^Report [^Report r]
+          (doseq [oc (.details r)
+                  :when (not (pass? oc))]
+            (print-outcome (.scope r) (.output r) oc))
+          r)
+
+        (all-pass? ^boolean [^Report r]
+          (zero? (+ (.error r) (.fail r))))
+        (print-nmsp-report ^Report [^Report r]
+          (if (all-pass? r)
+            (println (str (term/success "PASS ") (ns-name (.scope r)) "/... "
+                          "(" (.tests r) " tests" (.output r) ")"))
+            (run! print-test-report (.details r)))
+          r)]
+  
+  ;; Don't call this when materializing a lazy seq.
+  (defn print-report ^Report [x]
+    (cond
+      (test-report? x) (print-test-report x)
+      (nmsp-report? x) (print-nmsp-report x)
+      (instance? Future x) (recur (get-future x))
+      :else (nmsp-report nil (mapv print-report x)))))
+
+(defn run-scope ^Report [scope]
+  (letfn [(resolve-fq-nm ^Var [^Symbol fq-nm]
+            (or (find-var fq-nm)
+                (throw (Exception. (str "No var: " fq-nm " found")))))]
+    (let [[_ scope-nm line-num] (re-matches #"([^:]*)(?::(\d+))?" (name scope))
+          select (if (some? line-num)
+                   (let [n (Integer/parseInt line-num)]
+                     (fn ^IntPredicate select-line [line]
+                       (= line n)))
+                   select-all)
+          test-sym (symbol scope-nm)]
+      (if (some? (namespace test-sym))  ;symbol has form nmsp/test
+        (run-test-var select (resolve-fq-nm test-sym))
+        (run-nmsp-tests select test-sym)))))
+
+(defn run-scoped-tests
+  "Experimental - If `scope` (by default environment variable \"TEST\")
+  is not nil, then only run the test of this namespaced var or only
+  the tests from the given namespace.  Optionally this is limited to
+  matching line numbers.  If `scope` is nil, run the tests from the
+  namespaces in `else-namespaces`.  Var and namespace can be specified
+  as symbol or string.  Depending on the outcome, result is one of the
+  keywords :error, :fail, or :success."
+  (^Keyword [else-namespaces]
+   (run-scoped-tests (System/getenv "TEST") else-namespaces))
+  (^Keyword [scope else-namespaces]
+   (let [r (time (-> (if (some? scope)
+                       (run-scope scope)
+                       (run-namespaces (mapv symbol else-namespaces)))
+                     (print-report)))]
+     (println "\nRan" (.tests r) "tests containing"
+              (assert-count r) "assertions.")
+     (println (.fail r) "failures," (.error r) "errors.")
+     (exit-status r))))
