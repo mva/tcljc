@@ -145,7 +145,8 @@
 (def req-define-class 1)
 ;;; Issued after compiling a `definterface*` or a `deftype*`.  Returns
 ;;; the class instance, although other classes it depends on may not
-;;; be defined at this point.
+;;; be defined at this point.  Type descriptors like array types may
+;;; reference the newly created class immediately.
 
 (def req-flush-s-queue 2)
 ;;; Returns when there are no outstanding messages in the `s` queue.

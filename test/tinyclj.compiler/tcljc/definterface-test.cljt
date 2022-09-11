@@ -13,13 +13,15 @@
              (LDC "tinyclj.core")
              (ARETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC VOLATILE] "a" "[Lpkg/ns0/IInterface;")]
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* IInterface
-                   (foo ^int [^Class cl]))]))))
+                   (foo ^int [^Class cl]))
+                 (def ^"[Lpkg.ns0.IInterface;" a)]))))
 
 (deftest default-type-test
   (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/IInterface")

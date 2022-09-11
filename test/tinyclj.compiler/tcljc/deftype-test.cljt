@@ -35,6 +35,7 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC VOLATILE] "a" "[Lpkg/ns0/Vec3;")]
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
@@ -48,7 +49,8 @@
                    pkg.ns0.Vec3
                    [^float x ^float y ^float z]
                    :implements
-                   [clojure.lang.IType])]))))
+                   [clojure.lang.IType])
+                 (def ^"[Lpkg.ns0.Vec3;" a)]))))
 
 (deftest data-only-reference-within-do
   (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/A"
