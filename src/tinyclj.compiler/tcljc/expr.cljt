@@ -1513,7 +1513,7 @@
 
 
 (definterface FnMacroFn
-  (expand ^Object [env form])) ;`env` is currently passed the Ctx instance
+  (expand ^Object [ctx form])) ;`ctx` is not the `env` seen by macro fn
 
 (deftype MacroRef [^:pass-to-super-constructor ^Object _form
                    ^:pass-to-super-constructor ^Class type

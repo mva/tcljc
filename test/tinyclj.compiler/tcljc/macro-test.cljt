@@ -280,3 +280,12 @@
                  
                  (def x (nil-pred "abc"))
                  (def y (java.util.Objects/requireNonNull nil-pred))]))))
+
+(deftest early-macro-reference
+  (is (thrown-with-msg? Exception #"cannot define and expand macro .*one-macro.* in same top-level form"
+                        (nmsp '[(ns pkg.ns0)
+                                (let* []
+                                  (def ^:macro one-macro
+                                    (fn* one-macro ^int [&form &env]
+                                         1))
+                                  (def one (one-macro)))]))))

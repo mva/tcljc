@@ -77,7 +77,7 @@
 (deftype ImportedMacroFn [^MethodHandle apply-mh
                           ^Object f]
   FnMacroFn
-  (expand [_ env form]
+  (expand [_ ctx form]
     ;; pass nil as `env` for now
     (macro/apply-macro apply-mh f form nil)))
 

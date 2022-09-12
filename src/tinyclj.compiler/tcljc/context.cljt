@@ -95,7 +95,13 @@
   (put-global ^void [^String nm ^BindingRef x])
   
   (get-imports ^IPersistentMap [])
-  (put-import ^void [^Symbol nm ^Class cl]))
+  (put-import ^void [^Symbol nm ^Class cl])
+  
+  ;; Top-level forms are assigned consecutive index values.  This
+  ;; enables synchronization of macro operations across forms, as well
+  ;; as between compilation and bytecode emit threads.
+  (get-tlf-idx ^int [])
+  (increment-tlf-idx ^void []))
 
 (definterface FnRequireNamespace
   ;; Schedule the namespace `ns-str` for compilation, passing it
@@ -245,7 +251,8 @@
               ;; reify* method, or deftype method).
 
               ^boolean locked?
-              ^:unsynchronized-mutable ^int _macro-count]
+              ^:unsynchronized-mutable ^int _macro-count
+              ^:unsynchronized-mutable ^int _tlf-idx]
   ICtx
   (get-known-ns [_]
     _known-ns)
@@ -281,7 +288,12 @@
     (if locked?
       (throw (IllegalStateException.))
       (set! _imports (assoc _imports nm x))))
-    
+  
+  (get-tlf-idx [_]
+    _tlf-idx)
+  (increment-tlf-idx [_]
+    (set! _tlf-idx (inc _tlf-idx)))
+  
   ICompilerContext
   (update-macro-count ^int [_ ^int delta]
     (if locked?
@@ -313,7 +325,7 @@
     (Ctx. known-ns ns-alias initial-globals jb/initial-imports
           ns-str rpath rurl lookup-in-pkg require-namespace
           private-names binding-frame emit next-id-mh apply-mh exc-method
-          false 0)))
+          false 0 0)))
 
 (defn locked ^Ctx [^Ctx ctx]
   (if (.locked? ctx)
@@ -323,7 +335,8 @@
           (.ns-str ctx) (.rpath ctx) (.rurl ctx)
           (.lookup-in-pkg ctx) (.require-namespace ctx)
           (.!private-names ctx) (.binding-frame ctx) (.emit ctx)
-          (.next-id-mh ctx) (.apply-mh ctx) (.exc-method ctx) true 0)))
+          (.next-id-mh ctx) (.apply-mh ctx) (.exc-method ctx) true 0
+          (.get-tlf-idx ctx))))
 
 (defn locked-in-class ^Ctx [^Ctx ctx ^Class ephemeral-class]
   (let [short-sym (jb/import-symbol-short ephemeral-class)
@@ -334,7 +347,8 @@
           (.ns-str ctx) (.rpath ctx) (.rurl ctx)
           l (.require-namespace ctx)
           (.!private-names ctx) (.binding-frame ctx) (.emit ctx)
-          (.next-id-mh ctx) (.apply-mh ctx) (.exc-method ctx) true 0)))
+          (.next-id-mh ctx) (.apply-mh ctx) (.exc-method ctx) true 0
+          (.get-tlf-idx ctx))))
 
 
 ;;; Not private because of the `with-context` macro.

@@ -219,9 +219,13 @@
 (deftype DelayedMacroFn [^Supplier f
                          ^MethodHandle apply-mh
                          ^Semaphore sem
+                         ^int defining-tlf-idx
                          ^:volatile-mutable ^Object value]
   FnMacroFn
-  (expand [_ env form]
+  (expand [_ ctx form]
+    (when (= defining-tlf-idx (.get-tlf-idx ^Ctx ctx))
+      (wrong/other (str "cannot define and expand macro " (wrong/q (first form))
+                        " in same top-level form")))
     (let [mfn (or value (do (.acquire sem)
                             (try
                               (or value (set! value (.get f)))
@@ -262,7 +266,7 @@
                                   (send-msg (.emit ctx)
                                             ctx/req-macro-value bref)))
                             (DelayedMacroFn. (.apply-mh ctx) (Semaphore. 1)
-                                             nil))
+                                             (.get-tlf-idx ctx) nil))
                     mref (x/macro-ref nm ns-str mfn macro-v bref)]
                 (.update-macro-count ctx +1)
                 (ctx/put-global (name nm) mref tl-ctx)
@@ -1423,6 +1427,7 @@
               (conv/consume jb/void))
         mc-post (.update-macro-count ctx 0)]
     (send-msg (.emit ctx) ctx/msg-emit-tlf x)
+    (.increment-tlf-idx ctx)
     (when (not= mc-pre mc-post)
       ;; After a macro, delay further compilation until the macro's
       ;; top-level form has made it into the emit queue.  This means
