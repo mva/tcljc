@@ -168,7 +168,7 @@
           (-> nmsp .ctx .ns-str))
         (core-provided-nmsp ^IPersistentMap [^Namespace nmsp ^boolean require?]
           (if (and require? (core-lib? nmsp))
-            (let [force-x (ctx/send-msg (-> nmsp .ctx .emit)
+            (let [force-x (ctx/send-msg (-> nmsp .ctx .emit-q)
                                         ctx/req-flush-namespace-segment nil)
                   globals (-> (-> nmsp .ctx .get-globals)
                               (assoc cfg/key-force-clinit force-x))]
@@ -207,7 +207,7 @@
                   (recur (merge publics-map ekns) (inc i)))))
             ;; ensure that all required namespace classes are
             ;; initialized at this point
-            (ctx/send-msg (-> nmsp .ctx .emit) ctx/msg-emit-tlf
+            (ctx/send-msg (-> nmsp .ctx .emit-q) ctx/msg-emit-tlf
                           (-> (reduce conj-force-clinit [] apublics)
                               (xf/progn-expr x/expr-empty)))
             (with-requires nmsp req-strs)))
@@ -227,7 +227,7 @@
               (do (when (and (core-lib? nmsp) (= (fnext form) "core_print"))
                     ;; hack for dependency chain core_print.cljt
                     ;; -> MultiFn.java -> tinyclj.core fns
-                    (ctx/send-msg (-> nmsp .ctx .emit)
+                    (ctx/send-msg (-> nmsp .ctx .emit-q)
                                   ctx/req-flush-namespace-segment nil))
                   (reduce
                    (fn ^Namespace [^Namespace nmsp ^String path-str]

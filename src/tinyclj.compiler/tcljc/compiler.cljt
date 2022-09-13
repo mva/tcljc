@@ -19,7 +19,7 @@
    [tcljc.compiler.branch :as branch]
    [tinyclj.string :as str])
   (:import
-   (tcljc.context Ctx EmitQueue)
+   (tcljc.context Ctx)
    (tcljc.classfile ClassDef)
    (tcljc.expr Expr InvokeXref Const Branch Guard TryHandler
                Binding BindingRef ValueRef MacroRef
@@ -211,10 +211,10 @@
         (some? meta-x) (set-meta meta-x)
         dynamic? (set-dynamic)))))
 
-(defn- send-msg ^Object [^EmitQueue emit ^int task ^Object x]
+(defn- send-msg ^Object [tl-ctx ^int task ^Object x]
   (ctx/with-log-task
     {:label (str "tinyclj.*/c-thread/send-msg-BLOCKING-" (ctx/task-id* task))}
-    (ctx/send-msg emit task x)))
+    (ctx/send-msg (.emit-q (ctx/tl-ctx* tl-ctx)) task x)))
 
 (deftype DelayedMacroFn [^MethodHandle apply-mh
                          ^int defining-tlf-idx
@@ -257,8 +257,7 @@
                     mfn (DelayedMacroFn. (.apply-mh ctx) (.get-tlf-idx ctx)
                                          bref (CompletableFuture.))
                     mref (x/macro-ref nm ns-str mfn macro-v bref)]
-                (send-msg (.emit (ctx/tl-ctx* tl-ctx))
-                          ctx/msg-macro-of-next-tlf mfn)
+                (send-msg ctx ctx/msg-macro-of-next-tlf mfn)
                 (ctx/put-global (name nm) mref tl-ctx)
                 (x/global-binding bref v))
               (do
@@ -948,7 +947,7 @@
                                                          method-ctx)
                    env (add-fields env field-brefs)
                    mdefs (mapv #(method-def env % etp method-ctx) methods)]
-               (DeftypeDef. cdef field-brefs mdefs nil)))))
+               (DeftypeDef. cdef field-brefs mdefs)))))
        (deftype*-form ^Expr [[_ fq-sym binary-sym field-sig & opts+specs]]
          ;; only do rudimentary error messages because this form is
          ;; produced by a macro
@@ -961,8 +960,7 @@
                                   [acc xs]))
                cdef (dtp-class-def env short-sym fq-sym binary-sym
                                    field-sig opts methods)
-               cl (send-msg (.emit (ctx/tl-ctx* tl-ctx)) ctx/req-define-class
-                            cdef)]
+               cl (send-msg tl-ctx ctx/req-define-class cdef)]
            x/expr-empty))
 
        (reify*-form ^Expr [[_ itf-vector & methods :as form]]
@@ -1023,8 +1021,7 @@
          (let [cdef (sigclass/itf-class-def (ctx/this-ns tl-ctx)
                                             (.get-imports (ctx/tl-ctx* tl-ctx))
                                             form)
-               cl (send-msg (.emit (ctx/tl-ctx* tl-ctx)) ctx/req-define-class
-                            cdef)]
+               cl (send-msg tl-ctx ctx/req-define-class cdef)]
            x/expr-empty))
 
        (catch-form? ^boolean [x]
@@ -1414,7 +1411,7 @@
   (let [x (-> (compile-form empty-global-env ctx-tlf form ctx)
               (x/ensure-runtime-outcome)
               (conv/consume jb/void))]
-    (send-msg (.emit ctx) ctx/msg-emit-tlf x)
+    (send-msg ctx ctx/msg-emit-tlf x)
     (.increment-tlf-idx ctx)))
 
 ;;; ------------------------------------------------------------------------

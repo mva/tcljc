@@ -167,15 +167,7 @@
 (defn task-id ^String [^Msg msg]
   (task-id* (.task msg)))
 
-;;; The queue connecting the compile to the emit thread has two parts.
-;;; Part `q` is consumed directly by the emit thread.  Part `s` is a
-;;; staging area that passes messages on in the order of arrival, but
-;;; ensures that all compilation threads working on a top-level form
-;;; have finished before sending it on to `q` (see `preparer-thread`).
-(deftype EmitQueue [^BlockingQueue q
-                    ^BlockingQueue s])
-
-(defn send-msg* ^Object [^BlockingQueue q ^int task ^Object x]
+(defn send-msg ^Object [^BlockingQueue q ^int task ^Object x]
   (if (needs-response? task)
     (let [fut (CompletableFuture.)]
       (.put q (Msg. task x fut))
@@ -184,9 +176,6 @@
           (throw ^Throwable resp)       ;receiving thread is in trouble
           resp)))
     (.put q (Msg. task x nil))))
-
-(defn send-msg ^Object [^EmitQueue emit ^int task ^Object x]
-  (send-msg* (.s emit) task x))
 
 ;;; ------------------------------------------------------------------------
 
@@ -214,7 +203,7 @@
               ^Object binding-frame
               ;; To carry *out* and *err* into threads.
      
-              ^EmitQueue emit
+              ^BlockingQueue emit-q
      
               ^MethodHandle next-id-mh
               ^MethodHandle apply-mh
@@ -287,15 +276,13 @@
   (let [known-ns {}
         ns-alias {}
         binding-frame (clojure.lang.Var/cloneThreadBindingFrame)
-        capacity-q 32 ;for top-level forms, macro values, define class, ...
-        capacity-s 8  ;prevent compilation from reaching too far ahead
-        emit (EmitQueue. (ArrayBlockingQueue. capacity-q)
-                         (ArrayBlockingQueue. capacity-s))
+        capacity-q 8  ;prevent compilation from reaching too far ahead
+        emit-q (ArrayBlockingQueue. capacity-q)
         next-id-mh (resolve-mh lookup-in-pkg rt/mhd-nextID)
         private-names (ConcurrentHashMap.)]
     (Ctx. known-ns ns-alias initial-globals jb/initial-imports
           ns-str rpath rurl lookup-in-pkg require-namespace
-          private-names binding-frame emit next-id-mh apply-mh exc-method
+          private-names binding-frame emit-q next-id-mh apply-mh exc-method
           false 0 0)))
 
 (defn locked ^Ctx [^Ctx ctx]
@@ -305,7 +292,7 @@
           (.get-imports ctx)
           (.ns-str ctx) (.rpath ctx) (.rurl ctx)
           (.lookup-in-pkg ctx) (.require-namespace ctx)
-          (.!private-names ctx) (.binding-frame ctx) (.emit ctx)
+          (.!private-names ctx) (.binding-frame ctx) (.emit-q ctx)
           (.next-id-mh ctx) (.apply-mh ctx) (.exc-method ctx) true 0
           (.get-tlf-idx ctx))))
 
@@ -317,7 +304,7 @@
           imports
           (.ns-str ctx) (.rpath ctx) (.rurl ctx)
           l (.require-namespace ctx)
-          (.!private-names ctx) (.binding-frame ctx) (.emit ctx)
+          (.!private-names ctx) (.binding-frame ctx) (.emit-q ctx)
           (.next-id-mh ctx) (.apply-mh ctx) (.exc-method ctx) true 0
           (.get-tlf-idx ctx))))
 

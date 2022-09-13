@@ -1648,9 +1648,4 @@
 (deftype DeftypeDef [^ClassDef cdef
                      field-brefs        ;seq of BindingRef
                      method-defs        ;seq of MethodDef
-                     ^IPersistentVector fn-specs ;of FnSpec
                      ])
-
-(defn with-fn-specs ^DeftypeDef [^DeftypeDef dtdef ^IPersistentVector fn-specs]
-  (DeftypeDef. (.cdef dtdef) (.field-brefs dtdef) (.method-defs dtdef)
-    fn-specs))
