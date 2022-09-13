@@ -692,7 +692,7 @@
 
                  (when-some [cl (try-load-capstone env ns-str)]
                    (.put !futs ns-str nmsp/marker-depth-first-path)
-                   (let [x (-> (mk-ctx env require-fn {} ns-str nil)
+                   (let [x (-> (mk-ctx-import env require-fn cl)
                                (nmsp/mk-imported provided-nmsp)
                                (import-from-capstone cl))]
                      (.put !futs ns-str x)
