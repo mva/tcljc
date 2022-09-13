@@ -258,7 +258,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(deftype TlfSummary [^IPersistentVector fn-specs
+(deftype TopLevelForm [^IPersistentVector fn-specs
                      ^IPersistentVector global-bs
                      ^Expr top-level-form])
 
@@ -360,7 +360,7 @@
 ;;     (prn (str k) :-> (map str v)))
 ;;   (println))
 
-(defn print-fn-summary ^TlfSummary [^TlfSummary summary ^HashMap env-providers]
+(defn print-fn-summary ^TopLevelForm [^TopLevelForm tlf ^HashMap env-providers]
   (letfn [(print-fn-form [^FnSpec fspec]
             (let [fn-form (.fn-form fspec)
                   fnc (.!fnc fn-form)]
@@ -385,8 +385,8 @@
                   (doseq [^ArityId ep epv]
                     (println " " (str ep)))))))]
 
-    (run! print-fn-form (.fn-specs summary))
-    summary))
+    (run! print-fn-form (.fn-specs tlf))
+    tlf))
 
 (deftype TraversalContext [^HashSet !private-names
                            ^HashMap env-providers
@@ -499,7 +499,7 @@
          (map env-entry)
          ^"[Ltcljc.emitter.emitfn.EnvEntry;" (into-array EnvEntry))))
 
-(defn collect-fn-info ^TlfSummary [^HashSet !private-names ^Expr x]
+(defn collect-fn-info ^TopLevelForm [^HashSet !private-names ^Expr x]
   (let [fn-specs (ArrayList.)
         global-bs (ArrayList.)
         env-providers (HashMap.)]
@@ -557,5 +557,5 @@
       ;; At this point every function's `variable-environment?` member
       ;; is stable.
       
-      (-> (TlfSummary. fn-specs (vec global-bs) x)
+      (-> (TopLevelForm. fn-specs (vec global-bs) x)
           #_(print-fn-summary env-providers)))))

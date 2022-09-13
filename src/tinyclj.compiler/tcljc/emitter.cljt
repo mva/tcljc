@@ -23,7 +23,7 @@
    (tcljc.expr FnCode DeftypeDef MethodDef)
    (tcljc.emitter.namespace Namespace)
    (tcljc.emitter.emitfn FnSpec)
-   (tcljc.emitter.prepare TlfSummary)
+   (tcljc.emitter.prepare TopLevelForm)
    (tcljc.context FnRequireNamespace Ctx Msg EmitQueue)
    (tcljc.expr Expr Binding BindingRef FnForm)
    (clojure.lang ISeq IPersistentMap IPersistentVector)
@@ -96,7 +96,7 @@
                     
                     ^int segm-id
                     ^ClassDesc segm-cld
-                    ^IPersistentVector summaryv ;of TlfSummary
+                    ^IPersistentVector tlfv ;of TopLevelForm
                     
                     ^IPersistentVector bytesv ;nil if bytes are not tracked
                     ^ClassDesc prev-segm-cld
@@ -115,23 +115,23 @@
 (defn- segment-chr ^CHR [^SegmState segm]
   (-> segm .env .dyn-chr))
 
-(defn with-summary ^SegmState [^SegmState segm ^TlfSummary summary]
+(defn with-tlf ^SegmState [^SegmState segm ^TopLevelForm tlf]
   (SegmState. (.env segm) (.ctx segm) (.source-file segm)
-              (.segm-id segm) (.segm-cld segm) (conj (.summaryv segm) summary)
+              (.segm-id segm) (.segm-cld segm) (conj (.tlfv segm) tlf)
               (.bytesv segm) (.prev-segm-cld segm)
               (.fn-class-futv segm)))
 (defn with-bytes ^SegmState [^SegmState segm ^int id-delta
-                             ^boolean clear-summaryv? ^bytes bs ^Class segm-cl]
+                             ^boolean clear-tlfv? ^bytes bs ^Class segm-cl]
   (let [bytesv' (when-some [bsv (.bytesv segm)]
                   (conj bsv bs))]
     (SegmState. (.env segm) (.ctx segm) (.source-file segm)
                 (+ (.segm-id segm) id-delta) (segment-cld segm id-delta)
-                (if clear-summaryv? [] (.summaryv segm)) bytesv'
+                (if clear-tlfv? [] (.tlfv segm)) bytesv'
                 (if segm-cl (rt/describe-class segm-cl) (.prev-segm-cld segm))
                 (.fn-class-futv segm))))
 (defn- with-fn-class-fut ^SegmState [^SegmState segm ^Future fut]
   (SegmState. (.env segm) (.ctx segm) (.source-file segm)
-              (.segm-id segm) (.segm-cld segm) (.summaryv segm)
+              (.segm-id segm) (.segm-cld segm) (.tlfv segm)
               (.bytesv segm) (.prev-segm-cld segm)
               (conj (.fn-class-futv segm) fut)))
 (defn- with-collect-fn-classes ^SegmState [^SegmState segm]
@@ -141,7 +141,7 @@
                   (run! ctx/wait-for-result (.fn-class-futv segm)))]
     (SegmState. (.env segm) (.ctx segm) (.source-file segm)
                 (.segm-id segm) (.segm-cld segm)
-                (.summaryv segm) bytesv' (.prev-segm-cld segm) [])))
+                (.tlfv segm) bytesv' (.prev-segm-cld segm) [])))
 
 (defn- capstone-cld ^ClassDesc [^SegmState segm]
   (ClassDesc/of (-> segm .ctx .ns-str) ns-class-name))
@@ -163,8 +163,8 @@
                          (conj (x/invoke-xref
                                 jb/void [(x/const String ns-str)]
                                 rt/mhd-createNamespace)))
-                       (into (map #(.top-level-form ^TlfSummary %))
-                             (.summaryv segm))
+                       (into (map #(.top-level-form ^TopLevelForm %))
+                             (.tlfv segm))
                        (cond-> (cfg/core-lib? ns-str)
                          (conj (x/invoke-xref
                                 jb/void [(x/const String (segment-name segm 0))]
@@ -176,12 +176,12 @@
      (cf/with-cbh [cb]
        (when-not (= (.segm-id segm) first-segm-id)
          (.withSuperclass cb (segment-cld segm -1)))
-       (doseq [^TlfSummary summary (.summaryv segm)]
+       (doseq [^TopLevelForm tlf (.tlfv segm)]
          ;; emit fields and methods of all global bindings, delivering
          ;; their loads in order
-         (doseq [^Binding global-b (.global-bs summary)]
+         (doseq [^Binding global-b (.global-bs tlf)]
            (bytecode/emit-global-b cb segm-cld global-b))
-         (doseq [^FnSpec fspec (.fn-specs summary)]
+         (doseq [^FnSpec fspec (.fn-specs tlf)]
            (.fn-methods (-> fspec .fn-form .!fnc .emit-plan) cb)))
        (-> (.withFlags cb Classfile/ACC_PUBLIC)
            (cf/with-source-file (.source-file segm))
@@ -292,10 +292,10 @@
             (if-some [cbh (.fn-cbh (.emit-plan fnc))]
               (with-fn-class-fut segm (fn-class-future segm fnc cbh))
               segm))
-          (schedule-fn-classes ^SegmState [^SegmState segm ^TlfSummary summary]
-            (let [segm (with-summary segm summary)
+          (schedule-fn-classes ^SegmState [^SegmState segm ^TopLevelForm tlf]
+            (let [segm (with-tlf segm tlf)
                   dyn-chr (segment-chr segm)
-                  fncs (map #(-> ^FnSpec % .fn-form .!fnc) (.fn-specs summary))]
+                  fncs (map #(-> ^FnSpec % .fn-form .!fnc) (.fn-specs tlf))]
               (doseq [^FnCode fnc fncs :let [ep (.emit-plan fnc)]]
                 (when-some [ch-info (.fn-class-hierarchy-info ep)]
                   (.register! dyn-chr ch-info)))
@@ -345,21 +345,21 @@
                 segm)
 
               ctx/msg-emit-tlf
-              (let [^TlfSummary summary x]
+              (let [^TopLevelForm tlf x]
                 (prepare/prepare-fns! (.segm-cld segm) (.source-file segm)
-                                      (.fn-specs summary))
+                                      (.fn-specs tlf))
                 (prepare/prepare-globals! (.segm-cld segm)
-                                          (.global-bs summary))
-                (schedule-fn-classes segm summary))
+                                          (.global-bs tlf))
+                (schedule-fn-classes segm tlf))
               
               ctx/req-define-class
               (if (instance? ClassDef x)
                 (write-and-define segm ^ClassDef x promise)
                 (let [dtdef ^DeftypeDef x
-                      summary (TlfSummary. (.fn-specs dtdef) nil x/expr-empty)]
+                      tlf (TopLevelForm. (.fn-specs dtdef) nil x/expr-empty)]
                   (prepare/prepare-fns! (.segm-cld segm) (.source-file segm)
                                         (.fn-specs dtdef))
-                  (-> (schedule-fn-classes segm summary)
+                  (-> (schedule-fn-classes segm tlf)
                       (write-and-define (build-deftype dtdef) promise))))
               
               ctx/req-flush-namespace-segment
@@ -402,14 +402,14 @@
               (.take q)))
           (collect-fn-specs [acc ^MethodDef mdef]
             (let [body (.body-expr mdef)
-                  summary (prepare/collect-fn-info !private-names body)]
-              (into acc (.fn-specs summary))))]
+                  tlf (prepare/collect-fn-info !private-names body)]
+              (into acc (.fn-specs tlf))))]
     (let [msg (take-msg (.s emit))]
       (ctx/with-log-task {:label (str ns-str "/p-thread/" (ctx/task-id msg))}
         (condp = (.task msg)
           ctx/msg-emit-tlf
-          (let [summary (prepare/collect-fn-info !private-names (.x msg))]
-            (.put (.q emit) (Msg. (.task msg) summary (.promise msg))))
+          (let [tlf (prepare/collect-fn-info !private-names (.x msg))]
+            (.put (.q emit) (Msg. (.task msg) tlf (.promise msg))))
 
           ctx/req-define-class
           (condp instance? (.x msg)
