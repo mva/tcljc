@@ -33,8 +33,8 @@
                        DynamicConstantDesc)
    (java.lang.invoke MethodHandle MethodHandles$Lookup)
    (java.lang.reflect Constructor Method Field Executable)
-   (java.util.concurrent Future BlockingQueue Semaphore)
-   (java.util.function Consumer Supplier)
+   (java.util.concurrent Future BlockingQueue CompletableFuture)
+   (java.util.function Consumer)
    (java.util.regex Pattern))
   (:refer-clojure :exclude [type]))
 
@@ -216,22 +216,17 @@
     {:label (str "tinyclj.*/c-thread/send-msg-BLOCKING-" (ctx/task-id* task))}
     (ctx/send-msg emit task x)))
 
-(deftype DelayedMacroFn [^Supplier f
-                         ^MethodHandle apply-mh
-                         ^Semaphore sem
+(deftype DelayedMacroFn [^MethodHandle apply-mh
                          ^int defining-tlf-idx
-                         ^:volatile-mutable ^Object value]
+                         ^BindingRef bref
+                         ^CompletableFuture value-promise]
   FnMacroFn
   (expand [_ ctx form]
     (when (= defining-tlf-idx (.get-tlf-idx ^Ctx ctx))
       (wrong/other (str "cannot define and expand macro " (wrong/q (first form))
                         " in same top-level form")))
-    (let [mfn (or value (do (.acquire sem)
-                            (try
-                              (or value (set! value (.get f)))
-                              (finally (.release sem)))))]
-      ;; pass nil as `env` for now
-      (macro/apply-macro apply-mh mfn form nil))))
+    ;; pass nil as `env` for now
+    (macro/apply-macro apply-mh (.get value-promise) form nil)))
 
 (defn def-form ^Expr [[_ nm :as form] ^Expr v ^BindingRef macro-v tl-ctx]
   (letfn [(prior-def ^BindingRef [^Symbol nm]
@@ -243,9 +238,7 @@
               ;; make sure that the old definition has been defined
               ;; into some prior namespace segment, and treat the
               ;; redefinition as a fresh macro
-              (let [macro-fn (.macro-fn ^MacroRef prior)]
-                (force (.f ^DelayedMacroFn macro-fn))
-                nil)
+              nil  ;FIXME... change this if macros are held until used
               prior))
           
           (put-value-or-macro ^Binding [^String ns-str ^Symbol nm
@@ -261,14 +254,11 @@
             (if (x/meta-flag? nm :macro)
               (let [bref (x/with-macro-value bref macro-v) ;then baked into mfn
                     ctx (ctx/tl-ctx* tl-ctx)
-                    mfn (-> (fn ^Supplier delayed-macro-value []
-                              (or (ctx/try-load-bref ctx bref) ;optimistic
-                                  (send-msg (.emit ctx)
-                                            ctx/req-macro-value bref)))
-                            (DelayedMacroFn. (.apply-mh ctx) (Semaphore. 1)
-                                             (.get-tlf-idx ctx) nil))
+                    mfn (DelayedMacroFn. (.apply-mh ctx) (.get-tlf-idx ctx)
+                                         bref (CompletableFuture.))
                     mref (x/macro-ref nm ns-str mfn macro-v bref)]
-                (.update-macro-count ctx +1)
+                (send-msg (.emit (ctx/tl-ctx* tl-ctx))
+                          ctx/msg-macro-of-next-tlf mfn)
                 (ctx/put-global (name nm) mref tl-ctx)
                 (x/global-binding bref v))
               (do
@@ -1421,19 +1411,11 @@
 
 (def ^:private empty-global-env (Env. x/lvl-environment nil {} nil nil))
 (defn top-level-form ^void [form ^Ctx ctx]
-  (let [mc-pre (.update-macro-count ctx 0)
-        x (-> (compile-form empty-global-env ctx-tlf form ctx)
+  (let [x (-> (compile-form empty-global-env ctx-tlf form ctx)
               (x/ensure-runtime-outcome)
-              (conv/consume jb/void))
-        mc-post (.update-macro-count ctx 0)]
+              (conv/consume jb/void))]
     (send-msg (.emit ctx) ctx/msg-emit-tlf x)
-    (.increment-tlf-idx ctx)
-    (when (not= mc-pre mc-post)
-      ;; After a macro, delay further compilation until the macro's
-      ;; top-level form has made it into the emit queue.  This means
-      ;; that its effect's are visible to all future `req-macro-value`
-      ;; requests.
-      (send-msg (.emit ctx) ctx/req-flush-s-queue nil))))
+    (.increment-tlf-idx ctx)))
 
 ;;; ------------------------------------------------------------------------
 

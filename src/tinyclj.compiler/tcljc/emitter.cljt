@@ -21,6 +21,7 @@
   (:import
    (tcljc.classfile CHR ClassDef)
    (tcljc.expr FnCode DeftypeDef MethodDef)
+   (tcljc.compiler DelayedMacroFn)
    (tcljc.emitter.namespace Namespace)
    (tcljc.emitter.emitfn FnSpec)
    (tcljc.emitter.prepare TopLevelForm)
@@ -31,7 +32,7 @@
    (java.nio.file Path)
    (java.lang.constant ClassDesc MethodTypeDesc)
    (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
-   (java.util Map HashMap HashSet)
+   (java.util Map HashMap HashSet ArrayList)
    (java.util.concurrent Future CompletableFuture ConcurrentHashMap
                          BlockingQueue ExecutorService)
    (java.util.function Consumer)))
@@ -97,6 +98,7 @@
                     ^int segm-id
                     ^ClassDesc segm-cld
                     ^IPersistentVector tlfv ;of TopLevelForm
+                    ^ArrayList !delayed-macros ;shared across SegmState
                     
                     ^IPersistentVector bytesv ;nil if bytes are not tracked
                     ^ClassDesc prev-segm-cld
@@ -118,7 +120,7 @@
 (defn with-tlf ^SegmState [^SegmState segm ^TopLevelForm tlf]
   (SegmState. (.env segm) (.ctx segm) (.source-file segm)
               (.segm-id segm) (.segm-cld segm) (conj (.tlfv segm) tlf)
-              (.bytesv segm) (.prev-segm-cld segm)
+              (.!delayed-macros segm) (.bytesv segm) (.prev-segm-cld segm)
               (.fn-class-futv segm)))
 (defn with-bytes ^SegmState [^SegmState segm ^int id-delta
                              ^boolean clear-tlfv? ^bytes bs ^Class segm-cl]
@@ -126,13 +128,13 @@
                   (conj bsv bs))]
     (SegmState. (.env segm) (.ctx segm) (.source-file segm)
                 (+ (.segm-id segm) id-delta) (segment-cld segm id-delta)
-                (if clear-tlfv? [] (.tlfv segm)) bytesv'
+                (if clear-tlfv? [] (.tlfv segm)) (.!delayed-macros segm) bytesv'
                 (if segm-cl (rt/describe-class segm-cl) (.prev-segm-cld segm))
                 (.fn-class-futv segm))))
 (defn- with-fn-class-fut ^SegmState [^SegmState segm ^Future fut]
   (SegmState. (.env segm) (.ctx segm) (.source-file segm)
               (.segm-id segm) (.segm-cld segm) (.tlfv segm)
-              (.bytesv segm) (.prev-segm-cld segm)
+              (.!delayed-macros segm) (.bytesv segm) (.prev-segm-cld segm)
               (conj (.fn-class-futv segm) fut)))
 (defn- with-collect-fn-classes ^SegmState [^SegmState segm]
   (let [bytesv' (if-some [bytesv (.bytesv segm)]
@@ -140,8 +142,8 @@
                         (.fn-class-futv segm))
                   (run! ctx/wait-for-result (.fn-class-futv segm)))]
     (SegmState. (.env segm) (.ctx segm) (.source-file segm)
-                (.segm-id segm) (.segm-cld segm)
-                (.tlfv segm) bytesv' (.prev-segm-cld segm) [])))
+                (.segm-id segm) (.segm-cld segm) (.tlfv segm)
+                (.!delayed-macros segm) bytesv' (.prev-segm-cld segm) [])))
 
 (defn- capstone-cld ^ClassDesc [^SegmState segm]
   (ClassDesc/of (-> segm .ctx .ns-str) ns-class-name))
@@ -268,7 +270,7 @@
         cld (ClassDesc/of (.ns-str ctx)
                           (str ns-class-name first-segm-id))]
     (SegmState. env ctx source-file first-segm-id cld
-                [] (when collect-bytesv? []) nil [])))
+                [] (ArrayList.) (when collect-bytesv? []) nil [])))
 
 (defn- emit-segments ^Namespace [^SegmState segm ^ExecutorService build-exc]
   (letfn [(take-msg ^Msg [^BlockingQueue q]
@@ -300,19 +302,37 @@
                 (when-some [ch-info (.fn-class-hierarchy-info ep)]
                   (.register! dyn-chr ch-info)))
               (reduce schedule-fn-class segm fncs)))
+          (delayed-macros? ^boolean [^SegmState segm]
+            (not (.isEmpty (.!delayed-macros segm))))
+          (load-bref ^Object [^Ctx ctx ^BindingRef bref]
+            (let [global-mh (.mh-if-global (x/deref-load bref)
+                                           (.lookup-in-pkg ctx))]
+              (if (nil? (.apply-mh ctx))
+                ;; compiler and application share runtime?
+                ;; careful, this is a very brittle method type!
+                ^tinyclj.lang.StaticFnMh (.invokeExact global-mh)
+                (.invoke global-mh))))
           (write-segment ^SegmState [^SegmState segm ^boolean force-clinit?]
-            ;; Note: There is no point to move the segment class into
-            ;; a future, because it is immediately required -- either
-            ;; for a macro value or for namespace completion.
-            (let [bs (build-segment segm force-clinit?)
-                  ;; macros from this segment class can be invoked
-                  ;; once it is defined: make sure there are no
-                  ;; pending dependencies
-                  segm (with-collect-fn-classes segm)
-                  cl (cfg/write-and-define-class (-> segm .env .dest-dir)
-                                                 (segment-lookup segm)
-                                                 (segment-cld segm 0) bs)]
-              (with-bytes segm +1 true bs cl)))
+            (if (and (not force-clinit?) (zero? (count (.tlfv segm))))
+              segm                      ;nothing to do for empty segment
+              ;; Note: There is no point to move the segment class into
+              ;; a future, because it is immediately required -- either
+              ;; for a macro value or for namespace completion.
+              (let [bs (build-segment segm force-clinit?)
+                    ;; macros from this segment class can be invoked
+                    ;; once it is defined: make sure there are no
+                    ;; pending dependencies
+                    segm (with-collect-fn-classes segm)
+                    cl (cfg/write-and-define-class (-> segm .env .dest-dir)
+                                                   (segment-lookup segm)
+                                                   (segment-cld segm 0) bs)]
+                (when (delayed-macros? segm)
+                  (doseq [^DelayedMacroFn mfn (.!delayed-macros segm)]
+                    (when-not (.complete (.value-promise mfn)
+                                         (load-bref (.ctx segm) (.bref mfn)))
+                      (throw (IllegalStateException.))))
+                  (.clear (.!delayed-macros segm)))
+                (with-bytes segm +1 true bs cl))))
           (write-and-define ^SegmState [^SegmState segm ^ClassDef cdef
                                         ^CompletableFuture promise]
             (let [bs (build-class cdef (.source-file segm) (segment-chr segm))
@@ -334,23 +354,18 @@
           (complete-req! ^SegmState [^SegmState segm ^int task x
                                      ^CompletableFuture promise]
             (condp = task
-              ctx/req-macro-value
-              ;; Note: "flush class" requests are issued in arbitrary
-              ;; order by namespace threads.
-              (let [bref ^BindingRef x
-                    segm (write-segment segm false)]
-                ;; Upstream code issuing this request has already
-                ;; done its own `try-load-bref` without success.
-                (.complete promise (ctx/try-load-bref (.ctx segm) bref))
-                segm)
-
               ctx/msg-emit-tlf
               (let [^TopLevelForm tlf x]
                 (prepare/prepare-fns! (.segm-cld segm) (.source-file segm)
                                       (.fn-specs tlf))
                 (prepare/prepare-globals! (.segm-cld segm)
                                           (.global-bs tlf))
-                (schedule-fn-classes segm tlf))
+                (cond-> (schedule-fn-classes segm tlf)
+                  (delayed-macros? segm) (write-segment false)))
+
+              ctx/msg-macro-of-next-tlf
+              (do (.add (.!delayed-macros segm) x)
+                  segm)
               
               ctx/req-define-class
               (if (instance? ClassDef x)
@@ -375,11 +390,16 @@
           
           ;; Complete all requests with an exception, so that the
           ;; namespace thread does not run into a timeout.
-          (drain-queue ^void [^BlockingQueue q ^Throwable t ^Msg msg]
-            (when (ctx/needs-response? (.task msg))
-              (.completeExceptionally ^CompletableFuture (.promise msg) t))
-            (when-not (ctx/close-queue? msg)
-              (recur q t (take-msg q))))]
+          (drain-queue ^void [^SegmState segm ^Throwable t ^Msg msg]
+            (doseq [^DelayedMacroFn mfn (.!delayed-macros segm)]
+              (.complete (.value-promise mfn) nil))
+            (.clear (.!delayed-macros segm))
+            (let [q (-> segm .ctx .emit .q)]
+              (loop [msg msg]
+                (when (ctx/needs-response? (.task msg))
+                  (.completeExceptionally ^CompletableFuture (.promise msg) t))
+                (when-not (ctx/close-queue? msg)
+                  (recur (take-msg q))))))]
 
     (let [msg (take-msg (-> segm .ctx .emit .q))
           p (.promise msg)]
@@ -392,7 +412,7 @@
                      (assert (or (nil? p) (.isDone p)))
                      segm)
                    (catch Throwable t
-                     (drain-queue (-> segm .ctx .emit .q) t msg)
+                     (drain-queue segm t msg)
                      (throw t))))
                build-exc)))))
 
@@ -424,9 +444,6 @@
                                     (.promise msg))))
 
             #_else (throw (IllegalStateException.))) 
-          
-          ctx/req-flush-s-queue
-          (.complete (.promise msg) nil)
           
           #_else (.put (.q emit) msg)))
       

@@ -112,50 +112,35 @@
 
 ;;; ------------------------------------------------------------------------
 
-;;; Messages are processed by the namespace's emit thread in order.
-;;; This imposes some restrictions on the order in which messages are
-;;; added to the emit queue.
-;;;
-;;; Stipulation 1: All `req-macro-value` requests produced during
-;;; compilation of a `req-emit-tlf` expression must appear before this
-;;; `req-emit-ltf` in the queue.  (Otherwise the emit thread will
-;;; deadlock while waiting for the top-level form to complete
-;;; compilation, because compilation waits for a macro value that the
-;;; emitter won't process yet.)
-;;;
-;;; Stipulation 2: A `req-macro-value` request is only added to the
-;;; emit queue after all (in source code order) prior top-level forms
-;;; with macro definitions have been added.  (A macro's value can not
-;;; be produced before its containing form has been emitted.)
-
-(def msg-fatal-error -3)
+(def msg-fatal-error -4)
 ;;; Contains the exception that killed the sending thread.  The
 ;;; receiving end should re-raise it.  This message is always followed
 ;;; by a `msg-close-queue`.
 
-(def msg-close-queue -2)
+(def msg-close-queue -3)
 ;;; Send when the compile thread is exiting.  Usually this means
 ;;; compilation is done, but this message is also send after
 ;;; exceptional completion.
 
-(def msg-emit-tlf -1)
+(def msg-emit-tlf -2)
 ;;; Emit top-level form.  The `s` queue waits for the function bodies'
 ;;; futures before passing this message on to the `q` queue.  That is,
 ;;; once in `q` all compilation tasks of this top-level form have
 ;;; completed.
 
-(def req-macro-value 0)
-;;; Request the application-side value of the given macro.  The
-;;; returnd value is cached in the compile thread.
+(def msg-macro-of-next-tlf -1)
+;;; Registers a DelayedMacroFn that is part of the next `msg-emit-tlf`
+;;; top-level form.  This tasks the emitter thread to deliver the
+;;; macro's value eventually.  Messages of this type are sequenced
+;;; with respect to `msg-emit-tlf`: the macro is defined after the
+;;; previous message's top-level form, and is contained in the next
+;;; message's top-level form.
 
 (def req-define-class 1)
 ;;; Issued after compiling a `definterface*` or a `deftype*`.  Returns
 ;;; the class instance, although other classes it depends on may not
 ;;; be defined at this point.  Type descriptors like array types may
 ;;; reference the newly created class immediately.
-
-(def req-flush-s-queue 2)
-;;; Returns when there are no outstanding messages in the `s` queue.
 
 (def req-flush-namespace-segment 3)
 ;;; Returns when all namespace code accumulated upto this point has
@@ -173,12 +158,11 @@
   (>= task 0))
 (defn task-id* ^String [^int task]
   (case task
-    #_msg-fatal-error -3 "msg-fatal-error"
-    #_msg-close-queue -2 "msg-close-queue"
-    #_msg-emit-tlf -1 "msg-emit-tlf"
-    #_req-macro-value 0 "req-macro-value"
+    #_msg-fatal-error -4 "msg-fatal-error"
+    #_msg-close-queue -3 "msg-close-queue"
+    #_msg-emit-tlf -2 "msg-emit-tlf"
+    #_msg-macro-of-next-tlf -1 "msg-macro-of-next-tlf"
     #_req-define-class 1 "req-define-class"
-    #_req-flush-s-queue 2 "req-flush-s-queue"
     #_req-flush-namespace-segment 3 "req-flush-namespace-segment"))
 (defn task-id ^String [^Msg msg]
   (task-id* (.task msg)))
@@ -202,16 +186,9 @@
     (.put q (Msg. task x nil))))
 
 (defn send-msg ^Object [^EmitQueue emit ^int task ^Object x]
-  (send-msg* (if (and (not cfg/deterministic-namespace-compile?)
-                      (= task req-macro-value))
-               (.q emit)
-               (.s emit))
-             task x))
+  (send-msg* (.s emit) task x))
 
 ;;; ------------------------------------------------------------------------
-
-(definterface ICompilerContext
-  (update-macro-count ^int [^int delta]))
 
 ;;; The mutable (unlocked) namespace context is private to the
 ;;; namespace thread.  All updates and reads are confined to this
@@ -292,13 +269,7 @@
   (get-tlf-idx [_]
     _tlf-idx)
   (increment-tlf-idx [_]
-    (set! _tlf-idx (inc _tlf-idx)))
-  
-  ICompilerContext
-  (update-macro-count ^int [_ ^int delta]
-    (if locked?
-      (throw (IllegalStateException.))
-      (set! _macro-count (+ _macro-count delta)))))
+    (set! _tlf-idx (inc _tlf-idx))))
 
 (defn resolve-mh ^MethodHandle [^MethodHandles$Lookup l ^ConstantDesc cd]
   ^MethodHandle (.resolveConstantDesc cd l))
@@ -427,19 +398,6 @@
 
 (defn exc-method ^ExecutorService [tl-ctx]
   (.exc-method (tl-ctx* tl-ctx)))
-
-(defn try-load-bref ^Object [^Ctx ctx ^BindingRef bref]
-  (when (.realized? bref)
-    (let [global-mh (try
-                      (.mh-if-global (x/deref-load bref) (.lookup-in-pkg ctx))
-                      (catch ClassNotFoundException _
-                        nil))]
-      (when (some? global-mh)
-        (if (nil? (.apply-mh ctx))
-          ;; compiler and application share runtime?
-          ;; careful, this is a very brittle method type!
-          ^tinyclj.lang.StaticFnMh (.invokeExact global-mh)
-          (.invoke global-mh))))))
 
 ;;; ------------------------------------------------------------------------
 

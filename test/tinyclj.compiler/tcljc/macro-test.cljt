@@ -54,7 +54,7 @@
 
 (deftest macro-call-to-same-segment
   ;; my-defn should call sigs from the same namespace segment
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns102")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns103")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -91,36 +91,42 @@
              (INVOKESTATIC RT "cons" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;")
              (ARETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "my-fn" "()Ltinyclj/lang/StaticFnMh;")
-             (RuntimeVisibleAnnotations (Macro))
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
-                   [[STATIC . "my-fn~3" "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"]]])
-             (ARETURN)]
-            [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "my-fn~3" "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
-             #_["LOCAL 0: Object &form"]
-             #_["LOCAL 1: Object &env"]
-             #_["LOCAL 2: Object[] decl"]
-             (ALOAD_0)
-             (ALOAD_1)
-             (ALOAD_2)
-             (INVOKESTATIC ArraySeq "create" "([Ljava/lang/Object;)Lclojure/lang/ArraySeq;")
-             (INVOKESTATIC . "my-fn~3" "(Ljava/lang/Object;Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
-             (ARETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "my-fn~3" "(Ljava/lang/Object;Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
-             ["LOCAL 0: Object &form"]
-             ["LOCAL 1: Object &env"]
-             ["LOCAL 2: ISeq decl"]
-             (LDC [:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["fn*"]])
-             (ALOAD_2)
-             (INVOKESTATIC RT "cons" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;")
-             (ARETURN)]
-
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns101" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "my-fn" "()Ltinyclj/lang/StaticFnMh;")
+             (RuntimeVisibleAnnotations (Macro))
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                   [[STATIC . "my-fn~3"
+                     "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "my-fn~3"
+                     "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
+             (ALOAD_0)
+             (ALOAD_1)
+             (ALOAD_2)
+             (INVOKESTATIC ArraySeq "create"
+                           "([Ljava/lang/Object;)Lclojure/lang/ArraySeq;")
+             (INVOKESTATIC . "my-fn~3"
+                           "(Ljava/lang/Object;Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "my-fn~3"
+                     "(Ljava/lang/Object;Ljava/lang/Object;Lclojure/lang/ISeq;)Ljava/lang/Object;")
+             ["LOCAL 0: Object &form"]
+             ["LOCAL 1: Object &env"]
+             ["LOCAL 2: ISeq decl"]
+             (LDC [:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["fn*"]])
+             (ALOAD_2)
+             (INVOKESTATIC RT "cons"
+                           "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;")
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns102" nil "pkg/ns0/__ns101")
             [(METHOD [PUBLIC STATIC FINAL] "first" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC RT "first" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
@@ -170,7 +176,7 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (RETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns102" nil "pkg/ns0/__ns101")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns103" nil "pkg/ns0/__ns102")
             [(FIELD [PUBLIC STATIC FINAL] "to-array" "Ljava/lang/Object;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
