@@ -908,3 +908,10 @@
                                         (if temp
                                           b
                                           temp)))))]))))
+
+(deftest definition-inside-function
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"cannot .*def.* in this position"
+                        (nmsp '[(ns pkg.ns0)
+                                (def f (fn* f ^boolean []
+                                            (def foo 123)))]))))

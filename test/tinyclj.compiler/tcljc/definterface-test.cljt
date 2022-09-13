@@ -214,3 +214,10 @@
          (nmsp '[(ns pkg.ns0)
                  (definterface* ISucc
                    (succ ^IForward [^IForward a]))]))))
+
+(deftest definterface-inside-function
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"cannot .*definterface\*.* in this position"
+                        (nmsp '[(ns pkg.ns0)
+                                (def f (fn* f ^boolean []
+                                            (definterface* IFoo)))]))))

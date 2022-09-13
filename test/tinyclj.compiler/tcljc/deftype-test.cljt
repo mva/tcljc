@@ -1132,3 +1132,14 @@
                    [^int y
                     ^:pass-to-super-constructor ^int x]
                    :implements [pkg.ns0.B clojure.lang.IType])]))))
+
+(deftest deftype-inside-function
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"cannot .*deftype\*.* in this position"
+                        (nmsp '[(ns pkg.ns0)
+                                (def f (fn* f ^boolean []
+                                            (deftype*
+                                              pkg.ns0/Foo
+                                              pkg.ns0.Foo
+                                              []
+                                              :implements [])))]))))

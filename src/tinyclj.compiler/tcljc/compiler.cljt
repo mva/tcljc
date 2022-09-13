@@ -114,6 +114,13 @@
 
 ;;; ------------------------------------------------------------------------
 
+(defn- ensure-global ^void [form tl-ctx]
+  ;; Some forms, like non-assignment def, cannot work in a function, a
+  ;; deftype* method, or a reify* method.
+  (when-not (ctx/global? tl-ctx)
+    (wrong/other (str "cannot " (wrong/q (first form)) " in this position")
+                 form)))
+
 (defn- compile-named ^Expr [^clojure.lang.Named nm ^String tp-clnm tl-ctx]
   (x/const (ctx/get-type tp-clnm tl-ctx) nm))
 
@@ -336,11 +343,7 @@
           (if (x/meta-flag? d :var)
             (assign-var-def-form d nm)
             (assign-member-def-form d nm)))
-      (do (when-not (ctx/global? tl-ctx)
-            ;; prevent non-assignment def in a function, a deftype*
-            ;; method, or a reify* method
-            (wrong/other "cannot def in this position" form))
-
+      (do (ensure-global form tl-ctx)
           (if (x/meta-flag? nm :var)
             (-> (var-def-fresh nm form)
                 (var-binding-then-get))
@@ -956,11 +959,12 @@
                    env (add-fields env field-brefs)
                    mdefs (mapv #(method-def env % etp method-ctx) methods)]
                (DeftypeDef. cdef field-brefs mdefs)))))
-       (deftype*-form ^Expr [[_ fq-sym binary-sym field-sig & opts+specs]]
+       (deftype*-form ^Expr [[_ fq-sym binary-sym field-sig
+                              & opts+specs :as form]]
          ;; only do rudimentary error messages because this form is
          ;; produced by a macro
          (assert (vector? field-sig))
-
+         (ensure-global form tl-ctx)
          (let [short-sym (symbol nil (name fq-sym))
                [opts methods] (loop [acc {}, [x :as xs] opts+specs]
                                 (if (keyword? x)
@@ -1026,6 +1030,7 @@
                     atv body-fut fnc)))
        
        (definterface*-form [form]
+         (ensure-global form tl-ctx)
          (let [cdef (sigclass/itf-class-def (ctx/this-ns tl-ctx)
                                             (.get-imports (ctx/tl-ctx* tl-ctx))
                                             form)
