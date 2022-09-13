@@ -211,6 +211,8 @@
         (some? meta-x) (set-meta meta-x)
         dynamic? (set-dynamic)))))
 
+;;; A function thread calling this in non-deterministic mode leads to 
+;;; deadlock in the emit thread.
 (defn- send-msg ^Object [tl-ctx ^int task ^Object x]
   (ctx/with-log-task
     {:label (str "tinyclj.*/c-thread/send-msg-BLOCKING-" (ctx/task-id* task))}
@@ -219,12 +221,16 @@
 (deftype DelayedMacroFn [^MethodHandle apply-mh
                          ^int defining-tlf-idx
                          ^BindingRef bref
-                         ^CompletableFuture value-promise]
+                         ^CompletableFuture value-promise
+                         ^BlockingQueue emit-q]
   FnMacroFn
   (expand [_ ctx form]
     (when (= defining-tlf-idx (.get-tlf-idx ^Ctx ctx))
       (wrong/other (str "cannot define and expand macro " (wrong/q (first form))
                         " in same top-level form")))
+    (when (and (cfg/collect-macro-definitions?)
+               (not (.isDone value-promise)))
+      (ctx/send-msg emit-q ctx/msg-flush-macro-definitions nil))
     ;; pass nil as `env` for now
     (macro/apply-macro apply-mh (.get value-promise) form nil)))
 
@@ -238,7 +244,9 @@
               ;; make sure that the old definition has been defined
               ;; into some prior namespace segment, and treat the
               ;; redefinition as a fresh macro
-              nil  ;FIXME... change this if macros are held until used
+              (do (when (cfg/collect-macro-definitions?)
+                    (send-msg tl-ctx ctx/msg-flush-macro-definitions nil))
+                  nil)
               prior))
           
           (put-value-or-macro ^Binding [^String ns-str ^Symbol nm
@@ -255,7 +263,7 @@
               (let [bref (x/with-macro-value bref macro-v) ;then baked into mfn
                     ctx (ctx/tl-ctx* tl-ctx)
                     mfn (DelayedMacroFn. (.apply-mh ctx) (.get-tlf-idx ctx)
-                                         bref (CompletableFuture.))
+                                         bref (CompletableFuture.) (.emit-q ctx))
                     mref (x/macro-ref nm ns-str mfn macro-v bref)]
                 (send-msg ctx ctx/msg-macro-of-next-tlf mfn)
                 (ctx/put-global (name nm) mref tl-ctx)

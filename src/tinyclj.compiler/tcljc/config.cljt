@@ -25,6 +25,12 @@
       (.getField "deterministic-namespace-compile?")
       (.setBoolean nil deterministic?)))
 
+;;; When true, try to collect multiple macro definitions into a
+;;; namespace segment, instead of starting a new one after each macro.
+;;; Only works in deterministic mode, because the emit thread
+;;; deadlocks when a function thread thread sends it any tasks.
+(defn collect-macro-definitions? ^boolean []
+  deterministic-namespace-compile?)
 
 ;; Emit ClassFile attribute SourceFile & Code attribute LineNumberTable?
 (def enable-line-numbers true)

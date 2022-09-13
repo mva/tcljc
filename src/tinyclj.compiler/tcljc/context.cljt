@@ -112,15 +112,19 @@
 
 ;;; ------------------------------------------------------------------------
 
-(def msg-fatal-error -4)
+(def msg-fatal-error -5)
 ;;; Contains the exception that killed the sending thread.  The
 ;;; receiving end should re-raise it.  This message is always followed
 ;;; by a `msg-close-queue`.
 
-(def msg-close-queue -3)
+(def msg-close-queue -4)
 ;;; Send when the compile thread is exiting.  Usually this means
 ;;; compilation is done, but this message is also send after
 ;;; exceptional completion.
+
+(def msg-flush-macro-definitions -3)
+;;; Flushes macro definitions from completed top-level forms to class
+;;; files.  Only works in deterministic mode.
 
 (def msg-emit-tlf -2)
 ;;; Emit top-level form.  The `s` queue waits for the function bodies'
@@ -158,8 +162,9 @@
   (>= task 0))
 (defn task-id* ^String [^int task]
   (case task
-    #_msg-fatal-error -4 "msg-fatal-error"
-    #_msg-close-queue -3 "msg-close-queue"
+    #_msg-fatal-error -5 "msg-fatal-error"
+    #_msg-close-queue -4 "msg-close-queue"
+    #_msg-flush-macro-definitions -3 "msg-flush-macro-definitions"
     #_msg-emit-tlf -2 "msg-emit-tlf"
     #_msg-macro-of-next-tlf -1 "msg-macro-of-next-tlf"
     #_req-define-class 1 "req-define-class"
@@ -276,7 +281,7 @@
   (let [known-ns {}
         ns-alias {}
         binding-frame (clojure.lang.Var/cloneThreadBindingFrame)
-        capacity-q 8  ;prevent compilation from reaching too far ahead
+        capacity-q 128  ;prevent compilation from reaching too far ahead
         emit-q (ArrayBlockingQueue. capacity-q)
         next-id-mh (resolve-mh lookup-in-pkg rt/mhd-nextID)
         private-names (ConcurrentHashMap.)]

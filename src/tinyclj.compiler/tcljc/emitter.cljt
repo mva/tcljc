@@ -32,7 +32,7 @@
    (java.nio.file Path)
    (java.lang.constant ClassDesc MethodTypeDesc)
    (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
-   (java.util Map HashMap HashSet ArrayList)
+   (java.util Map HashMap HashSet ArrayDeque)
    (java.util.concurrent Future CompletableFuture ConcurrentHashMap
                          BlockingQueue ExecutorService)
    (java.util.function Consumer)))
@@ -98,7 +98,7 @@
                     ^int segm-id
                     ^ClassDesc segm-cld
                     ^IPersistentVector tlfv ;of TopLevelForm
-                    ^ArrayList !delayed-macros ;shared across SegmState
+                    ^ArrayDeque !delayed-macros ;shared across SegmState
                     ^HashSet !private-names ;shared across SegmState
                     
                     ^IPersistentVector bytesv ;nil if bytes are not tracked
@@ -274,13 +274,15 @@
         cld (ClassDesc/of (.ns-str ctx)
                           (str ns-class-name first-segm-id))]
     (SegmState. env ctx source-file first-segm-id cld
-                [] (ArrayList.) (HashSet.) (when collect-bytesv? []) nil [])))
+                [] (ArrayDeque.) (HashSet.) (when collect-bytesv? []) nil [])))
 
 (defn- emit-segments ^Namespace [^SegmState segm ^ExecutorService build-exc]
   (letfn [(take-msg ^Msg [^BlockingQueue q]
             (ctx/with-log-task {:label (str (segment-ns-str segm) "/e-thread/"
                                             "take-BLOCKING")}
-              (.take q)))
+              (let [^Msg msg (.take q)]
+                #_(cfg/log-info "e-thread msg task" (.task msg))
+                msg)))
           (fn-class-future ^Future [^SegmState segm ^FnCode fnc ^Consumer cbh]
             (ctx/with-fork-or-on-thread
               {:executor build-exc
@@ -306,8 +308,10 @@
                 (when-some [ch-info (.fn-class-hierarchy-info ep)]
                   (.register! dyn-chr ch-info)))
               (reduce schedule-fn-class segm fncs)))
-          (delayed-macros? ^boolean [^SegmState segm]
-            (not (.isEmpty (.!delayed-macros segm))))
+          (delayed-but-ready ^DelayedMacroFn [^SegmState segm]
+            (when-some [mfn ^DelayedMacroFn (.peekFirst (.!delayed-macros segm))]
+              (when (.realized? (.bref mfn))
+                mfn)))
           (load-bref ^Object [^Ctx ctx ^BindingRef bref]
             (let [global-mh (.mh-if-global (x/deref-load bref)
                                            (.lookup-in-pkg ctx))]
@@ -330,12 +334,13 @@
                     cl (cfg/write-and-define-class (-> segm .env .dest-dir)
                                                    (segment-lookup segm)
                                                    (segment-cld segm 0) bs)]
-                (when (delayed-macros? segm)
-                  (doseq [^DelayedMacroFn mfn (.!delayed-macros segm)]
+                (loop []
+                  (when-some [mfn (delayed-but-ready segm)]
                     (when-not (.complete (.value-promise mfn)
                                          (load-bref (.ctx segm) (.bref mfn)))
-                      (throw (IllegalStateException.))))
-                  (.clear (.!delayed-macros segm)))
+                      (throw (IllegalStateException.)))
+                    (.removeFirst (.!delayed-macros segm))
+                    (recur)))
                 (with-bytes segm +1 true bs cl))))
           (write-and-define ^SegmState [^SegmState segm ^ClassDef cdef
                                         ^CompletableFuture promise]
@@ -372,11 +377,18 @@
                 (prepare/prepare-globals! (.segm-cld segm)
                                           (.global-bs tlf))
                 (cond-> (schedule-fn-classes segm tlf)
-                  (delayed-macros? segm) (write-segment false)))
+                  (and (not (cfg/collect-macro-definitions?))
+                       (some? (delayed-but-ready segm)))
+                  (write-segment false)))
 
               ctx/msg-macro-of-next-tlf
-              (do (.add (.!delayed-macros segm) x)
+              (do (.addLast (.!delayed-macros segm) x)
                   segm)
+
+              ctx/msg-flush-macro-definitions
+              (do (assert (cfg/collect-macro-definitions?))
+                  (cond-> segm
+                    (delayed-but-ready segm) (write-segment false)))
               
               ctx/req-define-class
               (if (instance? ClassDef x)
