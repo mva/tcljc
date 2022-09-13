@@ -32,6 +32,13 @@
            (IRETURN)]
          (asm-expr (do (.println java.lang.System/out "hello") 123)))))
 
+(deftest do-dead-code-at-end
+  (is (= '[(NEW Exception)
+           (DUP)
+           (INVOKESPECIAL Exception "<init>" "()V")
+           (ATHROW)]
+         (asm-expr (do (throw (Exception.)) 123)))))
+
 (deftest let*-test
   (is (= '[(ACONST_NULL)
            (ARETURN)]
