@@ -17,9 +17,6 @@
                          CompletableFuture TimeoutException TimeUnit
                          ExecutorService Executors ConcurrentHashMap)))
 
-(defn cf? ^boolean [x]
-  (instance? CompletableFuture x))
-
 ;;; Produces the value of `body` or throws an exception.  Whatever the
 ;;; outcome, the provided CompletableFuture is completed afterwards:
 ;;; either with the value or exceptionally.
@@ -28,19 +25,6 @@
      (try
        (let [res# (do ~@body)]
          (.complete cf# res#)
-         res#)
-       (catch Throwable t#
-         (.completeExceptionally cf# t#)
-         (throw t#)))))
-
-;;; This is used to communicate completion without a particular value,
-;;; *or* exceptional completion.  Only the former would be covered by
-;;; a semaphore or a countdown latch.
-(defmacro with-complete-nil [cf & body]
-  `(let [^CompletableFuture cf# ~cf]
-     (try
-       (let [res# (do ~@body)]
-         (.complete cf# nil)
          res#)
        (catch Throwable t#
          (.completeExceptionally cf# t#)
