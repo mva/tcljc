@@ -30,16 +30,10 @@
         rt-lookup (cfg/get-rt-lookup app-ld)
         dyn-ld (cfg/dyn-class-loader app-ld [])
         dest-dir (cfg/dest-dir "tcljc.rtiow-nocore")
-        env (em/mk-build-env app-ld dest-dir dyn-ld {})]
-    (ctx/with-executor
-      {:binding-sym exc-nmsp
-       :parent-fn compile-rtiow-nocore-test}
-      (let [ns-str "tcljc.rtiow-nocore-ref"
-            provided-nmsp (em/mk-provided-nmsp)
-            
-            exc-method (when-not cfg/deterministic-namespace-compile?
-                         exc-nmsp)
-            globals (core-ns-globals rt-lookup)
-            tl-ctx (em/mk-ctx env noop-require-namespace globals ns-str
-                              exc-method)]
-        (em/compile-and-emit env tl-ctx false provided-nmsp)))))
+        env (em/mk-build-env app-ld dest-dir dyn-ld {})
+        
+        ns-str "tcljc.rtiow-nocore-ref"
+        provided-nmsp (em/mk-provided-nmsp)
+        globals (core-ns-globals rt-lookup)]
+    (em/compile-and-emit env ns-str noop-require-namespace false
+                         provided-nmsp globals)))

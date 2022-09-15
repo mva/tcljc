@@ -254,28 +254,23 @@
                        ^"[Ljava.lang.String;" (into-array String))
          provided-nmsp (em/mk-provided-nmsp cfg/core-lib {cfg/key-force-clinit
                                                           x/expr-empty})]
-     (ctx/with-executor
-       {:binding-sym exc-nmsp
-        :parent-fn bootstrap/nmsp}
-       ;; manual unrolled reduce to reduce stack trace noise; during
-       ;; development, `emit-namespace` will die uncountable times
-       (loop [known-ns predefined/implicit-known-ns
-              i 0]
-         (if (= i (alength ans-strs))
-           known-ns
-           (let [ns-str (aget ans-strs i)
-                 exc-method (when-not cfg/deterministic-namespace-compile?
-                              exc-nmsp)
-                 req-fn (fn ^FnRequireNamespace provided [ns-str provided-nmsp]
-                          (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
-                 tl-ctx (em/mk-ctx env req-fn bootstrap-globals ns-str
-                                   exc-method)
-                 nmsp (em/compile-and-emit env tl-ctx true provided-nmsp)]
-             (doseq [^bytes bs (.bytesv nmsp)
-                     :let [x (classdata/extract bs)]]
-               (.put !render-to (classdata/class-name x) x))
-             (let [globals (get (.exported-known-ns nmsp) ns-str)]
-               (recur (assoc known-ns ns-str globals) (inc i)))))))
+     
+     ;; manual unrolled reduce to reduce stack trace noise; during
+     ;; development, `emit-namespace` will die uncountable times
+     (loop [known-ns predefined/implicit-known-ns
+            i 0]
+       (if (= i (alength ans-strs))
+         known-ns
+         (let [ns-str (aget ans-strs i)
+               req-fn (fn ^FnRequireNamespace provided [ns-str provided-nmsp]
+                        (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
+               nmsp (em/compile-and-emit env ns-str req-fn true provided-nmsp
+                                         bootstrap-globals)]
+           (doseq [^bytes bs (.bytesv nmsp)
+                   :let [x (classdata/extract bs)]]
+             (.put !render-to (classdata/class-name x) x))
+           (let [globals (get (.exported-known-ns nmsp) ns-str)]
+             (recur (assoc known-ns ns-str globals) (inc i))))))
      
      (->> (sort-by key (seq !render-to))
           (mapv (comp vec val))))))

@@ -221,9 +221,7 @@
 ;;; A function thread calling this in non-deterministic mode leads to 
 ;;; deadlock in the emit thread.
 (defn- send-msg ^Object [tl-ctx ^int task ^Object x]
-  (ctx/with-log-task
-    {:label (str "tinyclj.*/c-thread/send-msg-BLOCKING-" (ctx/task-id* task))}
-    (ctx/send-msg (.emit-q (ctx/tl-ctx* tl-ctx)) task x)))
+  (ctx/send-msg (.emit-q (ctx/tl-ctx* tl-ctx)) task x))
 
 (deftype DelayedMacroFn [^MethodHandle apply-mh
                          ^int defining-tlf-idx
@@ -562,31 +560,32 @@
          ;; smallest unit of work a single arity's body, there is
          ;; little use in moving each arity into a future of its own.
          (let [tl-ctx' (ctx/locked tl-ctx)
-               body-fut (ctx/with-fork+context
-                          {:executor (ctx/exc-method tl-ctx)
-                           :local-context tl-ctx'
-                           :other-thread? true #_(ctx/global? tl-ctx)
-                           :label (str (.unique-mnm fn-form)
-                                       ":" (x/line fn-form))}
-                          (let [n (count (.at-sigs fn-form))
-                                aca (new "[Ltcljc.expr.ArityCode;" n)]
-                            (dotimes [i n]
-                              (let [at ^Arity (nth (.at-sigs fn-form) i)
-                                    this-bref (x/local-ref
-                                               (.level fn-form) (.this-name at)
-                                               (x/type fn-form) x/b-this-object
-                                               fn-form)
-                                    unique-mnm (.unique-mnm fn-form)
-                                    body (wrong/with-list-context (.aform at)
-                                           (-> (enter-fn-arity env unique-mnm
-                                                               at this-bref)
-                                               (add-locals (.paramv at))
-                                               (compile-body at tl-ctx')))
-                                    at' (cond-> at
-                                          (auto-rtype? at)
-                                          (x/with-rtype (x/type body)))]
-                                (aset aca i (x/mk-arity-code at' this-bref body))))
-                            aca))
+               fork? (some? (.arity-task-scope tl-ctx'))
+               at-fn (fn ^Callable arities-callable []
+                       (when fork?
+                         (ctx/reset-thread-binding-frame tl-ctx'))
+                       (let [n (count (.at-sigs fn-form))
+                             aca (new "[Ltcljc.expr.ArityCode;" n)]
+                         (dotimes [i n]
+                           (let [at ^Arity (nth (.at-sigs fn-form) i)
+                                 this-bref (x/local-ref
+                                            (.level fn-form) (.this-name at)
+                                            (x/type fn-form) x/b-this-object
+                                            fn-form)
+                                 unique-mnm (.unique-mnm fn-form)
+                                 body (wrong/with-list-context (.aform at)
+                                        (-> (enter-fn-arity env unique-mnm
+                                                            at this-bref)
+                                            (add-locals (.paramv at))
+                                            (compile-body at tl-ctx')))
+                                 at' (cond-> at
+                                       (auto-rtype? at)
+                                       (x/with-rtype (x/type body)))]
+                             (aset aca i (x/mk-arity-code at' this-bref body))))
+                         aca))
+               body-fut (if-some [sts (.arity-task-scope tl-ctx')]
+                          (.fork sts at-fn)
+                          (CompletableFuture/completedFuture (.call at-fn)))
                fn-form (if (some auto-rtype? (.at-sigs fn-form))
                          ;; Must force future early to pick up the
                          ;; replacement type from the arity body.
@@ -946,19 +945,16 @@
                ;; inside this deftype* and derive the deftype's
                ;; compilation context from it.
                etp (create-ephemeral-class cdef)
-               method-ctx (ctx/locked-in-class ctx etp)]
+               method-ctx (ctx/locked-in-class ctx etp)
            
-           ;; Moving method compilation to other threads does not help
-           ;; much, because compilation can only progress once this
-           ;; class has been defined.
-           (ctx/with-context
-             {:local-context method-ctx
-              :other-thread? false}
-             (let [field-brefs (sigclass/dtp-field-brefs this-class field-sig
-                                                         method-ctx)
-                   env (add-fields env field-brefs)
-                   mdefs (mapv #(method-def env % etp method-ctx) methods)]
-               (DeftypeDef. cdef field-brefs mdefs)))))
+               ;; Moving method compilation to other threads does not help
+               ;; much, because compilation can only progress once this
+               ;; class has been defined.
+               field-brefs (sigclass/dtp-field-brefs this-class field-sig
+                                                     method-ctx)
+               env (add-fields env field-brefs)
+               mdefs (mapv #(method-def env % etp method-ctx) methods)]
+           (DeftypeDef. cdef field-brefs mdefs)))
        (deftype*-form ^Expr [[_ fq-sym binary-sym field-sig
                               & opts+specs :as form]]
          ;; only do rudimentary error messages because this form is
@@ -1012,19 +1008,21 @@
                ;; trees.  It becomes visible for example when invoking
                ;; a method on the receiver.
                tl-ctx' (ctx/locked tl-ctx)
-               body-fut (ctx/with-fork+context
-                          {:executor (ctx/exc-method tl-ctx)
-                           :local-context tl-ctx'
-                           :other-thread? true #_(ctx/global? tl-ctx)
-                           :label (str unique-mnm ":" (-> form (meta) :line))}
-                          (let [n (count atv)
-                                aca (new "[Ltcljc.expr.ArityCode;" n)]
-                            (dotimes [i n]
-                              (let [at ^Arity (nth atv i)]
-                                (aset aca i (-> (enter-fn-arity env unique-mnm
-                                                                at nil)
-                                                (parse-method at etp tl-ctx')))))
-                            aca))]
+               fork? (some? (.arity-task-scope tl-ctx'))
+               m-fn (fn ^Callable methods-callable []
+                      (when fork?
+                        (ctx/reset-thread-binding-frame tl-ctx'))
+                      (let [n (count atv)
+                            aca (new "[Ltcljc.expr.ArityCode;" n)]
+                        (dotimes [i n]
+                          (let [at ^Arity (nth atv i)]
+                            (aset aca i (-> (enter-fn-arity env unique-mnm
+                                                            at nil)
+                                            (parse-method at etp tl-ctx')))))
+                        aca))
+               body-fut (if-some [sts (.arity-task-scope tl-ctx')]
+                          (.fork sts m-fn)
+                          (CompletableFuture/completedFuture (.call m-fn)))]
            (FnForm. form etp [m] nil (level-fn-form env) unique-mnm
                     (.super-mhd eph-cdef) (.getInterfaces etp)
                     atv body-fut fnc)))

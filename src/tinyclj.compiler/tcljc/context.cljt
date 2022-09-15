@@ -9,13 +9,13 @@
   (:import
    (tcljc.expr BindingRef FnForm)
    (clojure.lang Symbol Keyword IPersistentVector IPersistentMap)
+   (jdk.incubator.concurrent StructuredTaskScope)
    (java.nio.file Path)
    (java.lang.constant ClassDesc ConstantDesc)
    (java.lang.invoke MethodHandles$Lookup MethodHandle)
    (java.util Map ArrayList)
    (java.util.concurrent Future BlockingQueue ArrayBlockingQueue
-                         CompletableFuture TimeoutException TimeUnit
-                         ExecutorService Executors ConcurrentHashMap)))
+                         CompletableFuture TimeUnit ConcurrentHashMap)))
 
 ;;; See ptest/get-future: Do *NOT* call wait-for-result as part of a
 ;;; map.
@@ -188,7 +188,7 @@
               ;; classes.  In the latter case, the macro function's
               ;; `applyTo` can be invoked directly.
      
-              ^ExecutorService exc-method
+              ^StructuredTaskScope arity-task-scope
               ;; The executor for futures compiling an fn* arity (or
               ;; reify* method, or deftype method).
 
@@ -246,20 +246,18 @@
                     ^MethodHandles$Lookup lookup-in-pkg
                     ^FnRequireNamespace require-namespace
                     ^MethodHandle apply-mh
-                    ^ExecutorService exc-method]
-  ;; pick up bindings for *out* and *err* at this point, so that
-  ;; output redirection established by ptest works for worker threads
+                    ^StructuredTaskScope arity-task-scope
+                    binding-frame]
   (let [known-ns {}
         ns-alias {}
-        binding-frame (clojure.lang.Var/cloneThreadBindingFrame)
-        capacity-q 128  ;prevent compilation from reaching too far ahead
+        capacity-q 16 ;prevent compilation from reaching too far ahead
         emit-q (ArrayBlockingQueue. capacity-q)
         next-id-mh (resolve-mh lookup-in-pkg rt/mhd-nextID)
         private-names (ConcurrentHashMap.)]
     (Ctx. known-ns ns-alias initial-globals jb/initial-imports
           ns-str rpath rurl lookup-in-pkg require-namespace
-          private-names binding-frame emit-q next-id-mh apply-mh exc-method
-          false 0 0)))
+          private-names binding-frame emit-q next-id-mh apply-mh
+          arity-task-scope false 0 0)))
 
 (defn locked ^Ctx [^Ctx ctx]
   (if (.locked? ctx)
@@ -269,7 +267,7 @@
           (.ns-str ctx) (.rpath ctx) (.rurl ctx)
           (.lookup-in-pkg ctx) (.require-namespace ctx)
           (.!private-names ctx) (.binding-frame ctx) (.emit-q ctx)
-          (.next-id-mh ctx) (.apply-mh ctx) (.exc-method ctx) true 0
+          (.next-id-mh ctx) (.apply-mh ctx) (.arity-task-scope ctx) true 0
           (.get-tlf-idx ctx))))
 
 (defn locked-in-class ^Ctx [^Ctx ctx ^Class ephemeral-class]
@@ -281,12 +279,11 @@
           (.ns-str ctx) (.rpath ctx) (.rurl ctx)
           l (.require-namespace ctx)
           (.!private-names ctx) (.binding-frame ctx) (.emit-q ctx)
-          (.next-id-mh ctx) (.apply-mh ctx) (.exc-method ctx) true 0
+          (.next-id-mh ctx) (.apply-mh ctx) (.arity-task-scope ctx) true 0
           (.get-tlf-idx ctx))))
 
 
-;;; Not private because of the `with-context` macro.
-#_(def ^ThreadLocal ctx (ThreadLocal.))   ;FIXME... want ScopeLocal here
+#_(def ^:private ^ThreadLocal ctx (ThreadLocal.)) ;FIXME... want ExtentLocal
 (defn tl-ctx* ^Ctx [tl-ctx] tl-ctx)
 
 (defn global? ^boolean [tl-ctx]
@@ -359,93 +356,11 @@
   (let [mh (resolve-mh lookup-in-pkg rt/mhd-popFileContext)]
     ^void (.invokeExact mh)))
 
-(defn exc-method ^ExecutorService [tl-ctx]
-  (.exc-method (tl-ctx* tl-ctx)))
-
-;;; ------------------------------------------------------------------------
-
-(def enable-task-log false)
-
-(letfn [(get-sexpr [^Keyword kw ^IPersistentMap m]
-          (java.util.Objects/requireNonNull (get m kw) (str kw)))]
-  (defn- binding-sym ^Symbol [m] (get-sexpr :binding-sym m))
-  (defn- local-context-sexpr [m] (get-sexpr :local-context m))
-  (defn- other-thread-sexpr [m] (get-sexpr :other-thread? m))
-  (defn- executor-sexpr [m] (get-sexpr :executor m))
-  (defn- label-sexpr [m] (get m :label "<no-label>")))
-
-(defmacro with-log-task [m & body]
-  (if enable-task-log
-    `(let [label# ~(label-sexpr m)
-           start# (cfg/log-start label#)
-           res# (do ~@body)]
-       (cfg/log-end start# label#)
-       res#)
-    (list* 'do body)))
-
-(defmacro with-executor [m & body]
-  (let [exc-sym (binding-sym m)]
-    `(let [~exc-sym (Executors/newVirtualThreadPerTaskExecutor)]
-       (try
-         ~@body
-         (finally
-           (.shutdown ~exc-sym)
-           (when-not (.awaitTermination ~exc-sym 5 TimeUnit/MINUTES)
-             (throw (TimeoutException.))))))))
-
-(defmacro with-context [m & body]
-  ;; FIXME... currently this is just a no-op with regard to actually
-  ;; setting the context
-  `(do
-     (when ~(other-thread-sexpr m)
-       ;; compiler code running in unit tests should use the *out*
-       ;; and *err* bound by ptest:
-       (clojure.lang.Var/resetThreadBindingFrame
-        (.binding-frame (tl-ctx* ~(local-context-sexpr m)))))
-     
-     ~@body)
-  #_
-  `(let [prev-ctx# (.get ctx)]
-     (try
-       (.set ctx ~local-ctx)
-       ~@body
-       (finally
-         (.set ctx prev-ctx#)))))
-
-(defmacro with-fork-or-on-thread [m & body]
-  `(let [task# (fn ^Callable task [] (with-log-task ~m ~@body))]
-     (if ~(other-thread-sexpr m)
-       (.submit ~(executor-sexpr m) task#)
-       ^Future (CompletableFuture/completedFuture (.call task#)))))
-
-(defmacro with-fork [m & body]
-  `(let [exc# ~(executor-sexpr m)
-         other-thread?# (some? exc#)]
-     (with-fork-or-on-thread
-       {:executor exc#
-        :other-thread? other-thread?#
-        :label ~(label-sexpr m)}
-       ~@body)))
-
-(defmacro with-fork+context [m & body]
-  ;; force context computation in outside thread
-  `(let [local-ctx# ~(local-context-sexpr m)
-         exc# ~(executor-sexpr m)
-         other-thread?# (and (some? exc#) ~(other-thread-sexpr m))]
-     (with-fork-or-on-thread
-       {:executor exc#
-        :other-thread? other-thread?#
-        :label ~(label-sexpr m)}
-       (with-context {:local-context local-ctx#, :other-thread? other-thread?#}
-         ~@body))))
-
-
-(defmacro start-solo-thread [m & body]
-  `(let [frame# (.binding-frame (tl-ctx* ~(local-context-sexpr m)))]
-     (-> (fn ^Runnable task-with-ctx []
-           ;; compiler code running in unit tests should use the *out*
-           ;; and *err* bound by ptest:
-           (clojure.lang.Var/resetThreadBindingFrame frame#)
-           (with-log-task ~m
-             ~@body))
-         (Thread/startVirtualThread))))
+(defn clone-thread-binding-frame []
+  (clojure.lang.Var/cloneThreadBindingFrame))
+(defn reset-thread-binding-frame ^void [x]
+  ;; compiler code running in unit tests should use the *out*
+  ;; and *err* bound by ptest:
+  (clojure.lang.Var/resetThreadBindingFrame (if (instance? Ctx x)
+                                              (.binding-frame (tl-ctx* x))
+                                              x)))

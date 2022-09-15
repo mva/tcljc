@@ -4,7 +4,7 @@ JAVAC=$(JAVA_BIN)javac
 JAVAP=$(JAVA_BIN)javap
 
 # Note: currently need the impl package for BlockCodeBuilderImpl.isEmpty()
-JAVA_OPTS=--enable-preview \
+JAVA_OPTS=--enable-preview --add-modules jdk.incubator.concurrent \
   --add-exports java.base/jdk.classfile=ALL-UNNAMED \
   --add-exports java.base/jdk.classfile.constantpool=ALL-UNNAMED \
   --add-exports java.base/jdk.classfile.instruction=ALL-UNNAMED \
@@ -116,7 +116,8 @@ $(DEST_DIR).stageDI2/DONE: $(DEST_DIR).stageDI1/DONE
 # Use bootstrapped compiler to build modules for runtime, core
 # library, and compiler.  Collect the jar files into $(DEST_DIR).mdir.
 
-BUILD_JAVAC=$(JAVAC) --release 17
+BUILD_JAVAC=$(JAVAC)
+#BUILD_JAVAC=$(JAVAC) --release 17
 BUILD_JAVA=$(JAVA)
 BUILD_JAR=$(JAVA_BIN)jar
 
