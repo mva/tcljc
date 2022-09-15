@@ -17,19 +17,6 @@
                          CompletableFuture TimeoutException TimeUnit
                          ExecutorService Executors ConcurrentHashMap)))
 
-;;; Produces the value of `body` or throws an exception.  Whatever the
-;;; outcome, the provided CompletableFuture is completed afterwards:
-;;; either with the value or exceptionally.
-(defmacro with-complete [cf & body]
-  `(let [^CompletableFuture cf# ~cf]
-     (try
-       (let [res# (do ~@body)]
-         (.complete cf# res#)
-         res#)
-       (catch Throwable t#
-         (.completeExceptionally cf# t#)
-         (throw t#)))))
-
 ;;; See ptest/get-future: Do *NOT* call wait-for-result as part of a
 ;;; map.
 (defn wait-for-result

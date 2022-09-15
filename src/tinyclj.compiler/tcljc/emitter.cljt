@@ -345,7 +345,7 @@
                   cl (cfg/write-and-define-class (-> segm .env .dest-dir)
                                                  (segment-lookup segm)
                                                  this-class bs)]
-              (ctx/with-complete promise cl)
+              (.complete promise cl)
               (with-bytes segm 0 false bs nil)))
           (write-capstone ^Namespace [^SegmState segm ^Namespace nmsp]
             (let [bs (build-capstone segm nmsp)
