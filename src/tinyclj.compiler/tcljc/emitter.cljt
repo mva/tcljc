@@ -102,7 +102,6 @@
                     ^HashSet !private-names ;shared across SegmState
                     
                     ^IPersistentVector bytesv ;nil if bytes are not tracked
-                    ^ClassDesc prev-segm-cld
                     fn-class-futv])     ;vector of Future of bytes
 
 (defn- segment-lookup ^MethodHandles$Lookup [^SegmState segm]
@@ -122,7 +121,7 @@
   (SegmState. (.env segm) (.ctx segm) (.source-file segm)
               (.segm-id segm) (.segm-cld segm) (conj (.tlfv segm) tlf)
               (.!delayed-macros segm) (.!private-names segm)
-              (.bytesv segm) (.prev-segm-cld segm) (.fn-class-futv segm)))
+              (.bytesv segm) (.fn-class-futv segm)))
 (defn with-bytes ^SegmState [^SegmState segm ^int id-delta
                              ^boolean clear-tlfv? ^bytes bs ^Class segm-cl]
   (let [bytesv' (when-some [bsv (.bytesv segm)]
@@ -131,14 +130,12 @@
                 (+ (.segm-id segm) id-delta) (segment-cld segm id-delta)
                 (if clear-tlfv? [] (.tlfv segm))
                 (.!delayed-macros segm) (.!private-names segm) bytesv'
-                (if segm-cl (rt/describe-class segm-cl) (.prev-segm-cld segm))
                 (.fn-class-futv segm))))
 (defn- with-fn-class-fut ^SegmState [^SegmState segm ^Future fut]
   (SegmState. (.env segm) (.ctx segm) (.source-file segm)
               (.segm-id segm) (.segm-cld segm) (.tlfv segm)
               (.!delayed-macros segm) (.!private-names segm)
-              (.bytesv segm) (.prev-segm-cld segm)
-              (conj (.fn-class-futv segm) fut)))
+              (.bytesv segm) (conj (.fn-class-futv segm) fut)))
 (defn- with-collect-fn-classes ^SegmState [^SegmState segm]
   (let [bytesv' (if-some [bytesv (.bytesv segm)]
                   (into (.bytesv segm) (map ctx/wait-for-result)
@@ -146,8 +143,7 @@
                   (run! ctx/wait-for-result (.fn-class-futv segm)))]
     (SegmState. (.env segm) (.ctx segm) (.source-file segm)
                 (.segm-id segm) (.segm-cld segm) (.tlfv segm)
-                (.!delayed-macros segm) (.!private-names segm)
-                bytesv' (.prev-segm-cld segm) [])))
+                (.!delayed-macros segm) (.!private-names segm) bytesv' [])))
 
 (defn- capstone-cld ^ClassDesc [^SegmState segm]
   (ClassDesc/of (-> segm .ctx .ns-str) ns-class-name))
@@ -274,7 +270,7 @@
         cld (ClassDesc/of (.ns-str ctx)
                           (str ns-class-name first-segm-id))]
     (SegmState. env ctx source-file first-segm-id cld
-                [] (ArrayDeque.) (HashSet.) (when collect-bytesv? []) nil [])))
+                [] (ArrayDeque.) (HashSet.) (when collect-bytesv? []) [])))
 
 (defn- emit-segments ^Namespace [^SegmState segm ^ExecutorService build-exc]
   (letfn [(take-msg ^Msg [^BlockingQueue q]
