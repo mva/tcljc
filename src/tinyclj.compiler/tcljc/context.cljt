@@ -108,7 +108,8 @@
 
 (def msg-flush-macro-definitions -3)
 ;;; Flushes macro definitions from completed top-level forms to class
-;;; files.  Only works in deterministic mode.
+;;; files.  No effect if there are no delayed but ready macros in the
+;;; current segment.  Only works in deterministic mode.
 
 (def msg-emit-tlf -2)
 ;;; Emit top-level form.  The `s` queue waits for the function bodies'
@@ -131,11 +132,10 @@
 ;;; reference the newly created class immediately.
 
 (def req-flush-namespace-segment 3)
-;;; Returns when all namespace code accumulated upto this point has
-;;; been defined into the class loader.  That is, the namespace code
-;;; has become both visible and possibly active.  The value being
-;;; returned is an expression that forces the namespace's
-;;; initialization up to this point.
+;;; Unconditionally flushes the current namespace segment's top-level
+;;; forms and returns an expression that forces the namespace's
+;;; initialization up to this point.  All macro values up to this
+;;; point will be delivered eventually.
 
 
 (deftype Msg [^int task ^Object x ^CompletableFuture promise])

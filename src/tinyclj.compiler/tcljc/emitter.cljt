@@ -402,10 +402,8 @@
                       (write-and-define (build-deftype dtdef) promise))))
               
               ctx/req-flush-namespace-segment
-              (let [segm (write-segment segm true)
-                    force-x (x/invoke-force-clinit (.prev-segm-cld segm))]
-                (.complete promise force-x)
-                segm)
+              (do (.complete promise (x/invoke-force-clinit (.segm-cld segm)))
+                  (write-segment segm true))
               
               ctx/msg-fatal-error
               (throw ^Throwable x)
