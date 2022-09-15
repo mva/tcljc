@@ -127,14 +127,14 @@ $(DEST_DIR).mod-tinyclj-rt/module-info.class: $(TINYCLJ_RT_SOURCE) | $(DEST_DIR)
 	mkdir -p --mode 700 "$(dir $@)"
 	$(BUILD_JAVAC) -d "$(dir $@)" $^
 
-TINYCLJ_CORE_SOURCE := $(sort $(wildcard src/tinyclj.core/*/*.cljt src/tinyclj.core/*/*/*.cljt))
-$(DEST_DIR).mod-tinyclj-core/module-info.class: $(DEST_DIR).mod-tinyclj-rt/module-info.class $(TINYCLJ_RT_SOURCE)
+TINYCLJ_CORE_SOURCE := $(sort $(wildcard src/tinyclj.core/*/*.cljt src/tinyclj.core/*/*/*.cljt)) src/tinyclj.core/module-info.java
+$(DEST_DIR).mod-tinyclj-core/module-info.class: $(DEST_DIR).mod-tinyclj-rt/module-info.class $(TINYCLJ_CORE_SOURCE)
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
 	$(BUILD_JAVA) -cp $(BOOT_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns -d "$(dir $@)" --parent-loader :platform -s $(dir $<) -s src/tinyclj.core tinyclj.core.all
 	$(BUILD_JAVAC) -p $(dir $<) -d "$(dir $@)" src/tinyclj.core/module-info.java
 
-TINYCLJ_COMPILER_SOURCE := $(sort $(wildcard src/tinyclj.compiler/*/*.cljt src/tinyclj.compiler/*/*/*.cljt))
+TINYCLJ_COMPILER_SOURCE := $(sort $(wildcard src/tinyclj.compiler/*/*.cljt src/tinyclj.compiler/*/*/*.cljt)) src/tinyclj.compiler/module-info.java
 $(DEST_DIR).mod-tinyclj-compiler/module-info.class: $(DEST_DIR).mod-tinyclj-core/module-info.class $(TINYCLJ_COMPILER_SOURCE)
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
