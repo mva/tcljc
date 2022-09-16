@@ -80,15 +80,10 @@
       (= p '&)
       (let [p (ensure-parameter (second params))
             tp (tag-of p false nil tl-ctx)
-            vap-tp (if (nil? tp)
-                     (cond (some? unset-tp)
-                           unset-tp
-                           (some? (.method-name tmpl))
-                           (wrong/syntax "method cannot have rest parameter")
-                           :else (ctx/get-type rt/clnm-seq tl-ctx))
-                     (if (jb/array? tp)
-                       tp
-                       (wrong/type-expr "type of rest parameter must be array" tp)))]
+            vap-tp (cond
+                     (nil? tp) (or unset-tp (ctx/get-type rt/clnm-seq tl-ctx))
+                     (jb/array? tp) tp
+                     :else (wrong/type-expr "type of rest parameter must be array" tp))]
         (when (nnext params)
           (wrong/syntax "additional parameters after rest parameter"))
         (let [param (mk-param (.level tmpl) p vap-tp)]
