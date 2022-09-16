@@ -179,6 +179,8 @@
   (let [method-n #(.getParameterCount ^Method %)
         av (vec (sort-by x/at-n asigs))
         mv (vec (sort-by method-n (resolve/itf-methods itf)))]
+    (when-not (= (count av) 1)
+      (wrong/other "interface function must implement exactly one arity"))
     (loop [acc []
            ai 0
            mi 0]
