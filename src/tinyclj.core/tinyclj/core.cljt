@@ -725,7 +725,7 @@
   seq calls. See also - realized?"
   {:added "1.0"}
   [& body]
-  (list 'new 'clojure.lang.LazySeq (list 'reify* '[java.util.function.Supplier] (list* 'get '[__this_lazy_seq] body))))    
+  (list 'new 'clojure.lang.LazySeq (list* 'fn* '^java.util.function.Supplier thunk [] body)))
 
 (defn ^:static chunk-buffer ^clojure.lang.ChunkBuffer [^int capacity]
   (clojure.lang.ChunkBuffer. capacity))

@@ -368,7 +368,7 @@
              
              (ALOAD_3)
              (ILOAD_1)
-             (INVOKEVIRTUAL is-odd$rec-odd "fn1" "(I)Z")
+             (INVOKEINTERFACE Pred "fn1" "(I)Z" :itf)
              (IRETURN)]
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -387,7 +387,8 @@
              
              (RETURN)]]
            
-           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/is-odd$rec-even" nil "tinyclj/lang/AFnMh" [Pred])
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/is-odd$rec-even"
+                   nil "java/lang/Object" [Pred])
             [(FIELD [PRIVATE FINAL] "cutoff" "I")]
             [(FIELD [PRIVATE] "rec-odd" "Lpkg/ns0/is-odd$rec-odd;")]
             
@@ -407,61 +408,38 @@
              (ILOAD_1)
              (ICONST_1)
              (ISUB)
-             (INVOKEVIRTUAL is-odd$rec-odd "fn1" "(I)Z")
+             (INVOKEINTERFACE Pred "fn1" "(I)Z" :itf)
              (IRETURN)]
             
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: is-odd$rec-even __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (ICONST_1)
-             (IF_ICMPNE L:0)
-             (LDC [VIRTUAL . "fn1" "(I)Z"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-            
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: is-odd$rec-even __this"]
-             (LDC [VIRTUAL . "fn1" "(I)Z"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-            
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;ILpkg/ns0/is-odd$rec-odd;)V")
+            [(METHOD [PRIVATE] "<init>" "(ILpkg/ns0/is-odd$rec-odd;)V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             #_["LOCAL 2: int cutoff"]
-             #_["LOCAL 3: is-odd$rec-odd rec-odd"]
+             #_["LOCAL 1: int cutoff"]
+             #_["LOCAL 2: is-odd$rec-odd rec-odd"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (ALOAD_0)
-             (ILOAD_2)
+             (ILOAD_1)
              (PUTFIELD . "cutoff" "I")
              (ALOAD_0)
-             (ALOAD_3)
+             (ALOAD_2)
              (PUTFIELD . "rec-odd" "Lpkg/ns0/is-odd$rec-odd;")
              (RETURN)]
 
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;I)V")
+            [(METHOD [PRIVATE] "<init>" "(I)V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             #_["LOCAL 2: int cutoff"]
+             #_["LOCAL 1: int cutoff"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (ALOAD_0)
-             (ILOAD_2)
+             (ILOAD_1)
              (PUTFIELD . "cutoff" "I")
              (RETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "__create" "(I)Lpkg/ns0/is-odd$rec-even;")
              #_["LOCAL 0: int cutoff"]
              (NEW is-odd$rec-even) (DUP)
-             (ACONST_NULL)
              (ILOAD_0)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;I)V")
+             (INVOKESPECIAL . "<init>" "(I)V")
              (ARETURN)]
             
             [(METHOD [FINAL] "__patch" "(Lpkg/ns0/is-odd$rec-odd;)V")
@@ -470,22 +448,10 @@
              (ALOAD_0)
              (ALOAD_1)
              (PUTFIELD . "rec-odd" "Lpkg/ns0/is-odd$rec-odd;")
-             (RETURN)]
-            
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/is-odd$rec-even;")
-             #_["LOCAL 0: is-odd$rec-even __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW is-odd$rec-even) (DUP)
-             (ALOAD_1)
-             (ALOAD_0)
-             (GETFIELD . "cutoff" "I")
-             (ALOAD_0)
-             (GETFIELD . "rec-odd" "Lpkg/ns0/is-odd$rec-odd;")
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;ILpkg/ns0/is-odd$rec-odd;)V")
-             (ARETURN)]]
+             (RETURN)]]
            
            [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/is-odd$rec-odd"
-                   nil "tinyclj/lang/AFnMh" [Pred])
+                   nil "java/lang/Object" [Pred])
             [(FIELD [PRIVATE FINAL] "cutoff" "I")]
             [(FIELD [PRIVATE FINAL] "rec-even" "Lpkg/ns0/is-odd$rec-even;")]
             
@@ -505,40 +471,20 @@
              (ILOAD_1)
              (ICONST_1)
              (ISUB)
-             (INVOKEVIRTUAL is-odd$rec-even "fn1" "(I)Z")
+             (INVOKEINTERFACE Pred "fn1" "(I)Z" :itf)
              (IRETURN)]
             
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: is-odd$rec-odd __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (ICONST_1)
-             (IF_ICMPNE L:0)
-             (LDC [VIRTUAL . "fn1" "(I)Z"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-            
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: is-odd$rec-odd __this"]
-             (LDC [VIRTUAL . "fn1" "(I)Z"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-            
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;ILpkg/ns0/is-odd$rec-even;)V")
+            [(METHOD [PRIVATE] "<init>" "(ILpkg/ns0/is-odd$rec-even;)V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             #_["LOCAL 2: int cutoff"]
-             #_["LOCAL 3: is-odd$rec-even rec-even"]
+             #_["LOCAL 1: int cutoff"]
+             #_["LOCAL 2: is-odd$rec-even rec-even"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (ALOAD_0)
-             (ILOAD_2)
+             (ILOAD_1)
              (PUTFIELD . "cutoff" "I")
              (ALOAD_0)
-             (ALOAD_3)
+             (ALOAD_2)
              (PUTFIELD . "rec-even" "Lpkg/ns0/is-odd$rec-even;")
              (RETURN)]
             
@@ -546,22 +492,9 @@
              #_["LOCAL 0: int cutoff"]
              #_["LOCAL 1: is-odd$rec-even rec-even"]
              (NEW is-odd$rec-odd) (DUP)
-             (ACONST_NULL)
              (ILOAD_0)
              (ALOAD_1)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;ILpkg/ns0/is-odd$rec-even;)V")
-             (ARETURN)]
-            
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/is-odd$rec-odd;")
-             #_["LOCAL 0: is-odd$rec-odd __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW is-odd$rec-odd) (DUP)
-             (ALOAD_1)
-             (ALOAD_0)
-             (GETFIELD . "cutoff" "I")
-             (ALOAD_0)
-             (GETFIELD . "rec-even" "Lpkg/ns0/is-odd$rec-even;")
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;ILpkg/ns0/is-odd$rec-even;)V")
+             (INVOKESPECIAL . "<init>" "(ILpkg/ns0/is-odd$rec-even;)V")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* Pred (fn1 ^boolean [^int n]))
@@ -569,10 +502,10 @@
                  (def is-odd
                    (fn* is-odd ^boolean [^int cutoff ^int x]
                         (letfn* [(^Pred rec-even [n]
-                                  (if (zero? (- n cutoff)) true (rec-odd (- n 1))))
+                                  (if (zero? (- n cutoff)) true (.fn1 rec-odd (- n 1))))
                                  (^Pred rec-odd [n]
-                                  (if (zero? (- n cutoff)) false (rec-even (- n 1))))]
-                                (rec-odd x))))
+                                  (if (zero? (- n cutoff)) false (.fn1 rec-even (- n 1))))]
+                                (.fn1 rec-odd x))))
                  (def oddfalse (is-odd -2 2))
                  (def oddtrue (is-odd -2 3))]))))
 
@@ -600,7 +533,7 @@
              (LDC [:bsm-invoke "_" "Lpkg/ns0/is-odd$rec-odd;"
                    [[STATIC is-odd$rec-odd "__create" "()Lpkg/ns0/is-odd$rec-odd;"]]])
              (ILOAD_0)
-             (INVOKEVIRTUAL is-odd$rec-odd "fn1" "(I)Z")
+             (INVOKEINTERFACE Pred "fn1" "(I)Z" :itf)
              (IRETURN)]
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -618,7 +551,7 @@
              (RETURN)]]
            
            [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/is-odd$rec-even" nil
-                   "tinyclj/lang/AFnMh" [Pred])
+                   "java/lang/Object" [Pred])
             [(METHOD [PUBLIC FINAL] "fn1" "(I)Z")
              ["LOCAL 0: is-odd$rec-even rec-even"]
              ["LOCAL 1: int n"]
@@ -632,51 +565,22 @@
              (ILOAD_1)
              (ICONST_1)
              (ISUB)
-             (INVOKEVIRTUAL is-odd$rec-odd "fn1" "(I)Z")
+             (INVOKEINTERFACE Pred "fn1" "(I)Z" :itf)
              (IRETURN)]
             
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: is-odd$rec-even __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (ICONST_1)
-             (IF_ICMPNE L:0)
-             (LDC [VIRTUAL . "fn1" "(I)Z"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-            
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: is-odd$rec-even __this"]
-             (LDC [VIRTUAL . "fn1" "(I)Z"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-            
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;)V")
+            [(METHOD [PRIVATE] "<init>" "()V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (RETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/is-odd$rec-even;")
              (NEW is-odd$rec-even) (DUP)
-             (ACONST_NULL)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
-             (ARETURN)]
-            
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/is-odd$rec-even;")
-             #_["LOCAL 0: is-odd$rec-even __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW is-odd$rec-even) (DUP)
-             (ALOAD_1)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL . "<init>" "()V")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/is-odd$rec-odd"
-                   nil "tinyclj/lang/AFnMh" [Pred])
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/is-odd$rec-odd" nil
+                   "java/lang/Object" [Pred])
             [(METHOD [PUBLIC FINAL] "fn1" "(I)Z")
              ["LOCAL 0: is-odd$rec-odd rec-odd"]
              ["LOCAL 1: int n"]
@@ -690,47 +594,18 @@
              (ILOAD_1)
              (ICONST_1)
              (ISUB)
-             (INVOKEVIRTUAL is-odd$rec-even "fn1" "(I)Z")
+             (INVOKEINTERFACE Pred "fn1" "(I)Z" :itf)
              (IRETURN)]
             
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: is-odd$rec-odd __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (ICONST_1)
-             (IF_ICMPNE L:0)
-             (LDC [VIRTUAL . "fn1" "(I)Z"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-            
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: is-odd$rec-odd __this"]
-             (LDC [VIRTUAL . "fn1" "(I)Z"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-            
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;)V")
+            [(METHOD [PRIVATE] "<init>" "()V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (RETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/is-odd$rec-odd;")
              (NEW is-odd$rec-odd) (DUP)
-             (ACONST_NULL)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
-             (ARETURN)]
-            
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/is-odd$rec-odd;")
-             #_["LOCAL 0: is-odd$rec-odd __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW is-odd$rec-odd) (DUP)
-             (ALOAD_1)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL . "<init>" "()V")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* Pred (fn1 ^boolean [^int n]))
@@ -738,10 +613,10 @@
                  (def is-odd
                    (fn* is-odd ^boolean [^int x]
                         (letfn* [(^Pred rec-even [n]
-                                  (if (zero? n) true (rec-odd (- n 1))))
+                                  (if (zero? n) true (.fn1 rec-odd (- n 1))))
                                  (^Pred rec-odd [n]
-                                  (if (zero? n) false (rec-even (- n 1))))]
-                                (rec-odd x))))
+                                  (if (zero? n) false (.fn1 rec-even (- n 1))))]
+                                (.fn1 rec-odd x))))
                  (def oddfalse (is-odd 2))
                  (def oddtrue (is-odd 3))]))))
 
@@ -885,55 +760,27 @@
              
              (LDC [:bsm-invoke "_" "Lpkg/ns0/self-ref;"
                    [[STATIC self-ref "__create" "()Lpkg/ns0/self-ref;"]]])
-             (INVOKEVIRTUAL self-ref "fn0" "()Ljava/lang/Object;")
+             (INVOKEINTERFACE Generic0 "fn0" "()Ljava/lang/Object;" :itf)
              (POP)
              
              (RETURN)]]
            
            [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/self-ref" nil
-                   "tinyclj/lang/AFnMh" [Generic0])
+                   "java/lang/Object" [Generic0])
             [(METHOD [PUBLIC FINAL] "fn0" "()Ljava/lang/Object;")
              ["LOCAL 0: self-ref self-ref"]
              (ALOAD_0)
              (ARETURN)]
             
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: self-ref __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (IFNE L:0)
-             (LDC [VIRTUAL . "fn0" "()Ljava/lang/Object;"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-            
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: self-ref __this"]
-             (LDC [VIRTUAL . "fn0" "()Ljava/lang/Object;"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-            
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;)V")
+            [(METHOD [PRIVATE] "<init>" "()V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (RETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/self-ref;")
              (NEW self-ref) (DUP)
-             (ACONST_NULL)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
-             (ARETURN)]
-            
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/self-ref;")
-             #_["LOCAL 0: self-ref __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW self-ref) (DUP)
-             (ALOAD_1)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL . "<init>" "()V")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* Generic0
@@ -941,7 +788,7 @@
                  (import* pkg.ns0.Generic0)
                  (letfn* [(^Generic0 self-ref []
                            self-ref)]
-                         (self-ref))]))))
+                         (.fn0 self-ref))]))))
 
 (deftest other-ref-statics
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")

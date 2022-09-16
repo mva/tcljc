@@ -1350,7 +1350,11 @@
              level unique-mnm super-mhd itf-tags at-sigs body-fut !fnc)))
 
 (defn fn-reify? ^boolean [^FnForm fn-form]
-  (some? (seq (argv fn-form))))
+  (pos? (arg-count fn-form)))
+(defn fn-itfs? ^boolean [^FnForm fn-form] ;reify* or interface fn?
+  (if-some [a (.itf-tags fn-form)]
+    (pos? (alength a))
+    false))
 
 ;;; Completes a letfn* function definition that closes over a function
 ;;; value that is defined later in the same letfn*: this opcode fills
@@ -1457,6 +1461,11 @@
 (defn root-fn-const ^ConstantDesc [x]
   (when-some [fn-form (root-fn-form x)]
     (.fn-value-const (-> fn-form .!fnc .emit-plan))))
+
+(defn callable-root-fn-form ^FnForm [x]
+  (when-some [fn-form (root-fn-form x)]
+    (when-not (fn-itfs? fn-form)
+      fn-form)))
 
 (defn local-ref
   (^ValueRef [^int level ^Symbol simple-nm ^Class tp ^int kind]

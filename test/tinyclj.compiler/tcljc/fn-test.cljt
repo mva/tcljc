@@ -383,14 +383,12 @@
              (INVOKESTATIC . "add2" "()Lpkg/ns0/add2;")
              (ICONST_1)
              (ICONST_1)
-             #_(INVOKEINTERFACE "pkg/ns0/FnInt2" "arity-2" "(II)I" :itf)
-             (INVOKEVIRTUAL add2 "arity-2" "(II)I")
+             (INVOKEINTERFACE FnInt2 "arity-2" "(II)I" :itf)
              (PUTSTATIC . "two" "I")
              (RETURN)]]
 
            [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/add2" nil
-                   "tinyclj/lang/AFnMh" [FnInt2])
-
+                   "java/lang/Object" [FnInt2])
             [(METHOD [PUBLIC FINAL] "arity-2" "(II)I")
              ["LOCAL 0: add2 add2"]
              ["LOCAL 1: int a"]
@@ -399,53 +397,23 @@
              (ILOAD_2)
              (IADD)
              (IRETURN)]
-
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: add2 __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (ICONST_2)
-             (IF_ICMPNE L:0)
-             (LDC [VIRTUAL . "arity-2" "(II)I"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: add2 __this"]
-             (LDC [VIRTUAL . "arity-2" "(II)I"])
-             (INVOKESTATIC RT "methodHandleArray"
-                           "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;)V")
+            
+            [(METHOD [PRIVATE] "<init>" "()V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (RETURN)]
 
             [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/add2;")
              (NEW add2) (DUP)
-             (ACONST_NULL)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
-             (ARETURN)]
-
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/add2;")
-             #_["LOCAL 0: add2 __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW add2) (DUP)
-             (ALOAD_1)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL . "<init>" "()V")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* FnInt2
                    (arity-2 ^int [^int a ^int b]))
                  (def add2 (fn* ^pkg.ns0.FnInt2 add2 [a b]
                                 (+ a b)))
-                 (def two (add2 1 1))]))))
+                 (def two (.arity-2 add2 1 1))]))))
 
 (deftest delegating-str-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
@@ -506,7 +474,7 @@
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "g~0" "()Ljava/lang/Object;")
              (INVOKESTATIC . "f" "()Lpkg/ns0/f;")
-             (INVOKEVIRTUAL f "run" "()V")
+             (INVOKEINTERFACE Runnable "run" "()V" :itf)
              (ACONST_NULL)
              (ARETURN)]
 
@@ -516,57 +484,27 @@
              (RETURN)]]
            
            [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/f" nil
-                   "tinyclj/lang/AFnMh" [Runnable])
-
+                   "java/lang/Object" [Runnable])
             [(METHOD [PUBLIC FINAL] "run" "()V")
              ["LOCAL 0: f f"]
              (RETURN)]
-
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: f __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (IFNE L:0)
-             (LDC [VIRTUAL . "run" "()V"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: f __this"]
-             (LDC [VIRTUAL . "run" "()V"])
-             (INVOKESTATIC RT "methodHandleArray"
-                           "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;)V")
+            
+            [(METHOD [PRIVATE] "<init>" "()V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (RETURN)]
 
             [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/f;")
              (NEW f) (DUP)
-             (ACONST_NULL)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
-             (ARETURN)]
-
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/f;")
-             #_["LOCAL 0: f __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW f) (DUP)
-             (ALOAD_1)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL . "<init>" "()V")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^Runnable f
                    (fn* ^Runnable f [] ;mapped to Runnable.run(), which returns void
                         nil))
                  (def g (fn* g []
-                             (f)))]))))
+                             (.run f)))]))))
 
 (deftest def-comparator-itf-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
@@ -590,8 +528,8 @@
              (INVOKESTATIC . "f" "()Lpkg/ns0/f;")
              (ACONST_NULL)
              (ACONST_NULL)
-             (INVOKEVIRTUAL f "compare"
-                            "(Ljava/lang/Object;Ljava/lang/Object;)I")
+             (INVOKEINTERFACE Comparator "compare"
+                              "(Ljava/lang/Object;Ljava/lang/Object;)I" :itf)
              (IRETURN)]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -600,8 +538,7 @@
              (RETURN)]]
            
            [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/f" nil
-                   "tinyclj/lang/AFnMh" [Comparator])
-            
+                   "java/lang/Object" [Comparator])
             [(METHOD [PUBLIC FINAL] "compare" "(Ljava/lang/Object;Ljava/lang/Object;)I")
              ["LOCAL 0: f f"]
              ["LOCAL 1: Object o1"]
@@ -609,51 +546,22 @@
              (ICONST_0)
              (IRETURN)]
             
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: f __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (ICONST_2)
-             (IF_ICMPNE L:0)
-             (LDC [VIRTUAL . "compare" "(Ljava/lang/Object;Ljava/lang/Object;)I"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-            
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: f __this"]
-             (LDC [VIRTUAL . "compare" "(Ljava/lang/Object;Ljava/lang/Object;)I"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-            
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;)V")
+            [(METHOD [PRIVATE] "<init>" "()V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (RETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/f;")
              (NEW f) (DUP)
-             (ACONST_NULL)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
-             (ARETURN)]
-            
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/f;")
-             #_["LOCAL 0: f __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW f) (DUP)
-             (ALOAD_1)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL . "<init>" "()V")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^java.util.Comparator f
                    (fn* ^java.util.Comparator f [o1 o2]
                         0))
                  (def g (fn* g ^int []
-                             (f nil nil)))]))))
+                             (.compare f nil nil)))]))))
 
 (deftest static-recursive-call-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
@@ -935,89 +843,37 @@
              (RETURN)]]
            
            [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/fn-1"
-                   nil "tinyclj/lang/AFnMh" [FnMyFn])
+                   nil "java/lang/Object" [FnMyFn])
             [(METHOD [PUBLIC FINAL] "fn0" "()I")
              ["LOCAL 0: fn-1 fn-1"]
              (ICONST_1)
              (IRETURN)]
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: fn-1 __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (IFNE L:0)
-             (LDC [VIRTUAL . "fn0" "()I"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: fn-1 __this"]
-             (LDC [VIRTUAL . "fn0" "()I"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;)V")
+            [(METHOD [PRIVATE] "<init>" "()V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/fn-1;")
              (NEW fn-1)
              (DUP)
-             (ACONST_NULL)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
-             (ARETURN)]
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/fn-1;")
-             #_["LOCAL 0: fn-1 __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW fn-1)
-             (DUP)
-             (ALOAD_1)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL . "<init>" "()V")
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/fn-2"
-                   nil "tinyclj/lang/AFnMh" [FnMyFn])
+                   nil "java/lang/Object" [FnMyFn])
             [(METHOD [PUBLIC FINAL] "fn0" "()I")
              ["LOCAL 0: fn-2 fn-2"]
              (ICONST_2)
              (IRETURN)]
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: fn-2 __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (IFNE L:0)
-             (LDC [VIRTUAL . "fn0" "()I"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: fn-2 __this"]
-             (LDC [VIRTUAL . "fn0" "()I"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;)V")
+            [(METHOD [PRIVATE] "<init>" "()V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/fn-2;")
              (NEW fn-2)
              (DUP)
-             (ACONST_NULL)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
-             (ARETURN)]
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/fn-2;")
-             #_["LOCAL 0: fn-2 __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW fn-2)
-             (DUP)
-             (ALOAD_1)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL . "<init>" "()V")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* FnMyFn

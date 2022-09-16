@@ -1202,7 +1202,7 @@
        (call-fn-expr ^Expr [^Expr op-x form]
          (let [op+argv (into [(x/ensure-runtime-value op-x)]
                              (expr-forms (rest form)))]
-           (if-some [fn-form (x/root-fn-form op-x)]
+           (if-some [fn-form (x/callable-root-fn-form op-x)]
              (call-fn-def fn-form op+argv)
              (do (check-callable op-x tl-ctx)
                  (x/invoke-fn jb/cl-polymorphic-type
@@ -1458,7 +1458,7 @@
   (coll-literal rt/clnm-list argv rt/mhd-list tl-ctx))
 
 (defn ^FnPrimitiveFn not-primitive [form argv tl-ctx]
-  (-> (boolean-primitive form argv tl-ctx) ;also checks argc
+  (-> (.assemble boolean-primitive form argv tl-ctx) ;also checks argc
       (xf/icmp x/expr-false cf/eq)))
 
 ;;; FIXME... for a single argument of reference type, this can be
@@ -1517,7 +1517,7 @@
                   (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (defn ^FnPrimitiveFn arith-2-xdiv-int [form args tl-ctx]
-  (let [x ((arith-2 Opcode/IDIV) form args tl-ctx)]
+  (let [x (.assemble (arith-2 Opcode/IDIV) form args tl-ctx)]
     ;; FIXME... this does not work if the result is out of range of
     ;; long; maybe better: truncate with something along the line of
     ;; `(if (neg? x) (Math/ceil x) (Math/floor x))` (or put this into
@@ -1575,9 +1575,9 @@
     (wrong/check-argc-min min-argc form)
     (case (bounded-count 3 args)
       0 id
-      1 (pfn nil (list id (first args)) tl-ctx)
-      2 (pfn form args tl-ctx)
-      (reduce #(pfn nil (list %1 %2) tl-ctx) (first args) (rest args)))))
+      1 (.assemble pfn nil (list id (first args)) tl-ctx)
+      2 (.assemble pfn form args tl-ctx)
+      (reduce #(.assemble pfn nil (list %1 %2) tl-ctx) (first args) (rest args)))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -1627,13 +1627,13 @@
     (wrong/check-argc-min 1 form)
     (case (bounded-count 3 args)
       1 (xf/prog2-expr (nth args 0) x/expr-true)
-      2 (binary-pfn form args tl-ctx)
+      2 (.assemble binary-pfn form args tl-ctx)
       ;; Compute all arguments beforehand, otherwise the short circuit
       ;; logic of `if` may skip their exceptions.  Expand as primitive
       ;; instead of macro, because a macro would depend on gensym.
       (let [[bexprs brefs] (as-anonymous-bindings args)
             res (reduce (fn [cont [ref1 ref2]]
-                          (let [test (binary-pfn nil [ref1 ref2] tl-ctx)]
+                          (let [test (.assemble binary-pfn nil [ref1 ref2] tl-ctx)]
                             (branch/if-expr test cont x/expr-false)))
                         x/expr-true
                         (reverse (partition 2 1 brefs)))]

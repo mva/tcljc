@@ -99,8 +99,7 @@
              (RETURN)]]
 
            [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/add-int" nil
-                   "tinyclj/lang/AFnMh" [FnBinaryInt])
-            
+                   "java/lang/Object" [FnBinaryInt])
             [(METHOD [PUBLIC FINAL] "fn2" "(II)I")
              ["LOCAL 0: add-int add-int"]
              ["LOCAL 1: int a"]
@@ -110,45 +109,15 @@
              (IADD)
              (IRETURN)]
 
-            [(METHOD [PUBLIC FINAL] "__arityOrNull" "(I)Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: add-int __this"]
-             #_["LOCAL 1: int n"]
-             (ILOAD_1)
-             (ICONST_2)
-             (IF_ICMPNE L:0)
-             (LDC [VIRTUAL . "fn2" "(II)I"])
-             (ARETURN)
-             [L:0]
-             (ACONST_NULL)
-             (ARETURN)]
-            
-            [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
-             #_["LOCAL 0: add-int __this"]
-             (LDC [VIRTUAL . "fn2" "(II)I"])
-             (INVOKESTATIC RT "methodHandleArray"
-                           "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
-             (ARETURN)]
-
-            [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;)V")
+            [(METHOD [PRIVATE] "<init>" "()V")
              #_["LOCAL 0: uninitialized_this_type __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
              (ALOAD_0)
-             (ALOAD_1)
-             (INVOKESPECIAL AFnMh "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL Object "<init>" "()V")
              (RETURN)]
 
             [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/add-int;")
              (NEW add-int) (DUP)
-             (ACONST_NULL)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
-             (ARETURN)]
-
-            [(METHOD [PROTECTED FINAL] "__withMetaImpl" "(Lclojure/lang/IPersistentMap;)Lpkg/ns0/add-int;")
-             #_["LOCAL 0: add-int __this"]
-             #_["LOCAL 1: IPersistentMap __meta"]
-             (NEW add-int) (DUP)
-             (ALOAD_1)
-             (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;)V")
+             (INVOKESPECIAL . "<init>" "()V")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* FnBinaryInt

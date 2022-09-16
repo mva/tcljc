@@ -232,7 +232,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(def ^:private super-param-ldv [(cf/ld-st-parameter rt/map "__meta" 0)])
+(def ^:private meta-param-ldv [(cf/ld-st-parameter rt/map "__meta" 0)])
 
 (defn- constructor-impl ^void [^ClassBuilder cb
                                ^DirectMethodHandleDesc super-mhd
@@ -242,7 +242,25 @@
                     (cf/as-parameters param-ldv field-lds)
                     field-lds)))
 
-(defn- create-fn-method ^void [^ClassBuilder cb ^ClassDesc this-class ^ISeq ees]
+(defn- create-itf-fn-method ^void [^ClassBuilder cb ^ClassDesc this-class
+                                   ^ISeq ees]
+  (let [flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
+                      Classfile/ACC_FINAL)
+        param-lds (cf/as-parameters [] (ld-sts-for ees))
+        factory-mtd (ee-mtd this-class ees)
+        constr-mtd (ee-mtd rt/void ees)
+        xbh (cf/with-xbh [xb]
+              (-> (.new_ xb this-class)
+                  (.dup))
+              (doseq [^tcljc.classfile.LdStParameter param-ld param-lds]
+                (cf/ld-insn xb param-ld))
+              (-> (.invokespecial xb this-class cf/object-initializer-name
+                                  constr-mtd)
+                  (.areturn)))]
+    (.withMethodBody cb rt/name-factory-method factory-mtd flags xbh)))
+
+(defn- create-afn-method ^void [^ClassBuilder cb ^ClassDesc this-class
+                                ^ISeq ees]
   (let [flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
                       Classfile/ACC_FINAL)
         param-lds (cf/as-parameters [] (ld-sts-for ees))
@@ -346,7 +364,9 @@
             ld-this (cf/ld-st-receiver this-class this-mnm)
             final-ees (final-entries fspec)
             patched-ees (patched-entries fspec)
-            all-ees (concat final-ees patched-ees)]
+            all-ees (concat final-ees patched-ees)
+            itf-fn? (identical? rt/mhd-Object super-mhd)
+            super-param-ldv (if itf-fn? [] meta-param-ldv)]
         (cf/with-cbh [cb]
           (-> cb
               (.withFlags (bit-or Classfile/ACC_PUBLIC
@@ -368,16 +388,23 @@
               (classes/bridge-method cb (.load-mh-ext ac)
                                      (.load-mh-impl ac))
               (virtual-mdef-impl cb fspec ld-this ac)))
-                  
-          (arity-or-null-method cb (.fn-form fspec))
-          (dmh-method cb aca)
-          (when (seq patched-ees)
-            (constructor-impl cb super-mhd super-param-ldv all-ees))
-          (constructor-impl cb super-mhd super-param-ldv final-ees)
-          (create-fn-method cb this-class final-ees)
-          (when (seq patched-ees)
-            (patch-fn-method cb patched-ees))
-          (with-meta-method cb this-class all-ees))))
+
+          (if itf-fn?
+            (do (when (seq patched-ees)
+                  (constructor-impl cb super-mhd super-param-ldv all-ees))
+                (constructor-impl cb super-mhd super-param-ldv final-ees)
+                (create-itf-fn-method cb this-class final-ees)
+                (when (seq patched-ees)
+                  (patch-fn-method cb patched-ees)))
+            (do (arity-or-null-method cb (.fn-form fspec))
+                (dmh-method cb aca)
+                (when (seq patched-ees)
+                  (constructor-impl cb super-mhd super-param-ldv all-ees))
+                (constructor-impl cb super-mhd super-param-ldv final-ees)
+                (create-afn-method cb this-class final-ees)
+                (when (seq patched-ees)
+                  (patch-fn-method cb patched-ees))
+                (with-meta-method cb this-class all-ees))))))
     (fn-methods [_ cb]
       cb)
     
@@ -387,23 +414,6 @@
       [])))
 
 ;;; ------------------------------------------------------------------------
-
-(defn- create-reify-method ^void [^ClassBuilder cb ^ClassDesc this-class
-                                  ^ISeq ees]
-  (let [flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
-                      Classfile/ACC_FINAL)
-        param-lds (cf/as-parameters [] (ld-sts-for ees))
-        factory-mtd (ee-mtd this-class ees)
-        constr-mtd (ee-mtd rt/void ees)
-        xbh (cf/with-xbh [xb]
-              (-> (.new_ xb this-class)
-                  (.dup))
-              (doseq [^tcljc.classfile.LdStParameter param-ld param-lds]
-                (cf/ld-insn xb param-ld))
-              (-> (.invokespecial xb this-class cf/object-initializer-name
-                                  constr-mtd)
-                  (.areturn)))]
-    (.withMethodBody cb rt/name-factory-method factory-mtd flags xbh)))
 
 (defn- meta-method ^ClassBuilder [^ClassBuilder cb ^EnvEntry meta-ee]
   (let [flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL)
@@ -468,7 +478,7 @@
               (virtual-mdef-impl cb fspec ld-this ac)))
                   
           (constructor-impl cb super-mhd [] all-ees)
-          (create-reify-method cb this-class all-ees)
+          (create-itf-fn-method cb this-class all-ees)
           (with-meta-method cb this-class (rest all-ees))
           (meta-method cb (first all-ees)))))
     (fn-methods [_ cb]

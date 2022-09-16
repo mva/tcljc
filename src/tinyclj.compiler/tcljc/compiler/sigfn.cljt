@@ -224,11 +224,12 @@
                              (new "[Ljava.lang.Class;" 0))
                   
                   at-sigs (fn*-arity-sigs itf-tag this-name aforms level tl-ctx)
-                  fnc (x/mk-fn-code (count at-sigs))]
+                  fnc (x/mk-fn-code (count at-sigs))
+                  super-mhd (if (some? itf-tag) rt/mhd-Object rt/mhd-AFn)]
               ;; Set form early, so that its available in the forked
               ;; of thread that compiles the function body.
               (FnForm. form (or itf-tag tp) [] nil level unique-mnm
-                       rt/mhd-AFn itf-tags at-sigs nil fnc)))]
+                       super-mhd itf-tags at-sigs nil fnc)))]
     
     (let [nm (second form)]
       (if (symbol? nm)
