@@ -308,8 +308,8 @@
               (bytecode/emit-body xb ld-this at 0 (.body-expr ac)))]
     (.withMethodBody cb nm mtd flags xbh)))
 
-(defn mk-emit-virtuals ^IEmitPlan [^ClassDesc this-class ^ClassDesc super-class
-                                   itfs ^String source-file ^String this-mnm
+(defn mk-emit-virtuals ^IEmitPlan [^ClassDesc this-class itfs
+                                   ^String source-file ^String this-mnm
                                    ^DirectMethodHandleDesc super-mhd
                                    ^FnSpec fspec]
   (reify
@@ -340,7 +340,7 @@
 
     (fn-class-hierarchy-info [_]
       (jdk.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
-       this-class false super-class))
+       this-class false (.owner super-mhd)))
     (fn-cbh [_]
       (let [aca (arity-code-array fspec)
             ld-this (cf/ld-st-receiver this-class this-mnm)
@@ -352,7 +352,7 @@
               (.withFlags (bit-or Classfile/ACC_PUBLIC
                                   Classfile/ACC_FINAL
                                   Classfile/ACC_SUPER))
-              (.withSuperclass super-class)
+              (.withSuperclass (.owner super-mhd))
               (.withInterfaceSymbols itfs)
               (cf/with-source-file source-file))
 
@@ -413,8 +413,8 @@
                   (.areturn)))]
     (.withMethodBody cb rt/name-meta-method mtd flags xbh)))
 
-(defn mk-emit-reify ^IEmitPlan [^ClassDesc this-class ^ClassDesc super-class
-                                itfs ^String source-file ^String this-mnm
+(defn mk-emit-reify ^IEmitPlan [^ClassDesc this-class itfs
+                                ^String source-file ^String this-mnm
                                 ^DirectMethodHandleDesc super-mhd
                                 ^FnSpec fspec]
   (reify
@@ -433,7 +433,7 @@
 
     (fn-class-hierarchy-info [_]
       (jdk.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
-       this-class false super-class))
+       this-class false (.owner super-mhd)))
     (fn-cbh [_]
       (let [aca (arity-code-array fspec)
             
@@ -448,7 +448,7 @@
               (.withFlags (bit-or Classfile/ACC_PUBLIC
                                   Classfile/ACC_FINAL
                                   Classfile/ACC_SUPER))
-              (.withSuperclass super-class)
+              (.withSuperclass (.owner super-mhd))
               (.withInterfaceSymbols itfs)
               (cf/with-source-file source-file))
 

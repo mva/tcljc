@@ -191,12 +191,10 @@
         fnc (.!fnc fn-form)
         this-class ^ClassDesc (.ld-clx fnc)
         
-        super-class rt/AFn
         itfs (map rt/cd-of (.itf-tags fn-form))
         this-mnm (name (or (x/fn-this-name fn-form) "fn"))
         
-        emit-plan (emitfn/mk-emit-virtuals this-class super-class itfs
-                                           source-file this-mnm
+        emit-plan (emitfn/mk-emit-virtuals this-class itfs source-file this-mnm
                                            (.super-mhd fn-form)
                                            (with-field-ld-st fspec this-class))]
     (.set-emit-plan fnc emit-plan)
@@ -212,12 +210,10 @@
         fnc (.!fnc fn-form)
         this-class ^ClassDesc (.ld-clx fnc)
         
-        super-class (-> fn-form .super-mhd .owner)
         itfs (map rt/cd-of (.itf-tags fn-form))
         this-mnm "this"
         
-        emit-plan (emitfn/mk-emit-reify this-class super-class itfs
-                                        source-file this-mnm
+        emit-plan (emitfn/mk-emit-reify this-class itfs source-file this-mnm
                                         (.super-mhd fn-form)
                                         (with-field-ld-st fspec this-class))]
     (.set-emit-plan fnc emit-plan)
