@@ -646,33 +646,35 @@
     (into {} !futs)))
 
 (defn- emit-namespaces-st ^IPersistentMap [^BuildEnv env ns-strs]
-  (let [!futs (java.util.HashMap.)]     ;single-threaded!
-    (letfn [(^FnRequireNamespace require-fn [ns-str provided-nmsp]
-             (or (.get !futs ns-str)
+  (let [!futs (java.util.HashMap.)      ;single-threaded!
+        require-fn
+        (reify FnRequireNamespace
+          (schedule [this ns-str provided-nmsp]
+            (or (.get !futs ns-str)
 
-                 (when-some [cl (try-load-capstone env ns-str)]
-                   (.put !futs ns-str nmsp/marker-depth-first-path)
-                   (let [x (-> (mk-ctx-import env require-fn cl)
-                               (nmsp/mk-imported provided-nmsp)
-                               (import-from-capstone cl))]
-                     (.put !futs ns-str x)
-                     x))
+                (when-some [cl (try-load-capstone env ns-str)]
+                  (.put !futs ns-str nmsp/marker-depth-first-path)
+                  (let [x (-> (mk-ctx-import env this cl)
+                              (nmsp/mk-imported provided-nmsp)
+                              (import-from-capstone cl))]
+                    (.put !futs ns-str x)
+                    x))
                  
-                 (do (.put !futs ns-str nmsp/marker-depth-first-path)
-                     #_(prn :namespace-start ns-str)
-                     (let [x (compile-and-emit env ns-str require-fn false
-                                               provided-nmsp)]
-                       #_(prn :namespace-end ns-str)
-                       (.put !futs ns-str x)
-                       x))))]
-      ;; first, force discovery of core library
-      (.schedule require-fn cfg/core-lib (.builtin-nmsp env))
-      ;; then handle all namespaces from `ns-strs`
-      (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
-        ;; loop over array to avoid stack frame spamming
-        (dotimes [i (alength a)]
-          (.schedule require-fn (aget a i) (.builtin-nmsp env))))
-      (into {} !futs))))
+                (do (.put !futs ns-str nmsp/marker-depth-first-path)
+                    #_(prn :namespace-start ns-str)
+                    (let [x (compile-and-emit env ns-str this false
+                                              provided-nmsp)]
+                      #_(prn :namespace-end ns-str)
+                      (.put !futs ns-str x)
+                      x)))))]
+    ;; first, force discovery of core library
+    (.schedule require-fn cfg/core-lib (.builtin-nmsp env))
+    ;; then handle all namespaces from `ns-strs`
+    (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
+      ;; loop over array to avoid stack frame spamming
+      (dotimes [i (alength a)]
+        (.schedule require-fn (aget a i) (.builtin-nmsp env))))
+    (into {} !futs)))
 
 (defn emit-namespaces ^IPersistentMap [^BuildEnv env ns-strs]
   (if cfg/deterministic-namespace-compile?
