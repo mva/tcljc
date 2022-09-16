@@ -550,16 +550,14 @@
      (try
        (let [arity-task-scope (when-not cfg/deterministic-namespace-compile?
                                 nmsp-task-scope)
-             tl-ctx (mk-ctx env require-fn globals ns-str arity-task-scope)
-             nmsp (-> (mk-first-segm env tl-ctx collect-bytesv?)
-                      (emit-namespace provided-nmsp nmsp-task-scope))]
-         (.joinUntil nmsp-task-scope (-> (Instant/now) (.plusSeconds 5)))
-         nmsp)
+             tl-ctx (mk-ctx env require-fn globals ns-str arity-task-scope)]
+         (-> (mk-first-segm env tl-ctx collect-bytesv?)
+             (emit-namespace provided-nmsp nmsp-task-scope)))
        (catch Throwable t
-         (.shutdown nmsp-task-scope)
-         (.join nmsp-task-scope)        ;returns immediately
+         (.shutdown nmsp-task-scope)    ;make join return immediately
          (throw t))
        (finally
+         (.joinUntil nmsp-task-scope (-> (Instant/now) (.plusSeconds 5)))
          (.close nmsp-task-scope)))))
   (^Namespace [^BuildEnv env ^String ns-str ^FnRequireNamespace require-fn
                ^boolean collect-bytesv? ^IPersistentMap provided-nmsp]
@@ -681,14 +679,12 @@
     (emit-namespaces-st env ns-strs)
     (let [build-task-scope (StructuredTaskScope.)]
       (try
-        (let [res (emit-namespaces-mt env ns-strs build-task-scope)]
-          (.joinUntil build-task-scope (-> (Instant/now) (.plusSeconds 5)))
-          res)
+        (emit-namespaces-mt env ns-strs build-task-scope)
         (catch Throwable t
-          (.shutdown build-task-scope)
-          (.join build-task-scope)      ;returns immediately
+          (.shutdown build-task-scope)      ;make join return immediately
           (throw t))
         (finally
+          (.joinUntil build-task-scope (-> (Instant/now) (.plusSeconds 5)))
           (.close build-task-scope))))))
 
 (defn summary ^IPersistentMap [^IPersistentMap ns-futs]
