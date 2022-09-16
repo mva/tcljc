@@ -1086,9 +1086,12 @@
      ;; with a bridge method in between.  Mutually exclusive with
      ;; `varargs?`.
      
-     ^String method-name
+     ^Method method
      ;; If the arity's signature is derived from an interface, then
-     ;; this field holds the matching method's name.
+     ;; this field holds the matching method.
+     
+     ^String method-name
+     ;; The method name as given for example in a `deftype*`.
      
      ^Symbol this-name
      ;; For an arity, the name of its function (or nil if the function
@@ -1120,13 +1123,13 @@
 
 (defn with-rtype ^Arity [^Arity at ^Class rtype]
   (Arity. (.paramv at) rtype (.n at) (.varargs? at) (.variadic? at)
-          (.method-name at) (.this-name at) (.level at) (.aform at)
+          (.method at) (.method-name at) (.this-name at) (.level at) (.aform at)
           (.!closes-over at) (.at-idx at)))
 
 (defn with-method-name ^Arity [^Arity at ^Symbol nm ^Symbol this-name
                                ^int at-idx]
   (Arity. (.paramv at) (.rtype at) (.n at) (.varargs? at) (.variadic? at)
-          (name nm) this-name (.level at) (.aform at)
+          (.method at) (name nm) this-name (.level at) (.aform at)
           (.!closes-over at) at-idx))
 
 (defn at-n ^int [^Arity at]
@@ -1249,14 +1252,16 @@
      ;; If true, then this function is materialized as a proper value.
      ;; Otherwise its arities are invoked only, and can be translated
      ;; into independent methods.  Initialized to false when compiling
-     ;; a function, and to (stable) true for imported functions.
+     ;; a (non-reify* and non-interface) function, and to (stable)
+     ;; true for imported functions.
                  
      ^:volatile-mutable ^boolean _variable-environment
      ;; If true, then this function has a non-empty environment that
      ;; must be provided either during construction or when invoking
      ;; an arity.  Initialized to false when compiling or importing a
      ;; function.  Changed to (stable) true if the function closes
-     ;; over a non-constant value.
+     ;; over a non-constant value.  Always true for reify* and
+     ;; interface function.
      
      ^:volatile-mutable ^TypeDescriptor$OfField _ld-clx
      ;; Type of this function instance.  Either a generic class if it
@@ -1308,9 +1313,9 @@
   (set-arity-code [_ i ac]
     (aset _arity-code i ac)))
 
-(defn mk-fn-code ^FnCode [^int n]
+(defn mk-fn-code ^FnCode [^int n ^boolean always-instance?]
   (let [arity-code (new "[Ltcljc.expr.ArityCode;" n)]
-    (FnCode. 0 false false nil nil arity-code)))
+    (FnCode. 0 always-instance? always-instance? nil nil arity-code)))
 
 
 ;;; Function definition `(fn* ...)` (takes no arguments) or `(reify*
@@ -1591,7 +1596,7 @@
 (defn at-bridged-from ^Arity [^Arity at]
   (when (.variadic? at)
     (Arity. (at-extern-paramv at) (.rtype at) (.n at) true false
-            (.method-name at) (.this-name at) (.level at) nil
+            (.method at) (.method-name at) (.this-name at) (.level at) nil
             (.!closes-over at) (.at-idx at))))
 
 ;;; ------------------------------------------------------------------------

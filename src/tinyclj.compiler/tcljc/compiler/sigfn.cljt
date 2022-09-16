@@ -52,15 +52,15 @@
       (wrong/syntax "cannot type tag parameter in this context" t))))
 
 (defn- with-paramv
-  (^Arity [^Arity tmpl paramv ^Class rtype ^String method-name]
+  (^Arity [^Arity tmpl paramv ^Class rtype ^Method m]
    (Arity. paramv rtype (count paramv) (.varargs? tmpl) false
-           method-name (.this-name tmpl) (.level tmpl) (.aform tmpl)
+           m (.getName m) (.this-name tmpl) (.level tmpl) (.aform tmpl)
            (.!closes-over tmpl) (.at-idx tmpl)))
   (^Arity [^Arity tmpl paramv ^Class rtype
            ^boolean varargs? ^boolean variadic? ^int idx]
    (Arity. paramv rtype (count paramv) varargs? variadic?
-           (.method-name tmpl) (.this-name tmpl) (.level tmpl) (.aform tmpl)
-           (.!closes-over tmpl) idx)))
+           (.method tmpl) (.method-name tmpl) (.this-name tmpl)
+           (.level tmpl) (.aform tmpl) (.!closes-over tmpl) idx)))
 
 (defn mk-param ^Binding [^int level ^Symbol nm ^Class tp]
   (-> (x/local-ref level nm tp x/b-parameter)
@@ -108,7 +108,7 @@
                                 jb/cl-polymorphic-type
                                 jb/Object))
                     accept-tags? true #_(nil? itf-tp)
-                    tmpl (Arity. nil nil -1 false false nil this-name
+                    tmpl (Arity. nil nil -1 false false nil nil this-name
                                  level aform (util/mk-shm) at-idx)]
                 (ensure-accept-tag accept-tags? v)
                 (doseq [p v]
@@ -168,7 +168,7 @@
                               (inc i))))))]
     (when-not (= (.varargs? at) (.isVarArgs m))
       (wrong/other "interface and function disagree on varargs status"))
-    (with-paramv at paramv rtype (.getName m))))
+    (with-paramv at paramv rtype m)))
 
 (defn- fixup-arity-sigs-from-itf [asigs ^Class itf]
   (let [method-n #(.getParameterCount ^Method %)
@@ -221,7 +221,7 @@
                              (new "[Ljava.lang.Class;" 0))
                   
                   at-sigs (fn*-arity-sigs itf-tag this-name aforms level tl-ctx)
-                  fnc (x/mk-fn-code (count at-sigs))
+                  fnc (x/mk-fn-code (count at-sigs) (some? itf-tag))
                   super-mhd (if (some? itf-tag) rt/mhd-Object rt/mhd-AFn)]
               ;; Set form early, so that its available in the forked
               ;; of thread that compiles the function body.

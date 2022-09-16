@@ -369,45 +369,32 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "add2" "Lpkg/ns0/FnInt2;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "add2" "()Lpkg/ns0/add2;")
-             (LDC [:bsm-invoke "_" "Lpkg/ns0/add2;"
-                   [[STATIC add2 "__create" "()Lpkg/ns0/add2;"]]])
-             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "add2~2" "(II)I")
+             ["LOCAL 0: int a"]
+             ["LOCAL 1: int b"]
+             (ILOAD_0)
+             (ILOAD_1)
+             (IADD)
+             (IRETURN)]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
 
-             (INVOKESTATIC . "add2" "()Lpkg/ns0/add2;")
+             (INVOKEDYNAMIC "arity-2" "()Lpkg/ns0/FnInt2;" :bsm-metafactory
+                            ["MethodTypeDesc[(int,int)int]"
+                             [STATIC . "add2~2" "(II)I"]
+                             "MethodTypeDesc[(int,int)int]"])
+             (PUTSTATIC . "add2" "Lpkg/ns0/FnInt2;")
+             (GETSTATIC . "add2" "Lpkg/ns0/FnInt2;")
              (ICONST_1)
              (ICONST_1)
              (INVOKEINTERFACE FnInt2 "arity-2" "(II)I" :itf)
              (PUTSTATIC . "two" "I")
-             (RETURN)]]
-
-           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/add2" nil
-                   "java/lang/Object" [FnInt2])
-            [(METHOD [PUBLIC FINAL] "arity-2" "(II)I")
-             ["LOCAL 0: add2 add2"]
-             ["LOCAL 1: int a"]
-             ["LOCAL 2: int b"]
-             (ILOAD_1)
-             (ILOAD_2)
-             (IADD)
-             (IRETURN)]
-            
-            [(METHOD [PRIVATE] "<init>" "()V")
-             #_["LOCAL 0: uninitialized_this_type __this"]
-             (ALOAD_0)
-             (INVOKESPECIAL Object "<init>" "()V")
-             (RETURN)]
-
-            [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/add2;")
-             (NEW add2) (DUP)
-             (INVOKESPECIAL . "<init>" "()V")
-             (ARETURN)]]]
+             (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* FnInt2
                    (arity-2 ^int [^int a ^int b]))
@@ -463,17 +450,17 @@
              (ARETURN)]]
 
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Lpkg/ns0/f;")
-             (LDC [:bsm-invoke "_" "Lpkg/ns0/f;"
-                   [[STATIC f "__create" "()Lpkg/ns0/f;"]]])
-             (ARETURN)]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "f" "Ljava/lang/Runnable;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
+             (RETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "g~0" "()Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "g~0" "()Ljava/lang/Object;")
-             (INVOKESTATIC . "f" "()Lpkg/ns0/f;")
+             (GETSTATIC . "f" "Ljava/lang/Runnable;")
              (INVOKEINTERFACE Runnable "run" "()V" :itf)
              (ACONST_NULL)
              (ARETURN)]
@@ -481,24 +468,12 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]
-           
-           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/f" nil
-                   "java/lang/Object" [Runnable])
-            [(METHOD [PUBLIC FINAL] "run" "()V")
-             ["LOCAL 0: f f"]
-             (RETURN)]
-            
-            [(METHOD [PRIVATE] "<init>" "()V")
-             #_["LOCAL 0: uninitialized_this_type __this"]
-             (ALOAD_0)
-             (INVOKESPECIAL Object "<init>" "()V")
-             (RETURN)]
-
-            [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/f;")
-             (NEW f) (DUP)
-             (INVOKESPECIAL . "<init>" "()V")
-             (ARETURN)]]]
+             (INVOKEDYNAMIC "run" "()Ljava/lang/Runnable;" :bsm-metafactory
+                            ["MethodTypeDesc[()void]"
+                             [STATIC . "f~0" "()V"]
+                             "MethodTypeDesc[()void]"])
+             (PUTSTATIC . "f" "Ljava/lang/Runnable;")
+             (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^Runnable f
                    (fn* ^Runnable f [] ;mapped to Runnable.run(), which returns void
@@ -515,17 +490,22 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Lpkg/ns0/f;")
-             (LDC [:bsm-invoke "_" "Lpkg/ns0/f;"
-                   [[STATIC f "__create" "()Lpkg/ns0/f;"]]])
-             (ARETURN)]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "f"
+                    "Ljava/util/Comparator;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "f~2"
+                     "(Ljava/lang/Object;Ljava/lang/Object;)I")
+             ["LOCAL 0: Object o1"]
+             ["LOCAL 1: Object o2"]
+             (ICONST_0)
+             (IRETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "g~0" "()I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "g~0" "()I")
-             (INVOKESTATIC . "f" "()Lpkg/ns0/f;")
+             (GETSTATIC . "f" "Ljava/util/Comparator;")
              (ACONST_NULL)
              (ACONST_NULL)
              (INVOKEINTERFACE Comparator "compare"
@@ -535,27 +515,16 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]
-           
-           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/f" nil
-                   "java/lang/Object" [Comparator])
-            [(METHOD [PUBLIC FINAL] "compare" "(Ljava/lang/Object;Ljava/lang/Object;)I")
-             ["LOCAL 0: f f"]
-             ["LOCAL 1: Object o1"]
-             ["LOCAL 2: Object o2"]
-             (ICONST_0)
-             (IRETURN)]
-            
-            [(METHOD [PRIVATE] "<init>" "()V")
-             #_["LOCAL 0: uninitialized_this_type __this"]
-             (ALOAD_0)
-             (INVOKESPECIAL Object "<init>" "()V")
-             (RETURN)]
-            
-            [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/f;")
-             (NEW f) (DUP)
-             (INVOKESPECIAL . "<init>" "()V")
-             (ARETURN)]]]
+             (INVOKEDYNAMIC "compare" "()Ljava/util/Comparator;"
+                            :bsm-metafactory
+                            ["MethodTypeDesc[(Object,Object)int]"
+                             [STATIC
+                              .
+                              "f~2"
+                              "(Ljava/lang/Object;Ljava/lang/Object;)I"]
+                             "MethodTypeDesc[(Object,Object)int]"])
+             (PUTSTATIC . "f" "Ljava/util/Comparator;")
+             (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^java.util.Comparator f
                    (fn* ^java.util.Comparator f [o1 o2]
@@ -809,15 +778,15 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
-            [(METHOD [PUBLIC STATIC FINAL] "fn-1" "()Lpkg/ns0/fn-1;")
-             (LDC [:bsm-invoke "_" "Lpkg/ns0/fn-1;"
-                   [[STATIC fn-1 "__create" "()Lpkg/ns0/fn-1;"]]])
-             (ARETURN)]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "fn-1" "Lpkg/ns0/FnMyFn;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "fn-2" "Lpkg/ns0/FnMyFn;")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "fn-2" "()Lpkg/ns0/fn-2;")
-             (LDC [:bsm-invoke "_" "Lpkg/ns0/fn-2;"
-                   [[STATIC fn-2 "__create" "()Lpkg/ns0/fn-2;"]]])
-             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "fn-1~0" "()I")
+             (ICONST_1)
+             (IRETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "fn-2~0" "()I")
+             (ICONST_2)
+             (IRETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
@@ -827,10 +796,10 @@
              ["LOCAL 0: Object x"]
              (ALOAD_0)
              (IFNONNULL L:0)
-             (INVOKESTATIC . "fn-2" "()Lpkg/ns0/fn-2;")
+             (GETSTATIC . "fn-2" "Lpkg/ns0/FnMyFn;")
              (GOTO L:1)
              [L:0]
-             (INVOKESTATIC . "fn-1" "()Lpkg/ns0/fn-1;")
+             (GETSTATIC . "fn-1" "Lpkg/ns0/FnMyFn;")
              [L:1]
              (ASTORE_1)
              ["LOCAL 1: FnMyFn g*"]
@@ -840,41 +809,17 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
-             (RETURN)]]
-           
-           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/fn-1"
-                   nil "java/lang/Object" [FnMyFn])
-            [(METHOD [PUBLIC FINAL] "fn0" "()I")
-             ["LOCAL 0: fn-1 fn-1"]
-             (ICONST_1)
-             (IRETURN)]
-            [(METHOD [PRIVATE] "<init>" "()V")
-             #_["LOCAL 0: uninitialized_this_type __this"]
-             (ALOAD_0)
-             (INVOKESPECIAL Object "<init>" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/fn-1;")
-             (NEW fn-1)
-             (DUP)
-             (INVOKESPECIAL . "<init>" "()V")
-             (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/fn-2"
-                   nil "java/lang/Object" [FnMyFn])
-            [(METHOD [PUBLIC FINAL] "fn0" "()I")
-             ["LOCAL 0: fn-2 fn-2"]
-             (ICONST_2)
-             (IRETURN)]
-            [(METHOD [PRIVATE] "<init>" "()V")
-             #_["LOCAL 0: uninitialized_this_type __this"]
-             (ALOAD_0)
-             (INVOKESPECIAL Object "<init>" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/fn-2;")
-             (NEW fn-2)
-             (DUP)
-             (INVOKESPECIAL . "<init>" "()V")
-             (ARETURN)]]]
+             (INVOKEDYNAMIC "fn0" "()Lpkg/ns0/FnMyFn;" :bsm-metafactory
+                            ["MethodTypeDesc[()int]"
+                             [STATIC . "fn-1~0" "()I"]
+                             "MethodTypeDesc[()int]"])
+             (PUTSTATIC . "fn-1" "Lpkg/ns0/FnMyFn;")
+             (INVOKEDYNAMIC "fn0" "()Lpkg/ns0/FnMyFn;" :bsm-metafactory
+                            ["MethodTypeDesc[()int]"
+                             [STATIC . "fn-2~0" "()I"]
+                             "MethodTypeDesc[()int]"])
+             (PUTSTATIC . "fn-2" "Lpkg/ns0/FnMyFn;")
+             (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* FnMyFn
                    (fn0 ^int []))

@@ -74,13 +74,17 @@
              (LDC "tinyclj.core")
              (ARETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "add-int"
+                    "Lpkg/ns0/FnBinaryInt;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
-            
-            [(METHOD [PUBLIC STATIC FINAL] "add-int" "()Lpkg/ns0/add-int;")
-             (LDC [:bsm-invoke "_" "Lpkg/ns0/add-int;"
-                   [[STATIC add-int "__create" "()Lpkg/ns0/add-int;"]]])
-             (ARETURN)]
-            
+
+            [(METHOD [PUBLIC STATIC FINAL] "add-int~2" "(II)I")
+             ["LOCAL 0: int a"]
+             ["LOCAL 1: int b"]
+             (ILOAD_0)
+             (ILOAD_1)
+             (IADD)
+             (IRETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "apply-binary-int" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[INTERFACE_VIRTUAL FnBinaryInt "fn2" "(II)I"]]])
@@ -90,35 +94,18 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
 
-             (INVOKESTATIC . "add-int" "()Lpkg/ns0/add-int;")
+             (INVOKEDYNAMIC "fn2" "()Lpkg/ns0/FnBinaryInt;" :bsm-metafactory
+                            ["MethodTypeDesc[(int,int)int]"
+                             [STATIC . "add-int~2" "(II)I"]
+                             "MethodTypeDesc[(int,int)int]"])
+             (PUTSTATIC . "add-int" "Lpkg/ns0/FnBinaryInt;")
+             (GETSTATIC . "add-int" "Lpkg/ns0/FnBinaryInt;")
              (ICONST_1)
              (ICONST_1)
              (INVOKEINTERFACE FnBinaryInt "fn2" "(II)I" :itf)
              (PUTSTATIC . "two" "I")
              
-             (RETURN)]]
-
-           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/add-int" nil
-                   "java/lang/Object" [FnBinaryInt])
-            [(METHOD [PUBLIC FINAL] "fn2" "(II)I")
-             ["LOCAL 0: add-int add-int"]
-             ["LOCAL 1: int a"]
-             ["LOCAL 2: int b"]
-             (ILOAD_1)
-             (ILOAD_2)
-             (IADD)
-             (IRETURN)]
-
-            [(METHOD [PRIVATE] "<init>" "()V")
-             #_["LOCAL 0: uninitialized_this_type __this"]
-             (ALOAD_0)
-             (INVOKESPECIAL Object "<init>" "()V")
-             (RETURN)]
-
-            [(METHOD [PUBLIC STATIC FINAL] "__create" "()Lpkg/ns0/add-int;")
-             (NEW add-int) (DUP)
-             (INVOKESPECIAL . "<init>" "()V")
-             (ARETURN)]]]
+             (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* FnBinaryInt
                    (fn2 ^int [^int a ^int b]))

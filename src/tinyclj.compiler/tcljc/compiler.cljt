@@ -1001,7 +1001,7 @@
                                        etp form level at-idx tl-ctx)]
                                (conj acc at)))
                            [] methods)
-               fnc (x/mk-fn-code (count atv))
+               fnc (x/mk-fn-code (count atv) true)
                m (compile-meta (sq/source-meta form))
 
                ;; A reify's ephemeral type is leaked into expression

@@ -159,6 +159,12 @@
           (arity-virtual* mhd))
         (arity-virtual* nil)))))
 
+(defn- fspec-forward? ^boolean [^FnSpec fspec ^EnvEntry ee]
+  (and (some? (.root-fnc ee))
+       (let [fn-form (.fn-form fspec)]
+         (and (= (x/b-level (.root-bref ee)) (dec (.level fn-form)))
+              (> (-> ee .root-fnc .seqnum) (-> fn-form .!fnc .seqnum))))))
+
 ;;; pre: called after completion of `collect-fn-info`
 (defn- with-field-ld-st ^FnSpec [^FnSpec fspec ^ClassDesc this-class]
   (let [!field-names (HashSet.)]
@@ -179,10 +185,8 @@
         (dotimes [i (alength b)]
           (let [ee (aget a i)]
             (when (emitfn/ee-materialized? ee)
-              (let [forward? (and (some? (.root-fnc ee))
-                                  (= (x/b-level (.root-bref ee)) parent-level)
-                                  (> (-> ee .root-fnc .seqnum) fspec-seqnum))]
-                (aset b i (emitfn/with-ld-st ee (env-as-field ee) forward?))))))
+              (aset b i (emitfn/with-ld-st ee (env-as-field ee)
+                          (fspec-forward? fspec ee))))))
         (FnSpec. (.fn-form fspec) b)))))
 
 (defn- prepare-virtuals ^void [^FnSpec fspec ^String source-file]
@@ -202,7 +206,17 @@
       (let [ac (arity-code-virtual (aget aca i) fnc)]
         (.set-arity-code fnc i ac)))))
 
-;;; ------------------------------------------------------------------------
+(defn- prepare-lambda ^void [^ClassDesc statics-owner ^FnSpec fspec]
+  (let [fn-form (.fn-form fspec)
+        aca (ctx/fn-body-now fn-form)
+        fnc (.!fnc fn-form)
+        this-class (-> fn-form .itf-tags (aget 0))
+        this-mnm (name (or (x/fn-this-name fn-form) "fn"))
+        fspec (with-param-ld-st fspec)]
+    (.set-emit-plan fnc (emitfn/mk-emit-lambda this-class this-mnm fspec))
+    (assert (= (.arity-count fnc) 1))
+    (let [ac (arity-code-static statics-owner (aget aca 0) fspec)]
+      (.set-arity-code fnc 0 ac))))
 
 (defn- prepare-reify ^void [^FnSpec fspec ^String source-file]
   (let [fn-form (.fn-form fspec)
@@ -223,34 +237,47 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn- implements-interfaces? ^boolean [^FnForm fn-form]
-  (pos? (alength (.itf-tags fn-form))))
-
 (defn prepare-fns! ^void [^ClassDesc statics-owner ^String source-file
                           ^IPersistentVector fn-specs]
   (letfn [(translate-to-class? ^boolean [^FnSpec fspec]
-            (or (implements-interfaces? (.fn-form fspec))
+            (or (x/fn-itfs? (.fn-form fspec))
                 (let [fnc (-> fspec .fn-form .!fnc)]
-                  (and (.used-as-value? fnc) (.variable-environment? fnc)))))]
+                  (and (.used-as-value? fnc) (.variable-environment? fnc)))))
+          (translate-to-lambda? ^boolean [^FnSpec fspec]
+            (let [fn-form (.fn-form fspec)]
+              (and (x/fn-itfs? fn-form)
+                   (not (x/fn-reify? (.fn-form fspec)))
+                   (nil? (some (fn ^boolean [^EnvEntry ee]
+                                 (and (fspec-forward? fspec ee)
+                                      (emitfn/ee-materialized? ee)))
+                               (.fn-env fspec))))))]
     
     ;; Must provide type information for all functions first, so that
     ;; it is avaiable even for functions that mutually depend on each
     ;; other.
     (doseq [^FnSpec fspec fn-specs
             :let [fn-form (.fn-form fspec)]]
-      (->> (if (translate-to-class? fspec)
+      (->> (cond
+             (translate-to-lambda? fspec)
+             (rt/cd-of (aget (.itf-tags fn-form) 0))
+             (translate-to-class? fspec)
              (ClassDesc/of (str (.packageName statics-owner) "."
                                 (.unique-mnm fn-form)))
-             rt/StaticFnMh)
+             :else rt/StaticFnMh)
            (.set-ld-clx (.!fnc fn-form))))
 
     ;; Assign translation patterns.
     (doseq [^FnSpec fspec fn-specs]
-      (if (translate-to-class? fspec)
+      (cond
+        (translate-to-lambda? fspec)
+        (prepare-lambda statics-owner fspec)
+
+        (translate-to-class? fspec)
         (if (x/fn-reify? (.fn-form fspec))
           (prepare-reify fspec source-file)
           (prepare-virtuals fspec source-file))
-        (prepare-statics statics-owner fspec)))))
+
+        :else (prepare-statics statics-owner fspec)))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -421,8 +448,8 @@
 
           (process-fn-form ^void [^FnForm fn-form]
             (.set-seqnum (.!fnc fn-form) (.size (.fn-specs tctx)))
-            (when (implements-interfaces? fn-form)
-              (.mark-used-as-value (.!fnc fn-form)))
+            (when (x/fn-itfs? fn-form)
+              (assert (.used-as-value? (.!fnc fn-form))))
             
             (when (inside-arity?)
               ;; this arity potentially provides environment to

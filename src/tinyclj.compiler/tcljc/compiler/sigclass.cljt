@@ -44,7 +44,7 @@
                      (.getParameterTypes m) (.paramv at))]
     (assert (= (count paramv) (count (.paramv at))))
     (Arity. paramv (.getReturnType m) (count paramv)
-            (.isVarArgs m) false (.getName m)
+            (.isVarArgs m) false m (.getName m)
             (.this-name at) (.level at) (.aform at)
             (.!closes-over at) (.at-idx at))))
 

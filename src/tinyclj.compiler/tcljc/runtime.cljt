@@ -137,6 +137,7 @@
 (def ^:private Lookup ConstantDescs/CD_MethodHandles_Lookup)
 (def ^:private MethodType ConstantDescs/CD_MethodType)
 (def ^:private CallSite ConstantDescs/CD_CallSite)
+(def ^:private LambdaMetafactory (ClassDesc/of "java.lang.invoke.LambdaMetafactory"))
 (def ^:private Member (ClassDesc/of "java.lang.reflect.Member"))
 
 (def ^:private Object object)
@@ -346,6 +347,9 @@
 ;;; FIXME... rename BootstrapMethod::invokeN to ::invokeFn?
 (def bsm-invoke-fn (mhd-static [BootstrapMethod "invokeN"]
                                CallSite [Lookup String MethodType]))
+(def bsm-metafactory (mhd-static [LambdaMetafactory "metafactory"]
+                                 CallSite [Lookup String MethodType MethodType
+                                           MethodHandle MethodType]))
 
 ;;; ------------------------------------------------------------------------
 

@@ -16,7 +16,7 @@
    (jdk.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.lang.constant ClassDesc MethodTypeDesc MethodHandleDesc
                        ConstantDesc DynamicConstantDesc
-                       DirectMethodHandleDesc)
+                       DirectMethodHandleDesc DynamicCallSiteDesc)
    (java.lang.invoke TypeDescriptor$OfField)))
 
 ;; `origin-bref` is the binding from which the closed over value
@@ -407,6 +407,45 @@
                 (with-meta-method cb this-class all-ees))))))
     (fn-methods [_ cb]
       cb)
+    
+    (invoke-arity-with-self? [_]
+      true)
+    (arity-env [_ xb bref-mapper at]
+      [])))
+
+;;; ------------------------------------------------------------------------
+
+(defn mk-emit-lambda ^IEmitPlan [^Class this-itf ^String this-mnm
+                                 ^FnSpec fspec]
+  (reify
+    IEmitPlan
+    (fn-value-const [_]
+      nil)
+    (fn-value-instr [this xb bref-mapper]
+      (let [ees (final-entries fspec)
+            ac (aget (arity-code-array fspec) 0)
+            m (-> ac .at .method)
+            m-mtd (-> ac .at (x/at-mtd))
+            bs-args (doto (new "[Ljava.lang.constant.ConstantDesc;" 3)
+                      (aset 0 m-mtd)
+                      (aset 1 (.load-mh-impl ac))
+                      (aset 2 m-mtd))
+            dcd (DynamicCallSiteDesc/of rt/bsm-metafactory (.getName m)
+                                        (ee-mtd this-itf ees) bs-args)]
+        (doseq [^EnvEntry ee ees]
+          (cf/ld-insn xb (.apply bref-mapper (.origin-bref ee))))
+        (.invokedynamic xb dcd)))
+    (fn-patch-instr [_ xb bref-mapper bref]
+      xb)
+
+    (fn-class-hierarchy-info [_]
+      nil)
+    (fn-cbh [_]
+      nil)
+    (fn-methods [this cb]
+      (let [ac (aget (arity-code-array fspec) 0)
+            ld-this (cf/ld-st-constant jb/jvm-null)]
+        (static-mdef-impl cb fspec ld-this ac)))
     
     (invoke-arity-with-self? [_]
       true)
