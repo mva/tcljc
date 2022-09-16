@@ -138,7 +138,7 @@
         (DynamicConstantDesc/ofNamed
          rt/bsm-static-fn rt/dcd-default-name rt/StaticFnMh
          ^"[Ljava.lang.constant.ConstantDesc;" mh-array)))
-    (fn-value-instr [this xb caller-closes-over]
+    (fn-value-instr [this xb bref-mapper]
       (.constantInstruction xb (.fn-value-const this)))
     (fn-patch-instr [_ xb bref-mapper bref]
       xb)

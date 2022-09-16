@@ -21,7 +21,7 @@
     IEmitPlan
     (fn-value-const [_]
       (throw (IllegalStateException.)))
-    (fn-value-instr [this xb caller-closes-over]
+    (fn-value-instr [this xb bref-mapper]
       (throw (IllegalStateException.)))
     (fn-patch-instr [_ xb bref-mapper bref]
       (throw (IllegalStateException.)))
