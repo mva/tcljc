@@ -55,16 +55,23 @@
                   va? (.isVarargsCollector mh)]
               (Arity. (mapv import-parameter ptypes) (.returnType mt) pcount
                       va? va? nil nil nil -1 nil nil i)))
-          (import-arity-code ^ArityCode [^int i ^MethodHandle mh]
+          (import-arity-code ^ArityCode [^int i ^MethodHandle mh ^Arity at]
             (let [mhd (.get (.describeConstable mh))]
-              (ArityCode. (import-arity i mh) nil nil mhd nil false)))]
+              (ArityCode. at nil nil mhd nil false)))]
     (let [ep (if virtual? emit-virtuals-import emit-statics-import)
-          aca (new "[Ltcljc.expr.ArityCode;" (alength mhs))]
-      (dotimes [i (alength aca)]
-        (aset aca i (import-arity-code i (aget mhs i))))
-      (FnForm. nil declared-tp [] nil x/lvl-outermost-fn nil nil nil
-               (mapv #(.at ^ArityCode %) aca) nil
-               (FnCode. 0 true false declared-tp ep aca)))))
+          ac (new "[Ltcljc.expr.Arity;" (alength mhs))]
+      (dotimes [i (alength ac)]
+        (aset ac i (import-arity i (aget mhs i))))
+      (let [fn-form (x/fn-form-fct nil declared-tp x/lvl-outermost-fn nil
+                                   (vec ac))
+            fnc (.!fnc fn-form)
+            aca (.arity-code-array fnc)]
+        (.mark-used-as-value fnc)
+        (.set-ld-clx fnc declared-tp)
+        (.set-emit-plan fnc ep)
+        (dotimes [i (alength aca)]
+          (aset aca i (import-arity-code i (aget mhs i) (aget ac i))))
+        fn-form))))
 
 (defn- import-fn-form ^FnForm [^MethodHandles$Lookup lookup-in-pkg
                                ^MethodHandle arity-handles-mh

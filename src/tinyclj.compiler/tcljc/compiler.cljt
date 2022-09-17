@@ -1001,7 +1001,6 @@
                                        etp form level at-idx tl-ctx)]
                                (conj acc at)))
                            [] methods)
-               fnc (x/mk-fn-code (count atv) true)
                m (compile-meta (sq/source-meta form))
 
                ;; A reify's ephemeral type is leaked into expression
@@ -1023,9 +1022,9 @@
                body-fut (if-some [sts (.arity-task-scope tl-ctx')]
                           (.fork sts m-fn)
                           (CompletableFuture/completedFuture (.call m-fn)))]
-           (FnForm. form etp [m] nil (level-fn-form env) unique-mnm
-                    (.super-mhd eph-cdef) (.getInterfaces etp)
-                    atv body-fut fnc)))
+           (-> (x/fn-form-reify form etp m (level-fn-form env) unique-mnm
+                          (.super-mhd eph-cdef) atv)
+               (x/with-body-fut body-fut))))
        
        (definterface*-form [form]
          (ensure-global form tl-ctx)

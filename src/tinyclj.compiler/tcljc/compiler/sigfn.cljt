@@ -214,19 +214,13 @@
             (when-some [tp (tag-of fn-name false nil tl-ctx)]
               (ensure-interface tp)))
           (mk-fn-form [^Symbol this-name ^Class itf-tag aforms]
-            (let [tp (ctx/get-type rt/clnm-abstract-fn tl-ctx)
-                  itf-tags (if (some? itf-tag)
-                             (doto (new "[Ljava.lang.Class;" 1)
-                               (aset 0 itf-tag))
-                             (new "[Ljava.lang.Class;" 0))
-                  
-                  at-sigs (fn*-arity-sigs itf-tag this-name aforms level tl-ctx)
-                  fnc (x/mk-fn-code (count at-sigs) (some? itf-tag))
-                  super-mhd (if (some? itf-tag) rt/mhd-Object rt/mhd-AFn)]
+            (let [at-sigs (fn*-arity-sigs itf-tag this-name aforms level tl-ctx)]
               ;; Set form early, so that its available in the forked
               ;; of thread that compiles the function body.
-              (FnForm. form (or itf-tag tp) [] nil level unique-mnm
-                       super-mhd itf-tags at-sigs nil fnc)))]
+              (if itf-tag
+                (x/fn-form-itf form itf-tag level unique-mnm at-sigs)
+                (let [tp (ctx/get-type rt/clnm-abstract-fn tl-ctx)]
+                  (x/fn-form-fct form tp level unique-mnm at-sigs)))))]
     
     (let [nm (second form)]
       (if (symbol? nm)

@@ -1343,7 +1343,7 @@
                  ;; compilation.
                  
                  ^DirectMethodHandleDesc super-mhd
-                 ^"[Ljava.lang.Class;" itf-tags
+                 ^"[Ljava.lang.Class;" itf-tags ;nil for regular function
                  ^IPersistentVector at-sigs ;vector of Arity
                  ^Future body-fut           ;array of ArityCode or nil
                  ^FnCode !fnc]
@@ -1354,12 +1354,31 @@
     (FnForm. (form this) tp argv (.const-value this)
              level unique-mnm super-mhd itf-tags at-sigs body-fut !fnc)))
 
+(defn fn-form-fct                       ;aka regular function
+  ^FnForm [form ^Class type ^int level ^String unique-mnm
+           ^IPersistentVector at-sigs]
+  (let [fnc (mk-fn-code (count at-sigs) false)]
+    (FnForm. form type [] nil level unique-mnm
+             rt/mhd-AFn nil at-sigs nil fnc)))
+
+(defn fn-form-itf                       ;aka lambda expression
+  ^FnForm [form ^Class itf-tp ^int level ^String unique-mnm
+           ^IPersistentVector at-sigs]
+  (let [itf-tags (doto (new "[Ljava.lang.Class;" 1) (aset 0 itf-tp))
+        fnc (mk-fn-code (count at-sigs) true)]
+    (FnForm. form itf-tp [] nil level unique-mnm
+             rt/mhd-Object itf-tags at-sigs nil fnc)))
+
+(defn fn-form-reify
+  ^FnForm [form ^Class etp ^Expr meta ^int level ^String unique-mnm
+           ^DirectMethodHandleDesc super-mhd ^IPersistentVector at-sigs]
+  (FnForm. form etp [meta] nil level unique-mnm super-mhd (.getInterfaces etp)
+           at-sigs nil (mk-fn-code (count at-sigs) true)))
+
 (defn fn-reify? ^boolean [^FnForm fn-form]
   (pos? (arg-count fn-form)))
 (defn fn-itfs? ^boolean [^FnForm fn-form] ;reify* or interface fn?
-  (if-some [a (.itf-tags fn-form)]
-    (pos? (alength a))
-    false))
+  (some? (.itf-tags fn-form)))
 
 ;;; Completes a letfn* function definition that closes over a function
 ;;; value that is defined later in the same letfn*: this opcode fills
