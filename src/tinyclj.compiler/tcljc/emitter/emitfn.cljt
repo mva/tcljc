@@ -89,8 +89,7 @@
 ;; For every variable that this function closes over, set a "load from
 ;; instance field".  Inlined environment values are loaded as
 ;; constants.
-(defn- install-env! ^void [^FnSpec fspec ^ILdStInstr ld-this ^ArityCode ac]
-  (.deliver-load (.this-bref ac) ld-this)
+(defn- install-env! ^void [^FnSpec fspec ^ArityCode ac]
   (dotimes [i (alength (.fn-env fspec))]
     (let [ee (aget (.fn-env fspec) i)
           closes-over (-> ac .at .!closes-over)]
@@ -114,7 +113,9 @@
 (defn- static-mdef-impl ^void [^ClassBuilder cb ^FnSpec fspec
                                ^ILdStInstr ld-this ^ArityCode ac]
   (when (.body-node? ac)
-    (install-env! fspec ld-this ac)
+    (when (some? ld-this) ;no instance reference when invoked by mk-emit-lambda
+      (.deliver-load (.this-bref ac) ld-this))
+    (install-env! fspec ac)
     (let [at (.at ac)
           flags (cond-> bytecode/acc-static
                   (.varargs? (.at ac)) (bit-or Classfile/ACC_VARARGS))
@@ -315,7 +316,8 @@
 
 (defn- virtual-mdef-impl ^void [^ClassBuilder cb ^FnSpec fspec
                                 ^ILdStInstr ld-this ^ArityCode ac]
-  (install-env! fspec ld-this ac)
+  (.deliver-load (.this-bref ac) ld-this)
+  (install-env! fspec ac)
   (let [at (.at ac)
         flags (cond-> bytecode/acc-virtual
                 (.varargs? (.at ac)) (bit-or Classfile/ACC_VARARGS))
@@ -415,8 +417,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn mk-emit-lambda ^IEmitPlan [^Class this-itf ^String this-mnm
-                                 ^FnSpec fspec]
+(defn mk-emit-lambda ^IEmitPlan [^Class this-itf ^FnSpec fspec]
   (reify
     IEmitPlan
     (fn-value-const [_]
@@ -443,9 +444,8 @@
     (fn-cbh [_]
       nil)
     (fn-methods [this cb]
-      (let [ac (aget (arity-code-array fspec) 0)
-            ld-this (cf/ld-st-constant jb/jvm-null)]
-        (static-mdef-impl cb fspec ld-this ac)))
+      (let [ac (aget (arity-code-array fspec) 0)]
+        (static-mdef-impl cb fspec nil ac)))
     
     (invoke-arity-with-self? [_]
       true)

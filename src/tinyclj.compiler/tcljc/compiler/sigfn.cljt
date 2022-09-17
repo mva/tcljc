@@ -197,12 +197,6 @@
                 (recur (conj acc (fixup-arity-sig at m))
                        (inc ai) (inc mi))))))))))
 
-(defn- fn*-arity-sigs [itf-tag this-name aforms ^int level tl-ctx]
-  (if (some? itf-tag)
-    (-> (parse-arity-sigs level jb/cl-polymorphic-type this-name aforms tl-ctx)
-        (fixup-arity-sigs-from-itf itf-tag))
-    (parse-arity-sigs level nil this-name aforms tl-ctx)))
-
 ;;; `level` is the level that is assigned to names defined in this
 ;;; function.
 (defn destructure-fn*-form ^FnForm [form ^int level ^String unique-mnm tl-ctx]
@@ -210,19 +204,26 @@
             (if (vector? (first xs))
               (list (with-meta xs (meta form)))
               xs))
-          (fn*-itf-tag ^Class [fn-name]
-            (when-some [tp (tag-of fn-name false nil tl-ctx)]
-              (ensure-interface tp)))
-          (mk-fn-form [^Symbol this-name ^Class itf-tag aforms]
-            (let [at-sigs (fn*-arity-sigs itf-tag this-name aforms level tl-ctx)]
-              ;; Set form early, so that its available in the forked
-              ;; of thread that compiles the function body.
-              (if itf-tag
-                (x/fn-form-itf form itf-tag level unique-mnm at-sigs)
-                (let [tp (ctx/get-type rt/clnm-abstract-fn tl-ctx)]
-                  (x/fn-form-fct form tp level unique-mnm at-sigs)))))]
-    
+          ;; Set fn-form-*'s form early, so that its available in the
+          ;; forked of thread that compiles the function body.
+          (mk-fn-form-fct [^Symbol this-name aforms]
+            (let [at-sigs (parse-arity-sigs level nil this-name aforms tl-ctx)
+                  tp (ctx/get-type rt/clnm-abstract-fn tl-ctx)]
+              (x/fn-form-fct form tp level unique-mnm at-sigs)))
+          (mk-fn-form-itf [^Class itf-tag aforms]
+            (let [at-sigs (-> (parse-arity-sigs level jb/cl-polymorphic-type
+                                                nil aforms tl-ctx)
+                              (fixup-arity-sigs-from-itf itf-tag))]
+              (x/fn-form-itf form itf-tag level unique-mnm at-sigs)))]
     (let [nm (second form)]
       (if (symbol? nm)
-        (mk-fn-form nm (fn*-itf-tag nm) (arity-forms (nnext form)))
-        (mk-fn-form nil nil (arity-forms (next form)))))))
+        (let [aforms (arity-forms (nnext form))]
+          (when (some? (get-tag nm))
+            (wrong/other "type tag on function name is not supported"))
+          (when (some? (get-tag (first form)))
+            (wrong/other "interface function cannot have a name"))
+          (mk-fn-form-fct nm aforms))
+        (let [aforms (arity-forms (next form))]
+          (if-some [itf-tag (tag-of (first form) false nil tl-ctx)]
+            (mk-fn-form-itf (ensure-interface itf-tag) aforms)
+            (mk-fn-form-fct nil aforms)))))))

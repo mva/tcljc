@@ -78,7 +78,7 @@
                     "Lpkg/ns0/FnBinaryInt;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
 
-            [(METHOD [PUBLIC STATIC FINAL] "add-int~2" "(II)I")
+            [(METHOD [PUBLIC STATIC FINAL] "fn~2" "(II)I")
              ["LOCAL 0: int a"]
              ["LOCAL 1: int b"]
              (ILOAD_0)
@@ -96,7 +96,7 @@
 
              (INVOKEDYNAMIC "fn2" "()Lpkg/ns0/FnBinaryInt;" :bsm-metafactory
                             ["MethodTypeDesc[(int,int)int]"
-                             [STATIC . "add-int~2" "(II)I"]
+                             [STATIC . "fn~2" "(II)I"]
                              "MethodTypeDesc[(int,int)int]"])
              (PUTSTATIC . "add-int" "Lpkg/ns0/FnBinaryInt;")
              (GETSTATIC . "add-int" "Lpkg/ns0/FnBinaryInt;")
@@ -113,9 +113,7 @@
                  ;; Two possible variants to translate this:
                  ;; (def add-int (fn ^FnBinaryInt add-int))
                  ;; (def ^FnBinaryInt add-int (fn ^FnBinaryInt add-int))
-                 (def add-int
-                   (fn* ^FnBinaryInt add-int [a b]
-                        (+ a b)))
+                 (def add-int (^FnBinaryInt fn* [a b] (+ a b)))
                  (def apply-binary-int
                    (fn* apply-binary-int ^int [^FnBinaryInt f ^int a ^int b]
                         (.fn2 f a b)))

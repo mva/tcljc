@@ -211,9 +211,8 @@
         aca (ctx/fn-body-now fn-form)
         fnc (.!fnc fn-form)
         this-class (-> fn-form .itf-tags (aget 0))
-        this-mnm (name (or (x/fn-this-name fn-form) "fn"))
         fspec (with-param-ld-st fspec)]
-    (.set-emit-plan fnc (emitfn/mk-emit-lambda this-class this-mnm fspec))
+    (.set-emit-plan fnc (emitfn/mk-emit-lambda this-class fspec))
     (assert (= (.arity-count fnc) 1))
     (let [ac (arity-code-static statics-owner (aget aca 0) fspec)]
       (.set-arity-code fnc 0 ac))))
@@ -239,45 +238,35 @@
 
 (defn prepare-fns! ^void [^ClassDesc statics-owner ^String source-file
                           ^IPersistentVector fn-specs]
-  (letfn [(translate-to-class? ^boolean [^FnSpec fspec]
-            (or (x/fn-itfs? (.fn-form fspec))
-                (let [fnc (-> fspec .fn-form .!fnc)]
-                  (and (.used-as-value? fnc) (.variable-environment? fnc)))))
-          (translate-to-lambda? ^boolean [^FnSpec fspec]
-            (let [fn-form (.fn-form fspec)]
-              (and (x/fn-itfs? fn-form)
-                   (not (x/fn-reify? (.fn-form fspec)))
-                   (nil? (some (fn ^boolean [^EnvEntry ee]
-                                 (and (fspec-forward? fspec ee)
-                                      (emitfn/ee-materialized? ee)))
-                               (.fn-env fspec))))))]
+  (letfn [(translate-to-virtuals? ^boolean [^FnForm fn-form]
+            (let [fnc (.!fnc fn-form)]
+              (and (.used-as-value? fnc) (.variable-environment? fnc))))
+          (fn-class-desc ^ClassDesc [^FnForm fn-form]
+            (ClassDesc/of (str (.packageName statics-owner) "."
+                               (.unique-mnm fn-form))))]
     
     ;; Must provide type information for all functions first, so that
     ;; it is avaiable even for functions that mutually depend on each
     ;; other.
-    (doseq [^FnSpec fspec fn-specs
-            :let [fn-form (.fn-form fspec)]]
-      (->> (cond
-             (translate-to-lambda? fspec)
-             (rt/cd-of (aget (.itf-tags fn-form) 0))
-             (translate-to-class? fspec)
-             (ClassDesc/of (str (.packageName statics-owner) "."
-                                (.unique-mnm fn-form)))
-             :else rt/StaticFnMh)
+    (doseq [^FnSpec fspec fn-specs :let [fn-form (.fn-form fspec)]]
+      (->> (if (x/fn-itfs? fn-form)
+             (if (x/fn-reify? fn-form)
+               (fn-class-desc fn-form)
+               (rt/cd-of (aget (.itf-tags fn-form) 0)))
+             (if (translate-to-virtuals? fn-form)
+               (fn-class-desc fn-form)
+               rt/StaticFnMh))
            (.set-ld-clx (.!fnc fn-form))))
 
     ;; Assign translation patterns.
-    (doseq [^FnSpec fspec fn-specs]
-      (cond
-        (translate-to-lambda? fspec)
-        (prepare-lambda statics-owner fspec)
-
-        (translate-to-class? fspec)
-        (if (x/fn-reify? (.fn-form fspec))
+    (doseq [^FnSpec fspec fn-specs :let [fn-form (.fn-form fspec)]]
+      (if (x/fn-itfs? fn-form)
+        (if (x/fn-reify? fn-form)
           (prepare-reify fspec source-file)
-          (prepare-virtuals fspec source-file))
-
-        :else (prepare-statics statics-owner fspec)))))
+          (prepare-lambda statics-owner fspec))
+        (if (translate-to-virtuals? fn-form)
+          (prepare-virtuals fspec source-file)
+          (prepare-statics statics-owner fspec))))))
 
 ;;; ------------------------------------------------------------------------
 

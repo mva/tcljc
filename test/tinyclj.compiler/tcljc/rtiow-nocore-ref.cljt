@@ -38,8 +38,8 @@
 
 (def ^:macro fn
   (fn* fn [&form &env & decl]
-       (.withMeta ^clojure.lang.IObj (cons 'fn* decl)
-                  (.meta ^clojure.lang.IMeta &form))))
+       (let* [m (.meta ^clojure.lang.IMeta &form)]
+         (.withMeta ^clojure.lang.IObj (cons (.withMeta 'fn* m) decl) m))))
 
 (def first (fn first [coll]
              (clojure.lang.RT/first coll)))
@@ -247,7 +247,8 @@
   (hit ^HitRecord [^Ray r ^float t-min ^float t-max]))
 
 (defn mk-sphere ^FnHitable [^Vec3 center ^float radius]
-  (fn ^FnHitable sphere [r t-min t-max]
+  ^FnHitable
+  (fn [r t-min t-max]
     (let [oc (v3-sub (.origin r) center)
           a (v3-squared-length (.direction r))
           b (v3-dot oc (.direction r))
@@ -264,7 +265,8 @@
                   (hit-record temp p (v3-smul (/ radius) (v3-sub p center))))))))))))
 
 (defn mk-hlist ^FnHitable [& ^"[Ltcljc.rtiow-nocore-ref.FnHitable;" hs]
-  (fn ^FnHitable hlist [r t-min t-max]
+  ^FnHitable
+  (fn [r t-min t-max]
     (loop [i 0
            closest-so-far t-max
            hit-anything nil]

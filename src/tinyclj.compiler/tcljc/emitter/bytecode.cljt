@@ -86,7 +86,7 @@
         ;; something this function closes over itself, then it must be
         ;; the external name of this function and can be emitted as
         ;; its local "this" value.
-        ld-this))))
+        (java.util.Objects/requireNonNull ld-this)))))
 
 (defn- with-recur-target ^EmitState [^EmitState es ^Label recur-target]
   (EmitState. (.arity-level es) (.arity-closes-over es)

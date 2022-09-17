@@ -8,9 +8,9 @@
           quote-test meta-test str-test bits-test switch-test cond-test
           try-test array-test loop-test logic-test clone-test
 
-          namespace-test fn-test variadic-test macro-test deftype-test
-          set-test definterface-test closure-test line-test letfn-test
-          reify-test require-test
+          namespace-test fn-test itf-fn-test variadic-test macro-test
+          deftype-test set-test definterface-test closure-test line-test
+          letfn-test reify-test require-test
 
           rtiow-nocore-test)
    
@@ -47,6 +47,7 @@
 
     tcljc.namespace-test
     tcljc.fn-test
+    tcljc.itf-fn-test
     tcljc.variadic-test
     tcljc.macro-test
     tcljc.deftype-test
