@@ -280,17 +280,17 @@
   (letfn [(take-msg ^Msg [^BlockingQueue q]
             (.take q))
           (fn-class-future ^Future [^SegmState segm ^FnCode fnc ^Consumer cbh]
-            (let [f-fn (fn ^Callable fn-class-fn []
-                         (when cfg/fork-work?
-                           (ctx/reset-thread-binding-frame (.ctx segm)))
-                         (let [this-class ^ClassDesc (.ld-clx fnc)
-                               bs (cf/build this-class cbh (segment-chr segm))]
-                           (cfg/write-and-define-class (-> segm .env .dest-dir)
-                                                       (segment-lookup segm)
-                                                       this-class bs)
-                           ;; return bytes (not class!) once the class has been
-                           ;; defined into the classloader
-                           bs))]
+            (let [f-fn (^Callable fn* []
+                        (when cfg/fork-work?
+                          (ctx/reset-thread-binding-frame (.ctx segm)))
+                        (let [this-class ^ClassDesc (.ld-clx fnc)
+                              bs (cf/build this-class cbh (segment-chr segm))]
+                          (cfg/write-and-define-class (-> segm .env .dest-dir)
+                                                      (segment-lookup segm)
+                                                      this-class bs)
+                          ;; return bytes (not class!) once the class has been
+                          ;; defined into the classloader
+                          bs))]
               (if cfg/fork-work?
                 (.fork nmsp-task-scope f-fn)
                 (CompletableFuture/completedFuture (.call f-fn)))))
@@ -442,20 +442,20 @@
                                (ctx/this-ns (.ctx segm)))
   (let [env (.env segm)
         ctx (.ctx segm)
-        c-fn (fn ^Callable compilation-callable []
-               (ctx/reset-thread-binding-frame (.ctx segm))
-               (try
-                 (let [nsd (nmsp/compile-thread env provided-nmsp ctx)]
-                   ;; regular completion: pass back result in first
-                   ;; `close-queue` message
-                   (ctx/send-msg (.emit-q ctx) ctx/msg-close-queue nsd))
-                 (catch Throwable t ;no re-raise and wait for close-queue
-                   (ctx/send-msg (.emit-q ctx) ctx/msg-fatal-error t))
-                 (finally             ;there is always a `close-queue`
-                   (ctx/send-msg (.emit-q ctx) ctx/msg-close-queue nil))))]
+        c-fn (^Callable fn* []
+              (ctx/reset-thread-binding-frame (.ctx segm))
+              (try
+                (let [nsd (nmsp/compile-thread env provided-nmsp ctx)]
+                  ;; regular completion: pass back result in first
+                  ;; `close-queue` message
+                  (ctx/send-msg (.emit-q ctx) ctx/msg-close-queue nsd))
+                (catch Throwable t ;no re-raise and wait for close-queue
+                  (ctx/send-msg (.emit-q ctx) ctx/msg-fatal-error t))
+                (finally              ;there is always a `close-queue`
+                  (ctx/send-msg (.emit-q ctx) ctx/msg-close-queue nil))))]
     (let [c-thread (.fork nmsp-task-scope c-fn)
           nmsp (emit-segments segm nmsp-task-scope)]
-      (.get c-thread)                  ;pick up any exceptions
+      (.get c-thread)                   ;pick up any exceptions
       nmsp)))
 
 ;;; ------------------------------------------------------------------------
@@ -568,39 +568,38 @@
 (defn- emit-namespaces-mt ^IPersistentMap [^BuildEnv env ns-strs
                                            ^StructuredTaskScope build-task-scope]
   (let [namespaces-q (java.util.concurrent.LinkedBlockingQueue.)
-        !futs (ConcurrentHashMap.)]     ;updated by this thread only
-    (letfn [(^FnRequireNamespace require-fn [ns-str provided-nmsp]
-             (or
-              ;; First peek into the current namespace map, and
-              ;; return a known namespace immediately.
-              (.get !futs ns-str)
-              ;; For an unregistered namespace, delegate via message
-              ;; exchange/promise to the top-level thread's
-              ;; `namespace-loop`.
-              (let [cf (CompletableFuture.)]
-                (.put namespaces-q [ns-str provided-nmsp cf])
-                (ctx/wait-for-result 1 cf))))
-            
-            (fork-namespace ^Future [^String ns-str provided-nmsp]
+        !futs (ConcurrentHashMap.)      ;updated by this thread only
+        require-fn (^FnRequireNamespace fn* [ns-str provided-nmsp]
+                    (or
+                     ;; First peek into the current namespace map, and
+                     ;; return a known namespace immediately.
+                     (.get !futs ns-str)
+                     ;; For an unregistered namespace, delegate via message
+                     ;; exchange/promise to the top-level thread's
+                     ;; `namespace-loop`.
+                     (let [cf (CompletableFuture.)]
+                       (.put namespaces-q [ns-str provided-nmsp cf])
+                       (ctx/wait-for-result 1 cf))))]
+    (letfn [(fork-namespace ^Future [^String ns-str provided-nmsp]
               (.fork
                build-task-scope
-               (fn ^Callable build-callable []
-                 (ctx/reset-thread-binding-frame (.binding-frame env))
-                 (or           ;import from dyn-ld or compile and emit
-                  (when-some [cl (try-load-capstone env ns-str)]
-                    (try
-                      (-> (mk-ctx-import env require-fn cl)
-                          (nmsp/mk-imported provided-nmsp)
-                          (import-from-capstone cl))
-                      (finally    ;signal completion to namespace loop
-                        (.put namespaces-q [ns-str]))))
+               (^Callable fn* []
+                (ctx/reset-thread-binding-frame (.binding-frame env))
+                (or            ;import from dyn-ld or compile and emit
+                 (when-some [cl (try-load-capstone env ns-str)]
+                   (try
+                     (-> (mk-ctx-import env require-fn cl)
+                         (nmsp/mk-imported provided-nmsp)
+                         (import-from-capstone cl))
+                     (finally     ;signal completion to namespace loop
+                       (.put namespaces-q [ns-str]))))
                  
-                  (do #_(prn :namespace-start ns-str)
-                      (try
-                        (compile-and-emit env ns-str require-fn false
-                                          provided-nmsp)
-                        (finally  ;signal completion to namespace loop
-                          (.put namespaces-q [ns-str]))))))))
+                 (do #_(prn :namespace-start ns-str)
+                     (try
+                       (compile-and-emit env ns-str require-fn false
+                                         provided-nmsp)
+                       (finally   ;signal completion to namespace loop
+                         (.put namespaces-q [ns-str]))))))))
             
             (fork-all! ^int [ns-strs] ;returns number of new namespaces
               ;; this thread owns !futs and there are no concurrent

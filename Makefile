@@ -43,10 +43,10 @@ watch-and-test:
 # Compilation of tinyclj.core needs the bootstrap setup: place modules
 # in classpath so that they do not interfere with the compilation of
 # this special namespace.
-test-tclj-in-tclj:
-	$(BOOTSTRAP_TCLJ) -s $(TCLJ_MDIR)/tinyclj.rt -d $(DEST_DIR).compile-tclj-in-tclj -s $(TCLJ_MDIR)/tinyclj.core $(SOURCE_OPTS) tcljc.compile-tclj-in-tclj/run
-watch-and-test-tclj-in-tclj:
-	$(BOOTSTRAP_TCLJ) --watch -s $(TCLJ_MDIR)/tinyclj.rt -d $(DEST_DIR).compile-tclj-in-tclj -s $(TCLJ_MDIR)/tinyclj.core $(SOURCE_OPTS) tcljc.compile-tclj-in-tclj/run
+test-tcljc:
+	$(BOOTSTRAP_TCLJ) -s $(TCLJ_MDIR)/tinyclj.rt -d $(DEST_DIR).compile-tcljc-stage0 -s $(TCLJ_MDIR)/tinyclj.core $(SOURCE_OPTS) tcljc.compile-tcljc/run
+watch-and-test-tcljc:
+	$(BOOTSTRAP_TCLJ) --watch -s $(TCLJ_MDIR)/tinyclj.rt -d $(DEST_DIR).compile-tcljc-stage0 -s $(TCLJ_MDIR)/tinyclj.core $(SOURCE_OPTS) tcljc.compile-tcljc/run
 
 clean:
 	rm -rf "$(DEST_DIR)"/* "$(DEST_DIR)".* *.class hs_err_pid*.log replay_pid*.log

@@ -795,11 +795,11 @@
 
 (defn mk-reader ^IReader [^Tokens t]
   (let [c (cursor t)]
-    (fn ^IReader read-1-fn [ns-alias eof-value]
-      (while (and (.more? c) (try-skip-ws-1 c)))
-      (if (.more? c)
-        (read-form c ns-alias)
-        eof-value))))
+    (^IReader fn* [ns-alias eof-value]
+     (while (and (.more? c) (try-skip-ws-1 c)))
+     (if (.more? c)
+       (read-form c ns-alias)
+       eof-value))))
 
 ;;; ------------------------------------------------------------------------
 

@@ -53,9 +53,10 @@
 (def
  ^{:macro true
    :added "1.0"}
- fn (fn* fn [&form &env & decl] 
-         (.withMeta ^clojure.lang.IObj (cons 'fn* decl) 
-                    (.meta ^clojure.lang.IMeta &form))))
+ fn (fn* fn [&form &env & decl]
+         (let* [m (.meta ^clojure.lang.IMeta &form)]
+           (.withMeta ^clojure.lang.IObj (cons (.withMeta 'fn* m) decl) 
+                      m))))
 
 (def
  ^{:arglists '([coll])
@@ -342,7 +343,7 @@
                     m))
               m (conj (if (meta name) (meta name) {}) m)]
           (list 'def (with-meta name m)
-								(with-meta (cons `fn (cons name fdecl)) {:rettag (:tag m)})))))
+								(with-meta (cons `fn (if (:tag m) fdecl (cons name fdecl))) {:tag (:tag m)})))))
 
 ;; (. (var defn) (setMacro))
 
@@ -725,7 +726,7 @@
   seq calls. See also - realized?"
   {:added "1.0"}
   [& body]
-  (list 'new 'clojure.lang.LazySeq (list* 'fn* '^java.util.function.Supplier thunk [] body)))
+  (list 'new 'clojure.lang.LazySeq (list* '^java.util.function.Supplier fn* [] body)))
 
 (defn ^:static chunk-buffer ^clojure.lang.ChunkBuffer [^int capacity]
   (clojure.lang.ChunkBuffer. capacity))
@@ -1995,7 +1996,7 @@
 
 (defn ^:private binding-conveyor-thunk ^Callable [^Callable f]
   (let [frame (clojure.lang.Var/cloneThreadBindingFrame)]
-    (fn* ^Callable bct-fn []
+    (^Callable fn* []
       (clojure.lang.Var/resetThreadBindingFrame frame)
       (.call f))))
 
@@ -2485,7 +2486,7 @@
   once, but any effects on Refs will be atomic."
   {:added "1.0"}
   [flags-ignored-for-now & body]
-  `(clojure.lang.LockingTransaction/runInTransaction (fn ^Callable f [] ~@body)))
+  `(clojure.lang.LockingTransaction/runInTransaction (^Callable fn* [] ~@body)))
 
 
 (defmacro io!
@@ -3026,7 +3027,7 @@
   {:added "1.0"
    :static true}
   ^java.util.Comparator [pred]
-    (fn ^java.util.Comparator cpt [x y]
+    (^java.util.Comparator fn* [x y]
       (cond (pred x y) -1 (pred y x) 1 :else 0)))
 
 (defn sort
@@ -3058,7 +3059,7 @@
   ([keyfn coll]
    (sort-by keyfn compare coll))
   ([keyfn ^java.util.Comparator comp coll]
-   (sort (fn ^java.util.Comparator comp-fn [x y] (. comp (compare (keyfn x) (keyfn y)))) coll)))
+   (sort (^java.util.Comparator fn* [x y] (. comp (compare (keyfn x) (keyfn y)))) coll)))
 
 (defn dorun
   "When lazy sequences are produced via functions that have side
@@ -4511,7 +4512,7 @@
       (with-meta
         (if name
           (list* 'fn* name new-sigs)
-          (cons 'fn* new-sigs))
+          (cons (with-meta 'fn* (meta &form)) new-sigs))
         (meta &form))))
 
 (defmacro loop
@@ -7034,7 +7035,7 @@
   not yet finished, calls to deref/@ will block, unless the variant of
   deref with timeout is used. See also - realized?."
   {:added "1.1"}
-  [& body] `(future-call (fn* ~'^Callable future-fn [] ~@body)))
+  [& body] `(future-call (^Callable fn* [] ~@body)))
   
 
 (defn future-cancel
@@ -7943,7 +7944,7 @@
 (defonce ^:private tap-loop
   (delay
    (doto (Thread.
-          (fn ^Runnable tap-loop-fn []
+          (^Runnable fn* []
             (let [t (.take tapq)
                        x (if (identical? ::tap-nil t) nil t)
                        taps @tapset]

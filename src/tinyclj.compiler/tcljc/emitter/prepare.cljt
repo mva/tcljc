@@ -331,32 +331,32 @@
                 p-fnc (-> provider .fn-form .!fnc)
                 p-co (get-closes-over provider)]
             (pos? (util/sim-sum-keys!
-                   (fn ^ToIntFunction process-co! [closing-over]
-                     (let [closing-over ^BindingRef closing-over]
-                       (if (or (= (x/b-level closing-over) p-level)
-                               (some? (util/sim-get p-co closing-over))
-                               (outside-reference-to-this? p-fnc closing-over))
-                         0
-                         (let [x (x/closure-alias p-level (x/form closing-over)
-                                                  closing-over)]
-                           (util/sim-put-absent! p-co closing-over x)
-                           1))))
+                   (^ToIntFunction fn* [closing-over] ;does side-effects
+                    (let [closing-over ^BindingRef closing-over]
+                      (if (or (= (x/b-level closing-over) p-level)
+                              (some? (util/sim-get p-co closing-over))
+                              (outside-reference-to-this? p-fnc closing-over))
+                        0
+                        (let [x (x/closure-alias p-level (x/form closing-over)
+                                                 closing-over)]
+                          (util/sim-put-absent! p-co closing-over x)
+                          1))))
                    0 closes-over))))]
   
   (defn- propagate-env-demands! ^Set [^Set env-consumers ^HashMap env-providers]
     (let [modified (HashSet.)]
-      (->> (fn ^Consumer propagate [consumer]
-             (let [consumer ^ArityId consumer
-                   consumer-category (if (-> consumer .fn-form .!fnc
-                                             (.used-as-value?))
-                                       aid-consumer-is-factory
-                                       aid-consumer-is-invoke)
-                   consumer-closes-over (get-closes-over consumer)]
-               (when-not (util/sim-empty? consumer-closes-over)
-                 (doseq [^ArityId provider (.get env-providers consumer)
-                         :when (= (.category provider) consumer-category)]
-                   (when (propagate-closes-over! provider consumer-closes-over)
-                     (.add modified provider))))))
+      (->> (^Consumer fn* [consumer]
+            (let [consumer ^ArityId consumer
+                  consumer-category (if (-> consumer .fn-form .!fnc
+                                            (.used-as-value?))
+                                      aid-consumer-is-factory
+                                      aid-consumer-is-invoke)
+                  consumer-closes-over (get-closes-over consumer)]
+              (when-not (util/sim-empty? consumer-closes-over)
+                (doseq [^ArityId provider (.get env-providers consumer)
+                        :when (= (.category provider) consumer-category)]
+                  (when (propagate-closes-over! provider consumer-closes-over)
+                    (.add modified provider))))))
            (.forEach env-consumers))
       modified)))
 

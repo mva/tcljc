@@ -65,7 +65,8 @@
   (hit ^HitRecord [^Ray r ^float t-min ^float t-max]))
 
 (defn mk-sphere ^FnHitable [^Vec3 center ^float radius]
-  (fn ^FnHitable sphere [r t-min t-max]
+  ^FnHitable
+  (fn [r t-min t-max]
     (let [oc (v3-sub (.origin r) center)
           a (v3-squared-length (.direction r))
           b (v3-dot oc (.direction r))
@@ -82,7 +83,8 @@
                   (hit-record temp p (v3-smul (/ radius) (v3-sub p center))))))))))))
 
 (defn mk-hlist ^FnHitable [& ^"[Ltcljc.rtiow-ref.FnHitable;" hs]
-  (fn ^FnHitable hlist [r t-min t-max]
+  ^FnHitable
+  (fn [r t-min t-max]
     (loop [i 0
            closest-so-far t-max
            hit-anything nil]

@@ -175,15 +175,15 @@
     (.put class-map (.thisClass ch-info) ch-info)))
 
 (letfn [(internal-name ^String [^ClassDesc cd]
-           (assert (not (.isArray cd)))
-           (assert (not (.isPrimitive cd)))
-           (let [desc (.descriptorString cd)]
-             (.substring desc 1 (dec (.length desc)))))]
+          (assert (not (.isArray cd)))
+          (assert (not (.isPrimitive cd)))
+          (let [desc (.descriptorString cd)]
+            (.substring desc 1 (dec (.length desc)))))]
   (defn mk-chr ^CHR [^ClassLoader dyn-ld]
     (CHR. (ClassHierarchyResolver/ofCached
-           (fn ^Function dyn-ld-stream [class-desc]
-             (.getResourceAsStream dyn-ld (str (internal-name class-desc)
-                                               cfg/class-suffix))))
+           (^Function fn* [class-desc]
+            (.getResourceAsStream dyn-ld (str (internal-name class-desc)
+                                              cfg/class-suffix))))
           (ConcurrentHashMap.))))
 
 (defn build
@@ -487,10 +487,9 @@
                 (-> (label+return xb nil v)
                     (label+return start-false default))))
             
-            (^Function mk-label [_]
-             (.newLabel xb))
             (conj-sc+lv [acc [k v]]     ;uses mutable map v-to-label
-              (let [l (.computeIfAbsent v-to-label v mk-label)]
+              (let [l (.computeIfAbsent v-to-label v
+                                        (^Function fn* [_] (.newLabel xb)))]
                 (conj acc [(SwitchCase/of ^int k l) [l v]])))
             (switch-on-opnd [cases]
               (let [scs (map first cases)

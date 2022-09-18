@@ -561,28 +561,28 @@
          ;; little use in moving each arity into a future of its own.
          (let [tl-ctx' (ctx/locked tl-ctx)
                fork? (some? (.arity-task-scope tl-ctx'))
-               at-fn (fn ^Callable arities-callable []
-                       (when fork?
-                         (ctx/reset-thread-binding-frame tl-ctx'))
-                       (let [n (count (.at-sigs fn-form))
-                             aca (new "[Ltcljc.expr.ArityCode;" n)]
-                         (dotimes [i n]
-                           (let [at ^Arity (nth (.at-sigs fn-form) i)
-                                 this-bref (x/local-ref
-                                            (.level fn-form) (.this-name at)
-                                            (x/type fn-form) x/b-this-object
-                                            fn-form)
-                                 unique-mnm (.unique-mnm fn-form)
-                                 body (wrong/with-list-context (.aform at)
-                                        (-> (enter-fn-arity env unique-mnm
-                                                            at this-bref)
-                                            (add-locals (.paramv at))
-                                            (compile-body at tl-ctx')))
-                                 at' (cond-> at
-                                       (auto-rtype? at)
-                                       (x/with-rtype (x/type body)))]
-                             (aset aca i (x/mk-arity-code at' this-bref body))))
-                         aca))
+               at-fn (^Callable fn* []
+                      (when fork?
+                        (ctx/reset-thread-binding-frame tl-ctx'))
+                      (let [n (count (.at-sigs fn-form))
+                            aca (new "[Ltcljc.expr.ArityCode;" n)]
+                        (dotimes [i n]
+                          (let [at ^Arity (nth (.at-sigs fn-form) i)
+                                this-bref (x/local-ref
+                                           (.level fn-form) (.this-name at)
+                                           (x/type fn-form) x/b-this-object
+                                           fn-form)
+                                unique-mnm (.unique-mnm fn-form)
+                                body (wrong/with-list-context (.aform at)
+                                       (-> (enter-fn-arity env unique-mnm
+                                                           at this-bref)
+                                           (add-locals (.paramv at))
+                                           (compile-body at tl-ctx')))
+                                at' (cond-> at
+                                      (auto-rtype? at)
+                                      (x/with-rtype (x/type body)))]
+                            (aset aca i (x/mk-arity-code at' this-bref body))))
+                        aca))
                body-fut (if-some [sts (.arity-task-scope tl-ctx')]
                           (.fork sts at-fn)
                           (CompletableFuture/completedFuture (.call at-fn)))
@@ -1008,22 +1008,22 @@
                ;; a method on the receiver.
                tl-ctx' (ctx/locked tl-ctx)
                fork? (some? (.arity-task-scope tl-ctx'))
-               m-fn (fn ^Callable methods-callable []
-                      (when fork?
-                        (ctx/reset-thread-binding-frame tl-ctx'))
-                      (let [n (count atv)
-                            aca (new "[Ltcljc.expr.ArityCode;" n)]
-                        (dotimes [i n]
-                          (let [at ^Arity (nth atv i)]
-                            (aset aca i (-> (enter-fn-arity env unique-mnm
-                                                            at nil)
-                                            (parse-method at etp tl-ctx')))))
-                        aca))
+               m-fn (^Callable fn* []
+                     (when fork?
+                       (ctx/reset-thread-binding-frame tl-ctx'))
+                     (let [n (count atv)
+                           aca (new "[Ltcljc.expr.ArityCode;" n)]
+                       (dotimes [i n]
+                         (let [at ^Arity (nth atv i)]
+                           (aset aca i (-> (enter-fn-arity env unique-mnm
+                                                           at nil)
+                                           (parse-method at etp tl-ctx')))))
+                       aca))
                body-fut (if-some [sts (.arity-task-scope tl-ctx')]
                           (.fork sts m-fn)
                           (CompletableFuture/completedFuture (.call m-fn)))]
            (-> (x/fn-form-reify form etp m (level-fn-form env) unique-mnm
-                          (.super-mhd eph-cdef) atv)
+                                (.super-mhd eph-cdef) atv)
                (x/with-body-fut body-fut))))
        
        (definterface*-form [form]
@@ -1428,13 +1428,12 @@
 
 (defn primitive-conv-to ^FnPrimitiveFn [^Class to-tp]
   (let [conv-to-fn (conv/lookup-conv-to-fn* to-tp)]
-    
-    (fn ^FnPrimitiveFn conv-fn [form argv tl-ctx]
-      (wrong/check-argc 1 form)
-      (let [arg ^Expr (nth argv 0)]
-        (if (x/reference? arg)
-          (conv/primitive-conv-from-object to-tp arg)
-          (conv/conv-to to-tp conv-to-fn arg))))))
+    (^FnPrimitiveFn fn* [form argv tl-ctx]
+     (wrong/check-argc 1 form)
+     (let [arg ^Expr (nth argv 0)]
+       (if (x/reference? arg)
+         (conv/primitive-conv-from-object to-tp arg)
+         (conv/conv-to to-tp conv-to-fn arg))))))
 
 (defn ^FnPrimitiveFn identity-primitive [form argv tl-ctx]
   (wrong/check-argc 1 form)
@@ -1506,14 +1505,14 @@
    (cf/bc2opc base-opcode (typed-opcode tp))))
 
 (defn arith-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (fn ^FnPrimitiveFn arith-2-form [form args tl-ctx]
-    (when (some? form)
-      (wrong/check-argc 2 form))        ;unless called by nary-numeric
-    (let [arg0 (conv/ensure-numeric (nth args 0))
-          arg1 (conv/ensure-numeric (nth args 1))
-          to-tp (conv/upper-numeric-tp arg0 arg1)]
-      (xf/arith-2 to-tp (conv/widen-from to-tp arg0)
-                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
+  (^FnPrimitiveFn fn* [form args tl-ctx]
+   (when (some? form)
+     (wrong/check-argc 2 form))         ;unless called by nary-numeric
+   (let [arg0 (conv/ensure-numeric (nth args 0))
+         arg1 (conv/ensure-numeric (nth args 1))
+         to-tp (conv/upper-numeric-tp arg0 arg1)]
+     (xf/arith-2 to-tp (conv/widen-from to-tp arg0)
+                 (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (defn ^FnPrimitiveFn arith-2-xdiv-int [form args tl-ctx]
   (let [x (.assemble (arith-2 Opcode/IDIV) form args tl-ctx)]
@@ -1536,14 +1535,14 @@
     (x/wrong-type "expect float or double expression" from)))
 
 (defn arith-2-float ^FnPrimitiveFn [^Opcode int-opc]
-  (fn ^FnPrimitiveFn arith-2-float-form [form args tl-ctx]
-    (when (some? form)
-      (wrong/check-argc 2 form))        ;unless called by nary-numeric
-    (let [arg0 (ensure-float (nth args 0))
-          arg1 (ensure-float (nth args 1))
-          to-tp (conv/upper-numeric-tp arg0 arg1)]
-      (xf/arith-2 to-tp (conv/widen-from to-tp arg0)
-                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
+  (^FnPrimitiveFn fn* [form args tl-ctx]
+   (when (some? form)
+     (wrong/check-argc 2 form))         ;unless called by nary-numeric
+   (let [arg0 (ensure-float (nth args 0))
+         arg1 (ensure-float (nth args 1))
+         to-tp (conv/upper-numeric-tp arg0 arg1)]
+     (xf/arith-2 to-tp (conv/widen-from to-tp arg0)
+                 (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (defn- ensure-integral ^Expr [^Expr from]
   (if (resolve/numeric-assignable-to? (x/type from) jb/long)
@@ -1551,32 +1550,32 @@
     (x/wrong-type "expect integral expression" from)))
 
 (defn bits-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (fn ^FnPrimitiveFn bits-2-form [form args tl-ctx]
-    (when (some? form)
-      (wrong/check-argc 2 form))        ;unless called by nary-numeric
-    (let [arg0 (ensure-integral (nth args 0))
-          arg1 (ensure-integral (nth args 1))
-          to-tp (conv/upper-numeric-tp arg0 arg1)]
-      (xf/bits-2 to-tp (conv/widen-from to-tp arg0)
-                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
+  (^FnPrimitiveFn fn* [form args tl-ctx]
+   (when (some? form)
+     (wrong/check-argc 2 form))         ;unless called by nary-numeric
+   (let [arg0 (ensure-integral (nth args 0))
+         arg1 (ensure-integral (nth args 1))
+         to-tp (conv/upper-numeric-tp arg0 arg1)]
+     (xf/bits-2 to-tp (conv/widen-from to-tp arg0)
+                (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (defn shift-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (fn ^FnPrimitiveFn shift-2-form [form args tl-ctx]
-    (wrong/check-argc 2 form)
-    (let [arg0 (ensure-integral (nth args 0))
-          arg1 (ensure-int (nth args 1))
-          to-tp (x/type arg0)]
-      (xf/bits-2 to-tp arg0 arg1 (typed-opcode int-opc to-tp)))))
+  (^FnPrimitiveFn fn* [form args tl-ctx]
+   (wrong/check-argc 2 form)
+   (let [arg0 (ensure-integral (nth args 0))
+         arg1 (ensure-int (nth args 1))
+         to-tp (x/type arg0)]
+     (xf/bits-2 to-tp arg0 arg1 (typed-opcode int-opc to-tp)))))
 
 
 (defn nary-numeric ^FnPrimitiveFn [^int min-argc ^Expr id ^FnPrimitiveFn pfn]
-  (fn ^FnPrimitiveFn nary-numeric-fn [form args tl-ctx]
-    (wrong/check-argc-min min-argc form)
-    (case (bounded-count 3 args)
-      0 id
-      1 (.assemble pfn nil (list id (first args)) tl-ctx)
-      2 (.assemble pfn form args tl-ctx)
-      (reduce #(.assemble pfn nil (list %1 %2) tl-ctx) (first args) (rest args)))))
+  (^FnPrimitiveFn fn* [form args tl-ctx]
+   (wrong/check-argc-min min-argc form)
+   (case (bounded-count 3 args)
+     0 id
+     1 (.assemble pfn nil (list id (first args)) tl-ctx)
+     2 (.assemble pfn form args tl-ctx)
+     (reduce #(.assemble pfn nil (list %1 %2) tl-ctx) (first args) (rest args)))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -1592,10 +1591,11 @@
 ;; (!(f1 == f2)) ...".  Probably not, but Clojure has no !=.  Add NaN
 ;; & negative zero test cases to ieee754-test.
 (defn binary-cmp ^FnPrimitiveFn [^int cmp-opcd]
-  (fn ^FnPrimitiveFn binary-cmp-fn [form [arg0 arg1] tl-ctx]
-    (when form
-      (wrong/check-argc 2 form))       ;unless called by nary-cmp
-    (branch/xcmp cmp-opcd arg0 arg1)))
+  (^FnPrimitiveFn fn* [form args tl-ctx]
+   (let [[arg0 arg1] args]
+     (when form
+       (wrong/check-argc 2 form))         ;unless called by nary-cmp
+     (branch/xcmp cmp-opcd arg0 arg1))))
 
 (defn- ensure-reference ^Expr [^Expr from]
   (if (x/reference? from)
@@ -1603,9 +1603,10 @@
     (x/wrong-type "expect reference expression" from)))
 
 (defn binary-cmp-ref ^FnPrimitiveFn [^int cmp-opcd]
-  (fn ^FnPrimitiveFn binary-cmp-ref-fn [form [arg0 arg1] tl-ctx]
-    (wrong/check-argc 2 form)
-    (xf/acmp (ensure-reference arg0) (ensure-reference arg1) cmp-opcd)))
+  (^FnPrimitiveFn fn* [form args tl-ctx]
+   (let [[arg0 arg1] args]
+     (wrong/check-argc 2 form)
+     (xf/acmp (ensure-reference arg0) (ensure-reference arg1) cmp-opcd))))
 
 (defn- as-anonymous-bindings [args]
   ;; note: simplified version of logic from fn bindings above
@@ -1622,21 +1623,21 @@
           (recur (conj bexprs b) (conj brefs bref) argr))))))
 
 (defn nary-cmp ^FnPrimitiveFn [^FnPrimitiveFn binary-pfn]
-  (fn ^FnPrimitiveFn nary-cmp-fn [form args tl-ctx]
-    (wrong/check-argc-min 1 form)
-    (case (bounded-count 3 args)
-      1 (xf/prog2-expr (nth args 0) x/expr-true)
-      2 (.assemble binary-pfn form args tl-ctx)
-      ;; Compute all arguments beforehand, otherwise the short circuit
-      ;; logic of `if` may skip their exceptions.  Expand as primitive
-      ;; instead of macro, because a macro would depend on gensym.
-      (let [[bexprs brefs] (as-anonymous-bindings args)
-            res (reduce (fn [cont [ref1 ref2]]
-                          (let [test (.assemble binary-pfn nil [ref1 ref2] tl-ctx)]
-                            (branch/if-expr test cont x/expr-false)))
-                        x/expr-true
-                        (reverse (partition 2 1 brefs)))]
-        (x/block bexprs res)))))
+  (^FnPrimitiveFn fn* [form args tl-ctx]
+   (wrong/check-argc-min 1 form)
+   (case (bounded-count 3 args)
+     1 (xf/prog2-expr (nth args 0) x/expr-true)
+     2 (.assemble binary-pfn form args tl-ctx)
+     ;; Compute all arguments beforehand, otherwise the short circuit
+     ;; logic of `if` may skip their exceptions.  Expand as primitive
+     ;; instead of macro, because a macro would depend on gensym.
+     (let [[bexprs brefs] (as-anonymous-bindings args)
+           res (reduce (fn [cont [ref1 ref2]]
+                         (let [test (.assemble binary-pfn nil [ref1 ref2] tl-ctx)]
+                           (branch/if-expr test cont x/expr-false)))
+                       x/expr-true
+                       (reverse (partition 2 1 brefs)))]
+       (x/block bexprs res)))))
 
 ;;; Note: Clojure's equiv does not follow Java's equals with regard to
 ;;; e.g. negative zero -- (= -0.0 0.0) is true like Util/equiv, at
