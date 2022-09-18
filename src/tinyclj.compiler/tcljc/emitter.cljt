@@ -280,7 +280,7 @@
   (letfn [(take-msg ^Msg [^BlockingQueue q]
             (.take q))
           (fn-class-future ^Future [^SegmState segm ^FnCode fnc ^Consumer cbh]
-            (let [f-fn (^Callable fn* []
+            (let [f-fn (^Callable fn []
                         (when cfg/fork-work?
                           (ctx/reset-thread-binding-frame (.ctx segm)))
                         (let [this-class ^ClassDesc (.ld-clx fnc)
@@ -442,7 +442,7 @@
                                (ctx/this-ns (.ctx segm)))
   (let [env (.env segm)
         ctx (.ctx segm)
-        c-fn (^Callable fn* []
+        c-fn (^Callable fn []
               (ctx/reset-thread-binding-frame (.ctx segm))
               (try
                 (let [nsd (nmsp/compile-thread env provided-nmsp ctx)]
@@ -569,7 +569,7 @@
                                            ^StructuredTaskScope build-task-scope]
   (let [namespaces-q (java.util.concurrent.LinkedBlockingQueue.)
         !futs (ConcurrentHashMap.)      ;updated by this thread only
-        require-fn (^FnRequireNamespace fn* [ns-str provided-nmsp]
+        require-fn (^FnRequireNamespace fn [ns-str provided-nmsp]
                     (or
                      ;; First peek into the current namespace map, and
                      ;; return a known namespace immediately.
@@ -583,7 +583,7 @@
     (letfn [(fork-namespace ^Future [^String ns-str provided-nmsp]
               (.fork
                build-task-scope
-               (^Callable fn* []
+               (^Callable fn []
                 (ctx/reset-thread-binding-frame (.binding-frame env))
                 (or            ;import from dyn-ld or compile and emit
                  (when-some [cl (try-load-capstone env ns-str)]

@@ -181,7 +181,7 @@
             (.substring desc 1 (dec (.length desc)))))]
   (defn mk-chr ^CHR [^ClassLoader dyn-ld]
     (CHR. (ClassHierarchyResolver/ofCached
-           (^Function fn* [class-desc]
+           (^Function fn [class-desc]
             (.getResourceAsStream dyn-ld (str (internal-name class-desc)
                                               cfg/class-suffix))))
           (ConcurrentHashMap.))))
@@ -489,7 +489,7 @@
             
             (conj-sc+lv [acc [k v]]     ;uses mutable map v-to-label
               (let [l (.computeIfAbsent v-to-label v
-                                        (^Function fn* [_] (.newLabel xb)))]
+                                        (^Function fn [_] (.newLabel xb)))]
                 (conj acc [(SwitchCase/of ^int k l) [l v]])))
             (switch-on-opnd [cases]
               (let [scs (map first cases)

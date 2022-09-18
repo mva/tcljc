@@ -112,7 +112,7 @@
 (defmacro with-fork [exc & body]
   (if single-threaded
     `(do (object ~@body))
-    `(.submit ~exc (^Callable fn* [] ~@body))))
+    `(.submit ~exc (^Callable fn [] ~@body))))
 
 (defmacro with-executor [exc & body]
   (assert (symbol? exc))
@@ -365,7 +365,7 @@
     (let [[_ scope-nm line-num] (re-matches #"([^:]*)(?::(\d+))?" (name scope))
           select (if (some? line-num)
                    (let [n (Integer/parseInt line-num)]
-                     (^IntPredicate fn* [line] (= line n)))
+                     (^IntPredicate fn [line] (= line n)))
                    select-all)
           test-sym (symbol scope-nm)]
       (if (some? (namespace test-sym))  ;symbol has form nmsp/test

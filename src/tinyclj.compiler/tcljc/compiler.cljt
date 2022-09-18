@@ -561,7 +561,7 @@
          ;; little use in moving each arity into a future of its own.
          (let [tl-ctx' (ctx/locked tl-ctx)
                fork? (some? (.arity-task-scope tl-ctx'))
-               at-fn (^Callable fn* []
+               at-fn (^Callable fn []
                       (when fork?
                         (ctx/reset-thread-binding-frame tl-ctx'))
                       (let [n (count (.at-sigs fn-form))
@@ -1008,7 +1008,7 @@
                ;; a method on the receiver.
                tl-ctx' (ctx/locked tl-ctx)
                fork? (some? (.arity-task-scope tl-ctx'))
-               m-fn (^Callable fn* []
+               m-fn (^Callable fn []
                      (when fork?
                        (ctx/reset-thread-binding-frame tl-ctx'))
                      (let [n (count atv)
@@ -1428,7 +1428,7 @@
 
 (defn primitive-conv-to ^FnPrimitiveFn [^Class to-tp]
   (let [conv-to-fn (conv/lookup-conv-to-fn* to-tp)]
-    (^FnPrimitiveFn fn* [form argv tl-ctx]
+    (^FnPrimitiveFn fn [form argv tl-ctx]
      (wrong/check-argc 1 form)
      (let [arg ^Expr (nth argv 0)]
        (if (x/reference? arg)
@@ -1505,7 +1505,7 @@
    (cf/bc2opc base-opcode (typed-opcode tp))))
 
 (defn arith-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn* [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args tl-ctx]
    (when (some? form)
      (wrong/check-argc 2 form))         ;unless called by nary-numeric
    (let [arg0 (conv/ensure-numeric (nth args 0))
@@ -1535,7 +1535,7 @@
     (x/wrong-type "expect float or double expression" from)))
 
 (defn arith-2-float ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn* [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args tl-ctx]
    (when (some? form)
      (wrong/check-argc 2 form))         ;unless called by nary-numeric
    (let [arg0 (ensure-float (nth args 0))
@@ -1550,7 +1550,7 @@
     (x/wrong-type "expect integral expression" from)))
 
 (defn bits-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn* [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args tl-ctx]
    (when (some? form)
      (wrong/check-argc 2 form))         ;unless called by nary-numeric
    (let [arg0 (ensure-integral (nth args 0))
@@ -1560,7 +1560,7 @@
                 (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (defn shift-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn* [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args tl-ctx]
    (wrong/check-argc 2 form)
    (let [arg0 (ensure-integral (nth args 0))
          arg1 (ensure-int (nth args 1))
@@ -1569,7 +1569,7 @@
 
 
 (defn nary-numeric ^FnPrimitiveFn [^int min-argc ^Expr id ^FnPrimitiveFn pfn]
-  (^FnPrimitiveFn fn* [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args tl-ctx]
    (wrong/check-argc-min min-argc form)
    (case (bounded-count 3 args)
      0 id
@@ -1591,11 +1591,10 @@
 ;; (!(f1 == f2)) ...".  Probably not, but Clojure has no !=.  Add NaN
 ;; & negative zero test cases to ieee754-test.
 (defn binary-cmp ^FnPrimitiveFn [^int cmp-opcd]
-  (^FnPrimitiveFn fn* [form args tl-ctx]
-   (let [[arg0 arg1] args]
-     (when form
-       (wrong/check-argc 2 form))         ;unless called by nary-cmp
-     (branch/xcmp cmp-opcd arg0 arg1))))
+  (^FnPrimitiveFn fn [form [arg0 arg1] tl-ctx]
+   (when form
+     (wrong/check-argc 2 form))         ;unless called by nary-cmp
+   (branch/xcmp cmp-opcd arg0 arg1)))
 
 (defn- ensure-reference ^Expr [^Expr from]
   (if (x/reference? from)
@@ -1603,10 +1602,9 @@
     (x/wrong-type "expect reference expression" from)))
 
 (defn binary-cmp-ref ^FnPrimitiveFn [^int cmp-opcd]
-  (^FnPrimitiveFn fn* [form args tl-ctx]
-   (let [[arg0 arg1] args]
-     (wrong/check-argc 2 form)
-     (xf/acmp (ensure-reference arg0) (ensure-reference arg1) cmp-opcd))))
+  (^FnPrimitiveFn fn [form [arg0 arg1] tl-ctx]
+   (wrong/check-argc 2 form)
+   (xf/acmp (ensure-reference arg0) (ensure-reference arg1) cmp-opcd)))
 
 (defn- as-anonymous-bindings [args]
   ;; note: simplified version of logic from fn bindings above
@@ -1623,7 +1621,7 @@
           (recur (conj bexprs b) (conj brefs bref) argr))))))
 
 (defn nary-cmp ^FnPrimitiveFn [^FnPrimitiveFn binary-pfn]
-  (^FnPrimitiveFn fn* [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args tl-ctx]
    (wrong/check-argc-min 1 form)
    (case (bounded-count 3 args)
      1 (xf/prog2-expr (nth args 0) x/expr-true)

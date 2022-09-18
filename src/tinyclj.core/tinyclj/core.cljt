@@ -53,10 +53,9 @@
 (def
  ^{:macro true
    :added "1.0"}
- fn (fn* fn [&form &env & decl]
-         (let* [m (.meta ^clojure.lang.IMeta &form)]
-           (.withMeta ^clojure.lang.IObj (cons (.withMeta 'fn* m) decl) 
-                      m))))
+ fn (fn* fn [&form &env & decl] 
+         (.withMeta ^clojure.lang.IObj (cons (.withMeta 'fn* (.meta ^clojure.lang.IMeta (. clojure.lang.RT (first &form)))) decl)
+                    (.meta ^clojure.lang.IMeta &form))))
 
 (def
  ^{:arglists '([coll])
@@ -343,7 +342,9 @@
                     m))
               m (conj (if (meta name) (meta name) {}) m)]
           (list 'def (with-meta name m)
-								(with-meta (cons `fn (if (:tag m) fdecl (cons name fdecl))) {:tag (:tag m)})))))
+                (if (:tag m)
+                  (cons (with-meta `fn {:tag (:tag m)}) fdecl)
+                  (cons `fn (cons name fdecl)))))))
 
 ;; (. (var defn) (setMacro))
 
@@ -4508,11 +4509,12 @@
                                       body)
                               body)]
                    (with-meta (maybe-destructured params body) (meta sig))))
-          new-sigs (map psig sigs)]
+          new-sigs (map psig sigs)
+          op-fn* (with-meta 'fn* (meta (first &form)))]
       (with-meta
         (if name
-          (list* 'fn* name new-sigs)
-          (cons (with-meta 'fn* (meta &form)) new-sigs))
+          (list* op-fn* name new-sigs)
+          (cons op-fn* new-sigs))
         (meta &form))))
 
 (defmacro loop

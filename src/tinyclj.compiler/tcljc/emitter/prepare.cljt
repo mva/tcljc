@@ -331,7 +331,7 @@
                 p-fnc (-> provider .fn-form .!fnc)
                 p-co (get-closes-over provider)]
             (pos? (util/sim-sum-keys!
-                   (^ToIntFunction fn* [closing-over] ;does side-effects
+                   (^ToIntFunction fn [closing-over] ;does side-effects
                     (let [closing-over ^BindingRef closing-over]
                       (if (or (= (x/b-level closing-over) p-level)
                               (some? (util/sim-get p-co closing-over))
@@ -345,7 +345,7 @@
   
   (defn- propagate-env-demands! ^Set [^Set env-consumers ^HashMap env-providers]
     (let [modified (HashSet.)]
-      (->> (^Consumer fn* [consumer]
+      (->> (^Consumer fn [consumer]
             (let [consumer ^ArityId consumer
                   consumer-category (if (-> consumer .fn-form .!fnc
                                             (.used-as-value?))

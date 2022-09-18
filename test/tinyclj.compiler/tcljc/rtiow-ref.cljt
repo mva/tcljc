@@ -65,35 +65,33 @@
   (hit ^HitRecord [^Ray r ^float t-min ^float t-max]))
 
 (defn mk-sphere ^FnHitable [^Vec3 center ^float radius]
-  ^FnHitable
-  (fn [r t-min t-max]
-    (let [oc (v3-sub (.origin r) center)
-          a (v3-squared-length (.direction r))
-          b (v3-dot oc (.direction r))
-          c (- (v3-squared-length oc) (* radius radius))
-          discriminant (- (* b b) (* a c))]
-      (when (> discriminant 0)
-        (let [temp (/ (- (- b) (float (Math/sqrt discriminant))) a)]
-          (if (and (< temp t-max) (> temp t-min))
-            (let [p (point-at-parameter r temp)]
-              (hit-record temp p (v3-smul (/ radius) (v3-sub p center))))
-            (let [temp (/ (+ (- b) (float (Math/sqrt discriminant))) a)]
-              (when (and (< temp t-max) (> temp t-min))
-                (let [p (point-at-parameter r temp)]
-                  (hit-record temp p (v3-smul (/ radius) (v3-sub p center))))))))))))
+  (^FnHitable fn [r t-min t-max]
+   (let [oc (v3-sub (.origin r) center)
+         a (v3-squared-length (.direction r))
+         b (v3-dot oc (.direction r))
+         c (- (v3-squared-length oc) (* radius radius))
+         discriminant (- (* b b) (* a c))]
+     (when (> discriminant 0)
+       (let [temp (/ (- (- b) (float (Math/sqrt discriminant))) a)]
+         (if (and (< temp t-max) (> temp t-min))
+           (let [p (point-at-parameter r temp)]
+             (hit-record temp p (v3-smul (/ radius) (v3-sub p center))))
+           (let [temp (/ (+ (- b) (float (Math/sqrt discriminant))) a)]
+             (when (and (< temp t-max) (> temp t-min))
+               (let [p (point-at-parameter r temp)]
+                 (hit-record temp p (v3-smul (/ radius) (v3-sub p center))))))))))))
 
 (defn mk-hlist ^FnHitable [& ^"[Ltcljc.rtiow-ref.FnHitable;" hs]
-  ^FnHitable
-  (fn [r t-min t-max]
-    (loop [i 0
-           closest-so-far t-max
-           hit-anything nil]
-      (if (< i (alength hs))
-        (let [rec (.hit (aget hs i) r t-min closest-so-far)]
-          (if (some? rec)
-            (recur (inc i) (.t rec) rec)
-            (recur (inc i) closest-so-far hit-anything)))
-        hit-anything))))
+  (^FnHitable fn [r t-min t-max]
+   (loop [i 0
+          closest-so-far t-max
+          hit-anything nil]
+     (if (< i (alength hs))
+       (let [rec (.hit (aget hs i) r t-min closest-so-far)]
+         (if (some? rec)
+           (recur (inc i) (.t rec) rec)
+           (recur (inc i) closest-so-far hit-anything)))
+       hit-anything))))
 
 (defn mk-world ^FnHitable []
   (mk-hlist (mk-sphere (v3 0 0 -1) (float 0.5))

@@ -91,7 +91,7 @@
 
 (letfn [(assoc-syntax-quote [m]
           (let [sym (symbol nil (name sq/sym-syntax-quote))
-                mfn (^FnMacroFn fn* [ctx form]
+                mfn (^FnMacroFn fn [ctx form]
                      (sq/syntax-quote form ^Ctx ctx))]
             (assoc m (name sq/sym-syntax-quote)
                    (x/macro-ref sym cfg/core-lib mfn nil nil))))
