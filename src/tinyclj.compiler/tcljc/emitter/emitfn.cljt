@@ -130,8 +130,7 @@
       (.withMethodBody cb nm mtd flags xbh))))
 
 (defn mk-emit-statics ^IEmitPlan [^FnSpec fspec]
-  (reify
-    IEmitPlan
+  (reify IEmitPlan
     (fn-value-const [_]
       (let [mh-array (->> (x/aca-by-n (arity-code-array fspec))
                           (map #(.load-mh-ext ^ArityCode %))
@@ -328,12 +327,11 @@
               (bytecode/emit-body xb ld-this at 0 (.body-expr ac)))]
     (.withMethodBody cb nm mtd flags xbh)))
 
-(defn mk-emit-virtuals ^IEmitPlan [^ClassDesc this-class itfs
+(defn mk-emit-virtuals ^IEmitPlan [^ClassDesc this-class 
                                    ^String source-file ^String this-mnm
                                    ^DirectMethodHandleDesc super-mhd
                                    ^FnSpec fspec]
-  (reify
-    IEmitPlan
+  (reify IEmitPlan
     (fn-value-const [_]
       (when-not (materialized-env? fspec)
         (let [mtd (MethodTypeDesc/of this-class)
@@ -366,16 +364,13 @@
             ld-this (cf/ld-st-receiver this-class this-mnm)
             final-ees (final-entries fspec)
             patched-ees (patched-entries fspec)
-            all-ees (concat final-ees patched-ees)
-            itf-fn? (identical? rt/mhd-Object super-mhd)
-            super-param-ldv (if itf-fn? [] meta-param-ldv)]
+            all-ees (concat final-ees patched-ees)]
         (cf/with-cbh [cb]
           (-> cb
               (.withFlags (bit-or Classfile/ACC_PUBLIC
                                   Classfile/ACC_FINAL
                                   Classfile/ACC_SUPER))
               (.withSuperclass (.owner super-mhd))
-              (.withInterfaceSymbols itfs)
               (cf/with-source-file source-file))
 
           (doseq [^EnvEntry ee all-ees
@@ -391,22 +386,15 @@
                                      (.load-mh-impl ac))
               (virtual-mdef-impl cb fspec ld-this ac)))
 
-          (if itf-fn?
-            (do (when (seq patched-ees)
-                  (constructor-impl cb super-mhd super-param-ldv all-ees))
-                (constructor-impl cb super-mhd super-param-ldv final-ees)
-                (create-itf-fn-method cb this-class final-ees)
-                (when (seq patched-ees)
-                  (patch-fn-method cb patched-ees)))
-            (do (arity-or-null-method cb (.fn-form fspec))
-                (dmh-method cb aca)
-                (when (seq patched-ees)
-                  (constructor-impl cb super-mhd super-param-ldv all-ees))
-                (constructor-impl cb super-mhd super-param-ldv final-ees)
-                (create-afn-method cb this-class final-ees)
-                (when (seq patched-ees)
-                  (patch-fn-method cb patched-ees))
-                (with-meta-method cb this-class all-ees))))))
+          (arity-or-null-method cb (.fn-form fspec))
+          (dmh-method cb aca)
+          (when (seq patched-ees)
+            (constructor-impl cb super-mhd meta-param-ldv all-ees))
+          (constructor-impl cb super-mhd meta-param-ldv final-ees)
+          (create-afn-method cb this-class final-ees)
+          (when (seq patched-ees)
+            (patch-fn-method cb patched-ees))
+          (with-meta-method cb this-class all-ees))))
     (fn-methods [_ cb]
       cb)
     
@@ -418,8 +406,7 @@
 ;;; ------------------------------------------------------------------------
 
 (defn mk-emit-lambda ^IEmitPlan [^Class this-itf ^FnSpec fspec]
-  (reify
-    IEmitPlan
+  (reify IEmitPlan
     (fn-value-const [_]
       nil)
     (fn-value-instr [this xb bref-mapper]
@@ -466,8 +453,7 @@
                                 ^String source-file ^String this-mnm
                                 ^DirectMethodHandleDesc super-mhd
                                 ^FnSpec fspec]
-  (reify
-    IEmitPlan
+  (reify IEmitPlan
     (fn-value-const [_]
       nil)
     (fn-value-instr [_ xb bref-mapper]
