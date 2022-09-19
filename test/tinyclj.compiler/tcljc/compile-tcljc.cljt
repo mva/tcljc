@@ -8,7 +8,8 @@
    [tcljc.predefined :as predefined]))
 
 (defn run []
-  (let [sourcev [(cfg/path-of "../jvm-stuff/bootstrap-tclj" "tinyclj.rt")
+  (let [tcljc-mdir (cfg/dest-dir "tcljc.mdir")
+        sourcev [(.resolve tcljc-mdir (cfg/path-of "tinyclj-rt.jar"))
                  (cfg/path-of "src/tinyclj.core")
                  (cfg/path-of "src/tinyclj.compiler")
                  (cfg/path-of "test/tinyclj.compiler")]

@@ -22,7 +22,10 @@
    (java.util HashMap)
    (java.util.function Function)))
 
-(def ^:private app-ld (cfg/app-class-loader :system []))
+(def ^:private app-ld
+  (let [tcljc-mdir (cfg/dest-dir "tcljc.mdir")
+        tcljc-mod-rt (.resolve tcljc-mdir (cfg/path-of "tinyclj-rt.jar"))]
+    (cfg/app-class-loader :platform [tcljc-mod-rt])))
 (def ^:private rt-lookup (cfg/get-rt-lookup app-ld))
 (def ^:private bootstrap-ns-str "tinyclj.lang.bootstrap")
 
