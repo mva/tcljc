@@ -16,7 +16,7 @@ public final class BootstrapMethod {
     return insertArguments(arityMh, 1, n).asType(getterMt);
   }
   
-  public static CallSite invokeN(Lookup lookup, String name, MethodType type)
+  public static CallSite invokeFn(Lookup lookup, String name, MethodType type)
     throws NoSuchMethodException, IllegalAccessException
   {
     // method handle producing the arity's method handle, with
@@ -27,7 +27,7 @@ public final class BootstrapMethod {
     var invokeArity = invoker(type);
     // put arity's method handle in front of fnValue
     var mh = foldArguments(invokeArity, arityMh);
-    // call site: invokeN(fnValue, args...)
+    // call site: invokeFn(fnValue, args...)
     return new ConstantCallSite(mh);
   }
 

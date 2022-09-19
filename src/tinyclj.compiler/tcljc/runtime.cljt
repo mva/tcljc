@@ -344,8 +344,7 @@
               CallSite [Lookup String MethodType ObjectArray]))
 (def bsm-static-fn (mhd-static [BootstrapMethod "createStaticFn"] StaticFnMh
                                [Lookup String Class MethodHandleArray]))
-;;; FIXME... rename BootstrapMethod::invokeN to ::invokeFn?
-(def bsm-invoke-fn (mhd-static [BootstrapMethod "invokeN"]
+(def bsm-invoke-fn (mhd-static [BootstrapMethod "invokeFn"]
                                CallSite [Lookup String MethodType]))
 (def bsm-metafactory (mhd-static [LambdaMetafactory "metafactory"]
                                  CallSite [Lookup String MethodType MethodType
