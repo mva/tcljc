@@ -111,13 +111,11 @@
   (assert (vector? sig))
   (assert (= (count sig) 1))
   (let [[nm] sig]
-    `(reify*
-      [java.util.function.Consumer]
-      (accept [_ ~nm]
-              (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.ClassBuilder})]
-                #_(.println System/out ":accept ClassBuilder start")
-                ~@body
-                #_(.println System/out ":accept ClassBuilder end"))))))
+    `(^java.util.function.Consumer fn [~nm]
+      (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.ClassBuilder})]
+        #_(.println System/out ":accept ClassBuilder start")
+        ~@body
+        #_(.println System/out ":accept ClassBuilder end")))))
 
 (defn with-source-file ^ClassBuilder [^ClassBuilder cb ^String source-file]
   (cond-> cb source-file (.with (SourceFileAttribute/of source-file))))
@@ -127,37 +125,31 @@
   (assert (vector? sig))
   (assert (= (count sig) 1))
   (let [[nm] sig]
-    `(reify*
-      [java.util.function.Consumer]
-      (accept [_ ~nm]
-              (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.MethodBuilder})]
-                #_(.println System/out ":accept MethodBuilder start")
-                ~@body
-                #_(.println System/out ":accept MethodBuilder end"))))))
+    `(^java.util.function.Consumer fn [~nm]
+      (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.MethodBuilder})]
+        #_(.println System/out ":accept MethodBuilder start")
+        ~@body
+        #_(.println System/out ":accept MethodBuilder end")))))
 
 (defmacro with-xbh [sig & body]
   (assert (vector? sig))
   (assert (= (count sig) 1))
   (let [[nm] sig]
-    `(reify*
-      [java.util.function.Consumer]
-      (accept [_ ~nm]
-              (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.CodeBuilder})]
-                #_(.println System/out "\n:accept CodeBuilder start")
-                ~@body
-                #_(.println System/out ":accept CodeBuilder end\n"))))))
+    `(^java.util.function.Consumer fn [~nm]
+      (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.CodeBuilder})]
+        #_(.println System/out "\n:accept CodeBuilder start")
+        ~@body
+        #_(.println System/out ":accept CodeBuilder end\n")))))
 
 (defmacro with-fbh [sig & body]
   (assert (vector? sig))
   (assert (= (count sig) 1))
   (let [[nm] sig]
-    `(reify*
-      [java.util.function.Consumer]
-      (accept [_ ~nm]
-              (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.FieldBuilder})]
-                #_(.println System/out ":accept FieldBuilder start")
-                ~@body
-                #_(.println System/out ":accept FieldBuilder end"))))))
+    `(^java.util.function.Consumer fn [~nm]
+      (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.FieldBuilder})]
+        #_(.println System/out ":accept FieldBuilder start")
+        ~@body
+        #_(.println System/out ":accept FieldBuilder end")))))
 
 
 (definterface IClassHierarchyRegistry
