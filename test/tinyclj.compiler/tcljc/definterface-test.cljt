@@ -110,9 +110,6 @@
                  (definterface* FnBinaryInt
                    (fn2 ^int [^int a ^int b]))
                  (import* pkg.ns0.FnBinaryInt)
-                 ;; Two possible variants to translate this:
-                 ;; (def add-int (fn ^FnBinaryInt add-int))
-                 ;; (def ^FnBinaryInt add-int (fn ^FnBinaryInt add-int))
                  (def add-int (^FnBinaryInt fn* [a b] (+ a b)))
                  (def apply-binary-int
                    (fn* apply-binary-int ^int [^FnBinaryInt f ^int a ^int b]

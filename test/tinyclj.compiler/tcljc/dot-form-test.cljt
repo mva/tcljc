@@ -302,3 +302,41 @@
 
          (asm-expr [^String nm]
                    (.getMethod Object nm)))))
+
+(deftest dot-vector-passed-to-list
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           ["LOCAL 1: Object x"]
+           (LDC [STATIC Literal "vector"
+                 "([Ljava/lang/Object;)Lclojure/lang/IPersistentVector;"])
+           (ACONST_NULL)
+           (ALOAD_1)
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
+           (CHECKCAST List)
+           (ASTORE_2)
+           ["LOCAL 2: List args"]
+           (ALOAD_0)
+           (ALOAD_2)
+           (INVOKEVIRTUAL MethodHandle "invokeWithArguments"
+                          "(Ljava/util/List;)Ljava/lang/Object;")
+           (ARETURN)]
+         (asm-expr [^java.lang.invoke.MethodHandle mh ^Object x]
+                   (let* [^java.util.List args [nil x]]
+                     (.invokeWithArguments mh args)))))
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           ["LOCAL 1: Object x"]
+           (LDC [VIRTUAL MethodHandle "invokeWithArguments"
+                 "([Ljava/lang/Object;)Ljava/lang/Object;"])
+           (ALOAD_0)
+           (LDC [STATIC Literal "vector"
+                 "([Ljava/lang/Object;)Lclojure/lang/IPersistentVector;"])
+           (ACONST_NULL)
+           (ALOAD_1)
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "(Ljava/lang/invoke/MethodHandle;Lclojure/lang/IPersistentVector;)Ljava/lang/Object;")
+           (ARETURN)]
+         ;; Awkward: IPersistentVector does not implement java.util.List!
+         (asm-expr [^java.lang.invoke.MethodHandle mh ^Object x]
+                   (.invokeWithArguments mh [nil x])))))

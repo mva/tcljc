@@ -226,11 +226,11 @@
   (let [ns-alias {rd/this-namespace-key "this-namespace"
                   "alias" "aliased-namespace"
                   "known-namespace" "known-namespace"}]
-    (is (= [::this-namespace/bar]
+    (is (= [:this-namespace/bar]
            (read-all "::bar" ns-alias)))
-    (is (= [::aliased-namespace/bar]
+    (is (= [:aliased-namespace/bar]
            (read-all "::alias/bar" ns-alias)))
-    (is (= [::known-namespace/bar]
+    (is (= [:known-namespace/bar]
            (read-all "::known-namespace/bar" ns-alias)))
 
     (is (thrown-with-msg? ExceptionInfo #"invalid token: ::foo/bar"

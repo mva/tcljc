@@ -3,6 +3,11 @@
             [tcljc.main.options :as options]
             [tcljc.main.tclj0 :as tclj0]))
 
+(defn print-exception-info [^clojure.lang.ExceptionInfo e]
+  (println "ExceptionInfo:" (ex-message e))
+  (doseq [[k v] (sort-by key (ex-data e))]
+    (println k (if (= k :form/context) (last v) v))))
+
 (defn -main [& args]
   (letfn [(coded-exit ^void [^boolean success]
             (System/exit (if success 0 1)))
@@ -19,6 +24,9 @@
                     (assert false) #_(tinyclj.build.tclj1/run opts)
                     (tclj0/run opts)))
               false))
+          (catch clojure.lang.ExceptionInfo e
+            (print-exception-info e)
+            false)
           (catch Throwable t
             (.printStackTrace t)
             false)            ;failure because of unhandled expception

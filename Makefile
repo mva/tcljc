@@ -3,7 +3,6 @@ JAVA=$(JAVA_BIN)java
 JAVAC=$(JAVA_BIN)javac
 JAVAP=$(JAVA_BIN)javap
 
-# Note: currently need the impl package for BlockCodeBuilderImpl.isEmpty()
 JAVA_OPTS=--enable-preview --add-modules jdk.incubator.concurrent \
   --add-exports java.base/jdk.classfile=ALL-UNNAMED \
   --add-exports java.base/jdk.classfile.constantpool=ALL-UNNAMED \
@@ -11,11 +10,14 @@ JAVA_OPTS=--enable-preview --add-modules jdk.incubator.concurrent \
   --add-exports java.base/jdk.classfile.attribute=ALL-UNNAMED
 #JAVA_OPTS += -XX:+UseZGC -Xlog:gc
 #JAVA_OPTS += -Djdk.tracePinnedThreads
-#DET=--deterministic
 
+#DET=--deterministic
+#BOOTSTRAP_TCLJ_MDIR=../bootstrap-tcljc
+#BOOTSTRAP_TCLJ_MAIN=tcljc.main.__ns
 BOOTSTRAP_TCLJ_MDIR=../jvm-stuff/bootstrap-tclj
+BOOTSTRAP_TCLJ_MAIN=tinyclj.build.main.__ns
 BOOTSTRAP_TCLJ_MOD_RT=$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.rt
-BOOTSTRAP_TCLJ=$(JAVA) --class-path $(BOOTSTRAP_TCLJ_MOD_RT):$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.core:$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.compiler $(JAVA_OPTS) tinyclj.build.main.__ns $(DET) --parent-loader :platform
+BOOTSTRAP_TCLJ=$(JAVA) --class-path $(BOOTSTRAP_TCLJ_MOD_RT):$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.core:$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.compiler $(JAVA_OPTS) $(BOOTSTRAP_TCLJ_MAIN) $(DET) --parent-loader :platform
 
 # $(DEST_DIR) matches the compiler's default destination directory
 PROJECT_DIR=$(notdir $(PWD))
@@ -82,7 +84,7 @@ bootstrap-check: $(DEST_DIR).rtiowFS/DONE
 $(DEST_DIR).stageZero/DONE: $(wildcard $(BOOTSTRAP_TCLJ_MDIR)/commit-id.txt src/tinyclj.compiler/tcljc/*.cljt src/tinyclj.compiler/tcljc/*/*.cljt)
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(TIME_JAVA) --module-path $(BOOTSTRAP_TCLJ_MDIR) $(JAVA_OPTS) -m tinyclj.compiler -d "$(dir $@)" -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
+	$(BOOTSTRAP_TCLJ) -d "$(dir $@)" -s $(BOOTSTRAP_TCLJ_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
 	touch "$@"
 
 # DI1: Build "tcljc" using the initial compiler from PREV_DEST_DIR
@@ -126,6 +128,10 @@ $(DEST_DIR).mod-tinyclj-core/module-info.class: $(DEST_DIR).mod-tinyclj-rt/modul
 	@rm -rf "$(dir $@)"
 	$(BUILD_JAVA) -cp $(TCLJC_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns -d "$(dir $@)" --parent-loader :platform -s $(dir $<) -s src/tinyclj.core tinyclj.core.all
 	$(BUILD_JAVAC) -p $(dir $<) -d "$(dir $@)" src/tinyclj.core/module-info.java
+
+# FIXME... In the not so near future, after tcljc has become its own
+# bootstrap compiler, rename the module directory tinyclj.compiler to
+# match its module name tcljc.
 
 TINYCLJ_COMPILER_SOURCE := $(sort $(wildcard src/tinyclj.compiler/*/*.cljt src/tinyclj.compiler/*/*/*.cljt)) src/tinyclj.compiler/module-info.java
 $(DEST_DIR).mod-tinyclj-compiler/module-info.class: $(DEST_DIR).mod-tinyclj-core/module-info.class $(TINYCLJ_COMPILER_SOURCE) $(DEST_DIR).stageDI2/DONE
@@ -177,3 +183,11 @@ $(DEST_DIR).rtiowFS/DONE: $(DEST_DIR).stageFI2/DONE
 	$(JAVA) -p $(DEST_DIR).mdir --add-modules tinyclj.core -cp $(dir $@) tcljc.rtiow-ref.__ns >"$(dir $@)"ray.ppm
 	@echo "3cf6c9b9f93edb0de2bc24015c610d78  $(dir $@)ray.ppm" | md5sum -c -
 	touch "$@"
+
+# ------------------------------------------------------------------------
+
+install-into-bootstrap-tcljc:
+	$(MAKE) clean $(DEST_DIR).mdir/DONE
+	$(MAKE) JAR=$(BUILD_JAR) -C ../bootstrap-tcljc pack
+	cp -f $(DEST_DIR).mdir/*.jar ../bootstrap-tcljc
+	$(MAKE) JAR=$(BUILD_JAR) -C ../bootstrap-tcljc unpack

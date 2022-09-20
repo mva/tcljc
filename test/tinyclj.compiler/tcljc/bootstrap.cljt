@@ -19,7 +19,7 @@
    (java.lang.invoke MethodHandle MethodType)
    (java.lang.reflect Method)
    (java.nio.file Path)
-   (java.util HashMap)
+   (java.util HashMap List)
    (java.util.function Function)))
 
 (def ^:private app-ld
@@ -131,8 +131,8 @@
   (if (< (bounded-count 4 args) 4)
     (cons 'tinyclj.lang.primitive/xastore args)
     (list* 'tinyclj.lang.primitive/xastore
-           (xaload-nary cenv (cons 'tinyclj.lang.primitive/aget
-                                   (drop-last 2 args)))
+           (.expand xaload-nary cenv (cons 'tinyclj.lang.primitive/aget
+                                           (drop-last 2 args)))
            (take-last 2 args))))
 (defn- put-macros ^HashMap [^HashMap m]
   (letfn [(macro-ref ^MacroRef [^Symbol nm ^FnMacroFn mfn]
@@ -140,8 +140,8 @@
           (put-macro ^void [^Symbol nm ^FnMacroFn mfn]
             (.put m (name nm) (macro-ref nm mfn)))
           (put-alias ^void [^Symbol nm ^Symbol base]
-            (letfn [(^FnMacroFn mfn [env form]
-                     (cons base (rest form)))]
+            (let [mfn (^FnMacroFn fn [env form]
+                       (cons base (rest form)))]
               (.put m (name nm) (macro-ref nm mfn))))]
     ;; primitive conversion functions
     (put-alias 'object 'tinyclj.lang.primitive/object)
@@ -265,8 +265,8 @@
        (if (= i (alength ans-strs))
          known-ns
          (let [ns-str (aget ans-strs i)
-               req-fn (fn ^FnRequireNamespace provided [ns-str provided-nmsp]
-                        (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
+               req-fn (^FnRequireNamespace fn [ns-str provided-nmsp]
+                       (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
                nmsp (em/compile-and-emit env ns-str req-fn true provided-nmsp
                                          bootstrap-globals)]
            (doseq [^bytes bs (.bytesv nmsp)
@@ -394,13 +394,15 @@
         ccm (.findStatic rt-lookup ccm-cl "create" ccm-mt)
 
         mtc-mt (mt-of Object [Object])
-        mtc (.findVirtual rt-lookup ccm-cl "appToCpl" mtc-mt)]
-    (.bindTo mtc (.invokeWithArguments ccm [nil array-to-cpl]))))
+        mtc (.findVirtual rt-lookup ccm-cl "appToCpl" mtc-mt)
+        ^List args [nil array-to-cpl]]
+    (.bindTo mtc (.invokeWithArguments ccm args))))
 
 (def target-to-compiler-mh (to-compiler-mh app-ld))
 
 (defn target->compiler [x]
-  (.invokeWithArguments target-to-compiler-mh [x]))
+  (let [^List args [x]]
+    (.invokeWithArguments target-to-compiler-mh args)))
 
 (defmacro data-expr
   ([form]
