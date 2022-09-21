@@ -20,8 +20,8 @@
 
 ;;; ------------------------------------------------------------------------
 
-(def ^:private esc \u001b)
-(def ^:private terminator \m)
+(def esc \u001b)
+(def terminator \m)
 ;; (def reset (str esc "[0" terminator))
 
 ;;; https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_(Select_Graphic_Rendition)_parameters

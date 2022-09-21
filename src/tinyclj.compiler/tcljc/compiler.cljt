@@ -564,25 +564,28 @@
                at-fn (^Callable fn []
                       (when fork?
                         (ctx/reset-thread-binding-frame tl-ctx'))
-                      (let [n (count (.at-sigs fn-form))
-                            aca (new "[Ltcljc.expr.ArityCode;" n)]
-                        (dotimes [i n]
-                          (let [at ^Arity (nth (.at-sigs fn-form) i)
-                                this-bref (x/local-ref
-                                           (.level fn-form) (.this-name at)
-                                           (x/type fn-form) x/b-this-object
-                                           fn-form)
-                                unique-mnm (.unique-mnm fn-form)
-                                body (wrong/with-list-context (.aform at)
-                                       (-> (enter-fn-arity env unique-mnm
-                                                           at this-bref)
-                                           (add-locals (.paramv at))
-                                           (compile-body at tl-ctx')))
-                                at' (cond-> at
-                                      (auto-rtype? at)
-                                      (x/with-rtype (x/type body)))]
-                            (aset aca i (x/mk-arity-code at' this-bref body))))
-                        aca))
+                      (try
+                        (let [n (count (.at-sigs fn-form))
+                              aca (new "[Ltcljc.expr.ArityCode;" n)]
+                          (dotimes [i n]
+                            (let [at ^Arity (nth (.at-sigs fn-form) i)
+                                  this-bref (x/local-ref
+                                             (.level fn-form) (.this-name at)
+                                             (x/type fn-form) x/b-this-object
+                                             fn-form)
+                                  unique-mnm (.unique-mnm fn-form)
+                                  body (wrong/with-list-context (.aform at)
+                                         (-> (enter-fn-arity env unique-mnm
+                                                             at this-bref)
+                                             (add-locals (.paramv at))
+                                             (compile-body at tl-ctx')))
+                                  at' (cond-> at
+                                        (auto-rtype? at)
+                                        (x/with-rtype (x/type body)))]
+                              (aset aca i (x/mk-arity-code at' this-bref body))))
+                          aca)
+                        (catch ExceptionInfo e
+                          (throw (ctx/assoc-resource-url e tl-ctx')))))
                body-fut (if-some [sts (.arity-task-scope tl-ctx')]
                           (.fork sts at-fn)
                           (CompletableFuture/completedFuture (.call at-fn)))

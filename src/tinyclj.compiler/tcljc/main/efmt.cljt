@@ -1,0 +1,351 @@
+(ns tcljc.main.efmt
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.wrong :as wrong]
+   [tcljc.expr :as x]
+   [tinyclj.string :as str]
+   [tinyclj.alpha.ptest__term :as term])
+  (:import
+   (clojure.lang ExceptionInfo)
+   (java.lang.constant ClassDesc)
+   (java.lang.reflect Method Constructor Executable Field Member Modifier)
+   (java.util.regex Pattern)))
+
+(letfn [(skip-over ^int [^CharSequence cs ^int start ^int end ^char c]
+          (cond
+            (= start end) start
+            (= (.charAt cs start) c) (inc start)
+            :else (recur cs (inc start) end c)))]
+  
+  (defn- ansi-width
+    (^int [^CharSequence cs]
+     (ansi-width cs 0 (.length cs)))
+    (^int [^CharSequence cs ^int start ^int end]
+     (assert (<= 0 start end (.length cs)))
+     (loop [cnt 0, i start]
+       (cond
+         (= i end) cnt
+         (= (.charAt cs i) term/esc) (recur cnt (skip-over cs (inc i) end
+                                                           term/terminator))
+         :else (recur (inc cnt) (inc i)))))))
+
+
+(defn- file-line-column [emap]
+  (when-some [coll (->> (:form/context emap)
+                        (reverse)
+                        (filter #(-> % (meta) :line))
+                        (first))]
+    (:line (meta coll))))
+
+(defn- relative-path ^String [^java.net.URL url] ;relative to working directory
+  (if (some? url)
+    (let [path (java.nio.file.Path/of (.toURI url))
+          wd (-> (java.nio.file.Paths/get "")
+                 (.toAbsolutePath))]
+      (try
+        (str (.relativize wd path))
+        (catch IllegalArgumentException _
+          (str path))))
+    "<unknown-file>"))
+
+(defn- fit-indent* ^String [^StringBuilder sb ^int indent parts]
+  (letfn [(read-width ^int []
+            (if-some [s (System/getenv "COLUMNS")]
+              (try
+                (Integer/parseInt s)
+                (catch NumberFormatException _
+                  -1))
+              -1))
+          (guess-width ^int []
+            (let [w (read-width)] (if (pos? w) w 80)))]
+    (let [width (guess-width)
+          indent (if (< indent (quot width 2))
+                   indent
+                   1)]
+      (loop [[^String p & pr :as parts] (seq parts)
+             col (ansi-width sb)]
+        (if (nil? parts)
+          (.toString sb)
+          (let [colp (+ col 1 (ansi-width p))]
+            (if (or (<= colp width) (= col indent))
+              (do (.append sb " ")
+                  (.append sb p)
+                  (recur pr colp))
+              (do (.append sb (System/lineSeparator))
+                  (.append sb (.repeat " " indent))
+                  (recur parts indent)))))))))
+
+(defn- fit-indent ^String [^String prefix parts]
+  (fit-indent* (StringBuilder. prefix) (ansi-width prefix) parts))
+
+(defn- fit-string ^String [^String prefix ^String s]
+  (if (some? s)
+    (fit-indent prefix (str/split s #" +"))
+    prefix))
+
+(defn- type-str ^String [clx]
+  (cond
+    (nil? clx) "<nil>"              ;nil must not crash the build loop
+    (instance? Class clx) (recur (.get (.describeConstable ^Class clx)))
+    :else (.displayName ^ClassDesc clx)))
+
+(defn- context-summary [ctx]
+  (letfn [(shorten [x]
+            (cond
+              (vector? x) '[...]
+              (seq? x) (if (nil? (next x))
+                         x              ;list of one element
+                         (list (first x) '...))
+              :else x))
+          (line-number ^Integer [x]
+            (when (seq? x)
+              (let [l (some-> x (meta) :line)]
+                (when (instance? Integer l)
+                  ^Integer l))))
+          (format-line ^String [x]
+            (-> (if-some [line (line-number x)]
+                  (String/format "%4d:" line)
+                  "    :")
+                (term/dim)))
+
+          (op? ^boolean [^Pattern re x]
+            (and (symbol? x)
+                 (some? (re-matches re (name x)))
+                 (or (nil? (namespace x)) (cfg/core-lib? (namespace x)))))
+          (take-n [^int n xs]
+            (if (zero? n)
+              (if (seq xs) (list '...) ())
+              (cons (first xs) (take-n (dec n) (rest xs)))))
+          (mark-first-seq [kw [x & xr :as xs]]
+            (if (seq? x)
+              (with-meta
+                (cons (vary-meta x assoc kw true) xr)
+                (meta xs))
+              xs))
+          (marked-up-tail [[x & xr :as xs]] ;pre: (seq? x)
+            (assert (seq? x))
+            (condp = (first x)
+              'deftype* (mark-first-seq ::arity-or-method xr)
+              'reify* (mark-first-seq ::arity-or-method xr)
+              'fn* (if (symbol? (first xr))
+                     (->> (mark-first-seq ::arity-or-method (next xr))
+                          (cons (first xr)))
+                     (mark-first-seq ::arity-or-method xr))
+              #_else xr))
+          (rewrite-ctx [x]              ;pre: (seq? x)
+            ;; return nil to suggest omitting this line from the
+            ;; context summary
+            (condp op? (first x)
+              #"defn-?" (take-n 2 x)
+              #"fn\*?" (take-n (if (symbol? (second x)) 2 1) x)
+              #"reify\*?" (take-n 2 x)  ;show itf vector for reify*
+              #"loop\*?" (take-n 1 x)
+              #"deftype\*?" (take-n 2 x)
+              #_else (when (::arity-or-method (meta x))
+                       (take-n (if (symbol? (first x)) 2 1) x))))
+          (summarize [acc [x & xr :as xs]] ;pre: (some? xs)
+            (if (nil? xr)
+              (conj acc (fit-string (format-line x) (wrong/str* (shorten x))))
+              (let [acc (summarize acc (marked-up-tail xs))
+                    x* (when (some? (line-number x))
+                         (or (rewrite-ctx x)
+                             ;; unconditionally show some number of
+                             ;; lines of top context
+                             (when (< (count acc) 3) (shorten x))))]
+                (cond-> acc
+                  (some? x*)
+                  (conj (fit-string (format-line x) (wrong/str* x*)))))))]
+    (when-some [xs (seq ctx)]
+      (summarize [] xs))))
+
+;; (defn pprefix-end ^int [^"[Ltinyclj.frontend.data.Expr;" arg-exprs
+;;                         ^int start ^"[Ljava.lang.Class;" ptypes]
+;;   (assert (<= 0 start (alength ptypes)))
+;;   (loop [i start]
+;;     (if (or (= i (alength ptypes))
+;;             (= i (alength arg-exprs))
+;;             (not (resolve/assignable-to-class? (aget arg-exprs i)
+;;                                                (aget ptypes i))))
+;;       i
+;;       (recur (inc i)))))
+
+;; (defn- psuffix-start ^int [^"[Ltinyclj.frontend.data.Expr;" arg-exprs
+;;                            ^int end ^"[Ljava.lang.Class;" ptypes]
+;;   (assert (<= 0 end (alength ptypes)))
+;;   (loop [i end]
+;;     (let [i* (dec i)
+;;           j* (+ (- i* end) (alength arg-exprs))]
+;;       (if (or (neg? i*)
+;;               (neg? j*)
+;;               (not (resolve/assignable-to-class? (aget arg-exprs j*)
+;;                                                  (aget ptypes i*))))
+;;         i
+;;         (recur (dec i))))))
+
+;; (defn- style-parameters [^"[Ljava.lang.Class;" ptypes ^boolean varargs?
+;;                          ^"[Ltinyclj.frontend.data.Expr;" inv-args]
+;;   (letfn [(pstr ^String [^int i]
+;;             (let [cl (aget ptypes i)]
+;;               (if (and varargs? (= (inc i) (alength ptypes)))
+;;                 (str (type-str (.componentType cl)) "...")
+;;                 (type-str cl))))]
+;;     (let [sb (StringBuilder. "(")
+;;           prefix-end (pprefix-end inv-args 0 ptypes)
+;;           suffix-start (psuffix-start inv-args (alength ptypes) ptypes)
+;;           suffix-start* (if (or varargs? (>= prefix-end suffix-start))
+;;                           Integer/MAX_VALUE
+;;                           suffix-start)]
+;;       (loop [i 0]
+;;         (if (= i (alength ptypes))
+;;           (do (.append sb ")")
+;;               (str sb))
+;;           (do (when (pos? i)
+;;                 (.append sb " "))
+;;               (.append sb (cond-> (pstr i)
+;;                             (or (< i prefix-end) (>= i suffix-start*))
+;;                             (term/success)))
+;;               (recur (inc i))))))))
+
+;; (defn- print-sig [^String prefix ^"[Ljava.lang.Class;" ptypes ^boolean varargs?
+;;                   ^"[Ltinyclj.frontend.data.Expr;" inv-args]
+;;   (let [matching-count? (if varargs?
+;;                           (>= (alength inv-args) (dec (alength ptypes)))
+;;                           (= (alength inv-args) (alength ptypes)))]
+;;     (println (fit-string (if matching-count?
+;;                            prefix       ;or term/highlight?
+;;                            (term/dim prefix))
+;;                          (style-parameters ptypes varargs? inv-args)))))
+
+;; (defn print-member [^Member x ^"[Ltinyclj.frontend.data.Expr;" arg-exprs]
+;;   (letfn [(static-indicator ^String [^int mods]
+;;             (if (Modifier/isStatic mods)
+;;               "s"
+;;               "v"))
+;;           (jvm-args ^"[Ltinyclj.frontend.data.Expr;" [^Member x]
+;;             (if (or (instance? Constructor x)
+;;                     (Modifier/isStatic (.getModifiers x))
+;;                     (zero? (alength arg-exprs))) ;copyOfRange needs start <= end
+;;               arg-exprs
+;;               ^"[Ltinyclj.frontend.data.Expr;"
+;;               (java.util.Arrays/copyOfRange arg-exprs 1 (alength arg-exprs))))
+          
+;;           (print-executable [^Executable x]
+;;             (let [constr? (instance? Constructor x)]
+;;               (print-sig (str "  " (if constr?
+;;                                      " "
+;;                                      (static-indicator (.getModifiers x)))
+;;                               (if constr? "c" "m"))
+;;                          (.getParameterTypes x) (.isVarArgs x) (jvm-args x))))
+
+;;           (print-field [^Field f]
+;;             (let [mods (.getModifiers f)]
+;;               (print-sig (str "  " (static-indicator mods) "f")
+;;                          (new "[Ljava.lang.Class;" 0) false (jvm-args f))))]
+;;     (if (instance? Executable x)
+;;       (print-executable ^Executable x)
+;;       (print-field ^Field x))))
+
+;; (defn print-arity [^ArityDef at ^"[Ltinyclj.frontend.data.Expr;" arg-exprs]
+;;   (let [ptypes (->> (map tp/cl (fndef/at-parameter-types at))
+;;                     (into-array Class))]
+;;     (print-sig (String/format "%4d" (fndef/at-n at))
+;;                ptypes (fndef/at-extern-varargs? at) arg-exprs)))
+
+;; (defn- invoke-arguments [data]
+;;   (->> (:invoke/arg-types data)
+;;        (map #(expr/mk-expr expr/op-progn (epi/as-relaxed-type %)))
+;;        (into-array Expr)))
+
+(defn print-compiler-emap [^ExceptionInfo e]
+  (let [msg (ex-message e)
+        data (ex-data e)]
+    (println)
+    (println (fit-string (term/error "###") msg))
+    (println (term/error "@@@")
+             (str (relative-path (:file/resource-url data))
+                  (when-some [line (file-line-column data)]
+                    (str ":" (term/highlight (str line))))))
+    (when-some [t (ex-cause e)]
+      (if (and (instance? IllegalArgumentException t)
+               (some? (ex-message t))
+               (not= (ex-message t) ""))
+        (println (fit-string "cause:" (ex-message t))) ;expansion of let etc.
+        (.printStackTrace t)))
+    
+    (when-some [ctx (:form/context data)]
+      (doseq [lines (context-summary ctx)]
+        (println lines)))
+
+    ;; :invoke/owner
+    ;; :invoke/static?
+    ;; :invoke/name (<init> for constructor)
+    ;; :invoke/arg-types (Type or Class seq; includes receiver if virtual)
+    ;; (when-some [owner ^Class (:invoke/owner data)]
+    ;;   (let [nm ^String (:invoke/name data)
+    ;;         static? ^boolean (:invoke/static? data)
+    ;;         arg-exprs (invoke-arguments data)
+    ;;         ms (concat (when (= nm d/object-initializer-name)
+    ;;                      (.getConstructors owner))
+    ;;                    (->> (concat (.getMethods owner) (.getFields owner))
+    ;;                         (filter #(= nm (.getName ^Member %)))))]
+    ;;     (println (str "members " (term/highlight nm) " of "
+    ;;                   (term/highlight (type-str owner)) ":"))
+    ;;     (doseq [m ms]
+    ;;       (print-member m arg-exprs))
+    ;;     (when-not (seq ms)
+    ;;       (println "  <none>"))
+    ;;     (println (term/dim "args") (map type-str (:invoke/arg-types data)))))
+
+    ;; :invoke/fndef
+    ;; :invoke/arg-types
+    ;; (when-some [fndef ^FnDef (:invoke/fndef data)]
+    ;;   (println "arities:")
+    ;;   (let [arg-exprs (invoke-arguments data)]
+    ;;     (doseq [at (fndef/atv-by-arity (.atv fndef))]
+    ;;       (print-arity at arg-exprs)))
+    ;;   (println "args" (map type-str (:invoke/arg-types data))))
+    
+    (doseq [[k v] (-> data
+                      (update :form/context last)
+                      (dissoc :file/resource-url
+                              ;; :form/namespace
+                              :form/context
+                              ;; :invoke/fndef
+                              ;; :invoke/owner
+                              ;; :invoke/arg-types
+                              ;; :invoke/name
+                              ;; :invoke/static?
+                              ))]
+      (println k v)
+      #_(if (= k :node/path-types)
+          (println k (map tp/cl v))
+          (println k v)))))
+
+(defn print-discover-emap [^ExceptionInfo e]
+  (let [msg (ex-message e)
+        emap (ex-data e)]
+    (println)
+    (println (term/error "###")
+             (if-some [[_ txt] (re-matches #"\d+:\d+: (.*)" msg)]
+               txt
+               msg))
+    (println (term/error "@@@")
+             (str (relative-path (:file/resource-url emap))
+                  ":" (:line emap) ":" (:column emap)))
+    
+    (doseq [[k v] (-> emap
+                      (dissoc :file/resource-url
+                              :line
+                              :column))]
+      (println k v))))
+
+(defn print-emap [^ExceptionInfo e]
+  (try
+    (let [msg (or (ex-message e) "")]
+      (if (re-matches #"\d+:\d+: (.*)" msg)
+        (print-discover-emap e)
+        (print-compiler-emap e)))
+    (catch Throwable t*
+      (.printStackTrace (Exception. "error while formatting error message" t*))
+      (println)
+      (throw e))))

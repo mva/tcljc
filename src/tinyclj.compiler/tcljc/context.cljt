@@ -8,7 +8,7 @@
    [tinyclj.string :as str])
   (:import
    (tcljc.expr BindingRef FnForm)
-   (clojure.lang Symbol Keyword IPersistentVector IPersistentMap)
+   (clojure.lang Symbol Keyword IPersistentVector IPersistentMap ExceptionInfo)
    (jdk.incubator.concurrent StructuredTaskScope)
    (java.nio.file Path)
    (java.lang.constant ClassDesc ConstantDesc)
@@ -346,7 +346,8 @@
   (.rurl (tl-ctx* tl-ctx)))
 (defn private-name-map ^ConcurrentHashMap [tl-ctx]
   (.!private-names (tl-ctx* tl-ctx)))
-
+(defn assoc-resource-url ^ExceptionInfo [^ExceptionInfo e tl-ctx]
+  (wrong/assoc-if-new e :file/resource-url (this-rurl tl-ctx)))
 
 (defn push-nmsp-context ^void [^MethodHandles$Lookup lookup-in-pkg
                                ^String ns-str]

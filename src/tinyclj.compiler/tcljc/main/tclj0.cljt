@@ -2,8 +2,10 @@
   (:require [tcljc.config :as cfg]
             [tcljc.emitter :as em]
             [tcljc.main.options :as options]
+            [tcljc.main.efmt :as efmt]
             [tinyclj.string :as str])
   (:import (tcljc.main.options Options)
+           (clojure.lang ExceptionInfo)
            (java.nio.file Path Files)))
 
 (defn- class-file? ^boolean [^Path x]
@@ -30,6 +32,10 @@
         dyn-ld (cfg/dyn-class-loader app-ld dyn-sourcev)
         provided-nmsp (em/mk-provided-nmsp)
         env (em/mk-build-env app-ld (.dest-dir opts) dyn-ld provided-nmsp)]
-    (-> (em/emit-namespaces env all-nmsps)
-        (time)
-        (em/success? all-nmsps))))
+    (try
+      (-> (em/emit-namespaces env all-nmsps)
+          (time)
+          (em/success? all-nmsps))
+      (catch ExceptionInfo e
+        (efmt/print-emap e)
+        false))))

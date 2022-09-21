@@ -28,6 +28,7 @@ module tcljc {
   exports tcljc.grammar;
   exports tcljc.javabase;
   exports tcljc.macro;
+  exports tcljc.main.efmt;
   exports tcljc.main.options;
   exports tcljc.main.tclj0;
   exports tcljc.predefined;
