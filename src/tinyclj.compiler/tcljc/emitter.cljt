@@ -449,10 +449,12 @@
                   ;; regular completion: pass back result in first
                   ;; `close-queue` message
                   (ctx/send-msg (.emit-q ctx) ctx/msg-close-queue nsd))
-                (catch Throwable t ;no re-raise and wait for close-queue
-                  (ctx/send-msg (.emit-q ctx) ctx/msg-fatal-error t))
-                (finally              ;there is always a `close-queue`
-                  (ctx/send-msg (.emit-q ctx) ctx/msg-close-queue nil))))]
+                (catch java.lang.InterruptedException _
+                  ;; emitter thread is shutting down and is not taking
+                  ;; any more messages: exit without sending anything
+                  nil)
+                (catch Throwable t
+                  (ctx/send-msg (.emit-q ctx) ctx/msg-fatal-error t))))]
     (let [c-thread (.fork nmsp-task-scope c-fn)
           nmsp (emit-segments segm nmsp-task-scope)]
       (.get c-thread)                   ;pick up any exceptions

@@ -68,6 +68,7 @@ TIME_JAVA=time -p $(JAVA)
 TCLJC_MAIN_NS=tcljc.main
 
 bootstrap-fixpoint: $(DEST_DIR).stageDI2/DONE
+bootstrap-mdir: $(DEST_DIR).mdir/DONE
 bootstrap-check: $(DEST_DIR).rtiowFS/DONE
 
 # Naming:
