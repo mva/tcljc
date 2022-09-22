@@ -1,12 +1,15 @@
 (ns tcljc.main.tclj0
-  (:require [tcljc.config :as cfg]
-            [tcljc.emitter :as em]
-            [tcljc.main.options :as options]
-            [tcljc.main.efmt :as efmt]
-            [tinyclj.string :as str])
-  (:import (tcljc.main.options Options)
-           (clojure.lang IPersistentMap ExceptionInfo)
-           (java.nio.file Path Files)))
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.emitter :as em]
+   [tcljc.main.options :as options]
+   [tcljc.main.efmt :as efmt]
+   [tcljc.main.invoke :as invoke]
+   [tinyclj.string :as str])
+  (:import
+   (tcljc.main.options Options)
+   (clojure.lang IPersistentMap ExceptionInfo)
+   (java.nio.file Path Files)))
 
 (defn- class-file? ^boolean [^Path x]
   (str/ends-with? (.toString x) cfg/class-suffix))
@@ -35,8 +38,8 @@
   (options/print-options opts)
   (wipe-dest-dir opts)       ;wipe before any classloaders are created
   (try
-    (time (build-all opts false))
-    true
+    (-> (time (build-all opts false))
+        (invoke/invoke-and-report opts))
     (catch ExceptionInfo e
       (efmt/print-emap e)
       false)))

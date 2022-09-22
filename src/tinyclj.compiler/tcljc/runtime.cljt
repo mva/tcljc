@@ -218,6 +218,7 @@
 (def mhd-list (mhd-static [Literal "list"] seq [objects]))
 
 ;;; compilation/runtime interaction:
+(def mhd-apply (mhd-static [RT "apply"] object [IFn object]))
 (def mhd-applyMacroMapped
   (mhd-static [RT "applyMacroMapped"]
               object [Function Function AFn object object]))

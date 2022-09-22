@@ -1,0 +1,109 @@
+(ns tcljc.main.invoke
+  (:require
+   [tcljc.wrong :as wrong]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.context :as ctx]
+   [tcljc.expr :as x]
+   tcljc.emitter.namespace
+   [tcljc.main.options :as options]
+   [tinyclj.alpha.ptest__term :as term])
+  (:import
+   (tcljc.expr ValueRef)
+   (tcljc.emitter.namespace Namespace)
+   (tcljc.main.options Options)
+   (clojure.lang Symbol Keyword IPersistentMap)
+   (java.lang.invoke MethodHandle MethodHandles)))
+
+(defn- applicablev ^MethodHandle [^IPersistentMap nmsp-map ^Symbol fn-spec]
+  (if-some [nmsp (-> (get nmsp-map (namespace fn-spec))
+                     ^Namespace (ctx/get-result-now))]
+    (if-some [bref (-> (.exported-known-ns nmsp)
+                       (get (namespace fn-spec))
+                       ^ValueRef (get (name fn-spec)))]
+      (let [cl (.capstone nmsp)
+            l (.in (MethodHandles/publicLookup) cl)
+            member-mh (.mh-if-global (x/deref-load bref) l)]
+        (.bindTo (ctx/resolve-mh l rt/mhd-apply) (.invoke member-mh)))
+      (wrong/other (str "[invokable] no public var " (wrong/q fn-spec))))
+    (wrong/other (str "[invokable] no such namespace: "
+                      (wrong/q (namespace fn-spec))))))
+
+(defn- result-style [^Keyword res]
+  (case res
+    (:error :fail) :error
+    :success :success
+    :other :other
+    nil :no-result))
+
+(defn invoke-until-failure [^IPersistentMap nmsp-map ^Options opts
+                            ^boolean print-var?]
+  (letfn [(target-invoke-fnv [^Options opts]
+            (letfn [(target-invoke-fn? ^boolean [^String s]
+                      ;; note: don't produce empty namespace for "/..."
+                      (not (neg? (.indexOf s (int \/) 1))))]
+              (->> (filter target-invoke-fn? (.targets opts))
+                   (mapv symbol))))
+          (encode-result ^Keyword [res]
+            (if (and (some? res)
+                     (jb/same-classname? rt/clnm-keyword (.getClass res)))
+              (case (str res)
+                ":error" :error         ;non-zero error count
+                ":fail" :fail           ;non-zero fail count
+                ":success" :success
+                #_else :other)          ;none of the above
+              :other))]
+    (let [fn-specv (target-invoke-fnv opts)
+          n (count fn-specv)
+          applyv (mapv #(applicablev nmsp-map %) fn-specv)
+          resultv (vec (repeat n nil))]
+      (loop [acc (vec (repeat n nil)), i 0]
+        (if (= i n)
+          acc
+          (let [res (try
+                      (when print-var?
+                        (println)
+                        (println (term/highlight "###")
+                                 (str "calling " (nth fn-specv i))))
+                      (-> (.invoke ^MethodHandle (nth applyv i) nil)
+                          (encode-result))
+                      (catch Throwable t
+                        (.printStackTrace t)
+                        :error))
+                acc (assoc acc (object i) res)]
+            (if (identical? :error (result-style res))
+              acc
+              (recur acc (inc i)))))))))
+
+(defn- invokes-successful? ^boolean [resultv]
+  (or (nil? (seq resultv))
+      (not (identical? :error (result-style (peek resultv))))))
+
+(defn invoke-and-report ^boolean [^IPersistentMap nmsp-map ^Options opts]
+  (let [resultv (invoke-until-failure nmsp-map opts false)]
+    (invokes-successful? resultv)))
+
+(defn completion-report ^String [^Options opts resultv]
+  (letfn [(style ^String [^String s res]
+            (case (result-style res)
+              :error (term/error s)
+              :success (term/success s)
+              :other (term/highlight s)
+              nil (term/dim s)))]
+    (loop [acc (str (if (invokes-successful? resultv)
+                      (term/success "###")
+                      (term/error "###"))
+                    " Completed:")
+           [^String t :as targets] (seq (.targets opts))
+           i 0]
+      (if (nil? targets)
+        acc
+        (let [ns-str (options/target-ns-str t)]
+          (if (options/target-invoke-fn? t)
+            (recur (str acc " " (term/highlight ns-str)
+                        (style (.substring t (.length ns-str)) (nth resultv i)))
+                   (next targets)
+                   (inc i))
+            (recur (str acc " " (term/highlight ns-str))
+                   (next targets)
+                   i)))))))

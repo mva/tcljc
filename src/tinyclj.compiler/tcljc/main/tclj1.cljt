@@ -5,6 +5,7 @@
    [tcljc.main.watcher :as watcher]
    [tcljc.main.options :as options]
    [tcljc.main.efmt :as efmt]
+   [tcljc.main.invoke :as invoke]
    [tcljc.main.tclj0 :as tclj0]
    [tinyclj.set :as set]
    [tinyclj.string :as str]
@@ -53,8 +54,8 @@
   (letfn [(try-build-all ^IPersistentMap [^Options opts]
             (try
               (let [nmsp-map (tclj0/build-all opts true)]
-                #_(let [resultv (tclj0/invoke-until-failure env true)]
-                    (println (tclj0/completion-report (.opts env) resultv)))
+                (let [resultv (invoke/invoke-until-failure nmsp-map opts true)]
+                  (println (invoke/completion-report opts resultv)))
                 (em/dependency-map nmsp-map))
               (catch ExceptionInfo e
                 (efmt/print-emap e)
