@@ -187,8 +187,7 @@ $(DEST_DIR).rtiowFS/DONE: $(DEST_DIR).stageFI2/DONE
 
 # ------------------------------------------------------------------------
 
-install-into-bootstrap-tcljc:
-	$(MAKE) clean $(DEST_DIR).mdir/DONE
+install-into-bootstrap-tcljc: $(DEST_DIR).mdir/DONE
 	$(MAKE) JAR=$(BUILD_JAR) -C ../bootstrap-tcljc pack
 	cp -f $(DEST_DIR).mdir/*.jar ../bootstrap-tcljc
 	$(MAKE) JAR=$(BUILD_JAR) -C ../bootstrap-tcljc unpack
