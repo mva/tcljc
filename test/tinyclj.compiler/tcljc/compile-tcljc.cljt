@@ -27,10 +27,7 @@
                                               []))
         provided-nmsp (em/mk-provided-nmsp)
         env (em/mk-build-env app-ld dest-dir dyn-ld provided-nmsp)]
-    (-> (em/emit-namespaces env all-nmsps)
-        (time)
-        (em/summary)
-        #_(prn))))
+    (time (em/emit-namespaces env all-nmsps))))
 
 (defn -main [& args]
   (try

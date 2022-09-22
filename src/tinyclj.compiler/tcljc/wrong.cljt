@@ -5,7 +5,7 @@
            (java.lang.invoke TypeDescriptor$OfField)
            (java.nio.file Path)))
 
-(defn- update-ex-data ^ExceptionInfo [^ExceptionInfo ex f & args]
+(defn update-ex-data ^ExceptionInfo [^ExceptionInfo ex f & args]
   (let [ex* (ex-info (ex-message ex) (apply f (ex-data ex) args) (ex-cause ex))]
     (when-some [t (.getStackTrace ex)]
       (.setStackTrace ex* t))

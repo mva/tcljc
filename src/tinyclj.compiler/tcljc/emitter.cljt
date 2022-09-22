@@ -27,7 +27,7 @@
    (tcljc.emitter.prepare TopLevelForm)
    (tcljc.context FnRequireNamespace Ctx Msg)
    (tcljc.expr Expr Binding BindingRef FnForm)
-   (clojure.lang ISeq IPersistentMap IPersistentVector)
+   (clojure.lang ISeq IPersistentMap IPersistentVector ExceptionInfo)
    (jdk.incubator.concurrent StructuredTaskScope)
    (jdk.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.nio.file Path)
@@ -431,6 +431,11 @@
       (.merge-into-known-ns {cfg/primitive-ns-str primitive-publics})
       (.put-ns-alias cfg/primitive-ns-str cfg/primitive-ns-str))))
 
+;; Writes this namespace's bytecode to class files.  Assumes that
+;; somewhere up in the call chain (i.e. tclj0 or tclj1) any classes in
+;; this namespace's output package directory have been deleted.  The
+;; output directory is created if it does not exist.
+;;
 ;; Note: Exceptions are reported in the order in which they occur in
 ;; the emitter thread.  The "compile namespace" thread can fork of an
 ;; arbitrary number of futures of its own, and the emitter retrieves
@@ -438,8 +443,8 @@
 (defn- emit-namespace ^Namespace [^SegmState segm ^IPersistentMap provided-nmsp
                                   ^StructuredTaskScope nmsp-task-scope]
   (init-known-ns (.ctx segm) provided-nmsp)
-  (cfg/prepare-class-directory (.dest-dir (.env segm))
-                               (ctx/this-ns (.ctx segm)))
+  (cfg/prepare-package-directory (.dest-dir (.env segm))
+                                 (ctx/this-ns (.ctx segm)))
   (let [env (.env segm)
         ctx (.ctx segm)
         c-fn (^Callable fn []
@@ -567,10 +572,10 @@
      (compile-and-emit env ns-str require-fn collect-bytesv? provided-nmsp
                        globals))))
 
-(defn- emit-namespaces-mt ^IPersistentMap [^BuildEnv env ns-strs
-                                           ^StructuredTaskScope build-task-scope]
+(defn- emit-namespaces-mt ^void [^BuildEnv env ns-strs
+                                 ^StructuredTaskScope build-task-scope
+                                 ^ConcurrentHashMap !futs]
   (let [namespaces-q (java.util.concurrent.LinkedBlockingQueue.)
-        !futs (ConcurrentHashMap.)      ;updated by this thread only
         require-fn (^FnRequireNamespace fn [ns-str provided-nmsp]
                     (or
                      ;; First peek into the current namespace map, and
@@ -643,12 +648,10 @@
     (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
       ;; loop over array to avoid stack frame spamming
       (dotimes [i (alength a)]
-        (ctx/get-result-now (.get !futs (aget a i))))) ;forces exception
-    (into {} !futs)))
+        (ctx/get-result-now (.get !futs (aget a i))))))) ;forces exception
 
-(defn- emit-namespaces-st ^IPersistentMap [^BuildEnv env ns-strs]
-  (let [!futs (java.util.HashMap.)      ;single-threaded!
-        require-fn
+(defn- emit-namespaces-st ^void [^BuildEnv env ns-strs ^HashMap !futs]
+  (let [require-fn
         (reify FnRequireNamespace
           (schedule [this ns-str provided-nmsp]
             (or (.get !futs ns-str)
@@ -674,31 +677,59 @@
     (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
       ;; loop over array to avoid stack frame spamming
       (dotimes [i (alength a)]
-        (.schedule require-fn (aget a i) (.builtin-nmsp env))))
-    (into {} !futs)))
+        (.schedule require-fn (aget a i) (.builtin-nmsp env))))))
 
+;;; Returns a map of all namespaces.  Key is the name of the namespace
+;;; (a string).  Value is a map {:rpaths :req-strs} for a compiled &
+;;; completed namespace, nil if the namespace was not compiled
+;;; successfully, and the empty map {} for a namespace imported from
+;;; class files,
+(defn dependency-map ^IPersistentMap [^Map futs]
+  (letfn [(outcome-now [^Future x]
+            (assert (.isDone x))
+            (try (.get x) (catch Throwable t t)))
+          (dependency-info [x]
+            (cond
+              (instance? Namespace x)
+              (let [nmsp ^Namespace x]
+                (if (nmsp/imported? nmsp)
+                  {} ;rpaths and req-strs unchanged from prior compile
+                  {:rpaths (.rpaths nmsp), :req-strs (.req-strs nmsp)}))
+
+              (instance? Throwable x)
+              nil     ;not completed successfully, assume to be broken
+
+              (instance? Future x)
+              (recur (outcome-now x))
+              
+              :else (throw (IllegalArgumentException. (str (class x))))))]
+    (reduce-kv #(assoc %1 %2 (dependency-info %3)) {} futs)))
+
+;;; On success, returns map String -> Namespace of all namespaces.
+;;; Any compilation error causes an ExceptionInfo exception whose
+;;; entry :emitter/namespaces is a dependency map.
 (defn emit-namespaces ^IPersistentMap [^BuildEnv env ns-strs]
-  (if cfg/deterministic-namespace-compile?
-    (emit-namespaces-st env ns-strs)
-    (let [build-task-scope (StructuredTaskScope.)]
-      (try
-        (emit-namespaces-mt env ns-strs build-task-scope)
-        (catch Throwable t
-          (.shutdown build-task-scope)      ;make join return immediately
-          (throw t))
-        (finally
-          (.joinUntil build-task-scope (-> (Instant/now) (.plusSeconds 5)))
-          (.close build-task-scope))))))
-
-(defn summary ^IPersistentMap [^IPersistentMap ns-futs]
-  (into {}
-        (map (fn [^java.util.Map$Entry e]
-               [(.getKey e) (ctx/get-result-now (.getValue e))]))
-        ns-futs))
-
-(defn success? ^boolean [^IPersistentMap ns-futs ns-strs]
-  (letfn [(nmsp-exists? ^boolean [^String ns-str]
-            (when-some [x (get ns-futs ns-str)]
-              (not (instance? Throwable x))))]
-    (every? nmsp-exists? ns-strs)))
-
+  (letfn [(assoc-namespaces ^ExceptionInfo [^ExceptionInfo e ^Map futs]
+            (wrong/update-ex-data e assoc :emitter/namespaces
+                                  (dependency-map futs)))]
+    (if cfg/deterministic-namespace-compile?
+      (let [!futs (java.util.HashMap.)] ;single-threaded!
+        (try
+          (emit-namespaces-st env ns-strs !futs)
+          (into {} !futs)
+          (catch ExceptionInfo e
+            (throw (assoc-namespaces e !futs)))))
+      (let [!futs (ConcurrentHashMap.)  ;updated by this thread only
+            build-task-scope (StructuredTaskScope.)]
+        (try
+          (emit-namespaces-mt env ns-strs build-task-scope !futs)
+          (into {} !futs)
+          (catch ExceptionInfo e
+            (.shutdown build-task-scope) ;make join return immediately
+            (throw (assoc-namespaces e !futs)))
+          (catch Throwable t
+            (.shutdown build-task-scope) ;make join return immediately
+            (throw t))
+          (finally
+            (.joinUntil build-task-scope (-> (Instant/now) (.plusSeconds 5)))
+            (.close build-task-scope)))))))

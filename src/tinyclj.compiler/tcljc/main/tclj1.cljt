@@ -1,0 +1,81 @@
+(ns tcljc.main.tclj1
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.emitter :as em]
+   [tcljc.main.watcher :as watcher]
+   [tcljc.main.options :as options]
+   [tcljc.main.efmt :as efmt]
+   [tcljc.main.tclj0 :as tclj0]
+   [tinyclj.set :as set]
+   [tinyclj.string :as str]
+   [tinyclj.alpha.pp :as pp])
+  (:import
+   (tcljc.main.watcher Watcher)
+   (tcljc.main.options Options)
+   (clojure.lang Symbol IPersistentMap ExceptionInfo)))
+
+(defn delete-outdated-packages! ^Watcher [^Watcher w ^Options opts
+                                          ^IPersistentMap completed-map]
+  (letfn [(requires? ^boolean [{:keys [req-strs]} ns-strs]
+            (some? (seq (set/intersection req-strs ns-strs))))
+          (conj-if-requires-invalid [acc ns-str dep-info]
+            (cond
+              (contains? acc ns-str)    ;already invalidated
+              acc
+              (requires? dep-info acc) ;depends on invalidated namespace
+              (conj acc ns-str)
+              :else acc))
+          (invalidated-ns-strs [mod-paths]
+            (letfn [(modified? ^boolean [{:keys [rpaths]}]
+                      (some? (seq (set/intersection rpaths mod-paths))))
+                    (conj-if-input-modified  [acc ns-str dep-info]
+                      (cond-> acc (modified? dep-info) (conj ns-str)))]
+              (loop [inv (reduce-kv conj-if-input-modified
+                                    #{} completed-map)]
+                (let [inv* (reduce-kv conj-if-requires-invalid
+                                      inv completed-map)]
+                  (if (= (count inv*) (count inv))
+                    inv
+                    (recur inv*))))))]
+    (println)
+    (let [w (watcher/collect-modified w (.wait-after-change-ms opts))
+          mod-paths (set (map watcher/load-path (.modified w)))]
+      (println "### Modified:" (str/join " " (sort mod-paths)))
+      (doseq [ns-str (invalidated-ns-strs mod-paths)]
+        (cfg/delete-package-classes (.dest-dir opts) ns-str))
+      w)))
+
+;; Returns the dependency map of all completed(!) namespaces.  There
+;; is no class file output from namespaces that were not compiled
+;; successfully.
+(defn build-pass ^IPersistentMap [^Options opts
+                                  ^IPersistentMap prior-completed-map]
+  (letfn [(try-build-all ^IPersistentMap [^Options opts]
+            (try
+              (let [nmsp-map (tclj0/build-all opts true)]
+                #_(let [resultv (tclj0/invoke-until-failure env true)]
+                    (println (tclj0/completion-report (.opts env) resultv)))
+                (em/dependency-map nmsp-map))
+              (catch ExceptionInfo e
+                (efmt/print-emap e)
+                (:emit/completed-namespaces (ex-data e)))))]
+    (reduce-kv (fn [acc ns-str dep-info]
+                 (if (nil? dep-info)
+                   (do (cfg/delete-package-classes (.dest-dir opts) ns-str)
+                       acc)
+                   (let [prior-dep-info (get prior-completed-map ns-str {})]
+                     ;; preserve old rpaths and req-strs info if this
+                     ;; namespace was imported and not compiled
+                     (assoc acc ns-str (merge prior-dep-info dep-info)))))
+               {} (try-build-all opts))))
+
+(defn run ^boolean [^Options opts]
+  (options/print-options opts)
+  (when (nil? (.dest-dir opts))
+    (options/abort "error: mode `--watch` requires a destination directory"))
+  (tclj0/wipe-dest-dir opts)
+  (loop [w (watcher/new-watcher (.sourcev opts))
+         completed-map (build-pass opts {})]
+    (recur (delete-outdated-packages! w opts completed-map)
+           (build-pass opts completed-map)))
+  false)                                ;unreachable

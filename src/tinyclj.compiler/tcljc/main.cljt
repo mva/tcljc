@@ -1,7 +1,8 @@
 (ns tcljc.main
   (:require [tcljc.config :as cfg]
             [tcljc.main.options :as options]
-            [tcljc.main.tclj0 :as tclj0]))
+            [tcljc.main.tclj0 :as tclj0]
+            [tcljc.main.tclj1 :as tclj1]))
 
 (defn print-exception-info [^clojure.lang.ExceptionInfo e]
   (println "ExceptionInfo:" (ex-message e))
@@ -24,7 +25,7 @@
                              "Thread.dump_to_file" "-format=json"
                              "/tmp/threads.json")
                   (if (.watch-mode? opts)
-                    (assert false) #_(tinyclj.build.tclj1/run opts)
+                    (tclj1/run opts)
                     (tclj0/run opts)))
               false))
           (catch clojure.lang.ExceptionInfo e

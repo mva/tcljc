@@ -118,7 +118,7 @@
 
 (defn- ^Predicate dir? [x]
   (Files/isDirectory x))
-(defn- directory-seq [^Path p]
+(defn directory-seq [^Path p]
   (path-seq p Integer/MAX_VALUE dir?))
 
 (defn- ^Predicate file? [x]
@@ -138,14 +138,21 @@
                  (PosixFilePermissions/asFileAttribute))]
     (Files/createDirectories p perm)))
 
-(defn prepare-class-directory ^void [^Path dest-dir ^String ns-str]
+(defn- package-directory ^Path [^Path dest-dir ^String ns-str]
+  (.resolve dest-dir (path-of (str/replace ns-str "." "/"))))
+
+(defn delete-package-classes
+  (^void [^Path pkg-dir]
+   #_(prn :delete-package-classes (str pkg-dir "/*.class"))
+   (doseq [^Path x (directory-file-seq pkg-dir) :when (class-file? x)]
+     (Files/delete x)))
+  (^void [^Path dest-dir ^String ns-str]
+   (delete-package-classes (package-directory dest-dir ns-str))))
+
+(defn prepare-package-directory ^void [^Path dest-dir ^String ns-str]
   (when (some? dest-dir)
-    (let [pkg-dir (.resolve dest-dir (path-of (str/replace ns-str "." "/")))]
-      (create-directories pkg-dir)
-      (doseq [^Path x (directory-file-seq pkg-dir)
-              :when (class-file? x)]
-        #_(prn :delete-class-files (.toString x))
-        (Files/delete x)))))
+    (-> (package-directory dest-dir ns-str)
+        (create-directories))))
 
 #_
 (defn spit-class ^void [^Path dest-prefix ^String owner-name ^bytes b]

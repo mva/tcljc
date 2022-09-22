@@ -1,0 +1,111 @@
+(ns tcljc.main.watcher
+  (:require [tcljc.config :as cfg]
+            [tinyclj.string :as str])
+  (:import (java.nio.file Path Paths FileSystems WatchService WatchKey
+                          WatchEvent StandardWatchEventKinds)
+           (java.util.concurrent TimeUnit)))
+
+(def log-watcher-events false)
+
+(defn- report [& msg]
+  (when log-watcher-events
+    (apply println msg)))
+
+(deftype WatchedPath [^WatchKey wk
+                      ^Path root])
+
+(defrecord Watcher [watches        ;maps directory Path to WatchedPath
+                    ^WatchService watch-service
+                    modified ;set of [root rel-path] pairs, can be empty
+                    ])
+
+(defn- watched-path ^WatchedPath [^Watcher w ^Path path]
+  ((.watches w) path))
+
+;;; Registers watch keys for all directories under `path`, starting
+;;; with `path` itself.  The directories are associated with the given
+;;; `root`.  A non-directory `path` results in no changes.
+(defn- add-directories
+  (^Watcher [^Watcher w ^Path root]
+   (add-directories w root root))       ;add whole `root`
+  (^Watcher [^Watcher w ^Path root ^Path path]
+   (letfn [(add-dir ^Watcher [^Watcher w ^Path path]
+             (if (some? (watched-path w path))
+               w
+               (let [wk (.register path (.-watch-service w)
+                                   StandardWatchEventKinds/ENTRY_CREATE
+                                   StandardWatchEventKinds/ENTRY_DELETE
+                                   StandardWatchEventKinds/ENTRY_MODIFY)]
+                 (report :watcher/add-directory (str path))
+                 (assoc-in w [:watches path] (WatchedPath. wk root)))))]
+     (reduce add-dir w (cfg/directory-seq path)))))
+
+;;; Removes all watches on directories starting with `path`.
+(defn- remove-directories ^Watcher [^Watcher w ^Path path]
+  (letfn [(remove-dir ^Watcher [^Watcher w ^Path path ^WatchedPath wp]
+            (report :watcher/remove-directory (str path))
+            (.cancel (.wk wp))     ;no effect if already cancelled
+            (update w :watches dissoc path))]
+    (reduce-kv (fn ^Watcher [^Watcher w ^Path k ^WatchedPath wp]
+                 (if (.startsWith k path)
+                   (remove-dir w k wp)
+                   w))
+               w (.watches w))))
+
+
+(defn new-watcher [source-paths]
+  (let [w (Watcher. {} (.newWatchService (FileSystems/getDefault)) #{})
+        w (reduce add-directories w source-paths)]
+    (doseq [p source-paths]
+      (when (nil? (watched-path w p))
+        (report :watcher/no-such-directory (str p))))
+    w))
+
+
+(defn- file-changed ^Watcher [^Watcher w ^Path root ^Path path]
+  (let [rel-path (.relativize root path)]
+    (report :watcher/changed-file [(str root) (str rel-path)])
+    (update w :modified conj [root rel-path])))
+
+(defn- track-name? ^boolean [^WatchEvent we]
+  ;; disregard Emacs temporary files starting with "#" or ".#", and
+  ;; all dot files in general
+  (let [c (-> we (.context) (.toString) (.charAt 0))]
+    (not (or (= c \.) (= c \#)))))
+
+(defn- process-watch-event ^Watcher [^Path dir-path ^Watcher w ^WatchEvent we]
+  (cond
+    (identical? (.kind we) StandardWatchEventKinds/OVERFLOW)
+    (throw (IllegalStateException. "file watcher directory overflow"))
+
+    (track-name? we)
+    (let [path (.resolve dir-path ^Path (.context we))
+          dir-wp (watched-path w dir-path)]
+      (assert (some? dir-wp) (str "no WatchedPath entry for directory "
+                                  dir-path))
+      (cond-> (file-changed w (.root dir-wp) path)
+        (identical? (.kind we) StandardWatchEventKinds/ENTRY_DELETE)
+        (remove-directories path)
+        (identical? (.kind we) StandardWatchEventKinds/ENTRY_CREATE)
+        (add-directories (.root dir-wp) path)))
+
+    :else w))
+
+(defn- process-watch-key ^Watcher [^Watcher w ^WatchKey wk]
+  (let [dir-path (.watchable wk)
+        w (reduce #(process-watch-event dir-path %1 %2) w (.pollEvents wk))]
+    (.reset wk)
+    w))
+
+(defn collect-modified ^Watcher [^Watcher w ^int wait-after-change-ms]
+  (loop [w ^Watcher (assoc w :modified #{})]
+    (let [ws (.-watch-service w)
+          wk (if (seq (:modified w)) ;wait some time for more pending changes?
+               (.poll ws wait-after-change-ms TimeUnit/MILLISECONDS)
+               (.take ws))]                         ;wait indefinitely
+      (if (some? wk)
+        (recur (process-watch-key w wk))
+        w))))
+
+(defn load-path ^Path [[_ ^Path rel-path]]
+  rel-path)

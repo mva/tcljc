@@ -30,7 +30,7 @@
                     ^IPersistentMap provided-nmsp ;string -> Namespace
                     ^Ctx ctx
                     
-                    ^IPersistentSet rpaths
+                    ^IPersistentSet rpaths ;nil if imported
                     ^IPersistentSet req-strs
                     ^Class capstone
                     ^IPersistentMap exported-known-ns
@@ -41,7 +41,10 @@
   (Namespace. env provided-nmsp ctx #{} #{} nil nil nil))
 
 (defn mk-imported ^Namespace [^Ctx ctx ^IPersistentMap provided-nmsp]
-  (mk-nmsp nil provided-nmsp ctx))
+  (Namespace. nil provided-nmsp ctx nil #{} nil nil nil))
+
+(defn imported? ^boolean [^Namespace nmsp]
+  (nil? (.rpaths nmsp)))
 
 (defn mk-provided ^Namespace [^String ns-str ^IPersistentMap publics]
   (Namespace. nil nil nil #{} #{} nil {ns-str publics} nil))
