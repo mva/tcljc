@@ -92,15 +92,14 @@
   (EmitState. (.arity-level es) (.arity-closes-over es)
               (.ld-this es) recur-target))
 
-;;; FIXME... pull out line numbers during compile and store the int in
-;;; Expr, with zero meaning "no line"?
-(defn- line-number ^void [^EmitState es ^CodeBuilder xb ^Expr x]
+(defn- line-number ^CodeBuilder [^CodeBuilder xb ^Expr x]
   (when cfg/enable-line-numbers
     (let [form (x/form x)]
       (when (instance? IMeta form)
         (when-some [m (.meta ^IMeta form)]
           (when-some [line (.valAt m :line nil)]
-            (.lineNumber xb ^int line)))))))
+            (.lineNumber xb ^int line))))))
+  xb)
 
 ;;; CAUTION: This function must be free of side effects, because the
 ;;; Classfile API can and will call the handlers that invoke `expr-insns`
@@ -186,10 +185,12 @@
                   (= (.kind x) rt/mhk-constructor)
                   (-> (.new_ (.owner x)) (.dup)))
                 (exprv-insns (x/argv x))
+                (line-number x)
                 (cf/invoke (.kind x) (.owner x) (.method-name x)
                            (.lookup-descriptor x) (.owner-interface? x))))
           (invoke-dynamic ^CodeBuilder [^CodeBuilder xb ^InvokeDynamic x]
             (let [mtd (rt/mtd-of (x/type x) (map x/type (x/argv x)))]
+              (line-number xb x)
               (->> (DynamicCallSiteDesc/of (.bsm x) (.invocation-name x) mtd
                                            (x/constant-desc-array (.cexprs x)))
                    (.invokedynamic xb))))
@@ -197,6 +198,7 @@
             (let [argv (x/argv x)
                   mtd (rt/mtd-of (x/type x) (map x/type (rest argv)))] ;virtual
               (-> (exprv-insns xb argv)
+                  (line-number x)
                   (cf/invoke (.kind x) (.owner x) (.method-name x)
                              (.descriptorString mtd) (.owner-interface? x)))))
           (invoke-arity-fa ^void [^CodeBuilder xb ^InvokeArity x ^IEmitPlan ep
@@ -205,6 +207,7 @@
               (exprv-insns xb (x/argv x)) ;no additional env parameters
               (do (.arity-env ep xb es at)
                   (exprv-insns xb (subvec (x/argv x) 1))))
+            (line-number xb x)
             (cf/invoke xb mhd))
           (invoke-arity-va ^void [^CodeBuilder xb ^InvokeArity x ^IEmitPlan ep
                                   ^Arity at ^DirectMethodHandleDesc mhd]
@@ -220,6 +223,7 @@
                                  argv (subvec (x/argv x) 1)]
                              (exprv-insns xb argv)
                              (into tpv (map x/type argv))))]
+              (line-number xb x)
               (.invokevirtual xb rt/MethodHandle "invoke"
                               (rt/mtd-of (.rtype at) atypes))))
           (invoke-arity ^CodeBuilder [^CodeBuilder xb ^InvokeArity x]
@@ -235,6 +239,7 @@
             (let [k (if (= (.kind x) rt/mhk-getter)
                       rt/mhk-setter
                       rt/mhk-static-getter)]
+              (line-number xb x)
               (cf/invoke xb k (.owner x) (.method-name x)
                          (.lookup-descriptor x) (.owner-interface? x))))
           (setter ^CodeBuilder [^CodeBuilder xb ^Setter x]
@@ -302,16 +307,10 @@
             (cond
               (x/expr-empty? if-false)
               (if-then xb branch-to-true if-true)
-              #_(.ifThen xb (branch-opcode! xb branch-to-true)
-                         (expr-handler if-true))
               (x/expr-empty? if-true)
               (if-then xb (x/with-negate-cmp branch-to-true) if-false)
-              #_(.ifThen xb (branch-opcode! xb (x/with-negate-cmp branch-to-true))
-                         (expr-handler if-false))
               :else
-              (if-then-else xb  branch-to-true if-true if-false)
-              #_(.ifThenElse xb (branch-opcode! xb branch-to-true)
-                             (expr-handler if-true) (expr-handler if-false))))
+              (if-then-else xb  branch-to-true if-true if-false)))
           (table-insn ^CodeBuilder [^CodeBuilder xb ^Switch x]
             (let [argv (x/argv x) ;first: switch expression; peek: default path
                   labelv (vec (repeatedly (dec (count argv)) #(.newLabel xb)))
@@ -449,60 +448,59 @@
     ;; In particular, it is known how functions are emitted as methods
     ;; and how their arities are invoked.
     #_(prn :expr-insns (class x))
-
-    ;; FIXME... this is only an approximation, the instruction is
-    ;; actually emitted at the end and should be decorated with this
-    ;; line number as well -- and especially if it is an invoke
-    (line-number es xb x)
-    
     (if-some [c (.const-value x)]
       (cond-> xb
         (not (x/expr-empty? x))
         (.constantInstruction (rt/describe-const-expr c)))
-      (condp instance? x ;tests sorted by counts from "make test-tcljc"
-        BindingRef                      ;ValueRef & AliasRef
-        (binding-ref xb ^BindingRef x)
-        InvokeArity
-        (invoke-arity xb ^InvokeArity x)
-        Insn
-        (simple-insn xb ^Insn x)
-        Binding
-        (binding-insn xb ^Binding x)
-        InvokeXref
-        (invoke-xref xb ^InvokeXref x)
-        LoopBody
-        (loop-body-insn xb ^LoopBody x)
-        Block
-        (.block xb (exprv-handler (x/argv x)))
-        SplitJoin
-        (split-join-insn xb ^Branch (x/nth-arg x 0) (x/nth-arg x 1) (x/nth-arg x 2))
-        Progn
-        (exprv-insns xb (x/argv x))
-        InvokePoly
-        (invoke-poly xb ^InvokePoly x)
-        InvokeDynamic
-        (-> xb (argv-insns) (invoke-dynamic ^InvokeDynamic x))
-        FnForm
-        (-> xb (argv-insns) (fn-create-insn ^FnForm x))
-        FnPatch
-        (-> xb (argv-insns) (fn-patch-insn ^FnPatch x))
-        Recur
-        (-> (recur-store-insns xb (.bv ^Recur x) (x/argv x))
-            (.branchInstruction Opcode/GOTO (.recur-target es)))
-        NewArray
-        (new-array-insn xb ^NewArray x)
-        VarRef
-        (cf/ld-insn xb (x/deref-load ^BindingRef (x/nth-arg x 0)))
-        Switch
-        (switch-insn xb ^Switch x)
-        TryCatchFinally
-        (try-catch-finally xb ^TryCatchFinally x)
-        Setter
-        (setter xb ^Setter x)
-        AssignDef
-        (-> (expr-insns xb es (x/nth-arg x 0))
-            (cf/st-insn (-> ^AssignDef x .bref (x/deref-load)) false))
-        #_else (throw (IllegalArgumentException. (str (class x))))))))
+      (do
+        ;; This line covers the arguments, which may overwrite it.
+        ;; The instruction is emitted at the end and should repeat its
+        ;; own line (especially the invoke opcodes).
+        (line-number xb x)
+        (condp instance? x ;tests sorted by counts from "make test-tcljc"
+          BindingRef       ;ValueRef & AliasRef
+          (binding-ref xb ^BindingRef x)
+          InvokeArity
+          (invoke-arity xb ^InvokeArity x)
+          Insn
+          (simple-insn xb ^Insn x)
+          Binding
+          (binding-insn xb ^Binding x)
+          InvokeXref
+          (invoke-xref xb ^InvokeXref x)
+          LoopBody
+          (loop-body-insn xb ^LoopBody x)
+          Block
+          (.block xb (exprv-handler (x/argv x)))
+          SplitJoin
+          (split-join-insn xb ^Branch (x/nth-arg x 0) (x/nth-arg x 1) (x/nth-arg x 2))
+          Progn
+          (exprv-insns xb (x/argv x))
+          InvokePoly
+          (invoke-poly xb ^InvokePoly x)
+          InvokeDynamic
+          (-> xb (argv-insns) (invoke-dynamic ^InvokeDynamic x))
+          FnForm
+          (-> xb (argv-insns) (fn-create-insn ^FnForm x))
+          FnPatch
+          (-> xb (argv-insns) (fn-patch-insn ^FnPatch x))
+          Recur
+          (-> (recur-store-insns xb (.bv ^Recur x) (x/argv x))
+              (.branchInstruction Opcode/GOTO (.recur-target es)))
+          NewArray
+          (new-array-insn xb ^NewArray x)
+          VarRef
+          (cf/ld-insn xb (x/deref-load ^BindingRef (x/nth-arg x 0)))
+          Switch
+          (switch-insn xb ^Switch x)
+          TryCatchFinally
+          (try-catch-finally xb ^TryCatchFinally x)
+          Setter
+          (setter xb ^Setter x)
+          AssignDef
+          (-> (expr-insns xb es (x/nth-arg x 0))
+              (cf/st-insn (-> ^AssignDef x .bref (x/deref-load)) false))
+          #_else (throw (IllegalArgumentException. (str (class x)))))))))
 
 (defn emit-body
   (^void [^CodeBuilder xb ^Expr x]
@@ -519,7 +517,7 @@
          (.deliver-load bref ld-st))
        (recur (inc i))))
    (let [es (EmitState. (.level at) (.!closes-over at) ld-this nil)]
-     (line-number es xb body-expr)
+     (line-number xb body-expr)
      (expr-insns xb es (xc/as-returning-code body-expr)))))
 
 (defn emit-global-b ^void [^ClassBuilder cb ^ClassDesc segm-cld ^Binding b]
