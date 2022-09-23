@@ -10,7 +10,10 @@
    (java.util Set)
    (java.util.function Predicate)))
 
-(def fork-work? true)
+;;; If true, the both the compilation and the emit thread are free to
+;;; fork of work to other threads.  Set this to false to force them to
+;;; compile namespaces sequentially and emit class files in order.
+(def fork-work? #_false true)
 
 ;;; If true, then namespaces are visited in depth first order, and
 ;;; each namespace is compiled sequentially.  In particular, macro and

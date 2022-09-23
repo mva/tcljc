@@ -459,56 +459,49 @@
       (cond-> xb
         (not (x/expr-empty? x))
         (.constantInstruction (rt/describe-const-expr c)))
-      (condp instance? x
-        Insn
-        (simple-insn xb ^Insn x)
-        NewArray
-        (new-array-insn xb ^NewArray x)
-        
-        InvokeXref
-        (invoke-xref xb ^InvokeXref x)
-        InvokeDynamic
-        (-> xb (argv-insns) (invoke-dynamic ^InvokeDynamic x))
-        InvokePoly
-        (invoke-poly xb ^InvokePoly x)
+      (condp instance? x ;tests sorted by counts from "make test-tcljc"
+        BindingRef                      ;ValueRef & AliasRef
+        (binding-ref xb ^BindingRef x)
         InvokeArity
         (invoke-arity xb ^InvokeArity x)
-        
-        Progn
-        (exprv-insns xb (x/argv x))
-        Block
-        (.block xb (exprv-handler (x/argv x)))
-        
-        SplitJoin
-        (split-join-insn xb ^Branch (x/nth-arg x 0) (x/nth-arg x 1) (x/nth-arg x 2))
-        Switch
-        (switch-insn xb ^Switch x)
-        TryCatchFinally
-        (try-catch-finally xb ^TryCatchFinally x)
-        
-        BindingRef
-        (binding-ref xb ^BindingRef x)
+        Insn
+        (simple-insn xb ^Insn x)
         Binding
         (binding-insn xb ^Binding x)
-        AssignDef
-        (-> (expr-insns xb es (x/nth-arg x 0))
-            (cf/st-insn (-> ^AssignDef x .bref (x/deref-load)) false))
-        VarRef
-        (cf/ld-insn xb (x/deref-load ^BindingRef (x/nth-arg x 0)))
-        Setter
-        (setter xb ^Setter x)
-
+        InvokeXref
+        (invoke-xref xb ^InvokeXref x)
         LoopBody
         (loop-body-insn xb ^LoopBody x)
-        Recur
-        (-> (recur-store-insns xb (.bv ^Recur x) (x/argv x))
-            (.branchInstruction Opcode/GOTO (.recur-target es)))
-
+        Block
+        (.block xb (exprv-handler (x/argv x)))
+        SplitJoin
+        (split-join-insn xb ^Branch (x/nth-arg x 0) (x/nth-arg x 1) (x/nth-arg x 2))
+        Progn
+        (exprv-insns xb (x/argv x))
+        InvokePoly
+        (invoke-poly xb ^InvokePoly x)
+        InvokeDynamic
+        (-> xb (argv-insns) (invoke-dynamic ^InvokeDynamic x))
         FnForm
         (-> xb (argv-insns) (fn-create-insn ^FnForm x))
         FnPatch
         (-> xb (argv-insns) (fn-patch-insn ^FnPatch x))
-        
+        Recur
+        (-> (recur-store-insns xb (.bv ^Recur x) (x/argv x))
+            (.branchInstruction Opcode/GOTO (.recur-target es)))
+        NewArray
+        (new-array-insn xb ^NewArray x)
+        VarRef
+        (cf/ld-insn xb (x/deref-load ^BindingRef (x/nth-arg x 0)))
+        Switch
+        (switch-insn xb ^Switch x)
+        TryCatchFinally
+        (try-catch-finally xb ^TryCatchFinally x)
+        Setter
+        (setter xb ^Setter x)
+        AssignDef
+        (-> (expr-insns xb es (x/nth-arg x 0))
+            (cf/st-insn (-> ^AssignDef x .bref (x/deref-load)) false))
         #_else (throw (IllegalArgumentException. (str (class x))))))))
 
 (defn emit-body
