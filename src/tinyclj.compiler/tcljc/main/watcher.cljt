@@ -38,7 +38,7 @@
                                    StandardWatchEventKinds/ENTRY_MODIFY)]
                  (report :watcher/add-directory (str path))
                  (assoc-in w [:watches path] (WatchedPath. wk root)))))]
-     (reduce add-dir w (cfg/directory-seq path)))))
+     (reduce add-dir w (cfg/recursive-directory-seq path)))))
 
 ;;; Removes all watches on directories starting with `path`.
 (defn- remove-directories ^Watcher [^Watcher w ^Path path]

@@ -115,13 +115,13 @@
 
 (defn- path-seq [^Path p ^int max-depth ^Predicate pred]
   (try
-    (-> p (Files/walk) (.filter pred) (.toArray) (seq))
+    (-> p (Files/walk max-depth) (.filter pred) (.toArray) (seq))
     (catch java.nio.file.NoSuchFileException _ ;thrown if `p` does not exist
       nil)))
 
 (defn- ^Predicate dir? [x]
   (Files/isDirectory x))
-(defn directory-seq [^Path p]
+(defn recursive-directory-seq [^Path p]
   (path-seq p Integer/MAX_VALUE dir?))
 
 (defn- ^Predicate file? [x]
