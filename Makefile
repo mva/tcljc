@@ -127,7 +127,7 @@ TINYCLJ_CORE_SOURCE := $(sort $(wildcard src/tinyclj.core/*/*.cljt src/tinyclj.c
 $(DEST_DIR).mod-tinyclj-core/module-info.class: $(DEST_DIR).mod-tinyclj-rt/module-info.class $(TINYCLJ_CORE_SOURCE) $(DEST_DIR).stageDI2/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(BUILD_JAVA) -cp $(TCLJC_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns -d "$(dir $@)" --parent-loader :platform -s $(dir $<) -s src/tinyclj.core tinyclj.core.all
+	$(BUILD_JAVA) -cp $(TCLJC_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns --deterministic -d "$(dir $@)" --parent-loader :platform -s $(dir $<) -s src/tinyclj.core tinyclj.core.all
 	$(BUILD_JAVAC) -p $(dir $<) -d "$(dir $@)" src/tinyclj.core/module-info.java
 
 # FIXME... In the not so near future, after tcljc has become its own
@@ -138,7 +138,7 @@ TINYCLJ_COMPILER_SOURCE := $(sort $(wildcard src/tinyclj.compiler/*/*.cljt src/t
 $(DEST_DIR).mod-tinyclj-compiler/module-info.class: $(DEST_DIR).mod-tinyclj-core/module-info.class $(TINYCLJ_COMPILER_SOURCE) $(DEST_DIR).stageDI2/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(BUILD_JAVA) -cp $(TCLJC_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns -d "$(dir $@)" --parent-loader :platform -s $(DEST_DIR).mod-tinyclj-rt -s $(dir $<) -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
+	$(BUILD_JAVA) -cp $(TCLJC_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns --deterministic -d "$(dir $@)" --parent-loader :platform -s $(DEST_DIR).mod-tinyclj-rt -s $(dir $<) -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
 	$(BUILD_JAVAC) -p $(DEST_DIR).mod-tinyclj-rt:$(dir $<) -d "$(dir $@)" src/tinyclj.compiler/module-info.java
 
 $(TCLJC_MOD_RT): $(DEST_DIR).mod-tinyclj-rt/module-info.class
