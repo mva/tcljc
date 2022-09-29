@@ -105,8 +105,11 @@
                      (q resolved-ns-nm)))))
   ([^String msg-prefix sym-or-str context]
    (throw (mk-e (str msg-prefix (q sym-or-str)) {} context))))
-(defn unresolved-interop [^String msg-prefix ^Symbol sym ^IPersistentMap data]
-  (throw (mk-e (str msg-prefix (q sym)) data)))
+(defn unresolved-interop [^String msg-prefix ^String nm ^Class opt-owner
+                          ^IPersistentMap data]
+  (throw (mk-e (cond-> (str msg-prefix (q (symbol nil nm)))
+                 (some? opt-owner) (str " in " (symbol nil (.getName opt-owner))))
+               data)))
 
 (defn class-not-found [x]
   (if (instance? NoClassDefFoundError x)

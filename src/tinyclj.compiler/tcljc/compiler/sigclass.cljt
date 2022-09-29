@@ -59,16 +59,16 @@
         (if (nil? (next ms))
           (method-as-arity (first ms) at)
           (-> (str "multiple virtual " n "-parameter methods matching ")
-              (wrong/unresolved-interop (symbol nil nm) (invoke-ex-data))))
+              (wrong/unresolved-interop nm nil (invoke-ex-data))))
         (-> (str "no virtual " n "-parameter method matching ")
-            (wrong/unresolved-interop (symbol nil nm) (invoke-ex-data)))))))
+            (wrong/unresolved-interop nm nil (invoke-ex-data)))))))
 
 (defn- check-method-match ^Arity [^Arity at ^Class etp]
   (let [nm (.method-name at)
         atypes (into-array Class (x/at-parameter-types at))]
     (if-some [m (resolve/itf-method-exact etp nm (.rtype at) atypes)]
       (method-as-arity m at)
-      (wrong/unresolved-interop "no virtual method matching " (symbol nil nm)
+      (wrong/unresolved-interop "no virtual method matching " nm nil
                                 {:invoke/owner etp
                                  :invoke/static? false
                                  :invoke/name nm

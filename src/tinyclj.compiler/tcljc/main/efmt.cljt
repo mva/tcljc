@@ -308,6 +308,7 @@
     (doseq [[k v] (-> data
                       (update :form/context last)
                       (dissoc :file/resource-url
+                              :emitter/namespaces
                               ;; :form/namespace
                               :form/context
                               ;; :invoke/fndef

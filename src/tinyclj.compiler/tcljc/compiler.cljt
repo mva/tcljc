@@ -828,9 +828,9 @@
              (if (nil? (next ms))
                (first ms)
                (-> (str "multiple " member-label "s matching ")
-                   (wrong/unresolved-interop (symbol nil nm) (invoke-ex-data))))
+                   (wrong/unresolved-interop nm owner (invoke-ex-data))))
              (-> (str "no " member-label " matching ")
-                 (wrong/unresolved-interop (symbol nil nm) (invoke-ex-data))))))
+                 (wrong/unresolved-interop nm owner (invoke-ex-data))))))
        (dot-form-static ^Expr [^Class owner ^String nm arg-forms]
          (let [argv (expr-forms arg-forms)
                atypes (argument-types argv)
