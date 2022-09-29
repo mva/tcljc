@@ -696,11 +696,12 @@
                   {} ;rpaths and req-strs unchanged from prior compile
                   {:rpaths (.rpaths nmsp), :req-strs (.req-strs nmsp)}))
 
-              (instance? Throwable x)
-              nil     ;not completed successfully, assume to be broken
-
               (instance? Future x)
               (recur (outcome-now x))
+              
+              (or (instance? Throwable x)
+                  (identical? nmsp/marker-depth-first-path x))
+              nil     ;not completed successfully, assume to be broken
               
               :else (throw (IllegalArgumentException. (str (class x))))))]
     (reduce-kv #(assoc %1 %2 (dependency-info %3)) {} futs)))
