@@ -70,9 +70,8 @@
       (method-as-arity m at)
       (wrong/unresolved-interop "no virtual method matching " nm nil
                                 {:invoke/owner etp
-                                 :invoke/static? false
                                  :invoke/name nm
-                                 :invoke/arg-types (cons etp atypes)}))))
+                                 :invoke/arg-types atypes}))))
 
 (defn method-arity-type ^Arity [^Class etp [nm sig & body :as form]
                                 ^int level ^int at-idx tl-ctx]

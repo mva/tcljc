@@ -141,8 +141,8 @@
         (compatible-var-array? ^boolean [^"[Ljava.lang.Class;" atypes
                                          ^"[Ljava.lang.Class;" ptypes]
           (and (= (alength atypes) (alength ptypes))
-               (identical? (aget atypes (dec (alength atypes)))
-                           (aget ptypes (dec (alength ptypes))))
+               (.isAssignableFrom (aget ptypes (dec (alength ptypes)))
+                                  (aget atypes (dec (alength atypes))))
                (compatible-prefix? atypes ptypes -2)))
 
         (signature-polymorphic* ^boolean [^Method m] ;pre: m.isVarArgs()

@@ -1,5 +1,6 @@
 (ns tcljc.main.efmt
   (:require
+   [tcljc.classfile :as cf]
    [tcljc.config :as cfg]
    [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
@@ -158,92 +159,51 @@
     (when-some [xs (seq ctx)]
       (summarize [] xs))))
 
-;; (defn pprefix-end ^int [^"[Ltinyclj.frontend.data.Expr;" arg-exprs
-;;                         ^int start ^"[Ljava.lang.Class;" ptypes]
-;;   (assert (<= 0 start (alength ptypes)))
-;;   (loop [i start]
-;;     (if (or (= i (alength ptypes))
-;;             (= i (alength arg-exprs))
-;;             (not (resolve/assignable-to-class? (aget arg-exprs i)
-;;                                                (aget ptypes i))))
-;;       i
-;;       (recur (inc i)))))
+(defn- style-parameters [^"[Ljava.lang.Class;" ptypes ^boolean varargs?]
+  (letfn [(pstr ^String [^int i]
+            (let [cl (aget ptypes i)]
+              (if (and varargs? (= (inc i) (alength ptypes)))
+                (str (type-str (.componentType cl)) "...")
+                (type-str cl))))]
+    (let [sb (StringBuilder. "(")]
+      (loop [i 0]
+        (if (= i (alength ptypes))
+          (do (.append sb ")")
+              (str sb))
+          (do (when (pos? i) (.append sb " "))
+              (.append sb (pstr i))
+              (recur (inc i))))))))
 
-;; (defn- psuffix-start ^int [^"[Ltinyclj.frontend.data.Expr;" arg-exprs
-;;                            ^int end ^"[Ljava.lang.Class;" ptypes]
-;;   (assert (<= 0 end (alength ptypes)))
-;;   (loop [i end]
-;;     (let [i* (dec i)
-;;           j* (+ (- i* end) (alength arg-exprs))]
-;;       (if (or (neg? i*)
-;;               (neg? j*)
-;;               (not (resolve/assignable-to-class? (aget arg-exprs j*)
-;;                                                  (aget ptypes i*))))
-;;         i
-;;         (recur (dec i))))))
+(defn- print-sig [^String prefix ^"[Ljava.lang.Class;" ptypes ^boolean varargs?
+                  ^int arg-count]
+  (let [matching-count? (if varargs?
+                          (>= arg-count (dec (alength ptypes)))
+                          (= arg-count (alength ptypes)))]
+    (println (fit-string (if matching-count?
+                           prefix       ;or term/highlight?
+                           (term/dim prefix))
+                         (style-parameters ptypes varargs?)))))
 
-;; (defn- style-parameters [^"[Ljava.lang.Class;" ptypes ^boolean varargs?
-;;                          ^"[Ltinyclj.frontend.data.Expr;" inv-args]
-;;   (letfn [(pstr ^String [^int i]
-;;             (let [cl (aget ptypes i)]
-;;               (if (and varargs? (= (inc i) (alength ptypes)))
-;;                 (str (type-str (.componentType cl)) "...")
-;;                 (type-str cl))))]
-;;     (let [sb (StringBuilder. "(")
-;;           prefix-end (pprefix-end inv-args 0 ptypes)
-;;           suffix-start (psuffix-start inv-args (alength ptypes) ptypes)
-;;           suffix-start* (if (or varargs? (>= prefix-end suffix-start))
-;;                           Integer/MAX_VALUE
-;;                           suffix-start)]
-;;       (loop [i 0]
-;;         (if (= i (alength ptypes))
-;;           (do (.append sb ")")
-;;               (str sb))
-;;           (do (when (pos? i)
-;;                 (.append sb " "))
-;;               (.append sb (cond-> (pstr i)
-;;                             (or (< i prefix-end) (>= i suffix-start*))
-;;                             (term/success)))
-;;               (recur (inc i))))))))
+(defn print-member [^Member x ^int arg-count]
+  (letfn [(static-indicator ^String [^int mods]
+            (if (Modifier/isStatic mods)
+              "s"
+              "v"))
+          (print-executable [^Executable x]
+            (let [constr? (instance? Constructor x)]
+              (print-sig (str "  " (if constr?
+                                     " "
+                                     (static-indicator (.getModifiers x)))
+                              (if constr? "c" "m"))
+                         (.getParameterTypes x) (.isVarArgs x) arg-count)))
 
-;; (defn- print-sig [^String prefix ^"[Ljava.lang.Class;" ptypes ^boolean varargs?
-;;                   ^"[Ltinyclj.frontend.data.Expr;" inv-args]
-;;   (let [matching-count? (if varargs?
-;;                           (>= (alength inv-args) (dec (alength ptypes)))
-;;                           (= (alength inv-args) (alength ptypes)))]
-;;     (println (fit-string (if matching-count?
-;;                            prefix       ;or term/highlight?
-;;                            (term/dim prefix))
-;;                          (style-parameters ptypes varargs? inv-args)))))
-
-;; (defn print-member [^Member x ^"[Ltinyclj.frontend.data.Expr;" arg-exprs]
-;;   (letfn [(static-indicator ^String [^int mods]
-;;             (if (Modifier/isStatic mods)
-;;               "s"
-;;               "v"))
-;;           (jvm-args ^"[Ltinyclj.frontend.data.Expr;" [^Member x]
-;;             (if (or (instance? Constructor x)
-;;                     (Modifier/isStatic (.getModifiers x))
-;;                     (zero? (alength arg-exprs))) ;copyOfRange needs start <= end
-;;               arg-exprs
-;;               ^"[Ltinyclj.frontend.data.Expr;"
-;;               (java.util.Arrays/copyOfRange arg-exprs 1 (alength arg-exprs))))
-          
-;;           (print-executable [^Executable x]
-;;             (let [constr? (instance? Constructor x)]
-;;               (print-sig (str "  " (if constr?
-;;                                      " "
-;;                                      (static-indicator (.getModifiers x)))
-;;                               (if constr? "c" "m"))
-;;                          (.getParameterTypes x) (.isVarArgs x) (jvm-args x))))
-
-;;           (print-field [^Field f]
-;;             (let [mods (.getModifiers f)]
-;;               (print-sig (str "  " (static-indicator mods) "f")
-;;                          (new "[Ljava.lang.Class;" 0) false (jvm-args f))))]
-;;     (if (instance? Executable x)
-;;       (print-executable ^Executable x)
-;;       (print-field ^Field x))))
+          (print-field [^Field f]
+            (let [mods (.getModifiers f)]
+              (print-sig (str "  " (static-indicator mods) "f")
+                         (new "[Ljava.lang.Class;" 0) false arg-count)))]
+    (if (instance? Executable x)
+      (print-executable ^Executable x)
+      (print-field ^Field x))))
 
 ;; (defn print-arity [^ArityDef at ^"[Ltinyclj.frontend.data.Expr;" arg-exprs]
 ;;   (let [ptypes (->> (map tp/cl (fndef/at-parameter-types at))
@@ -276,25 +236,20 @@
       (doseq [lines (context-summary ctx)]
         (println lines)))
 
-    ;; :invoke/owner
-    ;; :invoke/static?
-    ;; :invoke/name (<init> for constructor)
-    ;; :invoke/arg-types (Type or Class seq; includes receiver if virtual)
-    ;; (when-some [owner ^Class (:invoke/owner data)]
-    ;;   (let [nm ^String (:invoke/name data)
-    ;;         static? ^boolean (:invoke/static? data)
-    ;;         arg-exprs (invoke-arguments data)
-    ;;         ms (concat (when (= nm d/object-initializer-name)
-    ;;                      (.getConstructors owner))
-    ;;                    (->> (concat (.getMethods owner) (.getFields owner))
-    ;;                         (filter #(= nm (.getName ^Member %)))))]
-    ;;     (println (str "members " (term/highlight nm) " of "
-    ;;                   (term/highlight (type-str owner)) ":"))
-    ;;     (doseq [m ms]
-    ;;       (print-member m arg-exprs))
-    ;;     (when-not (seq ms)
-    ;;       (println "  <none>"))
-    ;;     (println (term/dim "args") (map type-str (:invoke/arg-types data)))))
+    (when-some [owner ^Class (:invoke/owner data)]
+      (let [nm ^String (:invoke/name data)
+            ms (concat (when (= nm cf/object-initializer-name)
+                         (.getConstructors owner))
+                       (->> (concat (.getMethods owner) (.getFields owner))
+                            (filter #(= nm (.getName ^Member %)))))
+            arg-types ^"[Ljava.lang.Class;" (:invoke/arg-types data)]
+        (println (str "members " (term/highlight nm) " of "
+                      (term/highlight (type-str owner)) ":"))
+        (doseq [m ms]
+          (print-member m (alength arg-types)))
+        (when-not (seq ms)
+          (println "  <none>")))
+      (println (term/dim "args") (map type-str (:invoke/arg-types data))))
 
     ;; :invoke/fndef
     ;; :invoke/arg-types
@@ -311,11 +266,7 @@
                               :emitter/namespaces
                               ;; :form/namespace
                               :form/context
-                              ;; :invoke/fndef
-                              ;; :invoke/owner
-                              ;; :invoke/arg-types
-                              ;; :invoke/name
-                              ;; :invoke/static?
+                              :invoke/owner :invoke/name :invoke/arg-types
                               ))]
       (println k v)
       #_(if (= k :node/path-types)
