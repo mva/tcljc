@@ -59,7 +59,7 @@
                 (em/dependency-map nmsp-map))
               (catch ExceptionInfo e
                 (efmt/print-emap e)
-                (:emit/completed-namespaces (ex-data e)))))]
+                (:emitter/namespaces (ex-data e)))))]
     (reduce-kv (fn [acc ns-str dep-info]
                  (if (nil? dep-info)
                    (do (cfg/delete-package-classes (.dest-dir opts) ns-str)
