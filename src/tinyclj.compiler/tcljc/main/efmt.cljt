@@ -241,12 +241,12 @@
             ms (concat (when (= nm cf/object-initializer-name)
                          (.getConstructors owner))
                        (->> (concat (.getMethods owner) (.getFields owner))
-                            (filter #(= nm (.getName ^Member %)))))
-            arg-types ^"[Ljava.lang.Class;" (:invoke/arg-types data)]
+                            (filter #(= nm (.getName ^Member %)))))]
         (println (str "members " (term/highlight nm) " of "
                       (term/highlight (type-str owner)) ":"))
-        (doseq [m ms]
-          (print-member m (alength arg-types)))
+        (when-some [arg-types ^"[Ljava.lang.Class;" (:invoke/arg-types data)]
+          (doseq [m ms]
+            (print-member m (alength arg-types))))
         (when-not (seq ms)
           (println "  <none>")))
       (println (term/dim "args") (map type-str (:invoke/arg-types data))))
