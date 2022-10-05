@@ -432,7 +432,10 @@
             xb)
           
           (simple-insn ^CodeBuilder [^CodeBuilder xb ^Insn insn]
-            (-> xb (exprv-insns (x/argv insn)) (.with (.instr insn))))
+            (-> xb
+                (exprv-insns (x/argv insn))
+                (line-number insn)      ;primarily for ATHROW
+                (.with (.instr insn))))
           (new-array-insn ^CodeBuilder [^CodeBuilder xb ^NewArray insn]
             (let [tp (x/type insn)
                   ln (count (x/argv insn))]
