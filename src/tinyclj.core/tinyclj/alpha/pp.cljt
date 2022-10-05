@@ -6,44 +6,51 @@
 
 (def ^:private page-width-default 80)
 
-(defn- lines-str
-  ([form]
-   (lines-str form {:page-width page-width-default}))
-  ([form ^IPersistentMap opts]
-   (let [page-width ^int (get opts :page-width (object page-width-default))
-         doc (impl/doc-dup form)
-         lv (impl/pretty1* page-width doc)]
-     (impl/lines-str lv))))
+(defn- page-width ^int [^IPersistentMap opts]
+  (if-some [x (get opts :page-width)]
+    ^int x
+    page-width-default))
 
-(defn prn
-  ([form]
-   (println (lines-str form)))
-  ([form ^IPersistentMap opts]
-   (println (lines-str form opts))))
+(def ^:private opts-default {:page-width page-width-default})
 
-(defn- side-by-side-str           ;derived from ptest__align/print-a-b
-  ([a b]
-   (side-by-side-str a b {:page-width page-width-default}))
-  ([a b opts]
-   (let [page-width ^int (get opts :page-width (object page-width-default))
-         style (if term/enable-color-output
-                 align/color-exclusive-compact #_color-exclusive-spaced
-                 align/plain-text-spaced)
-         al (align/align (align/arrify a) (align/arrify b))
-         doc-a (align/alignment-doc style align/part-of-a al)
-         doc-b (align/alignment-doc style align/part-of-b al)]
-     (assert (= (impl/width doc-a) (impl/width doc-b)))
-     
-     (let [side-by-side-width (quot (- page-width align/side-by-side-gap) 2)
-           lines-a (impl/pretty1* side-by-side-width doc-a)
-           lines-b (impl/pretty1* side-by-side-width doc-b)]
-       (assert (= (count lines-a) (count lines-b)))
-       (impl/side-by-side-str align/side-by-side-gap lines-a lines-b)))))
+(defn prn1
+  ([form]
+   (prn1 form opts-default))
+  ([form ^IPersistentMap opts]
+   (-> (impl/pretty1* (page-width opts) (impl/doc-dup form))
+       (impl/lines-str)
+       (println))))
+
+(defn prn*
+  ([forms]
+   (prn* forms opts-default))
+  ([forms ^IPersistentMap opts]
+   (-> (impl/pretty1* (page-width opts) (impl/doc-dup* forms))
+       (impl/lines-str)
+       (println))))
+
+(defn prn [& more]
+  (prn* more opts-default))
+
+(defn- side-by-side-str [a b opts] ;derived from ptest__align/print-a-b
+  (let [style (if term/enable-color-output
+                align/color-exclusive-compact #_color-exclusive-spaced
+                align/plain-text-spaced)
+        al (align/align (align/arrify a) (align/arrify b))
+        doc-a (align/alignment-doc style align/part-of-a al)
+        doc-b (align/alignment-doc style align/part-of-b al)]
+    (assert (= (impl/width doc-a) (impl/width doc-b)))
+    
+    (let [side-by-side-width (quot (- (page-width opts) align/side-by-side-gap) 2)
+          lines-a (impl/pretty1* side-by-side-width doc-a)
+          lines-b (impl/pretty1* side-by-side-width doc-b)]
+      (assert (= (count lines-a) (count lines-b)))
+      (impl/side-by-side-str align/side-by-side-gap lines-a lines-b))))
 
 ;;; Note: Apply this to smallish nested data only; the current
 ;;; implementation of sequence alignment is O(n^2).
 (defn prn-diff
   ([a b]
-   (println (side-by-side-str a b)))
+   (prn-diff a b opts-default))
   ([a b ^IPersistentMap opts]
    (println (side-by-side-str a b opts))))
