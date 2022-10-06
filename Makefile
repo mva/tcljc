@@ -130,10 +130,6 @@ $(DEST_DIR).mod-tinyclj-core/module-info.class: $(DEST_DIR).mod-tinyclj-rt/modul
 	$(BUILD_JAVA) -cp $(TCLJC_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns --deterministic -d "$(dir $@)" --parent-loader :platform -s $(dir $<) -s src/tinyclj.core tinyclj.core.all
 	$(BUILD_JAVAC) -p $(dir $<) -d "$(dir $@)" src/tinyclj.core/module-info.java
 
-# FIXME... In the not so near future, after tcljc has become its own
-# bootstrap compiler, rename the module directory tinyclj.compiler to
-# match its module name tcljc.
-
 TINYCLJ_COMPILER_SOURCE := $(sort $(wildcard src/tinyclj.compiler/*/*.cljt src/tinyclj.compiler/*/*/*.cljt)) src/tinyclj.compiler/module-info.java
 $(DEST_DIR).mod-tinyclj-compiler/module-info.class: $(DEST_DIR).mod-tinyclj-core/module-info.class $(TINYCLJ_COMPILER_SOURCE) $(DEST_DIR).stageDI2/DONE
 	@echo; echo "### $(dir $@)"
@@ -176,7 +172,7 @@ $(DEST_DIR).stageFI2/DONE: $(DEST_DIR).stageFI1/DONE
 $(DEST_DIR).rtiowFS/DONE: $(DEST_DIR).stageFI2/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(TIME_JAVA) --enable-preview --add-exports java.base/jdk.classfile=tcljc --add-exports java.base/jdk.classfile.constantpool=tcljc --add-exports java.base/jdk.classfile.instruction=tcljc --add-exports java.base/jdk.classfile.attribute=tcljc -p $(DEST_DIR).mdir -m tcljc -d "$(dir $@)" -s test/tinyclj.compiler tcljc.rtiow-ref
+	$(TIME_JAVA) --enable-preview --add-exports java.base/jdk.classfile=tinyclj.compiler --add-exports java.base/jdk.classfile.constantpool=tinyclj.compiler --add-exports java.base/jdk.classfile.instruction=tinyclj.compiler --add-exports java.base/jdk.classfile.attribute=tinyclj.compiler -p $(DEST_DIR).mdir -m tinyclj.compiler -d "$(dir $@)" -s test/tinyclj.compiler tcljc.rtiow-ref
 	@echo "\nRun from class path:"
 	$(JAVA) -cp $(DEST_DIR).mdir/\*:$(dir $@) tcljc.rtiow-ref.__ns >"$(dir $@)"ray.ppm
 	@echo "3cf6c9b9f93edb0de2bc24015c610d78  $(dir $@)ray.ppm" | md5sum -c -
