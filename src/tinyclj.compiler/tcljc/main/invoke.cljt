@@ -13,21 +13,33 @@
    (tcljc.emitter.namespace Namespace)
    (tcljc.main.options Options)
    (clojure.lang Symbol Keyword IPersistentMap)
-   (java.lang.invoke MethodHandle MethodHandles)))
+   (java.lang.invoke MethodHandle MethodHandles MethodHandles$Lookup)))
 
-(defn- applicablev ^MethodHandle [^IPersistentMap nmsp-map ^Symbol fn-spec]
-  (if-some [nmsp (-> (get nmsp-map (namespace fn-spec))
-                     ^Namespace (ctx/get-result-now))]
-    (if-some [bref (-> (.exported-known-ns nmsp)
-                       (get (namespace fn-spec))
-                       ^ValueRef (get (name fn-spec)))]
-      (let [cl (.capstone nmsp)
-            l (.in (MethodHandles/publicLookup) cl)
-            member-mh (.mh-if-global (x/deref-load bref) l)]
-        (.bindTo (ctx/resolve-mh l rt/mhd-apply) (.invoke member-mh)))
-      (wrong/other (str "[invokable] no public var " (wrong/q fn-spec))))
-    (wrong/other (str "[invokable] no such namespace: "
-                      (wrong/q (namespace fn-spec))))))
+(defn namespace-of ^Namespace [^IPersistentMap nmsp-map ^Symbol var-name]
+  (or (-> (get nmsp-map (namespace var-name))
+          ^Namespace (ctx/get-result-now))
+      (wrong/other (str "[namespace] no such namespace: "
+                        (wrong/q (namespace var-name))))))
+
+(defn- nmsp-lookup ^MethodHandles$Lookup [^Namespace nmsp]
+  (.in (MethodHandles/publicLookup) (.capstone nmsp)))
+
+(defn var-value
+  (^Object [^Namespace nmsp ^Symbol var-name]
+   (var-value (nmsp-lookup nmsp) nmsp var-name))
+  (^Object [^MethodHandles$Lookup l ^Namespace nmsp ^Symbol var-name]
+   (if-some [bref (-> (.exported-known-ns nmsp)
+                      (get (namespace var-name))
+                      ^ValueRef (get (name var-name)))]
+     (let [member-mh (.mh-if-global (x/deref-load bref) l)]
+       (.invoke member-mh))
+     (wrong/other (str "[var-value] no public var " (wrong/q var-name))))))
+
+(defn- applicable ^MethodHandle [^IPersistentMap nmsp-map ^Symbol fn-spec]
+  (let [nmsp (namespace-of nmsp-map fn-spec)
+        l (nmsp-lookup nmsp)
+        value (var-value l nmsp fn-spec)]
+    (.bindTo (ctx/resolve-mh l rt/mhd-apply) value)))
 
 (defn- result-style [^Keyword res]
   (case res
@@ -55,7 +67,7 @@
               :other))]
     (let [fn-specv (target-invoke-fnv opts)
           n (count fn-specv)
-          applyv (mapv #(applicablev nmsp-map %) fn-specv)
+          applicablev (mapv #(applicable nmsp-map %) fn-specv)
           resultv (vec (repeat n nil))]
       (loop [acc (vec (repeat n nil)), i 0]
         (if (= i n)
@@ -65,7 +77,7 @@
                         (println)
                         (println (term/highlight "###")
                                  (str "calling " (nth fn-specv i))))
-                      (-> (.invoke ^MethodHandle (nth applyv i) nil)
+                      (-> (.invoke ^MethodHandle (nth applicablev i) nil)
                           (encode-result))
                       (catch Throwable t
                         (.printStackTrace t)

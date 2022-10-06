@@ -1,8 +1,11 @@
 (ns tcljc.main
   (:require [tcljc.config :as cfg]
             [tcljc.main.options :as options]
+            [tcljc.main.invoke :as invoke]
             [tcljc.main.tclj0 :as tclj0]
-            [tcljc.main.tclj1 :as tclj1]))
+            [tcljc.main.tclj1 :as tclj1])
+  (:import (tcljc.main.options Options)
+           (java.util.function Consumer)))
 
 (defn print-exception-info [^clojure.lang.ExceptionInfo e]
   (println "ExceptionInfo:" (ex-message e))
@@ -37,3 +40,31 @@
           (finally
             (shutdown-agents))) ;can only shut down when owning the JVM
         (coded-exit))))           ;can only exit when owning the JVM
+
+;;; The value of the namespace var to which `var-name` resolves is
+;;; provided to the consumer handle after every successful
+;;; compilation.
+(defn watch-compile-provide             ;does not return normally
+  ^void [^String dest-dir               ;nil means default directory
+         ^clojure.lang.IPersistentVector sourcev
+         ^clojure.lang.Symbol var-name  ;namespace qualified
+         ^java.util.function.Consumer value-consumer]
+  (when (nil? (namespace var-name))
+    (options/abort (str "error: var name `" var-name
+                        "` must be a namespace qualified symbol")))
+  (doseq [x sourcev]
+    (when-not (instance? java.nio.file.Path x)
+      (options/abort (str "error: sourcev entry must java.nio.file.Path"))))
+  (let [opts (Options. (options/to-dest-dir dest-dir) ;dest-dir
+                       :system               ;parent-classloader
+                       sourcev               ;sourcev
+                       (list (str var-name)) ;targets
+                       false                 ;deterministic?
+                       5000                  ;wait-cyclic-ms
+                       true                  ;watch-mode?
+                       20)                   ;wait-after-change-ms
+        on-success (^Consumer fn [nmsp-map]
+                    (.accept value-consumer
+                             (-> (invoke/namespace-of nmsp-map var-name)
+                                 (invoke/var-value var-name))))]
+    (tclj1/run opts on-success)))

@@ -40,8 +40,9 @@
                            ^Ctx ctx]
   (Namespace. env provided-nmsp ctx #{} #{} nil nil nil))
 
-(defn mk-imported ^Namespace [^Ctx ctx ^IPersistentMap provided-nmsp]
-  (Namespace. nil provided-nmsp ctx nil #{} nil nil nil))
+(defn mk-imported ^Namespace [^IBuildEnv env ^IPersistentMap provided-nmsp
+                              ^Ctx ctx]
+  (Namespace. env provided-nmsp ctx nil #{} nil nil nil))
 
 (defn imported? ^boolean [^Namespace nmsp]
   (nil? (.rpaths nmsp)))
@@ -67,7 +68,7 @@
 (defn with-capstone ^Namespace [^Namespace nmsp ^Class capstone
                                 ^IPersistentVector bytesv]
   (let [ctx (.ctx nmsp)
-        publics (publics/extract ctx capstone)
+        publics (publics/extract (-> nmsp .env .rt-lookup) ctx capstone)
         ;; do not re-export namespaces from `provided-nmsp`, because
         ;; this would cause obsoleted versions of the core namespace
         ;; to reach downstream namespaces like tinyclj.java.io

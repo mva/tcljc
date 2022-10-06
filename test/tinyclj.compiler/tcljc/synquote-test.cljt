@@ -14,7 +14,7 @@
 
 (defn mk-sqs ^SyntaxQuoteState [^Symbol this-namespace]
   (let [l (MethodHandles/lookup)
-        ctx (ctx/mk-ctx* {} (name this-namespace) nil nil l nil nil nil
+        ctx (ctx/mk-ctx* {} (name this-namespace) nil nil l nil l nil
                          (ctx/clone-thread-binding-frame))]
     (.put-global ctx "imported-var"
                  (x/global-ref 'remote-var "my.name.space" Object

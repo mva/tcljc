@@ -88,9 +88,9 @@
     ;; pass nil as `env` for now
     (macro/apply-macro apply-mh f form nil)))
 
-(defn- add-publics [acc ^Class cl ^Ctx ctx ^MethodHandle arity-handles-mh]
+(defn- add-publics [acc ^Class cl ^Ctx ctx ^MethodHandle arity-handles-mh
+                    ^MethodHandle pdf-mh]
   (let [cld (rt/cd-of cl)
-        pdf-mh (ctx/resolve-mh (.lookup-in-pkg ctx) rt/mhd-publicDefInfo)
         postponed (java.util.HashMap.)]
     (letfn [(ns-str ^String []
               (.getPackageName cl))
@@ -204,13 +204,14 @@
         (doseq [x postponed] (assert (nil? (val x))))
         res))))
 
-(defn extract ^IPersistentMap [^Ctx ctx ^Class capstone]
+(defn extract ^IPersistentMap [^MethodHandles$Lookup rt-lookup ^Ctx ctx
+                               ^Class capstone]
   (letfn [(all-segments [acc ^Class cl]
             (if (identical? Object cl)
               acc
               (recur (cons cl acc) (.getSuperclass cl))))]
-    (let [arity-handles-mh (ctx/resolve-mh (.lookup-in-pkg ctx)
-                                           rt/mhd-arityHandlesIfFn)]
-      (reduce #(add-publics %1 %2 ctx arity-handles-mh)
+    (let [arity-handles-mh (ctx/resolve-mh rt-lookup rt/mhd-arityHandlesIfFn)
+          pdf-mh (ctx/resolve-mh rt-lookup rt/mhd-publicDefInfo)]
+      (reduce #(add-publics %1 %2 ctx arity-handles-mh pdf-mh)
               (predefined/initial-globals-for (.lookup-in-pkg ctx) (.ns-str ctx))
               (all-segments () capstone)))))
