@@ -764,3 +764,10 @@
                  (fn* f ^:auto-return-type []
                       (throw (Exception.))
                       123)]))))
+
+(deftest pass-double-to-float-test
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"cannot assign to .*float.* \(got: double\)"
+                        (nmsp '[(ns pkg.ns0)
+                                ((fn* f [^float x] nil) 0.0)]))))
+

@@ -155,7 +155,7 @@
 ;;; ------------------------------------------------------------------------
 
 (defn- jvm-adapt-to ^Expr [^Class to-tp ^Expr from] ;returns nil on failure
-  (cond                           ;mirrors `jvm-assignable-to?` below
+  (cond
     (or (x/type? to-tp from)      ;cheapest: type of `from` is `to-tp`
         (jb/polymorphic? to-tp))
     from
@@ -167,10 +167,7 @@
     (jb/statement? to-tp)
     (xf/coerce-to-statm from)
 
-    ;; weaker condition than `resolve/numeric-assignable-to?`:
-    (and (jb/primitive? to-tp)
-         (not (jb/same-class? jb/boolean to-tp))
-         (x/pushes-result? from))
+    (resolve/numeric-assignable-to? (x/type from) to-tp)
     (widen-from to-tp from)
     
     :else nil))
@@ -194,44 +191,6 @@
                 :else nil))
 
         (x/wrong-type (str "cannot assign to " (wrong/q to-tp)) from))))
-
-;;; ------------------------------------------------------------------------
-
-(defn- adapt-for-path ^Expr [^Expr from ^Class to-tp]
-  (or (jvm-adapt-to to-tp from)
-      (cond ;non-Java type conversions are possible for paths!
-        (x/statement? from) ;case "no return" is handled by jvm-adapt-to
-        (xf/prog2-expr from (expr-default to-tp))
-        
-        (and (jb/same-class? jb/boolean to-tp) (x/const-value-nil? from))
-        (xf/prog2-expr from x/expr-false)
-        
-        :else
-        (throw (IllegalStateException. (str "to " to-tp " <- from "
-                                            (x/type from)))))))
-
-;; Return `to` if `from` can be widened to `to`, and nil otherwise.
-(defn- path-adaptable ^Expr [^Expr to ^Expr from]
-  (when (or (not (x/pushes-result? from))
-            (resolve/numeric-assignable-to? (x/type from) (x/type to))
-            (and (x/pushes-nil-object? from)
-                 ;; FIXME... eliminate special treatment of boolean here?
-                 (or (x/boolean? to) (x/reference? to))))
-    to))
-
-(def ^:private expr-some-object (x/const jb/Object "expr-some-object"))
-(defn path-join
-  (^Expr [xs]
-   (reduce path-join (first xs) (rest xs)))
-  (^Expr [^Expr x0 ^Expr x1]
-   (or (when (x/same-type? x0 x1)
-         x0)
-       (path-adaptable x0 x1)
-       (path-adaptable x1 x0)
-       (when (and (x/reference? x0) (x/reference? x1))
-         expr-some-object)         ;must differ from x/expr-nil-object
-       (wrong/other (str "incompatible path types " (wrong/str* (x/type x0))
-                         " and " (wrong/str* (x/type x1)))))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -263,6 +222,45 @@
     x
     (consume x to-tp)))
 
+;;; ------------------------------------------------------------------------
+
+;; Return `to` if `from` can be widened to `to`, and nil otherwise.
+(defn- path-adaptable ^Expr [^Expr to ^Expr from]
+  (when (or (not (x/pushes-result? from))
+            (resolve/numeric-assignable-to? (x/type from) (x/type to))
+            (and (x/pushes-nil-object? from)
+                 ;; FIXME... eliminate special treatment of boolean here?
+                 (or (x/boolean? to) (x/reference? to))))
+    to))
+
+(def ^:private expr-some-object (x/const jb/Object "expr-some-object"))
+(defn path-join
+  (^Expr [xs]
+   (reduce path-join (first xs) (rest xs)))
+  (^Expr [^Expr x0 ^Expr x1]
+   (or (when (x/same-type? x0 x1)
+         x0)
+       (path-adaptable x0 x1)
+       (path-adaptable x1 x0)
+       (when (and (x/reference? x0) (x/reference? x1))
+         expr-some-object)         ;must differ from x/expr-nil-object
+       (wrong/other (str "incompatible path types " (wrong/str* (x/type x0))
+                         " and " (wrong/str* (x/type x1)))))))
+(defn- adapt-for-path ^Expr [^Expr from ^Class to-tp]
+  (or (jvm-adapt-to to-tp from)
+      (cond ;non-Java type conversions are possible for paths!
+        (x/statement? from) ;case "no return" is handled by jvm-adapt-to
+        (xf/prog2-expr from (expr-default to-tp))
+        
+        (and (jb/same-class? jb/boolean to-tp) (x/const-value-nil? from))
+        (xf/prog2-expr from x/expr-false)
+        
+        (and (jb/same-class? jb/int to-tp) (x/character? from))
+        (widen-from jb/int from) ;rejected by language, but ok for emitted code
+        
+        :else
+        (throw (IllegalStateException. (str "to " to-tp " <- from "
+                                            (x/type from)))))))
 
 (deftype AdaptForPath [^Class to-tp]
   IAdaptResult
