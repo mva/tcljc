@@ -14,10 +14,12 @@
 (deftype WatchedPath [^WatchKey wk
                       ^Path root])
 
+;;; `modified` is a possibly empty set of Path pairs [root rel-path],
+;;; where `rel-path` is either a file (created, deleted, or modified)
+;;; or a directory (created or deleted).
 (defrecord Watcher [watches        ;maps directory Path to WatchedPath
                     ^WatchService watch-service
-                    modified ;set of [root rel-path] pairs, can be empty
-                    ])
+                    modified])
 
 (defn- watched-path ^WatchedPath [^Watcher w ^Path path]
   ((.watches w) path))

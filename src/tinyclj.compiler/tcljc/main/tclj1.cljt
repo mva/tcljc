@@ -14,6 +14,7 @@
    (tcljc.main.watcher Watcher)
    (tcljc.main.options Options)
    (clojure.lang Symbol IPersistentMap ExceptionInfo)
+   (java.nio.file Path)
    (java.util.function Consumer)))
 
 (defn delete-outdated-packages! ^Watcher [^Watcher w ^Options opts
@@ -28,10 +29,14 @@
               (conj acc ns-str)
               :else acc))
           (invalidated-ns-strs [mod-paths]
-            (letfn [(modified? ^boolean [{:keys [rpaths]}]
-                      (some? (seq (set/intersection rpaths mod-paths))))
+            (letfn [(modified-rpath? ^boolean [^Path rpath]
+                      ;; use startsWith() to detect both a modified
+                      ;; file and a file whose directory was deleted
+                      (boolean (some #(.startsWith rpath ^Path %) mod-paths)))
+                    (modified-nmsp? ^boolean [{:keys [rpaths]}]
+                      (boolean (some modified-rpath? rpaths)))
                     (conj-if-input-modified  [acc ns-str dep-info]
-                      (cond-> acc (modified? dep-info) (conj ns-str)))]
+                      (cond-> acc (modified-nmsp? dep-info) (conj ns-str)))]
               (loop [inv (reduce-kv conj-if-input-modified
                                     #{} completed-map)]
                 (let [inv* (reduce-kv conj-if-requires-invalid
