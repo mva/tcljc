@@ -7,9 +7,7 @@
    [tcljc.main.efmt :as efmt]
    [tcljc.main.invoke :as invoke]
    [tcljc.main.tclj0 :as tclj0]
-   [tinyclj.set :as set]
-   [tinyclj.string :as str]
-   [tinyclj.alpha.pp :as pp])
+   [tinyclj.string :as str])
   (:import
    (tcljc.main.watcher Watcher)
    (tcljc.main.options Options)
@@ -17,49 +15,47 @@
    (java.nio.file Path)
    (java.util.function Consumer)))
 
-(defn delete-outdated-packages! ^Watcher [^Watcher w ^Options opts
-                                          ^IPersistentMap completed-map]
-  (letfn [(requires? ^boolean [{:keys [req-strs]} ns-strs]
-            (some? (seq (set/intersection req-strs ns-strs))))
-          (conj-if-requires-invalid [acc ns-str dep-info]
-            (cond
-              (contains? acc ns-str)    ;already invalidated
-              acc
-              (requires? dep-info acc) ;depends on invalidated namespace
-              (conj acc ns-str)
-              :else acc))
-          (invalidated-ns-strs [mod-paths]
-            (letfn [(modified-rpath? ^boolean [^Path rpath]
-                      ;; use startsWith() to detect both a modified
-                      ;; file and a file whose directory was deleted
-                      (boolean (some #(.startsWith rpath ^Path %) mod-paths)))
-                    (modified-nmsp? ^boolean [{:keys [rpaths]}]
-                      (boolean (some modified-rpath? rpaths)))
-                    (conj-if-input-modified  [acc ns-str dep-info]
-                      (cond-> acc (modified-nmsp? dep-info) (conj ns-str)))]
-              (loop [inv (reduce-kv conj-if-input-modified
-                                    #{} completed-map)]
-                (let [inv* (reduce-kv conj-if-requires-invalid
-                                      inv completed-map)]
-                  (if (= (count inv*) (count inv))
-                    inv
-                    (recur inv*))))))]
-    (println)
-    (let [w (watcher/collect-modified w (.wait-after-change-ms opts))
-          mod-paths (set (map watcher/load-path (.modified w)))]
-      (println "### Modified:" (str/join " " (sort mod-paths)))
-      (doseq [ns-str (invalidated-ns-strs mod-paths)]
-        (cfg/delete-package-classes (.dest-dir opts) ns-str))
-      w)))
+;;; Transitively remove all namespaces from `dep-map` for which
+;;; `pred-good` returns false, and delete all of their associated
+;;; class files.
+(defn- drop-bad-namespaces! ^IPersistentMap [^IPersistentMap dep-map
+                                             ^Options opts pred-good]
+  (let [!known-good (java.util.HashMap.)]
+    (letfn [(known-good? [ns-str]
+              (if-some [x (.get !known-good ns-str)] ;do not use `or` here
+                x                        
+                (let [dep-info (get dep-map ns-str)
+                      good? (object
+                             (and ^boolean (pred-good dep-info)
+                                  (every? known-good? (:req-strs dep-info))))]
+                  ;; note: imported class files have no req-strs and
+                  ;; are implicitly "good"
+                  (.put !known-good ns-str good?)
+                  good?)))]
+      (reduce-kv (fn [acc ns-str _]
+                   (if (known-good? ns-str)
+                     acc
+                     (do (cfg/delete-package-classes (.dest-dir opts) ns-str)
+                         (dissoc acc ns-str))))
+                 dep-map dep-map))))
+
+(defn- good-after-watching-pred [mod-paths]
+  (println "### Modified:" (str/join " " (sort mod-paths)))
+  (letfn [(modified-rpath? ^boolean [^Path rpath]
+            ;; use startsWith() to detect both a modified
+            ;; file and a file whose directory was deleted
+            (boolean (some #(.startsWith rpath ^Path %) mod-paths)))]
+    (fn ^boolean [dep-info]
+      (not (some modified-rpath? (:rpaths dep-info))))))
 
 (defn- mk-invoke-targets ^Consumer [^Options opts]
   (^Consumer fn [nmsp-map]
    (let [resultv (invoke/invoke-until-failure nmsp-map opts true)]
      (println (invoke/completion-report opts resultv)))))
 
-;; Returns the dependency map of all completed(!) namespaces.  There
-;; is no class file output from namespaces that were not compiled
-;; successfully.
+;; Returns the dependency map of all completed(!) namespaces.  On
+;; return, there is no class file output from namespaces that were not
+;; compiled successfully.
 (defn build-pass ^IPersistentMap [^Options opts ^Consumer on-success
                                   ^IPersistentMap prior-completed-map]
   (letfn [(try-build-all ^IPersistentMap [^Options opts]
@@ -69,16 +65,16 @@
                 (em/dependency-map nmsp-map))
               (catch ExceptionInfo e
                 (efmt/print-emap e)
-                (:emitter/namespaces (ex-data e)))))]
-    (reduce-kv (fn [acc ns-str dep-info]
-                 (if (nil? dep-info)
-                   (do (cfg/delete-package-classes (.dest-dir opts) ns-str)
-                       acc)
-                   (let [prior-dep-info (get prior-completed-map ns-str {})]
-                     ;; preserve old rpaths and req-strs info if this
-                     ;; namespace was imported and not compiled
-                     (assoc acc ns-str (merge prior-dep-info dep-info)))))
-               {} (try-build-all opts))))
+                (:emitter/namespaces (ex-data e)))))
+          (keep-across-import [prior build]
+            ;; preserve old rpaths and req-strs info if this namespace
+            ;; was imported from class files instead of being compiled
+            (if (em/imported-namespace? build)
+              (or prior {})  ;we may already know about this namespace
+              build))]
+    (drop-bad-namespaces! (merge-with keep-across-import prior-completed-map
+                                      (try-build-all opts))
+                          opts em/completed-namespace?)))
 
 (defn run
   (^boolean [^Options opts]
@@ -89,7 +85,10 @@
      (options/abort "error: mode `--watch` requires a destination directory"))
    (tclj0/wipe-dest-dir opts)
    (loop [w (watcher/new-watcher (.sourcev opts))
-          completed-map (build-pass opts on-success {})]
-     (recur (delete-outdated-packages! w opts completed-map)
-            (build-pass opts on-success completed-map)))
+          dep-map (build-pass opts on-success {})]
+     (let [w (watcher/collect-modified w (.wait-after-change-ms opts))
+           mod-paths (map watcher/load-path (.modified w))
+           dep-map (drop-bad-namespaces! dep-map opts
+                                         (good-after-watching-pred mod-paths))]
+       (recur w (build-pass opts on-success dep-map))))
    false))                                ;unreachable

@@ -669,11 +669,11 @@
       (dotimes [i (alength a)]
         (.schedule require-fn (aget a i) (.builtin-nmsp env))))))
 
-;;; Returns a map of all namespaces.  Key is the name of the namespace
-;;; (a string).  Value is a map {:rpaths :req-strs} for a compiled &
-;;; completed namespace, nil if the namespace was not compiled
-;;; successfully, and the empty map {} for a namespace imported from
-;;; class files,
+;;; Returns a map of namespaces that have been reached by the build
+;;; attempt.  Key is the name of the namespace (a string).  Value is a
+;;; map {:rpaths :req-strs} for a compiled & completed namespace, nil
+;;; if the namespace was not compiled successfully, and the empty map
+;;; {} for a namespace imported from class files.
 (defn dependency-map ^IPersistentMap [^Map futs]
   (letfn [(outcome-now [^Future x]
             (assert (.isDone x))
@@ -695,6 +695,11 @@
               
               :else (throw (IllegalArgumentException. (str (class x))))))]
     (reduce-kv #(assoc %1 %2 (dependency-info %3)) {} futs)))
+(defn completed-namespace? ^boolean [^IPersistentMap dependency-info]
+  (some? dependency-info))
+(defn imported-namespace? ^boolean [^IPersistentMap dependency-info]
+  (= dependency-info {}))               ;implies completed-namespace?
+
 
 ;;; On success, returns map String -> Namespace of all namespaces.
 ;;; Any compilation error causes an ExceptionInfo exception whose
