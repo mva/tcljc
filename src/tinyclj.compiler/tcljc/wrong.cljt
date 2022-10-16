@@ -56,6 +56,11 @@
     (not (contains? (ex-data e) k))
     (update-ex-data assoc k v)))
 
+(defn wrap-unhandled ^ExceptionInfo [^Throwable t]
+  (if (instance? ExceptionInfo t)
+    ^ExceptionInfo t
+    (ex-info "unhandled exception" {} t)))
+
 ;;; ------------------------------------------------------------------------
 
 (defn str* ^String [x]

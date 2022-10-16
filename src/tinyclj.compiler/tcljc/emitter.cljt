@@ -705,27 +705,25 @@
 ;;; Any compilation error causes an ExceptionInfo exception whose
 ;;; entry :emitter/namespaces is a dependency map.
 (defn emit-namespaces ^IPersistentMap [^BuildEnv env ns-strs]
-  (letfn [(assoc-namespaces ^ExceptionInfo [^ExceptionInfo e ^Map futs]
-            (wrong/update-ex-data e assoc :emitter/namespaces
+  (letfn [(assoc-namespaces ^ExceptionInfo [^Throwable t ^Map futs]
+            (wrong/update-ex-data (wrong/wrap-unhandled t)
+                                  assoc :emitter/namespaces
                                   (dependency-map futs)))]
     (if cfg/deterministic-namespace-compile?
       (let [!futs (java.util.HashMap.)] ;single-threaded!
         (try
           (emit-namespaces-st env ns-strs !futs)
           (into {} !futs)
-          (catch ExceptionInfo e
-            (throw (assoc-namespaces e !futs)))))
+          (catch Throwable t
+            (throw (assoc-namespaces t !futs)))))
       (let [!futs (ConcurrentHashMap.)  ;updated by this thread only
             build-task-scope (StructuredTaskScope.)]
         (try
           (emit-namespaces-mt env ns-strs build-task-scope !futs)
           (into {} !futs)
-          (catch ExceptionInfo e
-            (.shutdown build-task-scope) ;make join return immediately
-            (throw (assoc-namespaces e !futs)))
           (catch Throwable t
             (.shutdown build-task-scope) ;make join return immediately
-            (throw t))
+            (throw (assoc-namespaces t !futs)))
           (finally
             (.joinUntil build-task-scope (-> (Instant/now) (.plusSeconds 5)))
             (.close build-task-scope)))))))
