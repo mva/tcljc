@@ -1,6 +1,7 @@
 (ns tcljc.main.tclj1
   (:require
    [tcljc.config :as cfg]
+   [tcljc.wrong :as wrong]
    [tcljc.emitter :as em]
    [tcljc.main.watcher :as watcher]
    [tcljc.main.options :as options]
@@ -60,9 +61,13 @@
                                   ^IPersistentMap prior-completed-map]
   (letfn [(try-build-all ^IPersistentMap [^Options opts]
             (try
-              (let [nmsp-map (tclj0/build-all opts true)]
-                (.accept on-success nmsp-map)
-                (em/dependency-map nmsp-map))
+              (let [nmsp-map (tclj0/build-all opts true)
+                    dep-map (em/dependency-map nmsp-map)]
+                (try
+                  (.accept on-success nmsp-map) ;requires nmsp-map, not dep-map
+                  dep-map
+                  (catch Throwable t
+                    (throw (wrong/assoc-dep-map t dep-map)))))
               (catch ExceptionInfo e
                 (efmt/print-emap e)
                 (:emitter/namespaces (ex-data e)))))

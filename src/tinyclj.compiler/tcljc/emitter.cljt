@@ -706,9 +706,7 @@
 ;;; entry :emitter/namespaces is a dependency map.
 (defn emit-namespaces ^IPersistentMap [^BuildEnv env ns-strs]
   (letfn [(assoc-namespaces ^ExceptionInfo [^Throwable t ^Map futs]
-            (wrong/update-ex-data (wrong/wrap-unhandled t)
-                                  assoc :emitter/namespaces
-                                  (dependency-map futs)))]
+            (wrong/assoc-dep-map t (dependency-map futs)))]
     (if cfg/deterministic-namespace-compile?
       (let [!futs (java.util.HashMap.)] ;single-threaded!
         (try

@@ -56,10 +56,11 @@
     (not (contains? (ex-data e) k))
     (update-ex-data assoc k v)))
 
-(defn wrap-unhandled ^ExceptionInfo [^Throwable t]
-  (if (instance? ExceptionInfo t)
-    ^ExceptionInfo t
-    (ex-info "unhandled exception" {} t)))
+(defn assoc-dep-map ^ExceptionInfo [^Throwable t ^IPersistentMap dep-map]
+  (-> (if (instance? ExceptionInfo t)
+        ^ExceptionInfo t
+        (ex-info "unhandled exception" {} t))
+      (update-ex-data assoc :emitter/namespaces dep-map)))
 
 ;;; ------------------------------------------------------------------------
 
