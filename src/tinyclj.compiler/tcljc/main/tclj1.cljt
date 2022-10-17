@@ -9,9 +9,8 @@
    [tcljc.main.invoke :as invoke]
    [tcljc.main.tclj0 :as tclj0])
   (:import
-   (tcljc.main.watcher Watcher)
    (tcljc.main.options Options)
-   (clojure.lang Symbol IPersistentMap ExceptionInfo)
+   (clojure.lang IPersistentMap ExceptionInfo)
    (java.util.function Consumer)))
 
 ;;; Transitively remove all namespaces from `dep-map` for which
@@ -24,9 +23,9 @@
               (if-some [x (.get !known-good ns-str)] ;do not use `or` here
                 x                        
                 (let [dep-info (get dep-map ns-str)
-                      good? (object
-                             (and ^boolean (pred-good dep-info)
-                                  (every? known-good? (:req-strs dep-info))))]
+                      good? (object (and ^boolean (pred-good dep-info)
+                                         (every? known-good?
+                                                 (:req-strs dep-info))))]
                   ;; note: imported class files have no req-strs and
                   ;; are implicitly "good"
                   (.put !known-good ns-str good?)
@@ -38,25 +37,22 @@
                          (dissoc acc ns-str))))
                  dep-map dep-map))))
 
-(defn- mk-invoke-targets ^Consumer [^Options opts]
-  (^Consumer fn [nmsp-map]
-   (let [resultv (invoke/invoke-until-failure nmsp-map opts true)]
-     (println (invoke/completion-report opts resultv)))))
-
 ;; Returns the dependency map of all completed(!) namespaces.  On
 ;; return, there is no class file output from namespaces that were not
 ;; compiled successfully.
 (defn build-pass ^IPersistentMap [^Options opts ^Consumer on-success
                                   ^IPersistentMap prior-completed-map]
-  (letfn [(try-build-all ^IPersistentMap [^Options opts]
+  (letfn [(try-build ^IPersistentMap []
+            (let [nmsp-map (time (tclj0/build-all opts true))
+                  dep-map (em/dependency-map nmsp-map)]
+              (try
+                (.accept on-success nmsp-map) ;requires nmsp-map, not dep-map
+                dep-map
+                (catch Throwable t
+                  (throw (wrong/assoc-dep-map t dep-map))))))
+          (try-build-and-report ^IPersistentMap []
             (try
-              (let [nmsp-map (tclj0/build-all opts true)
-                    dep-map (em/dependency-map nmsp-map)]
-                (try
-                  (.accept on-success nmsp-map) ;requires nmsp-map, not dep-map
-                  dep-map
-                  (catch Throwable t
-                    (throw (wrong/assoc-dep-map t dep-map)))))
+              (try-build)
               (catch ExceptionInfo e
                 (efmt/print-emap e)
                 (:emitter/namespaces (ex-data e)))))
@@ -66,9 +62,14 @@
             (if (em/imported-namespace? build)
               (or prior {})  ;we may already know about this namespace
               build))]
-    (drop-bad-namespaces! (merge-with keep-across-import prior-completed-map
-                                      (try-build-all opts))
-                          opts em/completed-namespace?)))
+    (let [dep-map (try-build-and-report)]
+      (-> (merge-with keep-across-import prior-completed-map dep-map)
+          (drop-bad-namespaces! opts em/completed-namespace?)))))
+
+(defn- mk-invoke-targets ^Consumer [^Options opts]
+  (^Consumer fn [nmsp-map]
+   (let [resultv (invoke/invoke-until-failure nmsp-map opts true)]
+     (println (invoke/completion-report opts resultv)))))
 
 (defn run
   (^boolean [^Options opts]
