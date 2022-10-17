@@ -1,4 +1,4 @@
-JAVA_BIN=$(HOME)/local/jdk-classfile/bin/
+JAVA_BIN=~/local/jdk-classfile/bin/
 JAVA=$(JAVA_BIN)java
 JAVAC=$(JAVA_BIN)javac
 JAVAP=$(JAVA_BIN)javap

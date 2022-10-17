@@ -133,10 +133,11 @@
          :else (parse-positional m args))))))
 
 (defn print-options ^void [^Options opts]
-  (println :dest-dir (str (.dest-dir opts)))
-  (println :parent-classloader (.parent-classloader opts))
-  (println :sourcev (mapv str (.sourcev opts)))
-  (println :targets (.targets opts))
-  (println :deterministic? (.deterministic? opts))
-  (println :watch-mode? (.watch-mode? opts))
-  (println))
+  (comment
+    (println :dest-dir (str (.dest-dir opts)))
+    (println :parent-classloader (.parent-classloader opts))
+    (println :sourcev (mapv str (.sourcev opts)))
+    (println :targets (.targets opts))
+    (println :deterministic? (.deterministic? opts))
+    (println :watch-mode? (.watch-mode? opts))
+    (println)))
