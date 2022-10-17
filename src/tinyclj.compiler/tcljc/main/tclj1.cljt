@@ -7,13 +7,11 @@
    [tcljc.main.options :as options]
    [tcljc.main.efmt :as efmt]
    [tcljc.main.invoke :as invoke]
-   [tcljc.main.tclj0 :as tclj0]
-   [tinyclj.string :as str])
+   [tcljc.main.tclj0 :as tclj0])
   (:import
    (tcljc.main.watcher Watcher)
    (tcljc.main.options Options)
    (clojure.lang Symbol IPersistentMap ExceptionInfo)
-   (java.nio.file Path)
    (java.util.function Consumer)))
 
 ;;; Transitively remove all namespaces from `dep-map` for which
@@ -39,15 +37,6 @@
                      (do (cfg/delete-package-classes (.dest-dir opts) ns-str)
                          (dissoc acc ns-str))))
                  dep-map dep-map))))
-
-(defn- good-after-watching-pred [mod-paths]
-  (println "### Modified:" (str/join " " (sort mod-paths)))
-  (letfn [(modified-rpath? ^boolean [^Path rpath]
-            ;; use startsWith() to detect both a modified
-            ;; file and a file whose directory was deleted
-            (boolean (some #(.startsWith rpath ^Path %) mod-paths)))]
-    (fn ^boolean [dep-info]
-      (not (some modified-rpath? (:rpaths dep-info))))))
 
 (defn- mk-invoke-targets ^Consumer [^Options opts]
   (^Consumer fn [nmsp-map]
@@ -91,9 +80,10 @@
    (tclj0/wipe-dest-dir opts)
    (loop [w (watcher/new-watcher (.sourcev opts))
           dep-map (build-pass opts on-success {})]
-     (let [w (watcher/collect-modified w (.wait-after-change-ms opts))
-           mod-paths (map watcher/load-path (.modified w))
-           dep-map (drop-bad-namespaces! dep-map opts
-                                         (good-after-watching-pred mod-paths))]
+     (let [w (watcher/wait-for-changes w (.wait-after-change-ms opts))
+           pred-modified (watcher/mk-modified? w)
+           dep-map (->> (fn ^boolean [dep-info]
+                          (not (some pred-modified (:rpaths dep-info))))
+                        (drop-bad-namespaces! dep-map opts))]
        (recur w (build-pass opts on-success dep-map))))
    false))                                ;unreachable

@@ -99,7 +99,7 @@
     (.reset wk)
     w))
 
-(defn collect-modified ^Watcher [^Watcher w ^int wait-after-change-ms]
+(defn wait-for-changes ^Watcher [^Watcher w ^int wait-after-change-ms]
   (loop [w ^Watcher (assoc w :modified #{})]
     (let [ws (.-watch-service w)
           wk (if (seq (:modified w)) ;wait some time for more pending changes?
@@ -109,5 +109,12 @@
         (recur (process-watch-key w wk))
         w))))
 
-(defn load-path ^Path [[_ ^Path rel-path]]
-  rel-path)
+(defn mk-modified? [^Watcher w]
+  (letfn [(load-path ^Path [[_ ^Path rel-path]]
+            rel-path)]
+    (let [mod-paths (map load-path (.modified w))]
+      (println "### Modified:" (str/join " " (sort mod-paths)))
+      (fn modified? ^boolean [^Path rpath]
+        ;; use startsWith() to detect both a modified file and a file
+        ;; whose directory was moved or deleted
+        (boolean (some #(.startsWith rpath ^Path %) mod-paths))))))
