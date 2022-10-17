@@ -99,8 +99,11 @@
     #_else (throw (IllegalArgumentException. (str (class tp))))))
 
 (defn- instruction-data [insn ^ClassDesc owner-cld ^HashMap label-names]
-  (letfn [(opcode ^Symbol [^CodeElement insn]
-            (symbol nil (-> insn .opcode .name)))
+  (letfn [(opcode ^Symbol [^CodeElement ce]
+            (condp instance? ce
+              Instruction (symbol nil (-> ^Instruction ce .opcode .name))
+              ExceptionCatch 'EXCEPTION_CATCH
+              #_else (throw (IllegalArgumentException. (str (class ce))))))
           (owner-name [^ClassEntry owner] ;returns symbol or string
             (if (= owner-cld (.asSymbol owner))
               '.
@@ -254,9 +257,11 @@
                           (step bci (inc ec-i) lv-i elems))
 
                     (some? elems)
-                    (let [ce ^CodeElement (first elems)
-                          bci' (+ bci (.sizeInBytes ce))]
-                      (cons ce (step bci' ec-i lv-i (next elems))))
+                    (let [ce (first elems)]
+                      (cons ce (step (+ bci (if (instance? Instruction ce)
+                                              (.sizeInBytes ^Instruction ce)
+                                              0))
+                                     ec-i lv-i (next elems))))
 
                     :else nil)))
                0 0 0 (seq (remove out-of-band? elements))))]

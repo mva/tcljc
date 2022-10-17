@@ -48,7 +48,7 @@
 
 (def ^:private bytecode2opcode (new "[Ljdk.classfile.Opcode;" 256))
 (doseq [^Opcode opc (Opcode/values)]
-  (when-not (or (.isPseudo opc) (.isWide opc))
+  (when-not (.isWide opc)
     (aset bytecode2opcode (.bytecode opc) opc)))
 
 (defn bc2opc
