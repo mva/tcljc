@@ -80,7 +80,7 @@
    IncompatibleClassChangeError InstantiationError InternalError
    LinkageError NoClassDefFoundError NoSuchFieldError
    NoSuchMethodError OutOfMemoryError StackOverflowError
-   ThreadDeath UnknownError UnsatisfiedLinkError
+   UnknownError UnsatisfiedLinkError
    UnsupportedClassVersionError VerifyError VirtualMachineError
              
    Thread$UncaughtExceptionHandler Thread$State
