@@ -46,11 +46,6 @@
       x)
     (wrong/syntax "parameter name must be symbol" x)))
 
-(defn ensure-accept-tag [^boolean accept-tags? form]
-  (when-not accept-tags?
-    (when-some [t (get-tag form)]
-      (wrong/syntax "cannot type tag parameter in this context" t))))
-
 (defn- with-paramv
   (^Arity [^Arity tmpl paramv ^Class rtype ^Method m]
    (Arity. paramv rtype (count paramv) (.varargs? tmpl) false
@@ -70,7 +65,7 @@
   (-> (x/local-ref level nm tp x/b-this-object)
       (x/local-binding nil)))
 
-(defn- arity-sig ^Arity [^Arity tmpl ^Class unset-tp ^Class rtype params tl-ctx]
+(defn arity-sig ^Arity [^Arity tmpl ^Class unset-tp ^Class rtype params tl-ctx]
   (loop [acc []
          [p :as params] (seq params)]
     (cond
@@ -98,8 +93,8 @@
 ;;; If `unset-tp` is not nil, then this type is used for an entity
 ;;; without an explicit type tag: return type, parameter type, or
 ;;; varargs type.
-(defn parse-arity-sigs [^int level ^Class unset-tp ^Symbol this-name aforms
-                        tl-ctx]
+(defn- parse-arity-sigs [^int level ^Class unset-tp ^Symbol this-name aforms
+                         tl-ctx]
   (letfn [(arity ^Arity [aform ^int at-idx]
             (if (and (seq? aform) (vector? (first aform)))
               (let [v (first aform)
@@ -107,12 +102,8 @@
                               (if (-> v (meta) :auto-return-type)
                                 jb/cl-polymorphic-type
                                 jb/Object))
-                    accept-tags? true #_(nil? itf-tp)
                     tmpl (Arity. nil nil -1 false false nil nil this-name
                                  level aform (util/mk-shm) at-idx)]
-                (ensure-accept-tag accept-tags? v)
-                (doseq [p v]
-                  (ensure-accept-tag accept-tags? p))
                 (arity-sig tmpl unset-tp rtype (seq v) tl-ctx))
               (wrong/syntax "expect function arity ([...] ...)")))
           (arity-seq [acc seen-ns [aform :as aforms]]

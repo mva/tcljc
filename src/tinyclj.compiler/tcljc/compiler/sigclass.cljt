@@ -1,5 +1,6 @@
 (ns tcljc.compiler.sigclass
   (:require
+   [tcljc.util :as util]
    [tcljc.config :as cfg]
    [tcljc.javabase :as jb]
    [tcljc.classfile :as cf]
@@ -80,13 +81,10 @@
   ;; receiver of the virtual method.
   (wrong/ensure-sym nm)  ;silently ignore namespace part for defrecord
   (ensure-parameters sig true)
-  (let [aforms (-> (list* (with-meta (subvec sig 1) (meta sig)) body)
-                   (with-meta (meta form)) ;propagate line number
-                   (list))
-        at (-> (sig/parse-arity-sigs level jb/cl-polymorphic-type nil aforms
-                                     tl-ctx)
-               ^Arity (first)
-               (x/with-method-name nm (nth sig 0) at-idx))]
+  (let [rtype (sig/tag-of sig true jb/cl-polymorphic-type tl-ctx)
+        tmpl (Arity. nil nil -1 false false nil (name nm) (nth sig 0)
+                     level form (util/mk-shm) at-idx)
+        at (sig/arity-sig tmpl jb/cl-polymorphic-type rtype (rest sig) tl-ctx)]
     (-> (if (hinted? sig)
           (check-method-match at etp)
           (fixup-method-sig at etp)))))

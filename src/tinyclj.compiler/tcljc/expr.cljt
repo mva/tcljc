@@ -1126,12 +1126,6 @@
           (.method at) (.method-name at) (.this-name at) (.level at) (.aform at)
           (.!closes-over at) (.at-idx at)))
 
-(defn with-method-name ^Arity [^Arity at ^Symbol nm ^Symbol this-name
-                               ^int at-idx]
-  (Arity. (.paramv at) (.rtype at) (.n at) (.varargs? at) (.variadic? at)
-          (.method at) (name nm) this-name (.level at) (.aform at)
-          (.!closes-over at) at-idx))
-
 (defn at-n ^int [^Arity at]
   (.n at))
 
