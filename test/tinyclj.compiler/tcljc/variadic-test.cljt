@@ -1,5 +1,5 @@
 (ns tcljc.variadic-test
-  (:require [tcljc.bootstrap :refer [nmsp]]
+  (:require [tcljc.bootstrap :refer [nmsp asm-expr]]
             [tinyclj.alpha.ptest :refer :all]))
 
 (deftest varargs-list
@@ -1048,3 +1048,26 @@
                  (def void-fn (fn* void-fn ^void [^String s]))
                  (def x [(void-fn "foo")])]))))
 
+(deftest varargs-static-vs-virtual
+  (is (= '[(LDC [STATIC String "format"
+                 "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;"])
+           (LDC "%3.1f %3.1f")
+           (DCONST_1)
+           (INVOKESTATIC Double "valueOf" "(D)Ljava/lang/Double;")
+           (LDC2_W 2.0)
+           (INVOKESTATIC Double "valueOf" "(D)Ljava/lang/Double;")
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "(Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;)Ljava/lang/String;")
+           (ARETURN)]
+         (asm-expr (String/format "%3.1f %3.1f" (object 1.0) (object 2.0)))))
+  (is (= '[(LDC [VIRTUAL String "formatted"
+                 "([Ljava/lang/Object;)Ljava/lang/String;"])
+           (LDC "%3.1f %3.1f")
+           (DCONST_1)
+           (INVOKESTATIC Double "valueOf" "(D)Ljava/lang/Double;")
+           (LDC2_W 2.0)
+           (INVOKESTATIC Double "valueOf" "(D)Ljava/lang/Double;")
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "(Ljava/lang/String;Ljava/lang/Double;Ljava/lang/Double;)Ljava/lang/String;")
+           (ARETURN)]
+      (asm-expr (.formatted "%3.1f %3.1f" (object 1.0) (object 2.0))))))
