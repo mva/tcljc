@@ -32,11 +32,12 @@
 
 
 (defn- file-line-column [emap]
-  (when-some [coll (->> (:form/context emap)
-                        (reverse)
-                        (filter #(-> % (meta) :line))
-                        (first))]
-    (:line (meta coll))))
+  (or (:reader/line emap)
+      (when-some [coll (->> (:form/context emap)
+                            (reverse)
+                            (filter #(-> % (meta) :line))
+                            (first))]
+        (:line (meta coll)))))
 
 (defn- relative-path ^String [^java.net.URL url] ;relative to working directory
   (if (some? url)

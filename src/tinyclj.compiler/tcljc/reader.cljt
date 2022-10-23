@@ -63,7 +63,7 @@
   (Short/toUnsignedInt (aget tokens i)))
 
 (defn mk-ex-info ^clojure.lang.ExceptionInfo [^int line-num msg]
-  (ex-info (str line-num ": " msg) {}))
+  (ex-info msg {:reader/line line-num}))
 
 ;;; ------------------------------------------------------------------------
 
