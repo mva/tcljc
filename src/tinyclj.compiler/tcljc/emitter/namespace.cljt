@@ -60,7 +60,7 @@
               (conj (.rpaths nmsp) rpath) (.req-strs nmsp)
               (.capstone nmsp) (.exported-known-ns nmsp) (.bytesv nmsp)))
 
-(defn with-requires ^Namespace [^Namespace nmsp ns-strs]
+(defn- with-requires ^Namespace [^Namespace nmsp ns-strs]
   (Namespace. (.env nmsp) (.provided-nmsp nmsp) (.ctx nmsp)
               (.rpaths nmsp) (into (.req-strs nmsp) ns-strs)
               (.capstone nmsp) (.exported-known-ns nmsp) (.bytesv nmsp)))

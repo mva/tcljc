@@ -693,8 +693,18 @@
                   (identical? nmsp/marker-depth-first-path x))
               nil     ;not completed successfully, assume to be broken
               
-              :else (throw (IllegalArgumentException. (str (class x))))))]
-    (reduce-kv #(assoc %1 %2 (dependency-info %3)) {} futs)))
+              :else (throw (IllegalArgumentException. (str (class x))))))
+          (fixup-core-deps ^IPersistentMap [^IPersistentMap dep-map]
+            (let [req-strs (get-in dep-map [cfg/core-lib :req-strs])]
+              (cond-> dep-map
+                (seq req-strs)    ;any recorded dependencies for core?
+                (assoc cfg/core-lib
+                       {:rpaths (into (get-in dep-map [cfg/core-lib :rpaths])
+                                      (mapcat #(get-in dep-map [% :rpaths]))
+                                      req-strs)
+                        :req-strs #{}}))))]
+    (-> (reduce-kv #(assoc %1 %2 (dependency-info %3)) {} futs)
+        (fixup-core-deps))))
 (defn completed-namespace? ^boolean [^IPersistentMap dependency-info]
   (some? dependency-info))
 (defn imported-namespace? ^boolean [^IPersistentMap dependency-info]
