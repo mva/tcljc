@@ -1,0 +1,68 @@
+(ns tcljc.xcmp-test
+  (:require [tcljc.bootstrap :refer [asm-expr]]
+            [tinyclj.alpha.ptest :refer :all]))
+
+;; See "3.5 More Control Examples" of JVMS for details on the NaN
+;; handling of fcmpl/fcmpg and dcmpl/dcmpg).  The first two tests are
+;; taken direction from p48/p49, the other four have been verified
+;; against their javac bytecode.
+
+(deftest lt-test
+  (is (= '[["LOCAL 0: double d"]
+           (DLOAD_0)
+           (LDC2_W 100.0)
+           (DCMPG) ;Push 1 if d is NaN or d > 100.0; push 0 if d == 100.0
+           (IFGE L:0)                   ;Branch on 0 or 1
+           (ICONST_1) (IRETURN)
+           [L:0] (ICONST_M1) (IRETURN)]
+         (asm-expr [^double d] (if (< d 100.0) +1 -1)))))
+
+(deftest gt-test
+  (is (= '[["LOCAL 0: double d"]
+           (DLOAD_0)
+           (LDC2_W 100.0)
+           (DCMPL) ;Push -1 if d is NaN or d < 100.0; push 0 if d == 100.0
+           (IFLE L:0)                   ;Branch on 0 or -1
+           (ICONST_1) (IRETURN)
+           [L:0] (ICONST_M1) (IRETURN)]
+         (asm-expr [^double d] (if (> d 100.0) +1 -1)))))
+
+(deftest le-test
+  (is (= '[["LOCAL 0: double d"]
+           (DLOAD_0)
+           (LDC2_W 100.0)
+           (DCMPG) ;Push 1 if d is NaN or d > 100.0; push 0 if d == 100.0
+           (IFGT L:0)                   ;Branch on 1
+           (ICONST_1) (IRETURN)
+           [L:0] (ICONST_M1) (IRETURN)]
+         (asm-expr [^double d] (if (<= d 100.0) +1 -1)))))
+
+(deftest ge-test
+  (is (= '[["LOCAL 0: double d"]
+           (DLOAD_0)
+           (LDC2_W 100.0)
+           (DCMPL) ;Push -1 if d is NaN or d < 100.0; push 0 if d == 100.0
+           (IFLT L:0)                   ;Branch on -1
+           (ICONST_1) (IRETURN)
+           [L:0] (ICONST_M1) (IRETURN)]
+         (asm-expr [^double d] (if (>= d 100.0) +1 -1)))))
+
+(deftest eq-test
+  (is (= '[["LOCAL 0: double d"]
+           (DLOAD_0)
+           (LDC2_W 100.0)
+           (DCMPL) ;Push -1 if d is NaN or d < 100.0; push 0 if d == 100.0
+           (IFNE L:0)                   ;Branch on 1 or -1
+           (ICONST_1) (IRETURN)
+           [L:0] (ICONST_M1) (IRETURN)]
+         (asm-expr [^double d] (if (== d 100.0) +1 -1)))))
+
+(deftest ne-test
+  (is (= '[["LOCAL 0: double d"]
+           (DLOAD_0)
+           (LDC2_W 100.0)
+           (DCMPL) ;Push -1 if d is NaN or d < 100.0; push 0 if d == 100.0
+           (IFEQ L:0)                   ;Branch on 0
+           (ICONST_1) (IRETURN)
+           [L:0] (ICONST_M1) (IRETURN)]
+         (asm-expr [^double d] (if (not (== d 100.0)) +1 -1)))))

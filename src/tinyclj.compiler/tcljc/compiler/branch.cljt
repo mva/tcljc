@@ -40,17 +40,18 @@
 
 ;;; ------------------------------------------------------------------------
 
-;;; FIXME... see NaN comment before compiler/binary-cmp
 (defn xcmp ^Expr [^int cmp-opcd ^Expr arg0 ^Expr arg1]
   (let [arg0 (conv/ensure-numeric arg0)
         arg1 (conv/ensure-numeric arg1)
         to-cl (conv/upper-numeric-tp arg0 arg1)]
     (if (jb/same-class? Integer/TYPE to-cl)
       (xf/icmp arg0 arg1 cmp-opcd)
-      (let [cmp (xf/xcmp-signum (conv/widen-from to-cl arg0)
-                                (conv/widen-from to-cl arg1)
-                                (condp jb/same-class? to-cl
-                                  Double/TYPE Opcode/DCMPG
-                                  Float/TYPE Opcode/FCMPG
-                                  #_else Opcode/LCMP))]
-        (xf/icmp cmp x/expr-zero-int cmp-opcd)))))
+      (letfn [(nan-opcode ^Opcode [^Opcode g ^Opcode l]
+                (case cmp-opcd (#_lt 2 #_le 5) g #_else l))]
+        (-> (xf/xcmp-signum (conv/widen-from to-cl arg0)
+                            (conv/widen-from to-cl arg1)
+                            (condp jb/same-class? to-cl
+                              Double/TYPE (nan-opcode Opcode/DCMPG Opcode/DCMPL)
+                              Float/TYPE (nan-opcode Opcode/FCMPG Opcode/FCMPL)
+                              #_else Opcode/LCMP))
+            (xf/icmp x/expr-zero-int cmp-opcd))))))

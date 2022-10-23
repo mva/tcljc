@@ -1583,11 +1583,6 @@
 
 ;;; ------------------------------------------------------------------------
 
-;; FIXME... handling of NaN values is incomplete here (see "3.5 More
-;; Control Examples" of JVMS, fcmpl/fcmpg and dcmpl/dcmpg).  In
-;; particular, check whether "if (f1 != f2) ..." is equivalent to "if
-;; (!(f1 == f2)) ...".  Probably not, but Clojure has no !=.  Add NaN
-;; & negative zero test cases to ieee754-test.
 (defn binary-cmp ^FnPrimitiveFn [^int cmp-opcd]
   (^FnPrimitiveFn fn [form [arg0 arg1] tl-ctx]
    (when form

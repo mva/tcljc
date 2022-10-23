@@ -6,7 +6,7 @@
           
           const-test conv-test dot-form-test new-test arith-test let-test
           quote-test meta-test str-test bits-test switch-test cond-test
-          try-test array-test loop-test logic-test clone-test
+          try-test array-test loop-test logic-test clone-test xcmp-test
 
           namespace-test fn-test itf-fn-test variadic-test macro-test
           deftype-test set-test definterface-test closure-test line-test
@@ -44,6 +44,7 @@
     tcljc.loop-test
     tcljc.logic-test
     tcljc.clone-test
+    tcljc.xcmp-test
 
     tcljc.namespace-test
     tcljc.fn-test
