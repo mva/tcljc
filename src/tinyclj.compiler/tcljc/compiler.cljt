@@ -901,8 +901,8 @@
              (wrong/other (str "not a settable variable: " (wrong/q v)) v))))
 
        (parse-method ^ArityCode [^Env env ^Arity at ^Class etp tl-ctx]
-         ;; based on `arity-body` above
-         (wrong/with-list-context form
+         ;; based on `parse-arity-bodies` above
+         (wrong/with-list-context (.aform at)
            (let [receiver-b (sig/mk-receiver (.level at) (.this-name at) etp)
                  env (add-locals env (cons receiver-b (.paramv at)))]
              (x/mk-arity-code at (.bref receiver-b)

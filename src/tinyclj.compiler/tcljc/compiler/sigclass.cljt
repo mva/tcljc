@@ -80,7 +80,9 @@
   ;; receiver of the virtual method.
   (wrong/ensure-sym nm)  ;silently ignore namespace part for defrecord
   (ensure-parameters sig true)
-  (let [aforms (list (list* (with-meta (subvec sig 1) (meta sig)) body))
+  (let [aforms (-> (list* (with-meta (subvec sig 1) (meta sig)) body)
+                   (with-meta (meta form)) ;propagate line number
+                   (list))
         at (-> (sig/parse-arity-sigs level jb/cl-polymorphic-type nil aforms
                                      tl-ctx)
                ^Arity (first)
