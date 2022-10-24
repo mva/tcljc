@@ -17,10 +17,11 @@
 
 (def sym-quote 'quote)
 (def ^:private lacks-namespace "`") ;marks simple symbol inside syntax quote
-;;; FIXME... switch to unreadable symbols for these three?
+;;; note: the `syntax-quote` symbol is spliced into the core lib's
+;;; namespace (similar to e.g. `*ns*`) and bound to a predefined macro
 (def sym-syntax-quote (symbol cfg/core-lib "syntax-quote"))
-(def sym-unquote (symbol cfg/core-lib "unquote"))
-(def sym-unquote-splicing (symbol cfg/core-lib "unquote-splicing"))
+(def sym-unquote (symbol "," "unquote")) ;unreadable symbol
+(def sym-unquote-splicing (symbol "," "unquote-splicing")) ;unreadable symbol
 
 (defn syntax-quote? ^boolean [form]
   (and (seq? form) (= sym-syntax-quote (first form))))

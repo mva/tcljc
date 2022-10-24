@@ -103,12 +103,6 @@
 (def pattern (ClassDesc/of "java.util.regex.Pattern"))
 (def iobj (ClassDesc/of clnm-iobj))
 
-(defn keyword? ^boolean [^Class cl]     ;`cl` is usually an application class
-  ;; FIXME... identifying the application class is cheaper during
-  ;; emit; is it worthwhile to move the logic relying on this
-  ;; predicate there?
-  (= clnm-keyword (.getName cl)))
-
 (def ^:private int ConstantDescs/CD_int)
 (def ^:private long ConstantDescs/CD_long)
 (def ^:private float ConstantDescs/CD_float)

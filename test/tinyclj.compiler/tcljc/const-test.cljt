@@ -142,7 +142,7 @@
                 (ARETURN)]))
 
 (deftest constant-pool-conv-test
-  ;; FIXME... representation of long/float does not show actual type
+  ;; note: representation of long/float does not show actual type
   (is-asm [(long 0)]
           [(LDC [:bsm-quote "vector" "Lclojure/lang/IPersistentVector;" [0]])
            (ARETURN)])

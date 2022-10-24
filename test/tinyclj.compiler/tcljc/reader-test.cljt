@@ -539,9 +539,9 @@
 
   ;; FIXME... tclj eats `(tinyclj.core/syntax-quote ...)`, so go the
   ;; manual route
-  (is (= (list 'tinyclj.core/syntax-quote :foo/bar#)
+  (is (= (list sq/sym-syntax-quote :foo/bar#)
          (read1 "`:foo/bar#")))
-  (is (= (list 'tinyclj.core/syntax-quote :foo#)
+  (is (= (list sq/sym-syntax-quote :foo#)
          (read1 "`:foo#")))
   
   ;; In Clojure (as of 1.11-rc1) the symbol suffix "...#" has no
@@ -554,17 +554,17 @@
   (is (= (list 'quote (symbol "foo" "bar#")) (read1 "'foo/bar#")))
   (is (= (list 'quote (symbol nil "foo#")) (read1 "'foo#")))
   
-  (is (= (list 'tinyclj.core/syntax-quote (symbol "foo" "bar#"))
+  (is (= (list sq/sym-syntax-quote (symbol "foo" "bar#"))
          (read1 "`foo/bar#")))
-  (is (= (list 'tinyclj.core/syntax-quote 'foo__$1$__auto__)
+  (is (= (list sq/sym-syntax-quote 'foo__$1$__auto__)
          (-> (read1 "`foo#")
              (deterministic-gensyms))))
-  (is (= (list 'quote (list 'tinyclj.core/syntax-quote
+  (is (= (list 'quote (list sq/sym-syntax-quote
                             'foo__$1$__auto__))
          (-> (read1 "'`foo#")
              (deterministic-gensyms))))
-  (is (= (list 'tinyclj.core/syntax-quote (list 'quote
-                                                'foo__$1$__auto__))
+  (is (= (list sq/sym-syntax-quote (list 'quote
+                                         'foo__$1$__auto__))
          (-> (read1 "`'foo#")
              (deterministic-gensyms)))))
 

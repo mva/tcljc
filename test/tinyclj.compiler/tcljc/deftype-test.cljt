@@ -373,8 +373,6 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
-            
-            ;; FIXME... should this method be placed into class T?
             [(METHOD [PUBLIC STATIC FINAL] "fn~0" "(Ljava/lang/String;)Ljava/lang/String;")
              ["LOCAL 0: String x"]
              (ALOAD_0)
@@ -426,7 +424,6 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
-            ;; FIXME... should this method be placed into class T?
             [(METHOD [PUBLIC STATIC FINAL] "fn~0" "(Ljava/lang/String;)Ljava/lang/String;")
              ["LOCAL 0: String x"]
              (ALOAD_0)

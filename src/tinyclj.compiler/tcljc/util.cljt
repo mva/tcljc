@@ -52,7 +52,7 @@
   (defn sim-put-absent! ^Object [^objects hm k v] ;returns `v`
     (assert (some? k))
     (assert (some? v))
-    ;; FIXME... the precondition "absent" allows to skip all segments
+    ;; note: the precondition "absent" allows to skip all segments
     ;; that have a `next-mh`; probably not a worthwhile change, though
     (loop [i (dec (quot (alength hm) 2))]
       (if (neg? i)
