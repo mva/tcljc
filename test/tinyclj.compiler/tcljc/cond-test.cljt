@@ -2,26 +2,6 @@
   (:require [tcljc.bootstrap :refer [asm-expr call-expr nmsp]]
             [tinyclj.alpha.ptest :refer :all]))
 
-;;; This kind of `if` statement happens when expanding `cond`.  If `x`
-;;; is a reference, then everything is fine.  If `x` is a numeric
-;;; primitive, then the value type of `x` is not compatible with
-;;; `nil`.
-;;; 
-;;; But if `x` is of boolean primitive type, then the `nil` is
-;;; interpreted as boolean `false` to determine the if's result
-;;; type.
-;;;
-;;; FIXME... can this special case be retired now that the `cond`
-;;; expansion has been changed?
-(deftest if-else-nil
-  (is (= '[["LOCAL 0: boolean x"]
-           (ILOAD_0)
-           (IRETURN)]
-         (asm-expr ^boolean [^boolean x]
-                   (if :else       ;:else is logical true
-                     x             ;whole if is reduced to this branch
-                     nil)))))
-
 (deftest if-else-omit-path
   (is (= '[["LOCAL 0: boolean x"]
            (ILOAD_0)

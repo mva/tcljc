@@ -228,9 +228,7 @@
 (defn- path-adaptable ^Expr [^Expr to ^Expr from]
   (when (or (not (x/pushes-result? from))
             (resolve/numeric-assignable-to? (x/type from) (x/type to))
-            (and (x/pushes-nil-object? from)
-                 ;; FIXME... eliminate special treatment of boolean here?
-                 (or (x/boolean? to) (x/reference? to))))
+            (and (x/pushes-nil-object? from) (x/reference? to)))
     to))
 
 (def ^:private expr-some-object (x/const jb/Object "expr-some-object"))
@@ -251,9 +249,6 @@
       (cond ;non-Java type conversions are possible for paths!
         (x/statement? from) ;case "no return" is handled by jvm-adapt-to
         (xf/prog2-expr from (expr-default to-tp))
-        
-        (and (jb/same-class? jb/boolean to-tp) (x/const-value-nil? from))
-        (xf/prog2-expr from x/expr-false)
         
         (and (jb/same-class? jb/int to-tp) (x/character? from))
         (widen-from jb/int from) ;rejected by language, but ok for emitted code
