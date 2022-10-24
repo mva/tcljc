@@ -42,4 +42,5 @@
         (invoke/invoke-and-report opts))
     (catch ExceptionInfo e
       (efmt/print-emap e)
+      (println)
       false)))

@@ -7,6 +7,7 @@
    [tinyclj.string :as str]
    [tinyclj.alpha.ptest__term :as term])
   (:import
+   (tcljc.expr FnForm Arity)
    (clojure.lang ExceptionInfo)
    (java.lang.constant ClassDesc)
    (java.lang.reflect Method Constructor Executable Field Member Modifier)
@@ -206,16 +207,10 @@
       (print-executable ^Executable x)
       (print-field ^Field x))))
 
-;; (defn print-arity [^ArityDef at ^"[Ltinyclj.frontend.data.Expr;" arg-exprs]
-;;   (let [ptypes (->> (map tp/cl (fndef/at-parameter-types at))
-;;                     (into-array Class))]
-;;     (print-sig (String/format "%4d" (fndef/at-n at))
-;;                ptypes (fndef/at-extern-varargs? at) arg-exprs)))
-
-;; (defn- invoke-arguments [data]
-;;   (->> (:invoke/arg-types data)
-;;        (map #(expr/mk-expr expr/op-progn (epi/as-relaxed-type %)))
-;;        (into-array Expr)))
+(defn print-arity [^Arity at  ^"[Ljava.lang.Class;" arg-types]
+  (let [ptypes (into-array Class (x/at-parameter-types at))]
+    (print-sig (String/format "%4d" (x/at-n at))
+               ptypes (x/at-extern-varargs? at) (alength arg-types))))
 
 (defn print-compiler-emap [^ExceptionInfo e]
   (let [msg (ex-message e)
@@ -252,52 +247,26 @@
           (println "  <none>")))
       (println (term/dim "args") (map type-str (:invoke/arg-types data))))
 
-    ;; :invoke/fndef
-    ;; :invoke/arg-types
-    ;; (when-some [fndef ^FnDef (:invoke/fndef data)]
-    ;;   (println "arities:")
-    ;;   (let [arg-exprs (invoke-arguments data)]
-    ;;     (doseq [at (fndef/atv-by-arity (.atv fndef))]
-    ;;       (print-arity at arg-exprs)))
-    ;;   (println "args" (map type-str (:invoke/arg-types data))))
+    (when-some [fn-form ^FnForm (:invoke/fn-form data)]
+      (println "arities:")
+      (let [arg-types ^"[Ljava.lang.Class;" (:invoke/arg-types data)]
+        (doseq [at (sort-by x/at-n (.at-sigs fn-form))]
+          (print-arity at arg-types)))
+      (println "args" (map type-str (:invoke/arg-types data))))
     
     (doseq [[k v] (-> data
                       (update :form/context last)
                       (dissoc :file/resource-url
+                              :reader/line
                               :emitter/namespaces
-                              ;; :form/namespace
                               :form/context
                               :invoke/owner :invoke/name :invoke/arg-types
-                              ))]
-      (println k v)
-      #_(if (= k :node/path-types)
-          (println k (map tp/cl v))
-          (println k v)))))
-
-(defn print-discover-emap [^ExceptionInfo e]
-  (let [msg (ex-message e)
-        emap (ex-data e)]
-    (println)
-    (println (term/error "###")
-             (if-some [[_ txt] (re-matches #"\d+:\d+: (.*)" msg)]
-               txt
-               msg))
-    (println (term/error "@@@")
-             (str (relative-path (:file/resource-url emap))
-                  ":" (:line emap) ":" (:column emap)))
-    
-    (doseq [[k v] (-> emap
-                      (dissoc :file/resource-url
-                              :line
-                              :column))]
+                              :invoke/fn-form))]
       (println k v))))
 
 (defn print-emap [^ExceptionInfo e]
   (try
-    (let [msg (or (ex-message e) "")]
-      (if (re-matches #"\d+:\d+: (.*)" msg)
-        (print-discover-emap e)
-        (print-compiler-emap e)))
+    (print-compiler-emap e)
     (catch Throwable t*
       (.printStackTrace (Exception. "error while formatting error message" t*))
       (println)

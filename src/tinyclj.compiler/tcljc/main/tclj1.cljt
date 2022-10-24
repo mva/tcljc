@@ -55,7 +55,9 @@
               (try-build)
               (catch ExceptionInfo e
                 (efmt/print-emap e)
-                (:emitter/namespaces (ex-data e)))))
+                (:emitter/namespaces (ex-data e)))
+              (finally                 ;use finally to preserve result
+                (println))))
           (keep-across-import [prior build]
             ;; preserve old rpaths and req-strs info if this namespace
             ;; was imported from class files instead of being compiled

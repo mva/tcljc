@@ -51,7 +51,7 @@
 (defn- assoc-fn-form ^ExceptionInfo [^ExceptionInfo e fn-form [op & args]]
   (let [data (-> (ex-data e)
                  (assoc :invoke/fn-form fn-form)
-                 (assoc :invoke/arg-types (map x/type args)))]
+                 (assoc :invoke/arg-types (into-array Class (map x/type args))))]
     (ex-info (ex-message e) data (ex-cause e))))
 (defn- wrong-no-arity [^FnForm fn-form [^Expr op & args]]
   (throw (wrong/mk-e (str "function " (wrong/q (.form op)) " has no arity "
