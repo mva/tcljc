@@ -97,8 +97,7 @@
         (if-some [ld (.ld-st-instr ee)]
           (.deliver-load ^BindingRef display ld)
           ;; assume that this is an elided function value represented
-          ;; by a condy; FIXME... where does the constant value come
-          ;; from if this is not a function?
+          ;; by a condy
           (when-some [root-fnc (.root-fnc ee)]
             (.deliver-load ^BindingRef display
                            (-> (.fn-value-const (.emit-plan root-fnc))

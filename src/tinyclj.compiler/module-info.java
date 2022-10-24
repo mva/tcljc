@@ -19,7 +19,6 @@ module tinyclj.compiler {
   exports tcljc.emitter.classes;
   exports tcljc.emitter;
   exports tcljc.emitter.emitfn;
-  exports tcljc.emitter.export;
   exports tcljc.emitter.exprcode;
   exports tcljc.emitter.namespace;
   exports tcljc.emitter.prepare;

@@ -425,10 +425,10 @@
 (deftype ClassDef [^ClassHierarchyResolver$ClassHierarchyInfo ch-info
                    ^int flags
                    itfs                 ;seq of ClassDesc
-                   ^DirectMethodHandleDesc super-mhd ;FIXME... drop this
-                   ^IPersistentVector fieldv      ;vector of FieldDef
-                   ^IPersistentVector cb-handlerv ;vector to force eager
-                   ])
+                   ^DirectMethodHandleDesc super-mhd
+                   ^IPersistentVector fieldv ;vector of FieldDef
+                   ^IPersistentVector cb-handlerv]) ;vector to force eager
+                   
 
 (defn class-def ^ClassDef [^ClassDesc this-class
                            ^ClassDesc super-class

@@ -16,7 +16,6 @@
    [tcljc.emitter.bytecode :as bytecode]
    [tcljc.emitter.emitfn :as emitfn]
    [tcljc.emitter.classes :as classes]
-   [tcljc.emitter.export :as export]
    [tinyclj.string :as str])
   (:import
    (tcljc.classfile CHR ClassDef)
