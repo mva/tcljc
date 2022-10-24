@@ -23,6 +23,7 @@ module tinyclj.core {
 
   exports tinyclj.alpha.ptest__term;
   exports tinyclj.alpha.ptest__align;
+  exports tinyclj.alpha.ptest__impl;
   exports tinyclj.alpha.ptest__pp;
   exports tinyclj.alpha.ptest;
   exports tinyclj.alpha.pp;

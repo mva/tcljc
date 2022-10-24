@@ -148,7 +148,7 @@
 (def ^:private invalid-step (Step. -1 2r00 invalid-cost nil nil))
 (def ^:private init-step (Step. -1 2r00 0 nil nil))
 
-;;; FIXME... memorize (align a b) calls?
+;;; FIXME... memoize (align a b) calls?
 (defn align ^Arr [^Arr a ^Arr b]
   (let [grid (new "[[Ltinyclj.alpha.ptest__align.Step;" (inc (arr-length a)))]
     (letfn [(step-at ^Step [^int i ^int j]

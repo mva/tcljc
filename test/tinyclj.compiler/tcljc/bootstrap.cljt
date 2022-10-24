@@ -10,7 +10,8 @@
    [tcljc.context :as ctx]
    [tcljc.emitter :as em]
    [tcljc.predefined :as predefined]
-   [tinyclj.alpha.ptest :as ptest]      ;for get-test-context & is
+   [tinyclj.alpha.ptest :as ptest]             ;for is
+   [tinyclj.alpha.ptest__impl :as ptest__impl] ;for get-test-context
    [tcljc.classdata :as classdata])
   (:import
    (tcljc.expr MacroRef FnMacroFn)
@@ -212,7 +213,7 @@
 ;;; ------------------------------------------------------------------------
 
 (defn- dest-dir-of-test ^Path []
-  (let [ctx (ptest/get-test-context)]
+  (let [ctx (ptest__impl/get-test-context)]
     (cfg/dest-dir (str "tcljc.test" "/"
                        (name (.namespace ctx)) "/"
                        (name (.name ctx))))))

@@ -227,7 +227,7 @@
          (instance? IMeta form)
          (doc-imeta-form form)
          
-         (instance? Map$Entry form)     ;FIXME... use dgroup instead?
+         (instance? Map$Entry form)
          (pair (doc (key form)) (doc (val form)))
 
          :else
@@ -364,9 +364,9 @@
              (let [ ;; first, append `doc` as usual
                    lines-0 (.size acc)
                    wl (format width-left reserve ctx doc)
-                   ;; second, render `pad` into temporary buffers;
-                   ;; FIXME... wasteful: the eventual content of the
-                   ;; buffers is not used, only their size
+                   ;; second, render `pad` into temporary buffers
+                   ;; (this is wasteful: the eventual content of the
+                   ;; buffers is not used, only their size)
                    acc-p (ArrayList.)
                    sb-p (StringBuilder.)
                    wl-p (pretty1* acc-p sb-p page-width
