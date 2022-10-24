@@ -1,5 +1,6 @@
 (ns tcljc.reader
-  (:require [tcljc.synquote :as sq]
+  (:require [tcljc.config :as cfg]
+            [tcljc.synquote :as sq]
             [tinyclj.string :as str])
   (:import (clojure.lang Symbol Keyword Cons ISeq IPersistentMap IMeta)
            (java.net URL)
@@ -449,8 +450,6 @@
       (wrong c "octal escape sequence must be in range [0, 377]"))
     uc))
 
-(def this-namespace-key "")
-
 (defn- read-token [^Cursor c ^int tk ^IPersistentMap ns-alias]
   (letfn [(parse-dispatch-token [^String s] ;pre: looking at "#..."
             (case (.charAt s 1)
@@ -474,7 +473,7 @@
               (if (.startsWith s ":")
                 (if (.startsWith s "::")
                   (let [ks (Symbol/intern (.substring s 2))
-                        lookup-key (or (namespace ks) this-namespace-key)]
+                        lookup-key (or (namespace ks) cfg/this-namespace-key)]
                     (when-some [nstr (get ns-alias lookup-key)]
                       (Keyword/intern nstr (name ks))))
                   (-> (.substring s 1)

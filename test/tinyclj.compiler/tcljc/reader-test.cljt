@@ -1,5 +1,6 @@
 (ns tcljc.reader-test
-  (:require [tcljc.synquote :as sq]
+  (:require [tcljc.config :as cfg]
+            [tcljc.synquote :as sq]
             [tcljc.reader :as rd]
             [tinyclj.string :as str]
             [tinyclj.alpha.ptest :refer :all])
@@ -223,7 +224,7 @@
   (is (= :nil/nil (read1 ":nil/nil"))))
 
 (deftest keyword-auto-resolving-test
-  (let [ns-alias {rd/this-namespace-key "this-namespace"
+  (let [ns-alias {cfg/this-namespace-key "this-namespace"
                   "alias" "aliased-namespace"
                   "known-namespace" "known-namespace"}]
     (is (= [:this-namespace/bar]
