@@ -177,10 +177,11 @@
 (def > tinyclj.lang.primitive/gt-nary)
 (def <= tinyclj.lang.primitive/le-nary)
 
-;;; FIXME... single dimension getters/setters only
 (def alength tinyclj.lang.primitive/alength)
-(defmacro aget [& args] (cons 'tinyclj.lang.primitive/xaload args))
-(defmacro aset [& args] (cons 'tinyclj.lang.primitive/xastore args))
+(defmacro aget [array idx]              ;single dimension getter only
+  (list 'tinyclj.lang.primitive/xaload array idx))
+(defmacro aset [array idx val]          ;single dimension setter only
+  (list 'tinyclj.lang.primitive/xastore array idx val))
 
 ;;; ------------------------------------------------------------------------
 
