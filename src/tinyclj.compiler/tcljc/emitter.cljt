@@ -151,9 +151,9 @@
   (ClassDesc/of (-> segm .ctx .ns-str) ns-class-name))
 
 (defn with-force-clinit ^ClassBuilder [^ClassBuilder cb]
-  ;; static method with zero parameters, cannot clash with a
-  ;; regular function's method name because of the suffix "~1";
-  ;; FIXME... drop this and use requires~1 instead?
+  ;; Static method with zero parameters, cannot clash with a regular
+  ;; function's method name because of the suffix "~1".  Note: Could
+  ;; also use requires~1 instead and drop its result.
   (.withMethodBody cb rt/name-force-clinit rt/mtd-void-void
                    (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
                            Classfile/ACC_FINAL)

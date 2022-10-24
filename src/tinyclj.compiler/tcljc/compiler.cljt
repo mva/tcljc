@@ -1318,11 +1318,7 @@
            (and (= (.charAt s (- len 1)) \.)
                 (>= len 2) (not (= (.charAt s (- len 2)) \.)))))
        (compile-dotted-symbol ^Expr [^Symbol x [_ inst & formr :as form]]
-         ;; Returns nil on mismatch.  FIXME... Clojure 1.8.0 (and
-         ;; probably later ones as well) produces a ClassCastException
-         ;; for "(let [Integer 123] (.toString Integer))" as well as
-         ;; "java.lang.integer" -- while a lower-case "integer" works
-         ;; fine.
+         ;; Returns nil on mismatch.
          (let [nm (name x)]
            (cond
              (starts-with-dot? nm)
@@ -1457,9 +1453,6 @@
   (-> (.assemble boolean-primitive form argv tl-ctx) ;also checks argc
       (xf/icmp x/expr-false cf/eq)))
 
-;;; FIXME... for a single argument of reference type, this can be
-;;; reduced to (Objects/toString arg "") -- which may also be a good
-;;; alternative to null-to-empty-string
 (defn ^FnPrimitiveFn concat-primitive [form argv tl-ctx] ;aka `str`
   (letfn [(string-or-expr [^Expr x]
             (cond

@@ -211,10 +211,6 @@
             (cf/invoke xb mhd))
           (invoke-arity-va ^void [^CodeBuilder xb ^InvokeArity x ^IEmitPlan ep
                                   ^Arity at ^DirectMethodHandleDesc mhd]
-            ;; FIXME... is it possible to obtain the polymorphic mtd
-            ;; by combining the invocation type of mhd with the type
-            ;; from the suffix of argv?  in this case .arity-env()
-            ;; does not have to return any types
             (.constantInstruction xb mhd)
             (let [atypes (if (.invoke-arity-with-self? ep)
                            (do (exprv-insns xb (x/argv x))

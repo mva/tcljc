@@ -173,10 +173,11 @@
   (let [cl ^Class (first tps)]
     (if (or (nil? cl) (jb/array? cl) (jb/primitive? cl) (jb/interface? cl))
       [(rt/no-args-constructor rt/object) tps]
-      ;; FIXME... maybe check for constructor first? (can only
-      ;; unreflect if it is public or protected; for example,
+      ;; Right now, this does not check whether a constructor with
+      ;; this signature exists.  This check is complicated by the fact
+      ;; that the constructor does not to be public.  For example,
       ;; PrintWriter-on in core_print.cljt uses the protected
-      ;; constructor of Writer)
+      ;; constructor of Writer.
       [(->> (filter pass-to-super? field-sig)
             (map #(sig/tag-of % false jb/Object tl-ctx))
             (rt/fixed-args-constructor cl))
