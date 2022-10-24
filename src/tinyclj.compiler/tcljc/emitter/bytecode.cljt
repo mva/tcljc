@@ -153,7 +153,7 @@
             ;; empty instruction sequence, but `b` itself cannot be
             ;; treated as a regular empty instruction.
             (let [bref (.bref b)
-                  init-x (x/nth-arg x 0 nil)]
+                  init-x (x/first-arg x)]
               (case (x/b-kind bref)
                 #_b-def 2r00000
                 (when-not (x/alias-ref? bref)
@@ -243,7 +243,7 @@
               (cf/invoke xb k (.owner x) (.method-name x)
                          (.lookup-descriptor x) (.owner-interface? x))))
           (setter ^CodeBuilder [^CodeBuilder xb ^Setter x]
-            (let [v (x/nth-arg x 0)]
+            (let [v (x/first-arg x)]
               (cond
                 (x/invoke-xref? v)
                 (-> (exprv-insns xb (x/argv v)) ;getter argument, if any
@@ -324,7 +324,7 @@
                   (let [dtarget (peek labelv)
                         n (count labelv)
                         end-switch (.newLabel xb)]
-                    (expr-insns xb es (x/nth-arg x 0))
+                    (expr-insns xb es (x/first-arg x))
                     (if (cf/table-switch? lo hi (count sc-list))
                       (.tableSwitchInstruction xb lo hi dtarget sc-list)
                       (.lookupSwitchInstruction xb dtarget sc-list))
@@ -355,7 +355,7 @@
 
           (try-catch* ^boolean [^CodeBuilder xb ^TryCatchFinally x
                                 ^Label start-body ^Label f-label]
-            (let [body-expr (x/nth-arg x 0)
+            (let [body-expr (x/first-arg x)
                   handlerv (.handlerv x)
                   n (count handlerv)
                   c-labelv (vec (repeatedly n #(.newLabel xb)))
@@ -403,7 +403,7 @@
           (loop-body-insn ^CodeBuilder [^CodeBuilder xb ^LoopBody x]
             (let [es' (with-recur-target es (.newLabel xb))]
               (-> (.labelBinding xb (.recur-target es'))
-                  (expr-insns es' (x/nth-arg x 0)))))
+                  (expr-insns es' (x/first-arg x)))))
           (recur-store-insns ^CodeBuilder [^CodeBuilder xb bv argv]
             (letfn [(recur-store [^Binding b ^Expr x]
                       (let [rc (int-expr-counts (.bref b) x)]
@@ -493,7 +493,7 @@
           NewArray
           (new-array-insn xb ^NewArray x)
           VarRef
-          (cf/ld-insn xb (x/deref-load ^BindingRef (x/nth-arg x 0)))
+          (cf/ld-insn xb (x/deref-load ^BindingRef (x/first-arg x)))
           Switch
           (switch-insn xb ^Switch x)
           TryCatchFinally
@@ -501,7 +501,7 @@
           Setter
           (setter xb ^Setter x)
           AssignDef
-          (-> (expr-insns xb es (x/nth-arg x 0))
+          (-> (expr-insns xb es (x/first-arg x))
               (cf/st-insn (-> ^AssignDef x .bref (x/deref-load)) false))
           #_else (throw (IllegalArgumentException. (str (class x)))))))))
 
@@ -602,7 +602,7 @@
                   flags (bit-or (static-flags bref) Classfile/ACC_FINAL)]
               (.withMethod cb mnm mtd flags mbh)))]
 
-    (let [init-x (x/nth-arg b 0 nil)
+    (let [init-x (x/first-arg b)
           bref (.bref b)]
       (if (x/alias-ref? bref)
         (alias-field! ^AliasRef bref)

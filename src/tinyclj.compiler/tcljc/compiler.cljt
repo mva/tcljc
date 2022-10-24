@@ -759,7 +759,7 @@
            (ensure-distinct-fn-names fnv)
            (into [] (map destructure-to-fn*) fnv)))
        (invoke-patch-fn ^Expr [^Binding b]
-         (FnPatch. nil jb/void [] nil ^FnForm (x/nth-arg b 0) (.bref b)))
+         (FnPatch. nil jb/void [] nil ^FnForm (x/first-arg b) (.bref b)))
        (letfn*-form [[_ fnv & body :as form]]
          (let [fn-formv (mapv (fn ^FnForm [form]
                                 (let [level (level-fn-form env)
@@ -772,7 +772,7 @@
                             fn-formv)
                env (add-locals env bexprv)
                bexprv (mapv (fn ^Binding [^Binding b]
-                              (let [fn-form ^FnForm (x/nth-arg b 0)
+                              (let [fn-form ^FnForm (x/first-arg b)
                                     fn-form' (parse-arity-bodies fn-form env)]
                                 (x/local-binding (.bref b) fn-form')))
                             bexprv)

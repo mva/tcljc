@@ -123,12 +123,10 @@
 
 (defn arg-count ^int [^Expr x]
   (count (argv x)))
-;;; FIXME... introduce shortcuts arg-0 and maybe arg-m1
-(defn nth-arg
-  (^Expr [^Expr x ^int i]
-   (nth-arg x i nil))
-  (^Expr [^Expr x ^int i ^Expr not-found]
-   (nth (argv x) i not-found)))
+(defn nth-arg ^Expr [^Expr x ^int i]
+  (nth (argv x) i nil))
+(defn first-arg ^Expr [^Expr x]
+  (nth-arg x 0))
 
 (defn vararg-array-compatible? ^boolean [^Class parameter-type ^Expr arg]
   (.isAssignableFrom parameter-type (type arg)))

@@ -62,7 +62,7 @@
               (if (x/alias-ref? bref)
                 (x/deref-load (.alias-for ^AliasRef bref))
                 (let [mnm (x/mnm bref)
-                      init-x (x/nth-arg b 0 nil)
+                      init-x (x/first-arg b)
                       member-tp (rt/cd-of (member-type bref init-x))]
                   (if (static-field? bref init-x)
                     (cf/ld-st-static segm-cld mnm member-tp)
@@ -96,7 +96,7 @@
                                      ^ArityCode ac
                                      ^FnSpec fspec]
   (let [at (.at ac)
-        body-expr (x/nth-arg ^LoopBody (.body-expr ac) 0)]
+        body-expr (x/first-arg ^LoopBody (.body-expr ac))]
     
     (letfn [(arity-static* ^ArityCode [^DirectMethodHandleDesc load-mh-ext]
               (if (and (x/invoke-xref-not-special? body-expr)
@@ -462,7 +462,7 @@
     (cond
       (instance? InvokeArity x)
       (let [inv ^InvokeArity x
-            arg-fn (x/nth-arg x 0)]
+            arg-fn (x/first-arg x)]
         (when (x/fn-form? arg-fn)
           (process-fn-form ^FnForm arg-fn))
         (when (and (inside-arity?) (not (known-fn-value? (.fn-form inv))))
@@ -477,7 +477,7 @@
             
       (and (instance? Binding x)
            (= (x/b-kind (.bref ^Binding x)) x/b-let))
-      (let [arg-init (x/nth-arg x 0)]   ;let binding always has init
+      (let [arg-init (x/first-arg x)]   ;let binding always has init
         (if (x/fn-form? arg-init)
           (process-fn-form ^FnForm arg-init)
           (when (nil? (x/root-fn-form arg-init))

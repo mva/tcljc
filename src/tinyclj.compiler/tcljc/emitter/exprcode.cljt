@@ -86,7 +86,7 @@
                     (x/returns? (aget a i)) (x/type x)
                     :else (recur (dec i)))))
           (trace-split-join ^Expr [^SplitJoin x]
-            (let [branch (-> ^Branch (x/nth-arg x 0)
+            (let [branch (-> ^Branch (x/first-arg x)
                              (boolean-identities)
                              (trace-instruction x/adpt-identity))]
               (if (x/returns? branch)
@@ -98,7 +98,7 @@
                     (x/with-code x (returning-type x a 1 0) (vec a))))
                 branch)))
           (trace-switch ^Expr [^Switch x]
-            (let [test (trace-instruction (x/nth-arg x 0) x/adpt-identity)]
+            (let [test (trace-instruction (x/first-arg x) x/adpt-identity)]
               (if (x/returns? test)
                 (let [adpt-paths (.after adpt-res (.adpt-paths x))
                       a (doto (trace-paths x 1 0 adpt-paths)
@@ -121,7 +121,7 @@
                     (x/with-code x x/no-return (vec a)))))))
           (trace-loop-body ^Expr [^LoopBody x]
             (let [adpt-paths (.after adpt-res (.adpt-paths x))
-                  body (trace-flow (x/nth-arg x 0) adpt-paths)]
+                  body (trace-flow (x/first-arg x) adpt-paths)]
               (x/with-code x (x/type body) [body])))
           (trace-branching ^Expr [^Expr x]
             (condp instance? x
