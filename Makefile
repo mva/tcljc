@@ -1,4 +1,7 @@
-JAVA_BIN=~/local/jdk-classfile/bin/
+JAVA_HOME ?= ~/local/jdk-classfile
+BOOTSTRAP_TCLJ_MDIR ?= ../jvm-stuff/bootstrap-tclj
+
+JAVA_BIN=$(if $(JAVA_HOME),$(JAVA_HOME)/bin/,)
 JAVA=$(JAVA_BIN)java
 JAVAC=$(JAVA_BIN)javac
 JAVAP=$(JAVA_BIN)javap
@@ -12,10 +15,7 @@ JAVA_OPTS=--enable-preview --add-modules jdk.incubator.concurrent \
 #JAVA_OPTS += -Djdk.tracePinnedThreads
 
 #DET=--deterministic
-#BOOTSTRAP_TCLJ_MDIR=../bootstrap-tcljc
-#BOOTSTRAP_TCLJ_MAIN=tcljc.main.__ns
-BOOTSTRAP_TCLJ_MDIR=../jvm-stuff/bootstrap-tclj
-BOOTSTRAP_TCLJ_MAIN=tinyclj.build.main.__ns
+BOOTSTRAP_TCLJ_MAIN=$(if $(findstring /bootstrap-tcljc,$(BOOTSTRAP_TCLJ_MDIR)),tcljc.main.__ns,tinyclj.build.main.__ns)
 BOOTSTRAP_TCLJ_MOD_RT=$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.rt
 BOOTSTRAP_TCLJ=$(JAVA) --class-path $(BOOTSTRAP_TCLJ_MOD_RT):$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.core:$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.compiler $(JAVA_OPTS) $(BOOTSTRAP_TCLJ_MAIN) $(DET) --parent-loader :platform
 
@@ -90,12 +90,12 @@ $(DEST_DIR).stageZero/DONE: $(wildcard $(BOOTSTRAP_TCLJ_MDIR)/commit-id.txt src/
 
 # DI1: Build "tcljc" using the initial compiler from PREV_DEST_DIR
 # (aka the first prerequisite's $< directory).  The initial compiler
-# needs BOOTSTRAP_TCLJ_MDIR's tinyclj-rt & -core jars to run, but the
-# compiled application makes use of TCLJC_MOD_RT.
+# needs BOOTSTRAP_TCLJ_MDIR's tinyclj-rt jar to run, but the compiled
+# application makes use of TCLJC_MOD_RT.
 $(DEST_DIR).stageDI1/DONE: $(DEST_DIR).stageZero/DONE $(TCLJC_MOD_RT)
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(TIME_JAVA) -cp $(BOOTSTRAP_TCLJ_MDIR)/tinyclj.rt:$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.core:$(dir $<) $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns --deterministic --parent-loader :platform -d "$(dir $@)" -s $(TCLJC_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
+	$(TIME_JAVA) -cp $(BOOTSTRAP_TCLJ_MDIR)/tinyclj.rt:$(dir $<) $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns --deterministic --parent-loader :platform -d "$(dir $@)" -s $(TCLJC_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
 	touch "$@"
 
 # DI2: Build "tcljc" using the DI1 compiler from PREV_DEST_DIR (aka
