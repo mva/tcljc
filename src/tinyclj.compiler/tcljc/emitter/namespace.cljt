@@ -10,7 +10,7 @@
    [tcljc.config :as cfg]
    [tcljc.wrong :as wrong]
    [tcljc.grammar :as grammar]
-   [tcljc.reader :as rd]
+   tcljc.reader
    [tcljc.context :as ctx]
    [tcljc.expr :as x]
    [tcljc.exprfold :as xf]
@@ -260,8 +260,8 @@
               (do (compiler/top-level-form form (.ctx nmsp))
                   nmsp))))
         (top-level-file ^Namespace [^Namespace nmsp ^Path rpath ^URL rurl]
-          (let [rdr (.forms-reader (.env nmsp) rurl)]
-            (try
+          (try
+            (let [rdr (.forms-reader (.env nmsp) rurl)]
               (loop [nmsp (with-rpath nmsp rpath)]
                 (let [ns-alias (.get-ns-alias-map (.ctx nmsp))
                       form (.read-1 rdr ns-alias ::eof)]
@@ -271,9 +271,9 @@
                                  (wrong/with-list-context form
                                    (top-level-list-form nmsp rpath form)))
                     :else (do (compiler/top-level-form form (.ctx nmsp))
-                              (recur nmsp)))))
-              (catch ExceptionInfo e
-                (throw (wrong/assoc-if-new e :file/resource-url rurl))))))]
+                              (recur nmsp))))))
+            (catch ExceptionInfo e
+              (throw (wrong/assoc-if-new e :file/resource-url rurl)))))]
   
   (defn compile-thread [^IBuildEnv env ^IPersistentMap provided-nmsp ^Ctx ctx]
     (ctx/push-nmsp-context (.lookup-in-pkg ctx) (.ns-str ctx))
