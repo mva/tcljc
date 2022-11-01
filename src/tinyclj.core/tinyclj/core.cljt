@@ -37,7 +37,8 @@
    :macro-value __list
    :added "1.0"}
  list (fn* list [&form &env & items]
-           (cons 'tinyclj.lang.primitive/list items)))
+           (.withMeta ^clojure.lang.IObj (cons 'tinyclj.lang.primitive/list items)
+            {:tag 'java.lang.Object})))
 
 ;during bootstrap we don't have destructuring let, loop or fn, will redefine later
 (def
@@ -469,7 +470,7 @@
    :added "1.0"}
  defmacro (fn [&form &env 
                 name & args]
-             (let [prefix (loop [p (list (add-meta name :macro Boolean/TRUE)) args args]
+             (let [prefix (loop [p ^clojure.lang.ISeq (list (add-meta name :macro Boolean/TRUE)) args args]
                             (let [f (first args)]
                               (if (string? f)
                                 (recur (cons f p) (next args))

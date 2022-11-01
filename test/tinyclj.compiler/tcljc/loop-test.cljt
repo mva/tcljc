@@ -341,9 +341,9 @@
              (ISUB)
              (ISTORE_1)
              ["LOCAL 1: int i"]
-             (LDC [:bsm-quote "list" "Lclojure/lang/ISeq;" []])
+             (LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;" []])
              (ASTORE_2)
-             ["LOCAL 2: ISeq ret"]
+             ["LOCAL 2: IPersistentList ret"]
              [L:0]
              (ILOAD_1)
              (IFLT L:1)
@@ -351,8 +351,9 @@
              (ALOAD_0)
              (ILOAD_1)
              (AALOAD)
-             (INVOKEINTERFACE ISeq "cons"
-                              "(Ljava/lang/Object;)Lclojure/lang/ISeq;" :itf)
+             (INVOKEINTERFACE IPersistentList "cons"
+                              "(Ljava/lang/Object;)Lclojure/lang/IPersistentCollection;" :itf)
+             (CHECKCAST IPersistentList)
              (ASTORE_2)
              (IINC 1 -1)
              (GOTO L:0)

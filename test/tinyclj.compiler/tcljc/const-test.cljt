@@ -111,7 +111,7 @@
           [(LDC [:bsm-quote "set" "Lclojure/lang/IPersistentSet;" []])
            (ARETURN)])
   (is-asm ()
-          [(LDC [:bsm-quote "list" "Lclojure/lang/ISeq;" []])
+          [(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;" []])
            (ARETURN)]))
 
 (deftest collection-value-test
@@ -122,11 +122,12 @@
 
 (deftest primitive-list-test
   ;; (tinyclj.lang.primitive/list) is another way to write ()
-  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/ISeq;" []])
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;" []])
            (ARETURN)]
          (asm-expr (tinyclj.lang.primitive/list))))
   ;; (tinyclj.lang.primitive/list "foo") is list equivalent of ["foo"]
-  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/ISeq;" ["foo"]]) (ARETURN)]
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;" ["foo"]])
+           (ARETURN)]
          (asm-expr (tinyclj.lang.primitive/list "foo")))))
 
 (deftest constant-pool-literal-test

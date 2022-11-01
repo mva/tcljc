@@ -56,19 +56,19 @@ public final class Literal {
     }
   }
 
-  public static ISeq list(Object... init) {
+  public static IPersistentList list(Object... init) {
     if (init.length == 0) {
       return PersistentList.EMPTY;
     } else {
-      return (ISeq)PersistentList.create(java.util.Arrays.asList(init));
+      return PersistentList.create(java.util.Arrays.asList(init));
     }
   }
 
-  public static ISeq listOfList(List init) { // called from reader
+  public static IPersistentList listOfList(List init) { // called from reader
     if (init.size() == 0) {
       return PersistentList.EMPTY;
     } else {
-      return (ISeq)PersistentList.create(init);
+      return PersistentList.create(init);
     }
   }
 

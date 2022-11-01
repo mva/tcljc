@@ -392,12 +392,12 @@
   (is (= '[["LOCAL 0: Object x"]
            (ALOAD_0)
            (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)I" :bsm-clause-code
-                          [[:bsm-quote "list" "Lclojure/lang/ISeq;"
+                          [[:bsm-quote "list" "Lclojure/lang/IPersistentList;"
                             [[:bsm-quote "keyword" "Lclojure/lang/Keyword;"
                               ["a"]]
                              [:bsm-quote "keyword" "Lclojure/lang/Keyword;"
                               ["A"]]]]
-                           [:bsm-quote "list" "Lclojure/lang/ISeq;"
+                           [:bsm-quote "list" "Lclojure/lang/IPersistentList;"
                             [[:bsm-quote "keyword" "Lclojure/lang/Keyword;"
                               ["b"]]
                              [:bsm-quote "keyword" "Lclojure/lang/Keyword;"
@@ -417,8 +417,10 @@
            (DLOAD_0)
            (INVOKESTATIC Double "valueOf" "(D)Ljava/lang/Double;")
            (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)I" :bsm-clause-code
-                          [[:bsm-quote "list" "Lclojure/lang/ISeq;" [1.0 10.0]]
-                           [:bsm-quote "list" "Lclojure/lang/ISeq;" [-1.0 -10.0]]])
+                          [[:bsm-quote "list" "Lclojure/lang/IPersistentList;"
+                            [1.0 10.0]]
+                           [:bsm-quote "list" "Lclojure/lang/IPersistentList;"
+                            [-1.0 -10.0]]])
            (LOOKUPSWITCH L:2 [0 1] [L:0 L:1])
            [L:0] (ICONST_1) (IRETURN)
            [L:1] (ICONST_M1) (IRETURN)

@@ -67,7 +67,7 @@
 
 
 (deftest list-test
-  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/ISeq;" [1 2]])
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;" [1 2]])
            (ARETURN)]
          (asm-expr '(1 2)))))
 

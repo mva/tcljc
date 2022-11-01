@@ -229,7 +229,7 @@
             [(METHOD [PUBLIC STATIC FINAL VARARGS] "list~1" "([Ljava/lang/Object;)Ljava/lang/Object;")
              ["LOCAL 0: Object[] items"]
              (ALOAD_0)
-             (INVOKESTATIC Literal "list" "([Ljava/lang/Object;)Lclojure/lang/ISeq;")
+             (INVOKESTATIC Literal "list" "([Ljava/lang/Object;)Lclojure/lang/IPersistentList;")
              (ARETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "__nil-pred" "()Ltinyclj/lang/StaticFnMh;")

@@ -18,7 +18,7 @@
 (deftype Options [^Path dest-dir  ;nil means "don't store class files"
                   ^Keyword parent-classloader
                   ^IPersistentVector sourcev ;of Path
-                  ^ISeq targets
+                  targets
 
                   ^boolean deterministic?
                   ^long wait-cyclic-ms

@@ -966,7 +966,7 @@
             [(METHOD [PUBLIC STATIC FINAL] "deftype~2" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
              ["LOCAL 0: Object &form"]
              ["LOCAL 1: Object &env"]
-             (LDC [:bsm-quote "list" "Lclojure/lang/ISeq;"
+             (LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;"
                    [[:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["deftype*"]]
                     [:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["pkg.ns0" "T"]]
                     [:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["pkg.ns0.T"]]

@@ -96,8 +96,8 @@
 (def clnm-vector "clojure.lang.IPersistentVector")
 (def clnm-map "clojure.lang.IPersistentMap")
 (def clnm-set "clojure.lang.IPersistentSet")
+(def clnm-list "clojure.lang.IPersistentList")
 (def clnm-seq "clojure.lang.ISeq")
-(def clnm-list clnm-seq)
 (def clnm-iobj "clojure.lang.IObj")
 
 (def symbol (ClassDesc/of clnm-symbol))
@@ -105,8 +105,8 @@
 (def ^:private vector (ClassDesc/of clnm-vector))
 (def map (ClassDesc/of clnm-map))
 (def ^:private set (ClassDesc/of clnm-set))
+(def ^:private list (ClassDesc/of clnm-list))
 (def ^:private seq (ClassDesc/of clnm-seq))
-(def ^:private list seq)
 (def pattern (ClassDesc/of "java.util.regex.Pattern"))
 (def iobj (ClassDesc/of clnm-iobj))
 
@@ -216,7 +216,7 @@
 (def mhd-vector (mhd-static [Literal "vector"] vector [objects]))
 (def mhd-map (mhd-static [Literal "map"] map [objects]))
 (def mhd-set (mhd-static [Literal "set"] set [objects]))
-(def mhd-list (mhd-static [Literal "list"] seq [objects]))
+(def mhd-list (mhd-static [Literal "list"] list [objects]))
 
 ;;; compilation/runtime interaction:
 (def mhd-apply (mhd-static [RT "apply"] object [IFn object]))

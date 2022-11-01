@@ -61,8 +61,8 @@
 (deftest collection-const
   #_(is (= '[(LDC "(1 2 3)") (ARETURN)]
            (asm-expr (str '(1 2 3)))))
-  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/ISeq;" [1 2 3]])
-           (INVOKEDYNAMIC "_" "(Lclojure/lang/ISeq;)Ljava/lang/String;"
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;" [1 2 3]])
+           (INVOKEDYNAMIC "_" "(Lclojure/lang/IPersistentList;)Ljava/lang/String;"
                           :bsm-concat ["\\u0001"])
            (ARETURN)]
          (asm-expr (str '(1 2 3)))))
