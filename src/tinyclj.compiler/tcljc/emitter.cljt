@@ -406,8 +406,10 @@
                       (write-and-define (build-deftype dtdef) promise))))
               
               ctx/req-flush-namespace-segment
-              (do (.complete promise (x/invoke-force-clinit (.segm-cld segm)))
-                  (write-segment segm true))
+              (let [cl (write-segment segm true)]
+                ;; segment class `cl` exists and can now be looked up
+                (.complete promise (x/invoke-force-clinit (.segm-cld segm)))
+                cl)
               
               ctx/msg-fatal-error
               (throw ^Throwable x)
