@@ -158,7 +158,7 @@ public Object reduce(IFn f, Object start) {
 }
 
 
-    public static class EmptyList extends Obj implements IPersistentList, List, ISeq, Counted, IHashEq{
+    static class EmptyList extends Obj implements IPersistentList, List, ISeq, Counted, IHashEq{
 	static final int hasheq = Murmur3.hashOrdered(Collections.EMPTY_LIST);
 
 	public int hashCode(){
