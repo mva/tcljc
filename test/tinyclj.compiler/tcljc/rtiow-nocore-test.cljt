@@ -18,9 +18,7 @@
   (:import
    (tcljc.context FnRequireNamespace)))
 
-(def ^:private app-paths
-  [#_(cfg/path-of "../jvm-stuff/bootstrap-tclj/tinyclj.rt")
-   (cfg/path-of "test/tinyclj.compiler")])
+
 
 (defn- ^FnRequireNamespace noop-require-namespace [ns-str provided-nmsp]
   nil)
@@ -33,8 +31,11 @@
     {"*ns*" bref}))
 
 (deftest compile-rtiow-nocore-test
-  (let [app-ld (cfg/app-class-loader :system app-paths)
+  (let [app-paths [(cfg/path-of (str (cfg/dest-dir) ".mdir") "tinyclj-rt.jar")
+                   (cfg/path-of "test/tinyclj.compiler")]
+        app-ld (cfg/app-class-loader :platform app-paths)
         rt-lookup (cfg/get-rt-lookup app-ld)
+        
         dyn-ld (cfg/dyn-class-loader app-ld [])
         dest-dir (cfg/dest-dir "tcljc.rtiow-nocore")
         env (em/mk-build-env app-ld dest-dir dyn-ld {})
