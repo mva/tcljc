@@ -152,3 +152,48 @@
            (IRETURN)]
          (asm-expr ^boolean [^Class cl]
                    (instanceof* cl nil)))))
+
+(deftest instanceof-clojure-classes
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INSTANCEOF IPersistentVector)
+           (IRETURN)]
+         (asm-expr ^boolean [^Object x]
+                   (instanceof* vector x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INSTANCEOF IPersistentMap)
+           (IRETURN)]
+         (asm-expr ^boolean [^Object x]
+                   (instanceof* map x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INSTANCEOF IPersistentSet)
+           (IRETURN)]
+         (asm-expr ^boolean [^Object x]
+                   (instanceof* set x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INSTANCEOF IPersistentList)
+           (IRETURN)]
+         (asm-expr ^boolean [^Object x]
+                   (instanceof* list x))))
+  
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INSTANCEOF ISeq)
+           (IRETURN)]
+         (asm-expr ^boolean [^Object x]
+                   (instanceof* seq x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INSTANCEOF Symbol)
+           (IRETURN)]
+         (asm-expr ^boolean [^Object x]
+                   (instanceof* symbol x))))
+  (is (= '[["LOCAL 0: Object x"]
+           (ALOAD_0)
+           (INSTANCEOF Keyword)
+           (IRETURN)]
+         (asm-expr ^boolean [^Object x]
+                   (instanceof* keyword x)))))

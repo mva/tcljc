@@ -269,8 +269,19 @@
         emit-q (ArrayBlockingQueue. capacity-q)
         next-id-mh (resolve-mh rt-lookup rt/mhd-nextID)
         apply-mh (get-apply-mh rt-lookup)
-        private-names (ConcurrentHashMap.)]
-    (Ctx. known-ns ns-alias initial-globals jb/initial-imports
+        private-names (ConcurrentHashMap.)
+        initial-imports (reduce-kv (fn [acc nm-sym clnm]
+                                     (let [cl (.findClass rt-lookup clnm) ]
+                                       (assoc acc nm-sym cl)))
+                                   jb/jvm-imports
+                                   {'symbol rt/clnm-symbol
+                                    'keyword rt/clnm-keyword
+                                    'vector rt/clnm-vector
+                                    'map rt/clnm-map
+                                    'set rt/clnm-set
+                                    'list rt/clnm-list
+                                    'seq rt/clnm-seq})]
+    (Ctx. known-ns ns-alias initial-globals initial-imports
           ns-str rpath rurl lookup-in-pkg require-namespace
           private-names binding-frame emit-q next-id-mh apply-mh
           arity-task-scope false 0 0)))

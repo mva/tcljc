@@ -149,7 +149,7 @@
 ;;   (let [s (.getName cl)]
 ;;     (symbol nil s)))
 
-(def initial-imports
+(def jvm-imports
   (let [m (java.util.HashMap.)]
     ;; by default, import certain java.lang.* classes using their
     ;; short name; references using the long name are resolved on
