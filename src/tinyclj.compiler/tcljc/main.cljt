@@ -12,6 +12,7 @@
             [tcljc.main.tclj0 :as tclj0]
             [tcljc.main.tclj1 :as tclj1])
   (:import (tcljc.main.options Options)
+           (java.util Optional)
            (java.util.function Consumer)))
 
 (defn print-exception-info [^clojure.lang.ExceptionInfo e]
@@ -48,10 +49,12 @@
             (shutdown-agents))) ;can only shut down when owning the JVM
         (coded-exit))))           ;can only exit when owning the JVM
 
-;;; The value of the namespace var to which `var-name` resolves is
-;;; provided to the consumer handle after every successful
-;;; compilation.
-(defn watch-compile-provide             ;does not return normally
+;;; Start watch/compile/report loop.  After each build attempt,
+;;; `value-consumer` is called with an argument of type Optional.  On
+;;; success it holds the value of the namespace var to which
+;;; `var-name` resolves.  On failure it is empty.  This function never
+;;; returns normally.
+(defn start
   ^void [^String dest-dir               ;nil means default directory
          ^clojure.lang.IPersistentVector sourcev
          ^clojure.lang.Symbol var-name  ;namespace qualified
@@ -70,8 +73,12 @@
                        5000                  ;wait-cyclic-ms
                        true                  ;watch-mode?
                        20)                   ;wait-after-change-ms
-        on-success (^Consumer fn [nmsp-map]
-                    (.accept value-consumer
-                             (-> (invoke/namespace-of nmsp-map var-name)
-                                 (invoke/var-value var-name))))]
-    (tclj1/run opts on-success)))
+        on-completion (^Consumer fn [opt-nmsp-map]
+                       (.accept value-consumer
+                                (if (.isEmpty ^Optional opt-nmsp-map)
+                                  (Optional/empty)
+                                  (let [nmsp-map (.get ^Optional opt-nmsp-map)]
+                                    (-> (invoke/namespace-of nmsp-map var-name)
+                                        (invoke/var-value var-name)
+                                        (Optional/of))))))]
+    (tclj1/run opts on-completion)))

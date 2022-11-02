@@ -18,6 +18,7 @@
   (:import
    (tcljc.main.options Options)
    (clojure.lang IPersistentMap ExceptionInfo)
+   (java.util Optional)
    (java.util.function Consumer)))
 
 ;;; Transitively remove all namespaces from `dep-map` for which
@@ -47,22 +48,31 @@
 ;; Returns the dependency map of all completed(!) namespaces.  On
 ;; return, there is no class file output from namespaces that were not
 ;; compiled successfully.
-(defn build-pass ^IPersistentMap [^Options opts ^Consumer on-success
+(defn build-pass ^IPersistentMap [^Options opts ^Consumer on-completion
                                   ^IPersistentMap prior-completed-map]
-  (letfn [(try-build ^IPersistentMap []
-            (let [nmsp-map (time (tclj0/build-all opts true))
-                  dep-map (em/dependency-map nmsp-map)]
+  (letfn [(report-success ^IPersistentMap [^IPersistentMap nmsp-map]
+            ;; returns `dep-map` or throws an ExceptionInfo with
+            ;; embedded `dep-map`
+            (let [dep-map (em/dependency-map nmsp-map)]
               (try
-                (.accept on-success nmsp-map) ;requires nmsp-map, not dep-map
+                (.accept on-completion (Optional/of nmsp-map)) ;not dep-map!
                 dep-map
                 (catch Throwable t
                   (throw (wrong/assoc-dep-map t dep-map))))))
+          (report-failure ^void []
+            (.accept on-completion (Optional/empty)))
           (try-build-and-report ^IPersistentMap []
             (try
-              (try-build)
+              (-> (tclj0/build-all opts true)
+                  (time)
+                  (report-success))
               (catch ExceptionInfo e
+                (report-failure)
                 (efmt/print-emap e)
                 (:emitter/namespaces (ex-data e)))
+              (catch Throwable t
+                (report-failure)
+                (throw t))
               (finally                 ;use finally to preserve result
                 (println))))
           (keep-across-import [prior build]
@@ -75,25 +85,25 @@
       (-> (merge-with keep-across-import prior-completed-map dep-map)
           (drop-bad-namespaces! opts em/completed-namespace?)))))
 
-(defn- mk-invoke-targets ^Consumer [^Options opts]
-  (^Consumer fn [nmsp-map]
-   (let [resultv (invoke/invoke-until-failure nmsp-map opts true)]
-     (println (invoke/completion-report opts resultv)))))
-
 (defn run
   (^boolean [^Options opts]
-   (run opts (mk-invoke-targets opts)))
-  (^boolean [^Options opts ^Consumer on-success]
+   (run opts
+     (^Consumer fn [opt-nmsp-map]
+      (when (.isPresent ^Optional opt-nmsp-map)
+        (let [nmsp-map (.get ^Optional opt-nmsp-map)
+              resultv (invoke/invoke-until-failure nmsp-map opts true)]
+          (println (invoke/completion-report opts resultv)))))))
+  (^boolean [^Options opts ^Consumer on-completion]
    (options/print-options opts)
    (when (nil? (.dest-dir opts))
      (options/abort "error: mode `--watch` requires a destination directory"))
    (tclj0/wipe-dest-dir opts)
    (loop [w (watcher/new-watcher (.sourcev opts))
-          dep-map (build-pass opts on-success {})]
+          dep-map (build-pass opts on-completion {})]
      (let [w (watcher/wait-for-changes w (.wait-after-change-ms opts))
            pred-modified (watcher/mk-modified? w)
            dep-map (->> (fn ^boolean [dep-info]
                           (not (some pred-modified (:rpaths dep-info))))
                         (drop-bad-namespaces! dep-map opts))]
-       (recur w (build-pass opts on-success dep-map))))
+       (recur w (build-pass opts on-completion dep-map))))
    false))                                ;unreachable
