@@ -419,11 +419,13 @@
       (let [ees (final-entries fspec)
             ac (aget (arity-code-array fspec) 0)
             m (-> ac .at .method)
-            m-mtd (-> ac .at (x/at-mtd))
+            m-mtd (MethodTypeDesc/of (rt/cd-of (.getReturnType m))
+                                     (rt/cd-array-of (.getParameterTypes m)))
+            d-mtd (-> ac .at (x/at-mtd))
             bs-args (doto (new "[Ljava.lang.constant.ConstantDesc;" 3)
                       (aset 0 m-mtd)
                       (aset 1 (.load-mh-impl ac))
-                      (aset 2 m-mtd))
+                      (aset 2 d-mtd))
             dcd (DynamicCallSiteDesc/of rt/bsm-metafactory (.getName m)
                                         (ee-mtd this-itf ees) bs-args)]
         (doseq [^EnvEntry ee ees]

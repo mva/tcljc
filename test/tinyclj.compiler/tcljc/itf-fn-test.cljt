@@ -219,3 +219,64 @@
                  (def f (fn* f ^void [x]
                              (let* [g* (if (nil? x) fn-2 fn-1)]
                                nil)))]))))
+
+(deftest default-vs-provided-sig
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "fn~1" "(Ljava/lang/Object;)V")
+             ["LOCAL 0: Object x"]
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "fn^a57d~1" "(Ljava/lang/String;)V")
+             ["LOCAL 0: String s"]
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             
+             (INVOKEDYNAMIC "accept"
+                            "()Ljava/util/function/Consumer;"
+                            :bsm-metafactory
+                            ["MethodTypeDesc[(Object)void]"
+                             [STATIC . "fn~1" "(Ljava/lang/Object;)V"]
+                             "MethodTypeDesc[(Object)void]"])
+             (LDC "foo")
+             (INVOKEINTERFACE Consumer "accept" "(Ljava/lang/Object;)V" :itf)
+             
+             (INVOKEDYNAMIC "accept"
+                            "()Ljava/util/function/Consumer;"
+                            :bsm-metafactory
+                            ["MethodTypeDesc[(Object)void]"
+                             [STATIC . "fn^a57d~1" "(Ljava/lang/String;)V"]
+                             "MethodTypeDesc[(String)void]"])
+             (LDC "foo")
+             (INVOKEINTERFACE Consumer "accept" "(Ljava/lang/Object;)V" :itf)
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (.accept (^java.util.function.Consumer fn* [x])
+                          "foo")
+                 (.accept (^java.util.function.Consumer fn* ^void [^String s])
+                          "foo")]))))
+
+(deftest sig-mismatch
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo
+       #"function result .*java.lang.Object.* not assignment compatible to method's .*void.*"
+       (nmsp '[(ns pkg.ns0)
+               (.accept (^java.util.function.Consumer fn* [^String s]
+                         nil)
+                        "foo")])))
+  
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo
+       #"function parameter .*int.* not assignment compatible to method's .*java.lang.Object.*"
+       (nmsp '[(ns pkg.ns0)
+               (.accept (^java.util.function.Consumer fn* ^void [^int s]
+                         nil)
+                        "foo")]))))
