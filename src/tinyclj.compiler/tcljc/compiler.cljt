@@ -494,11 +494,17 @@
                      (subs s (- (count s) tag-width))))]
   
   (defn- pick-unique-mnm ^String [^Env env ^Symbol dflt-nm form tl-ctx]
+    ;; `dflt-nm` of nil means function or interface function
     (let [pn-map (ctx/private-name-map tl-ctx)
-          mnm (str (.mnm-path env)
-                   (when (some? (.mnm-path env)) "$")
-                   (let [x (second form)]
-                     (cfg/munge-name (if (symbol? x) x dflt-nm))))
+          candidate-nm (second form)
+          nm (if (symbol? candidate-nm)
+               candidate-nm
+               (or dflt-nm
+                   (when-some [itf (sig/tag-of (first form) true nil tl-ctx)]
+                     (symbol nil (.getSimpleName itf)))
+                   'fn))
+          mnm (str (.mnm-path env) (when (some? (.mnm-path env)) "$")
+                   (cfg/munge-name nm))
           s (if (.containsKey pn-map mnm)
               (loop [n (hash (cons mnm form))]
                 (let [s* (str mnm tag-sep (format-tag n))]
@@ -792,7 +798,7 @@
 
        (fn*-form ^FnForm [form]
          (let [level (level-fn-form env)
-               unique-mnm (pick-unique-mnm env 'fn form tl-ctx)
+               unique-mnm (pick-unique-mnm env nil form tl-ctx)
                fn-form (sig/destructure-fn*-form form level unique-mnm tl-ctx)]
            (parse-arity-bodies fn-form env)))
        

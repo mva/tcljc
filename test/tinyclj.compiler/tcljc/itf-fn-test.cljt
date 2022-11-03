@@ -34,7 +34,7 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "add2" "Lpkg/ns0/FnInt2;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "fn~2" "(II)I")
+            [(METHOD [PUBLIC STATIC FINAL] "FnInt2~2" "(II)I")
              ["LOCAL 0: int a"]
              ["LOCAL 1: int b"]
              (ILOAD_0)
@@ -48,7 +48,7 @@
 
              (INVOKEDYNAMIC "arity-2" "()Lpkg/ns0/FnInt2;" :bsm-metafactory
                             ["MethodTypeDesc[(int,int)int]"
-                             [STATIC . "fn~2" "(II)I"]
+                             [STATIC . "FnInt2~2" "(II)I"]
                              "MethodTypeDesc[(int,int)int]"])
              (PUTSTATIC . "add2" "Lpkg/ns0/FnInt2;")
              (GETSTATIC . "add2" "Lpkg/ns0/FnInt2;")
@@ -76,7 +76,7 @@
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "f" "Ljava/lang/Runnable;")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "fn~0" "()V")
+            [(METHOD [PUBLIC STATIC FINAL] "Runnable~0" "()V")
              (RETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
@@ -94,7 +94,7 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (INVOKEDYNAMIC "run" "()Ljava/lang/Runnable;" :bsm-metafactory
                             ["MethodTypeDesc[()void]"
-                             [STATIC . "fn~0" "()V"]
+                             [STATIC . "Runnable~0" "()V"]
                              "MethodTypeDesc[()void]"])
              (PUTSTATIC . "f" "Ljava/lang/Runnable;")
              (RETURN)]]]
@@ -117,7 +117,7 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "f"
                     "Ljava/util/Comparator;")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "fn~2"
+            [(METHOD [PUBLIC STATIC FINAL] "Comparator~2"
                      "(Ljava/lang/Object;Ljava/lang/Object;)I")
              ["LOCAL 0: Object o1"]
              ["LOCAL 1: Object o2"]
@@ -142,7 +142,7 @@
              (INVOKEDYNAMIC "compare" "()Ljava/util/Comparator;"
                             :bsm-metafactory
                             ["MethodTypeDesc[(Object,Object)int]"
-                             [STATIC . "fn~2"
+                             [STATIC . "Comparator~2"
                               "(Ljava/lang/Object;Ljava/lang/Object;)I"]
                              "MethodTypeDesc[(Object,Object)int]"])
              (PUTSTATIC . "f" "Ljava/util/Comparator;")
@@ -171,10 +171,10 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "fn-1" "Lpkg/ns0/FnMyFn;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "fn-2" "Lpkg/ns0/FnMyFn;")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "fn~0" "()I")
+            [(METHOD [PUBLIC STATIC FINAL] "FnMyFn~0" "()I")
              (ICONST_1)
              (IRETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "fn^d066~0" "()I")
+            [(METHOD [PUBLIC STATIC FINAL] "FnMyFn^9e71~0" "()I")
              (ICONST_2)
              (IRETURN)]
             
@@ -201,12 +201,12 @@
              
              (INVOKEDYNAMIC "fn0" "()Lpkg/ns0/FnMyFn;" :bsm-metafactory
                             ["MethodTypeDesc[()int]"
-                             [STATIC . "fn~0" "()I"]
+                             [STATIC . "FnMyFn~0" "()I"]
                              "MethodTypeDesc[()int]"])
              (PUTSTATIC . "fn-1" "Lpkg/ns0/FnMyFn;")
              (INVOKEDYNAMIC "fn0" "()Lpkg/ns0/FnMyFn;" :bsm-metafactory
                             ["MethodTypeDesc[()int]"
-                             [STATIC . "fn^d066~0" "()I"]
+                             [STATIC . "FnMyFn^9e71~0" "()I"]
                              "MethodTypeDesc[()int]"])
              (PUTSTATIC . "fn-2" "Lpkg/ns0/FnMyFn;")
              (RETURN)]]]
@@ -229,10 +229,10 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
-            [(METHOD [PUBLIC STATIC FINAL] "fn~1" "(Ljava/lang/Object;)V")
+            [(METHOD [PUBLIC STATIC FINAL] "Consumer~1" "(Ljava/lang/Object;)V")
              ["LOCAL 0: Object x"]
              (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "fn^a57d~1" "(Ljava/lang/String;)V")
+            [(METHOD [PUBLIC STATIC FINAL] "Consumer^ca69~1" "(Ljava/lang/String;)V")
              ["LOCAL 0: String s"]
              (RETURN)]
             
@@ -244,7 +244,7 @@
                             "()Ljava/util/function/Consumer;"
                             :bsm-metafactory
                             ["MethodTypeDesc[(Object)void]"
-                             [STATIC . "fn~1" "(Ljava/lang/Object;)V"]
+                             [STATIC . "Consumer~1" "(Ljava/lang/Object;)V"]
                              "MethodTypeDesc[(Object)void]"])
              (LDC "foo")
              (INVOKEINTERFACE Consumer "accept" "(Ljava/lang/Object;)V" :itf)
@@ -253,7 +253,7 @@
                             "()Ljava/util/function/Consumer;"
                             :bsm-metafactory
                             ["MethodTypeDesc[(Object)void]"
-                             [STATIC . "fn^a57d~1" "(Ljava/lang/String;)V"]
+                             [STATIC . "Consumer^ca69~1" "(Ljava/lang/String;)V"]
                              "MethodTypeDesc[(String)void]"])
              (LDC "foo")
              (INVOKEINTERFACE Consumer "accept" "(Ljava/lang/Object;)V" :itf)
