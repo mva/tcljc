@@ -380,7 +380,7 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def mk-as-list
-                   (fn* mk-as-list ^:auto-return-type [^String s]
+                   (fn* mk-as-list ^auto-return-type [^String s]
                         (fn* as-list ^java.util.List [& ^objects items]
                              (.print System/out s)
                              (java.util.Arrays/asList items))))
@@ -553,7 +553,7 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def mk-as-list
-                   (fn* mk-as-list ^:auto-return-type [^String s]
+                   (fn* mk-as-list ^auto-return-type [^String s]
                         (fn* as-list ^java.util.List [& ^objects items]
                              (.print System/out s)
                              ;; method call passes array `items` unmodified to
@@ -899,7 +899,7 @@
              (INVOKESPECIAL . "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/Object;)V")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (def f (fn* f ^:auto-return-type [a]
+                 (def f (fn* f ^auto-return-type [a]
                              (fn* callee-gets-iseq [& items]
                                   a)))]))))
 

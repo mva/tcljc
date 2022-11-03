@@ -420,7 +420,7 @@
            (concat (for [idx (range 1 (.size (.arg-env c)))]
                      (tagged-parameter ^int idx)))
            (vec))
-      {:auto-return-type true})))
+      {:tag 'auto-return-type})))
 
 ;;; ------------------------------------------------------------------------
 

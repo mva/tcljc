@@ -53,7 +53,7 @@
            [L:0]
            (ALOAD_1)
            (ARETURN)]
-         (asm-expr ^:auto-return-type [^boolean x ^Object y]
+         (asm-expr ^auto-return-type [^boolean x ^Object y]
                    (if x
                      "foo"
                      y)))))
@@ -220,7 +220,7 @@
                    [clojure.lang.IType])
                  (import* pkg.ns0.FooClass)
                  (def if-let
-                   (fn* if-let ^:auto-return-type [^boolean x]
+                   (fn* if-let ^auto-return-type [^boolean x]
                         (try
                           (if x
                             (let* [a (FooClass.)]

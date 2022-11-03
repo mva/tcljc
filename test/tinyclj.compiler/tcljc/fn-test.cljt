@@ -560,7 +560,7 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def mk-inc-fn
-                   (fn* mk-inc-fn ^:auto-return-type [^int n]
+                   (fn* mk-inc-fn ^auto-return-type [^int n]
                         (fn* inc
                              (^int [^int a ^int b]
                               (+ a b))
@@ -604,8 +604,9 @@
                                     (if (< i 100)
                                       (recur (inc i)))))]))))
 
-;;; Only works when read by tinyclj.frontend.reader, otherwise the
-;;; expansion of #(...) is not properly type hinted.
+;;; Only works when read by tcljc.reader or its tclj-in-tclj
+;;; counterpart, otherwise the expansion of #(...) is not properly
+;;; type hinted.
 (deftest def-fn-literal-hinted-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
@@ -686,7 +687,7 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (fn* f ^:auto-return-type []
+                 (fn* f ^auto-return-type []
                       nil)]))))
 
 (deftest auto-return-void
@@ -704,7 +705,7 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (fn* f ^:auto-return-type []
+                 (fn* f ^auto-return-type []
                       (do))]))))
 
 (deftest auto-return-throw
@@ -725,7 +726,7 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (fn* f ^:auto-return-type []
+                 (fn* f ^auto-return-type []
                       (throw (Exception.)))]))))
 
 (deftest auto-return-polymorphic
@@ -747,7 +748,7 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (fn* f ^:auto-return-type [^java.lang.invoke.MethodHandle mh]
+                 (fn* f ^auto-return-type [^java.lang.invoke.MethodHandle mh]
                       (.invoke mh))]))))
 
 (deftest auto-return-dead-code
@@ -768,7 +769,7 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (fn* f ^:auto-return-type []
+                 (fn* f ^auto-return-type []
                       (throw (Exception.))
                       123)]))))
 

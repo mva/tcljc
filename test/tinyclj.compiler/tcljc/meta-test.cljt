@@ -179,7 +179,7 @@
          (nmsp '[(ns pkg.ns0)
                  (def add2 (fn* add2 ^int [^int a ^int b]
                                 (+ a b)))
-                 (def mk-add1 (fn* mk-add1 ^:auto-return-type [^int a]
+                 (def mk-add1 (fn* mk-add1 ^auto-return-type [^int a]
                                    (fn* add1 ^int [^int b]
                                         (+ a b))))
                  ;; meta on StaticFnMh

@@ -35,14 +35,17 @@
 (defn get-tag [form]
   (-> form (meta) :tag))
 
-(defn tag-of ^Class [form ^boolean void? ^Class no-hint tl-ctx]
-  (if-some [tag (get-tag form)]
+(defn- tag-of* ^Class [tag ^boolean void? ^Class no-hint tl-ctx]
+  (if (some? tag)
     (if-some [tp (ctx/get-type tag tl-ctx)]
       (if (and (jb/statement? tp) (not void?))
         (wrong/syntax "`void` tag not applicable in this context")
         tp)
       (wrong-class tag))
     no-hint))
+
+(defn tag-of ^Class [form ^boolean void? ^Class no-hint tl-ctx]
+  (tag-of* (get-tag form) void? no-hint tl-ctx))
 
 ;;; ------------------------------------------------------------------------
 
@@ -105,10 +108,10 @@
   (letfn [(arity ^Arity [aform ^int at-idx]
             (if (and (seq? aform) (vector? (first aform)))
               (let [v (first aform)
-                    rtype (or (tag-of v true unset-tp tl-ctx)
-                              (if (-> v (meta) :auto-return-type)
-                                jb/cl-polymorphic-type
-                                jb/Object))
+                    rtag (get-tag v)
+                    rtype (if (= rtag 'auto-return-type)
+                            jb/cl-polymorphic-type
+                            (or (tag-of* rtag true unset-tp tl-ctx) jb/Object))
                     tmpl (Arity. nil nil -1 false false nil nil this-name
                                  level aform (util/mk-shm) at-idx)]
                 (arity-sig tmpl unset-tp rtype (seq v) tl-ctx))

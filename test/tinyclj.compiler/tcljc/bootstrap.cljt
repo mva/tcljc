@@ -294,7 +294,7 @@
     ['(ns pkg.ns0)
      (list 'fn* 'fnbody (cond-> params
                           (no-tag? params)
-                          (vary-meta assoc :auto-return-type true))
+                          (vary-meta assoc :tag 'auto-return-type))
            ;; note: some forms must be wrapped in (identity ...) 
            ;; to prevent them from disappearing
            form)]))

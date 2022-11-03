@@ -122,7 +122,7 @@
 ;;; `compile-form` replaces it with a proper class.
 ;;;
 ;;; Another short lived use is as marker of the still unknown return
-;;; type of an :auto-return-type arity.  This is an implementation
+;;; type of an `auto-return-type arity`.  This is an implementation
 ;;; detail private to `fn*-form`, `letfn*-form`, and `call-fn-def`.
 (deftype PolymorphicType [])
 (def cl-polymorphic-type PolymorphicType)

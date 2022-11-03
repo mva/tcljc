@@ -1089,7 +1089,8 @@
        (try-form ^Expr [form]
          (if (tcf-pos? form-ctx)
            (try-form* form)
-           (-> (list (list 'fn* 'try ^:auto-return-type [] form))
+           (-> (list (list 'fn* 'try (with-meta [] {:tag 'auto-return-type})
+                           form))
                (with-meta (meta form))  ;propagate :line meta
                (expr-form))))
 

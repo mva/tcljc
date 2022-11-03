@@ -1075,7 +1075,7 @@
      ;; variadic case the last/rest parameter is of type `ISeq`.
                    
      ^Class rtype
-     ;; The arity's return type.  In case of :auto-return-type, this
+     ;; The arity's return type.  In case of `auto-return-type`, this
      ;; is replaced with the arity body's result type.
 
      ^int n

@@ -580,7 +580,7 @@
   ;; no parameters
   (is (= '(fn* [] ())
          (read1 "#()")))
-  (is (true? (-> (read1 "#()") (second) (meta) :auto-return-type)))
+  (is (= 'auto-return-type (-> (read1 "#()") (second) (meta) :tag)))
 
   ;; one parameter
   (is (= '(fn* [p$1$__fnlit__] (p$1$__fnlit__))

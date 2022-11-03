@@ -298,7 +298,8 @@
         docstring (str "Positional factory function for class " classname ".")]
     `(defn ~fn-name
        ~docstring
-       ^:auto-return-type [~@field-args ~@(if (seq over) '[& overage] [])]
+       ~(with-meta (vec (concat field-args (if (seq over) '[& overage] [])))
+          {:tag 'auto-return-type})
        ~(if (seq over)
           `(if (= (count ~'overage) ~over-count)
              (new ~classname
