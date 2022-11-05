@@ -334,7 +334,11 @@
              (.setLength sb 0)          ;clear text accumulator
              (- page-width (.indent ctx)))
            (reserve-sep ^int [^Doc doc]
-             (.length (txt doc)))
+             ;; a child should take into account the non-whitespace
+             ;; prefix of the following separator
+             (let [s (txt doc)]
+               (cond-> (.length s)
+                 (.endsWith s " ") (dec))))
            (append-sep ^int [^int width-left ^boolean fit? ^Ctx ctx ^Doc sep]
              ;; note: rewrite-to-blank creates additional sep instances
              (if fit?

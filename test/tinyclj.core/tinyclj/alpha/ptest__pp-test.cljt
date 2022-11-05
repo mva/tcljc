@@ -124,6 +124,19 @@
   (is-pr1-doc "A\nB\nC" 2 abc)
   (is-pr1-doc "A\nB\nC" 1 abc))
 
+(deftest pretty1-inner-last-test
+  (let [nested-abc (pp/doc-dup* '[(a (b c))])]
+    (is-pr1-doc "(a (b c))" 9 nested-abc)
+    (is-pr1-doc "(a\n (b c))" 8 nested-abc)
+    (is-pr1-doc "(a\n (b c))" 7 nested-abc)
+    (is-pr1-doc "(a\n (b\n  c))" 6 nested-abc))
+
+  (let [nested-abcd (pp/doc-dup* '[(a (b c) d)])]
+    (is-pr1-doc "(a (b c) d)" 11 nested-abcd)
+    (is-pr1-doc "(a\n (b c)\n d)" 10 nested-abcd)
+    (is-pr1-doc "(a\n (b c)\n d)" 6 nested-abcd)
+    (is-pr1-doc "(a\n (b\n  c)\n d)" 5 nested-abcd)))
+
 (def flat-vector (pp/doc-dup [1 2 3]))
 (def nested-vector (pp/doc-dup [[1 2 3]]))
 (deftest pretty1-align-test
