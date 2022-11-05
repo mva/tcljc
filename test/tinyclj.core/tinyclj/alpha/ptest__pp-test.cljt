@@ -1,0 +1,206 @@
+(ns tinyclj.alpha.ptest__pp-test
+  (:require [tinyclj.alpha.ptest__pp :as pp]
+            [tinyclj.alpha.ptest :refer :all])
+  (:import (tinyclj.alpha.ptest__pp Doc)))
+
+(defn pretty0-forms ^String [forms]
+  (-> (StringBuilder.)
+      (pp/pretty0 (pp/doc-dup* forms)) ;doc-dup* expects a seqable of forms
+      (.toString)))
+
+(defmacro is-pr0* [exp forms]
+  (with-meta `(is (= ~exp (pretty0-forms ~forms)))
+    (meta &form)))                      ;provide correct :line to `is`
+
+(deftest pretty0-root-test
+  (is-pr0* "" ())
+  (is-pr0* "" [])
+  
+  (is-pr0* "1" '(1))
+  (is-pr0* "1 2" '(1 2)))
+
+
+(defn pretty0-form ^String [form]
+  (-> (StringBuilder.)
+      (pp/pretty0 (pp/doc-dup form))
+      (.toString)))
+
+(defmacro is-pr0 [exp form]
+  (with-meta `(is (= ~exp (pretty0-form (object ~form))))
+    (meta &form)))                      ;provide correct :line to `is`
+
+(deftest pretty0-form-test
+  ;; atomic text
+  (is-pr0 "nil" nil)
+  (is-pr0 "true" true)
+  (is-pr0 "false" false)
+  (is-pr0 "sym" 'sym)
+  (is-pr0 ":kw" :kw)
+  (is-pr0 "123" 123)
+  (is-pr0 "\\space" \space)
+  (is-pr0 "\\newline" \newline)
+  (is-pr0 "\\A" \A)
+  (is-pr0 "\\u0000" \u0000)
+  (is-pr0 "\\u007f" \u007f)
+
+  ;; numbers
+  (is-pr0 "1.0" 1.0)
+  (is-pr0 "1.0f" 1.0f)
+  (is-pr0 "123l" 123l)
+  (is-pr0 "##Inf" Double/POSITIVE_INFINITY)
+  (is-pr0 "##-Inf" Double/NEGATIVE_INFINITY)
+  (is-pr0 "##NaN" Double/NaN)
+  
+  ;; strings (incl escapes for \" and \\)
+  (is-pr0 "\"\"" "")
+  (is-pr0 "\"foo\"" "foo")
+  (is-pr0 "\"\\\\\"" "\\")
+  (is-pr0 "\"\\\"\"" "\"")
+  
+  ;; patterns
+  (is-pr0 "#\".\"" #".")
+  (is-pr0 "#\"\\\\\"" #"\\")
+  (is-pr0 "#\"\\\"\"" #"\"")
+  (is-pr0 "#\"\\Q*\\E\"" #"\Q*\E")
+  (is-pr0 "#\"\\Q\\\"\\E\"" #"\Q\"\E")
+  
+  ;; collection: list
+  (is-pr0 "()" ())
+  (is-pr0 "(1)" '(1))
+  (is-pr0 "(1 2)" '(1 2))
+  
+  ;; collection: vector
+  (is-pr0 "[]" [])
+  (is-pr0 "[1]" [1])
+  (is-pr0 "[1 2]" [1 2])
+
+  ;; collection: map
+  (is-pr0 "{}" {})
+  (is-pr0 "{:a 123}" {:a 123})
+  ;; order of entries not deterministic for two or more
+  
+  ;; collection: set
+  (is-pr0 "#{}" #{})
+  (is-pr0 "#{:a}" #{:a})
+  ;; order of elements not deterministic for two or more
+  )
+
+(deftest pretty0-meta-test
+  (is (= "^{} ()"
+         (pretty0-form ^{} ())))
+  (is (= "^{\"abc\" true} ()"
+         (pretty0-form ^{"abc" true} ())))
+  (is (= "^{\"abc\" true} ()"
+         (pretty0-form '^{"abc" true} ())))
+  
+  (is (= "^{} []"
+         (pretty0-form ^{} [])))
+  (is (= "^{\"abc\" true} []"
+         (pretty0-form ^{"abc" true} [])))
+
+  ;; shorthand notation
+  (is (= "^:foo sym"
+         (pretty0-form '^:foo sym)))
+  (is (= "^String sym"
+         (pretty0-form '^String sym))))
+
+(defn pretty1-doc ^String [^int page-width ^Doc doc]
+  (pp/lines-str (pp/pretty1* page-width doc)))
+
+(defmacro is-pr1-doc [exp page-width doc]
+  (with-meta `(is (= ~exp (pretty1-doc ~page-width ~doc)))
+    (meta &form)))                      ;provide correct :line to `is`
+
+(def abc                               ;doc1 example from yield-pp.pdf
+  (pp/dgroup* pp/text-empty false pp/text-empty
+              [(pp/text "A")
+               (pp/dgroup* pp/text-empty false pp/text-empty
+                           [(pp/text "B") (pp/text "C")])]))
+(deftest pretty1-abc-test
+  (is-pr1-doc "A B C" 6 abc)
+  (is-pr1-doc "A B C" 5 abc)
+  (is-pr1-doc "A\nB C" 4 abc)
+  (is-pr1-doc "A\nB C" 3 abc)
+  (is-pr1-doc "A\nB\nC" 2 abc)
+  (is-pr1-doc "A\nB\nC" 1 abc))
+
+(def flat-vector (pp/doc-dup [1 2 3]))
+(def nested-vector (pp/doc-dup [[1 2 3]]))
+(deftest pretty1-align-test
+  (is-pr1-doc "[1 2 3]" 7 flat-vector)
+  (is-pr1-doc "[1\n 2\n 3]" 6 flat-vector)
+
+  (is-pr1-doc "[[1 2 3]]" 10 nested-vector)
+  (is-pr1-doc "[[1 2 3]]" 9 nested-vector)
+
+  ;; Nested would vector fit, outer would not.  By reserving space for
+  ;; the "]" after the "3]", the layout decision of the inner vector
+  ;; is forced to "needs line breaks"
+  (is-pr1-doc "[[1\n  2\n  3]]" 8 nested-vector)
+  
+  (is-pr1-doc "[[1\n  2\n  3]]" 7 nested-vector))
+
+(def nested-data
+  (pp/doc-dup (list {:args [["VkInstance = 0x7f1bd84f53d0" 0]
+                            ["const VkAllocationCallbacks* = NULL" 0]]}
+                    {:fct "vkDestroyDebugUtilsMessengerEXT"})))
+
+(deftest nested-data-test
+  (is (= "({:args [[\"VkInstance = 0x7f1bd84f53d0\" 0]\n         [\"const VkAllocationCallbacks* = NULL\" 0]]}\n {:fct \"vkDestroyDebugUtilsMessengerEXT\"})"
+         (pretty1-doc 80 nested-data))))
+
+(deftest pretty1-pad-empty-test
+  (is-pr1-doc "    "
+              10 (pp/pad-to pp/text-empty
+                            (pp/doc-dup :xyz)))
+  (is-pr1-doc "      "
+              10 (pp/pad-to pp/text-empty
+                            (pp/doc-dup [:xyz])))
+  (is-pr1-doc "\n         "
+              10 (pp/pad-to pp/text-empty
+                            (pp/doc-dup [:line-1
+                                         :line-2]))))
+
+(deftest pretty1-pad-single-line-test
+  (is-pr1-doc ":abc"
+              10 (pp/pad-to (pp/doc-dup :abc)
+                            (pp/doc-dup :xyz)))
+  (is-pr1-doc ":abc"
+              10 (pp/pad-to (pp/doc-dup :abc)
+                            (pp/doc-dup :xy)))
+  (is-pr1-doc ":abc "
+              10 (pp/pad-to (pp/doc-dup :abc)
+                            (pp/doc-dup :xyzw)))
+
+  (is-pr1-doc ":abc     "
+              9 (pp/pad-to (pp/doc-dup :abc)
+                           (pp/doc-dup [:line-1])))
+  (is-pr1-doc ":abc\n         "
+              9 (pp/pad-to (pp/doc-dup :abc)
+                           (pp/doc-dup [:line-1
+                                        :line-2])))
+
+  (is-pr1-doc "[:abc]     "
+              9 (pp/pad-to (pp/doc-dup [:abc])
+                           (pp/doc-dup [[:line-1]])))
+  (is-pr1-doc "[:abc]\n           "
+              9 (pp/pad-to (pp/doc-dup [:abc])
+                           (pp/doc-dup [[:line-1
+                                         :line-2]]))))
+
+(deftest pretty1-pad-multi-line-test
+  (is-pr1-doc "[:abc\n :xyz]"
+              5 (pp/pad-to (pp/doc-dup [:abc
+                                         :xyz])
+                            (pp/doc-dup [:line-1])))
+  (is-pr1-doc "[:abc\n :xyz]   "
+              5 (pp/pad-to (pp/doc-dup [:abc
+                                         :xyz])
+                            (pp/doc-dup [:line-1
+                                         :line-2])))
+  (is-pr1-doc "[:abc\n :xyz]\n         "
+              5 (pp/pad-to (pp/doc-dup [:abc
+                                        :xyz])
+                           (pp/doc-dup [:line-1
+                                        :line-2
+                                        :line-3]))))

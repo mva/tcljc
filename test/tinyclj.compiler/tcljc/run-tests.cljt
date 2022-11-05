@@ -7,6 +7,7 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.run-tests
   (:require
+   (tinyclj.alpha ptest-test ptest__align-test ptest__pp-test)
    (tcljc reader-test synquote-test grammar-test
 
           resolve-test bootstrap-test
@@ -27,7 +28,11 @@
    [tinyclj.alpha.ptest :refer [run-scoped-tests]]))
 
 (def all-namespaces
-  '[tcljc.reader-test
+  '[tinyclj.alpha.ptest-test
+    tinyclj.alpha.ptest__align-test
+    tinyclj.alpha.ptest__pp-test
+    
+    tcljc.reader-test
     tcljc.synquote-test
     tcljc.grammar-test
 

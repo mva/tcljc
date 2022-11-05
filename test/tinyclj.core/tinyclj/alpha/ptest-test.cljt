@@ -1,0 +1,179 @@
+(ns tinyclj.alpha.ptest-test
+  (:require [tinyclj.alpha.ptest :refer :all]
+            [tinyclj.alpha.ptest__impl :as impl])
+  (:import (tinyclj.alpha.ptest__impl Outcome Report)))
+
+(defmacro defmockup-test [nm & body]
+  (assert (symbol? nm))
+  (assert (contains? (meta nm) :line))
+  ;; do not mark as :test and use given line number
+  `(defn ~(vary-meta nm assoc :var true) ^void []
+     ~@body))
+
+(defn throw-whatever []
+  (throw (Exception. "whatever")))
+
+(defn run-test ^Report [^String suffix]
+  ;; Note: This test module can only run specific test vars identified
+  ;; by name (i.e., the ones defined via `defmockup-test`).  A full
+  ;; namespace scan would pick up the non-mockup tests, leading to
+  ;; cyclic havoc.
+  (assert (.startsWith suffix "/"))
+  (impl/run-scope (str "tinyclj.alpha.ptest-test" suffix)))
+
+(defn first-outcome ^Outcome [^Report r]
+  (first (.details r)))
+
+(defn run-1-oc ^Outcome [^String suffix]
+  (let [r (run-test suffix)]
+    (is (= (count (.details r)) 1))
+    (first-outcome r)))
+
+
+(defmockup-test ^{:line 1000} empty-test-mockup
+  nil)
+(deftest empty-test
+  (let [r (run-test "/empty-test-mockup")]
+    (is (= (count (.details r)) 0))))
+
+(defmockup-test ^{:line 1100} throw-outside-is-mockup
+  (throw-whatever))
+(deftest throw-outside-is
+  (let [oc (run-1-oc "/throw-outside-is-mockup")]
+    (is (impl/error? oc))
+    (is (nil? (.msg oc)))
+    (is (= 1100 (.line oc)))
+    (is (identical? Exception (class (.ex oc))))))
+
+(defmockup-test ^{:line 1200} throw-inside-is-mockup
+  ^{:line 1205} (is (throw-whatever)))
+(deftest throw-inside-is
+  (let [oc (run-1-oc "/throw-inside-is-mockup")]
+    (is (impl/error? oc))
+    (is (nil? (.msg oc)))
+    (is (= 1205 (.line oc)))
+    (is (identical? Exception (class (.ex oc))))))
+
+
+
+(defmockup-test ^{:line 2000} is-boolean-true-mockup
+  ^{:line 2005} (is true))
+(deftest is-boolean-true
+  (let [oc (run-1-oc "/is-boolean-true-mockup")]
+    (is (impl/pass? oc))))
+
+(defmockup-test ^{:line 2100} is-boolean-false-mockup
+  ^{:line 2105} (is false))
+(deftest is-boolean-false
+  (let [oc (run-1-oc "/is-boolean-false-mockup")]
+    (is (impl/fail? oc))
+    (is (= "expression evaluates to false" (.msg oc)))
+    (is (= (object true) (.expected oc)))
+    (is (= (object false) (.actual oc)))))
+
+
+
+(defmockup-test ^{:line 3000} is-equivalent-mockup
+  ^{:line 3005} (is (= [1 2 3] [1 2 3])))
+(deftest is-equivalent
+  (let [oc (run-1-oc "/is-equivalent-mockup")]
+    (is (impl/pass? oc))))
+
+(defmockup-test ^{:line 3100} is-not-equivalent-mockup
+  ^{:line 3105} (is (= [1 2 3] [1 2 4])))
+(deftest is-not-equivalent
+  (let [oc (run-1-oc "/is-not-equivalent-mockup")]
+    (is (impl/fail? oc))
+    (is (= "expected not equivalent to actual value" (.msg oc)))
+    (is (= [1 2 3] (.expected oc)))
+    (is (= [1 2 4] (.actual oc)))))
+
+
+
+(defmockup-test ^{:line 4000} is-thrown-mockup
+  ^{:line 4005} (is (thrown? Exception (throw-whatever))))
+(deftest is-thrown
+  (let [oc (run-1-oc "/is-thrown-mockup")]
+    (is (impl/pass? oc))))
+
+(defmockup-test ^{:line 4100} is-not-thrown-mockup
+  ^{:line 4105} (is (thrown? Error (throw-whatever))))
+(deftest is-not-thrown
+  (let [oc (run-1-oc "/is-not-thrown-mockup")]
+    (is (impl/fail? oc))
+    (is (= "unexpected exception type" (.msg oc)))
+    (is (= Error (.expected oc)))
+    (is (= Exception (.actual oc)))))
+
+
+
+(defmockup-test ^{:line 5000} is-thrown-with-msg-mockup
+  ^{:line 5005} (is (thrown-with-msg? Exception #"what"
+                                      (throw-whatever))))
+(deftest is-thrown-with-msg
+  (let [oc (run-1-oc "/is-thrown-with-msg-mockup")]
+    (is (impl/pass? oc))))
+
+(defmockup-test ^{:line 5100} is-not-thrown-with-type-mockup
+  ^{:line 5105} (is (thrown-with-msg? Error #"what"
+                                      (throw-whatever))))
+(deftest is-not-thrown-with-type
+  (let [oc (run-1-oc "/is-not-thrown-with-type-mockup")]
+    (is (impl/fail? oc))
+    (is (= "unexpected exception type" (.msg oc)))
+    (is (= Error (.expected oc)))
+    (is (= Exception (.actual oc)))))
+
+(defmockup-test ^{:line 5200} is-not-thrown-with-type-mockup
+  ^{:line 5205} (is (thrown-with-msg? Exception #"whatsoever"
+                                      (throw-whatever))))
+(deftest is-not-thrown-with-type
+  (let [oc (run-1-oc "/is-not-thrown-with-type-mockup")]
+    (is (impl/fail? oc))
+    (is (= "unexpected exception message" (.msg oc)))
+    (is (= #"whatsoever" (.expected oc)))
+    (is (= "whatever" (.actual oc)))))
+
+
+
+(defmockup-test ^{:line 6000} output-pass-mockup
+  ^{:line 6005} (is (do (println "to out")
+                        (binding [*out* *err*] (println "to err"))
+                        true)))
+(deftest output-pass
+  (let [r (run-test "/output-pass-mockup")
+        oc (first-outcome r)]
+    (is (impl/pass? oc))
+    (is (= "to out\nto err\n" (impl/outcome-output r oc)))))
+
+(defmockup-test ^{:line 6000} output-fail-mockup
+  ^{:line 6005} (is (do (println "to out")
+                        (binding [*out* *err*] (println "to err"))
+                        false)))
+(deftest output-fail
+  (let [r (run-test "/output-fail-mockup")
+        oc (first-outcome r)]
+    (is (impl/fail? oc))
+    (is (= "to out\nto err\n" (impl/outcome-output r oc)))))
+
+
+
+(defmockup-test ^{:line 7000} select-is-by-line-mockup
+  ^{:line 7005} (is (= :a :a))
+  ^{:line 7010} (is (= :a :b)))
+;;; Note: The line number can be suffix as well for a whole namespace,
+;;; and has the same effect.  But because this namespace cannot scan
+;;; itself and only pick up the mockup tests, there are no unit tests
+;;; for this.
+(deftest select-is-by-line-of-test
+  ;; line number of the test selects all `is`
+  (let [r (run-test "/select-is-by-line-mockup:7000")]
+    (is (= 2 (count (.details r)))))
+  ;; line number of one of the the `is` selects only this one
+  (let [oc (run-1-oc "/select-is-by-line-mockup:7005")]
+    (is (impl/pass? oc)))
+  (let [oc (run-1-oc "/select-is-by-line-mockup:7010")]
+    (is (impl/fail? oc)))
+  ;; any other line number selects none
+  (let [r (run-test "/select-is-by-line-mockup:7999")]
+    (is (= 0 (count (.details r))))))

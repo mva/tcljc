@@ -24,7 +24,7 @@ PROJECT_DIR=$(notdir $(PWD))
 DEST_DIR=/tmp/$(USER)/tinyclj/$(PROJECT_DIR)
 TCLJC_MOD_RT=$(DEST_DIR).mdir/tinyclj-rt.jar
 
-SOURCE_OPTS=-s $(BOOTSTRAP_TCLJ_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler -s test/tinyclj.compiler
+SOURCE_OPTS=-s $(BOOTSTRAP_TCLJ_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler -s test/tinyclj.core -s test/tinyclj.compiler
 RUN_TESTS_NS=tcljc.run-tests
 
 compile: $(TCLJC_MOD_RT)

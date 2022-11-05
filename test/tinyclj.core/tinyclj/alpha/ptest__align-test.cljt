@@ -1,0 +1,240 @@
+(ns tinyclj.alpha.ptest__align-test
+  (:require [tinyclj.alpha.ptest__pp :as pp]
+            [tinyclj.alpha.ptest__align :refer :all]
+            [tinyclj.alpha.ptest :refer :all])
+  (:import (tinyclj.alpha.ptest__align Arr)
+           (clojure.lang IPersistentVector)))
+
+
+(defn- vec-arr ^Arr [^IPersistentVector x]
+  (arr-data (arrify x) 0))
+(defn- halign* [^Arr a ^Arr b]
+  (-> (align a b) (alignment-pairings) (halign-pairings)))
+(defn- valign* [^Arr a ^Arr b]
+  (-> (align a b) (alignment-pairings) (valign-pairings)))
+
+(defn halign [a b]
+  (halign* (arrify a) (arrify b)))
+(defn valign [a b]
+  (valign* (arrify a) (arrify b)))
+
+;;; Like `halign`, but discards the root array and aligns two vector
+;;; arrays directly.
+(defn halign-vec [^IPersistentVector a ^IPersistentVector b]
+  (halign* (vec-arr a) (vec-arr b)))
+(defn valign-vec [^IPersistentVector a ^IPersistentVector b]
+  (valign* (vec-arr a) (vec-arr b)))
+
+
+(deftest align-vec-equiv
+  (is (= [["[" "["]
+          ["]" "]"]]
+      (halign-vec [] [])))
+  (is (= ["[]"
+          "[]"]
+      (valign-vec [] [])))
+
+  (is (= [["[" "["]
+          [":a" ":a"] 
+          ["]" "]"]]
+         (halign-vec [:a] [:a])))
+  (is (= ["[:a]"
+          "[:a]"]
+         (valign-vec [:a] [:a])))
+  
+  (is (= [["[" "["]
+          [":a" ":a"] 
+          [":b" ":b"] 
+          ["]" "]"]]
+         (halign-vec [:a :b] [:a :b])))
+  (is (= ["[:a :b]"
+          "[:a :b]"]
+         (valign-vec [:a :b] [:a :b]))))
+
+(deftest align-vec-empty-a
+  (is (= [["[" "["]
+          [nil ":a"]
+          ["]" "]"]]
+         (halign-vec [] [:a])))
+  (is (= ["[  ]"
+          "[:a]"]
+         (valign-vec [] [:a])))
+  
+  (is (= [["[" "["]
+          [nil ":a"]
+          [nil ":b"]
+          ["]" "]"]]
+         (halign-vec [] [:a :b])))
+  (is (= ["[     ]"
+          "[:a :b]"]
+         (valign-vec [] [:a :b]))))
+
+(deftest align-vec-empty-b
+  (is (= [["[" "["]
+          [":a" nil]
+          ["]" "]"]]
+         (halign-vec [:a] [])))
+  (is (= ["[:a]"
+          "[  ]"]
+         (valign-vec [:a] [])))
+  
+  (is (= [["[" "["]
+          [":a" nil]
+          [":b" nil]
+          ["]" "]"]]
+         (halign-vec [:a :b] [])))
+  (is (= ["[:a :b]"
+          "[     ]"]
+         (valign-vec [:a :b] []))))
+
+(deftest align-vec-move
+  (is (= ["[:p0 :X    ]"
+          "[    :X :p0]"]
+         (valign-vec [:p0 :X] [:X :p0])))
+  
+  (is (= ["[:p0 :p1 :X    ]"
+          "[:p0     :X :p1]"]
+         (valign-vec [:p0 :p1 :X] [:p0 :X :p1])))
+  (is (= ["[   :p0 :p1 :X]"
+          "[:X :p0 :p1   ]"]
+         (valign-vec [:p0 :p1 :X] [:X :p0 :p1]))))
+
+(deftest align-vec-move-large
+  ;; Aligning the empty vector's siblings is cheaper than aligning the
+  ;; vector, so the vector is duplicated for both sides.
+  (is (= ["[   :p0 :p1 []]"
+          "[[] :p0 :p1   ]"]
+         (valign-vec [:p0 :p1 []] [[] :p0 :p1])))
+
+  ;; Starting at some size, aligning the larger value is less costly
+  ;; than aligning its siblings and they are duplicated instead.
+  (is (= ["[:p0 :p1 [:A]        ]"
+          "[        [:A] :p0 :p1]"]
+         (valign-vec [:p0 :p1 [:A]] [[:A] :p0 :p1])))
+  (is (= ["[:p0 :p1 [:A :B]        ]"
+          "[        [:A :B] :p0 :p1]"]
+         (valign-vec [:p0 :p1 [:A :B]] [[:A :B] :p0 :p1])))
+  (is (= ["[:p0 :p1 [:A :B :C]        ]"
+          "[        [:A :B :C] :p0 :p1]"]
+         (valign-vec [:p0 :p1 [:A :B :C]] [[:A :B :C] :p0 :p1]))))
+
+(deftest align-vec-keep-prefix
+  (is (= ["[:p0 :A   ]"
+          "[:p0    :B]"]
+         (valign-vec [:p0 :A] [:p0 :B])))
+  (is (= ["[:p0 :p1 :A   ]"
+          "[:p0 :p1    :B]"]
+         (valign-vec [:p0 :p1 :A] [:p0 :p1 :B]))))
+
+(deftest align-vec-keep-suffix
+  (is (= ["[:A    :s0]"
+          "[   :B :s0]"]
+         (valign-vec [:A :s0] [:B :s0])))
+  (is (= ["[:A    :s0 :s1]"
+          "[   :B :s0 :s1]"]
+         (valign-vec [:A :s0 :s1] [:B :s0 :s1]))))
+
+(deftest align-vec-p253
+  ;; This matches the third variant of Figure 7.7c of "Algorithms in
+  ;; Strings".  Two other variants are listed, moving the final "L"
+  ;; one and two steps further down.
+  (is (= ["[E     A W A C Q   G K L    ]"
+          "[E R D A W   C Q P G K   W Y]"]
+         (valign-vec '[E     A W A C Q   G K L    ]
+                     '[E R D A W   C Q P G K   W Y]))))
+
+(deftest simple-fn-with-one-nested-substitution
+  (is (= ["(defn add [a b] (+ a a  ))"
+          "(defn add [a b] (+ a   b))"]
+         (valign '(defn add [a b] (+ a a))
+                 '(defn add [a b] (+ a b)))))
+  
+  ;; using list/vector equivalence, the lhs parameter list could be
+  ;; matched against the addition on the rhs like this (length 16)
+  #_ (is (= ["(defn add       [  a b] a)"
+             "(defn add [a b] [+ a b]  )"]
+            (valign '(defn add [a b] a)
+                    '(defn add [a b] (+ a b)))))
+  
+  ;; this is the output when list and vector are considered distinct
+  ;; (also length 16, but less confusing)
+  (is (= ["(defn add [a b] a        )"
+          "(defn add [a b]   (+ a b))"]
+         (valign '(defn add [a b] a)
+                 '(defn add [a b] (+ a b))))))
+
+(deftest safe-sort-for-set
+  (is (= ["#{1 :a foo    }"
+          "#{1 :a     bar}"]
+         (valign '#{foo :a 1} '#{1 :a bar}))))
+
+(deftest safe-sort-for-map
+  (is (= ["{1 true, :a true, foo     true}"
+          "{1 true, :a true,     bar true}"]
+         (valign '{foo true, :a true, 1 true}
+                 '{1 true, :a true, bar true}))))
+
+(deftest map-alignment
+  (is (= ["{    }"
+          "{:a 1}"]
+         (valign '{} '{:a 1})))
+  (is (= ["{    ,     }"
+          "{:a 1, :b 2}"]
+         (valign '{} '{:b 2, :a 1})))
+  (is (= ["{    ,     ,     }"
+          "{:a 1, :b 2, :c 3}"]
+         (valign '{} '{:c 3, :b 2, :a 1})))
+  
+  (is (= ["{:a 1  }"
+          "{:a   2}"]
+         (valign '{:a 1} '{:a 2})))
+  (is (= ["{:a    1}"
+          "{   :b 1}"]
+         (valign '{:a 1} '{:b 1})))
+
+  (is (= ["{:a 1  , :b 2  }"
+          "{:a   2, :b   1}"]
+         (valign '{:a 1, :b 2} '{:b 1, :a 2})))
+  (is (= ["{:a 1, :b    2,     }"
+          "{    ,    :A 2, :B 1}" ]
+         (valign '{:a 1, :b 2} '{:B 1, :A 2}))))
+
+;;; ------------------------------------------------------------------------
+
+(defn diff-string ^String [^int mask ^Arr al]
+  (pp/lines-str (pp/pretty1* 80 (alignment-doc plain-text-spaced mask al))))
+
+(deftest alignment-doc-test
+  (let [al (align (arrify [:a :b]) (arrify [:b :a]))]
+    (is (= "[:a :b   ]" (diff-string part-of-a al)))
+    (is (= "[   :b :a]" (diff-string part-of-b al)))))
+
+;;; ------------------------------------------------------------------------
+
+#_
+(deftest equiv-fail-manual-check        ;assumes page-width of 38+4+38
+  (is (= [:a] [:b]))
+  (is (= [:a] [:bb]))
+  (is (= [:aa] [:b]))
+  (is (= [:a :b] [:b :a]))
+
+  ;; note: vector and seq are equivalent, but are rendered as a full
+  ;; replacement in case of mismatch
+  (is (= ["" "a" "aa" "aaa" "aaaa"] (take 5 (iterate #(str % "a") ""))))
+  
+  (is (= ()
+         (->> (iterate #(str % "a") "") (take 10) (drop 2))))
+  (is (= ()
+         (->> (iterate #(str % "a") "") (take 10) (drop 1))))
+  
+  (is (= (->> (iterate #(str % "e") "") (take 6) (drop 0))
+         (->> (iterate #(str % "a") "") (take 6) (drop 0))))
+  (is (= (->> (iterate #(str % "e") "") (take 7) (drop 2))
+         (->> (iterate #(str % "a") "") (take 7) (drop 2)))))
+
+#_
+(deftest equiv-fail-manual-color-bleed  ;assumes page-width of 38+4+38
+  ;; for the opening "[", the left hand side's color should not bleed
+  ;; over to the right side, and vice versa for the closing "]"
+  (is (= [(->> (iterate #(str % "e") "") (take 7) (seq))]
+         [(->> (iterate #(str % "a") "") (take 7) (vec))])))

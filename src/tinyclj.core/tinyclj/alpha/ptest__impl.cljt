@@ -47,11 +47,11 @@
 (defn- output-pos ^int [^TestContext ctx]
   (-> ctx .output (.getBuffer) (.length)))
 
-(defn- pass? ^boolean [^Outcome oc]
+(defn pass? ^boolean [^Outcome oc]
   (.pass? oc))
-(defn- fail? ^boolean [^Outcome oc]
+(defn fail? ^boolean [^Outcome oc]
   (some? (.msg oc)))
-(defn- error? ^boolean [^Outcome oc]
+(defn error? ^boolean [^Outcome oc]
   (and (some? (.ex oc)) (not (fail? oc))))
 
 (defn- output-seen ^int [^TestContext ctx]
@@ -203,7 +203,7 @@
 (defn- output? ^boolean [^Outcome oc]
   (and (<= 0 (.out-start oc)) (< (.out-start oc) (.out-end oc))))
 
-(defn- outcome-output ^String [^Report r ^Outcome oc]
+(defn outcome-output ^String [^Report r ^Outcome oc]
   (when (output? oc)
     (.substring (.output r) (.out-start oc) (.out-end oc))))
 
