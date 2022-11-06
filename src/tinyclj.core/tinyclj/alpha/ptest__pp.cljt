@@ -19,10 +19,10 @@
 
 (deftype Doc [^int tag ^Object _data ^int _width])
 
-(defn- txt ^String [^Doc doc]
+(defn txt ^String [^Doc doc]
   (._data doc))
 
-(defn- children ^"[Ltinyclj.alpha.ptest__pp.Doc;" [^Doc doc]
+(defn children ^"[Ltinyclj.alpha.ptest__pp.Doc;" [^Doc doc]
   (._data doc))
 
 (defn width
@@ -406,7 +406,7 @@
              (case (.tag doc)
                #_tag-text 0
                (do (.append sb (txt doc))
-                   (- width-left (width doc)) )
+                   (- width-left (width doc)))
                #_tag-aggr 2
                (format-aggr width-left reserve ctx doc)
                #_tag-dgroup 3
