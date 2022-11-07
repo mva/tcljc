@@ -33,7 +33,7 @@
                FnForm Arity ArityCode FnPatch
                PrimitiveFnRef FnPrimitiveFn FnMacroFn
                DeftypeDef MethodDef)
-   (clojure.lang Symbol Var ISeq IPersistentVector IPersistentMap IMeta IObj
+   (clojure.lang Symbol Var ISeq IPersistentVector IPersistentMap IMeta
                  ExceptionInfo)
    (jdk.classfile Classfile Opcode)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
