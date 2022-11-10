@@ -930,7 +930,8 @@
          (let [bs (cf/build
                    (-> cdef .ch-info .thisClass)
                    (cf/with-cbh [cb]
-                     (-> (.withFlags cb (.flags cdef))
+                     (-> (cf/with-version cb)
+                         (.withFlags (.flags cdef))
                          (.withSuperclass (-> cdef .ch-info .superClass))
                          (.withInterfaceSymbols (.itfs cdef)))
                      (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef))))

@@ -194,7 +194,8 @@
            (bytecode/emit-global-b cb segm-cld global-b))
          (doseq [^FnSpec fspec (.fn-specs tlf)]
            (.fn-methods (-> fspec .fn-form .!fnc .emit-plan) cb)))
-       (-> (.withFlags cb Classfile/ACC_PUBLIC)
+       (-> (cf/with-version cb)
+           (.withFlags Classfile/ACC_PUBLIC)
            (cf/with-source-file (.source-file segm))
            (cond-> force-clinit? (with-force-clinit))
            (.withMethodBody cf/class-initializer-name rt/mtd-void-void
@@ -231,7 +232,8 @@
     (cf/build
      (capstone-cld segm)
      (cf/with-cbh [cb]
-       (-> (.withFlags cb Classfile/ACC_PUBLIC)
+       (-> (cf/with-version cb)
+           (.withFlags Classfile/ACC_PUBLIC)
            (.withSuperclass (segment-cld segm -1))
            (cf/with-source-file (.source-file segm))
            (with-force-clinit)
@@ -247,7 +249,8 @@
   (cf/build
    (-> cdef .ch-info .thisClass)
    (cf/with-cbh [cb]
-     (-> (.withFlags cb (.flags cdef))
+     (-> (cf/with-version cb)
+         (.withFlags (.flags cdef))
          (.withSuperclass (-> cdef .ch-info .superClass))
          (.withInterfaceSymbols (.itfs cdef))
          (cf/with-source-file source-file))

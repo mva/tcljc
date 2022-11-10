@@ -23,7 +23,8 @@
       (Classfile/build
        (ClassDesc/of pkg-name nm-beachhead)
        (cf/with-cbh [cb]
-         (-> (.withFlags cb Classfile/ACC_PUBLIC)
+         (-> (cf/with-version cb)
+             (.withFlags Classfile/ACC_PUBLIC)
              (.withMethodBody "beachheadLookup" (MethodTypeDesc/of cd-Lookup)
                               (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
                               bhl-xb))))))
