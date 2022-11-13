@@ -117,12 +117,9 @@
   (-> (path-of (System/getProperty "user.dir"))
       (.getFileName)
       (.toString)))
-(defn dest-dir
-  (^Path []
-   (dest-dir (default-project-name)))
-  (^Path [^String dir-name]
-   (path-of (System/getProperty "java.io.tmpdir")
-            (System/getProperty "user.name") "tinyclj" dir-name)))
+(defn dest-dir ^Path [^String dir-name]
+  (path-of (System/getProperty "java.io.tmpdir")
+           (System/getProperty "user.name") "tinyclj" dir-name))
 
 (defn- path-seq [^Path p ^int max-depth ^Predicate pred]
   (try

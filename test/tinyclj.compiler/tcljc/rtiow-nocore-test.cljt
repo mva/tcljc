@@ -31,7 +31,8 @@
     {"*ns*" bref}))
 
 (deftest compile-rtiow-nocore-test
-  (let [app-paths [(cfg/path-of (str (cfg/dest-dir) ".mdir") "tinyclj-rt.jar")
+  (let [app-paths [(-> (cfg/dest-dir (str (cfg/default-project-name) ".mdir"))
+                       (.resolve "tinyclj-rt.jar"))
                    (cfg/path-of "test/tinyclj.compiler")]
         app-ld (cfg/app-class-loader :platform app-paths)
         rt-lookup (cfg/get-rt-lookup app-ld)
