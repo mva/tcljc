@@ -31,7 +31,9 @@
    (java.util.function Function)))
 
 (def ^:private app-ld
-  (let [tcljc-mdir (cfg/dest-dir "tcljc.mdir")
+  (let [project-name (or (System/getenv "PROJECT_DIR")
+                         (cfg/default-project-name))
+        tcljc-mdir (cfg/dest-dir (str project-name ".mdir"))
         tcljc-mod-rt (.resolve tcljc-mdir (cfg/path-of "tinyclj-rt.jar"))]
     (cfg/app-class-loader :platform [tcljc-mod-rt])))
 (def ^:private rt-lookup (cfg/get-rt-lookup app-ld))

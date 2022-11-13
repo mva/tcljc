@@ -20,7 +20,7 @@ BOOTSTRAP_TCLJ_MOD_RT=$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.rt
 BOOTSTRAP_TCLJ=$(JAVA) --class-path $(BOOTSTRAP_TCLJ_MOD_RT):$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.core:$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.compiler $(JAVA_OPTS) $(BOOTSTRAP_TCLJ_MAIN) $(DET) --parent-loader :platform
 
 # $(DEST_DIR) matches the compiler's default destination directory
-PROJECT_DIR=$(notdir $(PWD))
+PROJECT_DIR ?= $(notdir $(PWD))
 DEST_DIR=/tmp/$(USER)/tinyclj/$(PROJECT_DIR)
 TCLJC_MOD_RT=$(DEST_DIR).mdir/tinyclj-rt.jar
 
@@ -28,9 +28,9 @@ SOURCE_OPTS=-s $(BOOTSTRAP_TCLJ_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compi
 RUN_TESTS_NS=tcljc.run-tests
 
 compile: $(TCLJC_MOD_RT)
-	$(BOOTSTRAP_TCLJ) $(SOURCE_OPTS) $(RUN_TESTS_NS)
+	$(BOOTSTRAP_TCLJ) -d $(DEST_DIR) $(SOURCE_OPTS) $(RUN_TESTS_NS)
 watch-and-compile: $(TCLJC_MOD_RT)
-	$(BOOTSTRAP_TCLJ) --watch $(SOURCE_OPTS) $(RUN_TESTS_NS)
+	$(BOOTSTRAP_TCLJ) --watch -d $(DEST_DIR) $(SOURCE_OPTS) $(RUN_TESTS_NS)
 
 # Call with "make test TEST=<scope>" (with <scope> being "ns-name" or
 # "ns-name/var-name") to only run tests from the given namespace or
@@ -45,7 +45,7 @@ test-tcljc: $(TCLJC_MOD_RT)
 	$(BOOTSTRAP_TCLJ) -d $(DEST_DIR).compile-tcljc-stage0 $(SOURCE_OPTS) tcljc.compile-tcljc/run
 
 clean:
-	rm -rf "$(DEST_DIR)"/* "$(DEST_DIR)".* *.class hs_err_pid*.log replay_pid*.log
+	rm -rf "$(DEST_DIR)"/* "$(DEST_DIR)"*.* *.class hs_err_pid*.log replay_pid*.log
 
 print-line-count:
 	find src/tinyclj.compiler/tcljc -name "*.cljt" | xargs wc -l | sort -n
@@ -70,6 +70,14 @@ TCLJC_MAIN_NS=tcljc.main
 bootstrap-fixpoint: $(DEST_DIR).stageDI2/DONE
 bootstrap-mdir: $(DEST_DIR).mdir/DONE
 bootstrap-check: $(DEST_DIR).rtiowFS/DONE
+
+bootstrap-check-with-tclj:
+	$(MAKE) bootstrap-check PROJECT_DIR=tcljc-with-tclj BOOTSTRAP_TCLJ_MDIR=../jvm-stuff/bootstrap-tclj
+bootstrap-check-with-tcljc:
+	$(MAKE) bootstrap-check PROJECT_DIR=tcljc-with-tcljc BOOTSTRAP_TCLJ_MDIR=../bootstrap-tcljc
+bootstrap-check-with-all: \
+	bootstrap-check-with-tclj \
+	bootstrap-check-with-tcljc
 
 # Naming:
 # Dx -- deterministic classfile output but slow compilation
@@ -184,6 +192,6 @@ $(DEST_DIR).rtiowFS/DONE: $(DEST_DIR).stageFI2/DONE
 # ------------------------------------------------------------------------
 
 install-into-bootstrap-tcljc: $(DEST_DIR).mdir/DONE
-	$(MAKE) JAR=$(BUILD_JAR) -C ../bootstrap-tcljc pack
+	$(MAKE) -C ../bootstrap-tcljc pack JAR=$(BUILD_JAR)
 	cp -f $(DEST_DIR).mdir/*.jar ../bootstrap-tcljc
-	$(MAKE) JAR=$(BUILD_JAR) -C ../bootstrap-tcljc unpack
+	$(MAKE) -C ../bootstrap-tcljc unpack JAR=$(BUILD_JAR)

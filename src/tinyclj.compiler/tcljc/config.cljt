@@ -113,11 +113,13 @@
   (path-of (str (str/replace ns-str "." "/") source-suffix)))
 
 
+(defn default-project-name ^String []
+  (-> (path-of (System/getProperty "user.dir"))
+      (.getFileName)
+      (.toString)))
 (defn dest-dir
   (^Path []
-   (dest-dir (-> (path-of (System/getProperty "user.dir"))
-                 (.getFileName)
-                 (.toString))))
+   (dest-dir (default-project-name)))
   (^Path [^String dir-name]
    (path-of (System/getProperty "java.io.tmpdir")
             (System/getProperty "user.name") "tinyclj" dir-name)))
