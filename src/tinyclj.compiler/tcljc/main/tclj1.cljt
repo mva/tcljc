@@ -53,7 +53,7 @@
   (letfn [(report-success ^IPersistentMap [^IPersistentMap nmsp-map]
             ;; returns `dep-map` or throws an ExceptionInfo with
             ;; embedded `dep-map`
-            (let [dep-map (em/dependency-map nmsp-map)]
+            (let [dep-map (em/dependency-map ^java.util.Map nmsp-map)]
               (try
                 (.accept on-completion (Optional/of nmsp-map)) ;not dep-map!
                 dep-map

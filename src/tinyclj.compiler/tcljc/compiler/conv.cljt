@@ -167,9 +167,9 @@
         (jb/polymorphic? to-tp))
     from
     
-    (or (.isAssignableFrom to-tp (x/type from))
+    (or (jb/jvm-assignable-to? (x/type from) to-tp)
         (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
-    (xf/coerce from to-tp)
+    (xf/coerce from to-tp)              ;widen
 
     (jb/statement? to-tp)
     (xf/coerce-to-statm from)
@@ -188,9 +188,8 @@
           (xf/prog2-expr from (expr-default to-tp)))
         
         (when (jb/reference? to-tp)
-          (cond (or (jb/object? from-cl)
-                    (jb/jvm-assignable-to? from-cl to-cl))
-                (xf/coerce from to-tp)
+          (cond (jb/jvm-assignable-to? to-cl from-cl)
+                (xf/coerce from to-tp)  ;narrow
 
                 (jb/same-class? Void/TYPE from-cl)
                 (xf/prog2-expr from (x/const to-tp nil))

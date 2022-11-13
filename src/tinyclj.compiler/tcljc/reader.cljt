@@ -714,7 +714,7 @@
                 (do (.add l (read-form+ws c))
                     (recur l)))))
 
-          (read-list-eager-tail ^IMeta [^Cursor c]
+          (read-list-eager-tail [^Cursor c]
             ;; pre: looking at form
             (loop [l (ArrayList.)]
               (.add l (read-form+ws c))

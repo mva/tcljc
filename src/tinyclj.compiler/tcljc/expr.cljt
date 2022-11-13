@@ -1185,9 +1185,6 @@
               (if (nil? load-mh-ext) load-mh-impl load-mh-ext)
               load-mh-impl body-node?))
 
-(defn ac-load-mh-ext ^ConstantInstruction [^ArityCode ac]
-  (.load-mh-ext ac))
-
 (defn aca-by-n ^"[Ltcljc.expr.ArityCode;" [^"[Ltcljc.expr.ArityCode;" aca]
   (let [a (aclone aca)]
     (sort-by #(at-n (.at ^ArityCode %)) a)

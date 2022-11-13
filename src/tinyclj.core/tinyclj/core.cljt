@@ -226,8 +226,8 @@
     map m as its metadata."
    :added "1.0"
    :static true}
- with-meta (fn ^:static with-meta [^clojure.lang.IObj x m]
-             (. x (withMeta m))))
+ with-meta (fn ^:static with-meta [x m]
+             (. ^clojure.lang.IObj x (withMeta m))))
 
 (def ^{:private true :redef true}
   assert-valid-fdecl (fn [fdecl]))
@@ -3276,8 +3276,8 @@
   "Returns a new, transient version of the collection, in constant time."
   {:added "1.1"
    :static true}
-  [^clojure.lang.IEditableCollection coll] 
-  (.asTransient coll))
+  [coll] 
+  (.asTransient ^clojure.lang.IEditableCollection coll))
 
 (defn persistent! 
   "Returns a new, persistent version of the transient collection, in

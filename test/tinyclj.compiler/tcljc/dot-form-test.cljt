@@ -319,17 +319,17 @@
            (ALOAD_1)
            (INVOKEVIRTUAL MethodHandle "invoke"
                           "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
-           (CHECKCAST List)
            (ASTORE_2)
-           ["LOCAL 2: List args"]
+           ["LOCAL 2: IPersistentVector args"]
            (ALOAD_0)
            (ALOAD_2)
+           (CHECKCAST List)
            (INVOKEVIRTUAL MethodHandle "invokeWithArguments"
                           "(Ljava/util/List;)Ljava/lang/Object;")
            (ARETURN)]
          (asm-expr [^java.lang.invoke.MethodHandle mh ^Object x]
-                   (let* [^java.util.List args [nil x]]
-                     (.invokeWithArguments mh args)))))
+                   (let* [args [nil x]]
+                     (.invokeWithArguments mh ^java.util.List args)))))
   (is (= '[["LOCAL 0: MethodHandle mh"]
            ["LOCAL 1: Object x"]
            (LDC [VIRTUAL MethodHandle "invokeWithArguments"

@@ -68,15 +68,11 @@
   (.isInterface tp))
 
 
-;;; More permissive assignment compatibility than Java, but more
-;;; restrictive than what the JVM allows.  For type checking, the JVM
-;;; treats an interface class similar to j.l.Object.  On the other
-;;; hand, Tinyclj should reject assigning a value of a known class
-;;; (including primitives) to an interface that the class does not
-;;; implement.
 (defn jvm-assignable-to? ^boolean [^Class a ^Class b]
-  (or (.isAssignableFrom b a)
-      (and (interface? b) (interface? a))))
+  ;; Technically we use the more restrictive Java point of view here.
+  ;; For type checking, the JVM itself treats an interface class
+  ;; similar to java.lang.Object.
+  (.isAssignableFrom b a))
 
 ;;; ------------------------------------------------------------------------
 
