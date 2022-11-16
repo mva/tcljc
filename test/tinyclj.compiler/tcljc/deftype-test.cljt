@@ -1147,3 +1147,117 @@
                                               pkg.ns0.Foo
                                               []
                                               :implements [])))]))))
+
+;;; ------------------------------------------------------------------------
+
+(def exp-simple-self-reference-field
+  '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/Node"
+            nil "java/lang/Object" [IType])
+     [(FIELD [PUBLIC FINAL] "left" "Lpkg/ns0/Node;")]
+              
+     [(METHOD [PUBLIC] "<init>" "(Lpkg/ns0/Node;)V")
+      (ALOAD_0)
+      (INVOKESPECIAL Object "<init>" "()V")
+      (ALOAD_0)
+      (ALOAD_1)
+      (PUTFIELD . "left" "Lpkg/ns0/Node;")
+      (RETURN)]
+
+     [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+      ["LOCAL 0: Node _"]
+      (ALOAD_0)
+      (GETFIELD . "left" "Lpkg/ns0/Node;")
+      (INVOKEVIRTUAL . "toString" "()Ljava/lang/String;")
+      (ARETURN)]]
+           
+    [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+     [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+      (RETURN)]
+     [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+      (LDC "tinyclj.core")
+      (ARETURN)]]
+           
+    [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+     [(FIELD [PUBLIC STATIC VOLATILE] "a" "[Lpkg/ns0/Node;")]
+            
+     [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+      (LDC "pkg.ns0")
+      (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+      (RETURN)]]])
+
+;;; EXPERIMENTAL
+(deftest simple-self-reference-field
+  (is (= exp-simple-self-reference-field
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/Node
+                   pkg.ns0.Node
+                   [^Node left]         ;short name
+                   :implements
+                   [clojure.lang.IType]
+                   (toString [_] (.toString left)))
+                 (def ^"[Lpkg.ns0.Node;" a)]))) ;non-trivial descriptor
+  (is (= exp-simple-self-reference-field
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/Node
+                   pkg.ns0.Node
+                   [^pkg.ns0.Node left] ;long name
+                   :implements
+                   [clojure.lang.IType]
+                   (toString [_] (.toString left)))
+                 (def ^"[Lpkg.ns0.Node;" a)]))) ;non-trivial descriptor
+  (is (= exp-simple-self-reference-field
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/Node
+                   pkg.ns0.Node
+                   [^"Lpkg.ns0.Node;" left] ;descriptor
+                   :implements
+                   [clojure.lang.IType]
+                   (toString [_] (.toString left)))
+                 (def ^"[Lpkg.ns0.Node;" a)])))) ;non-trivial descriptor
+
+;;; EXPERIMENTAL
+(deftest array-self-reference-field
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/Node"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "nds" "[Lpkg/ns0/Node;")]
+            
+            [(METHOD [PUBLIC] "<init>" "([Lpkg/ns0/Node;)V")
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "nds" "[Lpkg/ns0/Node;")
+             (RETURN)]
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: Node _"]
+             (ALOAD_0)
+             (GETFIELD . "nds" "[Lpkg/ns0/Node;")
+             (INVOKEVIRTUAL Object "toString" "()Ljava/lang/String;")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+            [(FIELD [PUBLIC STATIC VOLATILE] "a" "[Lpkg/ns0/Node;")]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/Node
+                   pkg.ns0.Node
+                   [^"[Lpkg.ns0.Node;" nds]
+                   :implements
+                   [clojure.lang.IType]
+                   (toString [_] (.toString nds)))
+                 (def ^"[Lpkg.ns0.Node;" a)])))) ;non-trivial descriptor

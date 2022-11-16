@@ -269,6 +269,39 @@
 (def mhd-null-string (mhd-static [RT "nullToEmptyString"] Object [Object]))
 (def mhd-boolean-to-zero-one (mhd-static [RT "booleanToZeroOne"] int [boolean]))
 
+
+(defn- aidx-primitive ^int [^TypeDescriptor$OfField tpd]
+  (case (.charAt (.descriptorString tpd) 0)
+    \B 8
+    \C 7
+    \D 3
+    \F 2
+    \I 0
+    \J 1
+    \S 9
+    \Z 6))
+
+;;; boxed type of given primitive:
+(def ^:private box-types                ;types produced by the reader
+  (doto (new objects 11)
+    ;; native constant pool loadable
+    (aset 0 java.lang.Integer)
+    (aset 1 java.lang.Long)
+    (aset 2 java.lang.Float)
+    (aset 3 java.lang.Double)
+    (aset 4 java.lang.String)
+    (aset 5 java.lang.Class)
+    ;; mapped to condy
+    (aset 6 java.lang.Boolean)
+    (aset 7 java.lang.Character)
+    (aset 8 java.lang.Byte)
+    (aset 9 java.lang.Short)
+    (aset 10 Pattern)))
+
+(defn logical->box ^Class [^TypeDescriptor$OfField tpd]
+  ;; pre: `tp` is a non-void primitive type
+  (aget box-types (aidx-primitive tpd)))
+
 ;;; converting object to primitive value (currently "checked" variant):
 (def ^:private primitive-conv-method
   (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 11)
@@ -285,8 +318,8 @@
     (aset 10 nil)))
 
 (defn logical->conv-object-mhd ^DirectMethodHandleDesc [^Class tp]
-  ;; pre: `cl` is a non-void primitive type
-  (aget primitive-conv-method (jb/aidx jb/logical-types tp)))
+  ;; pre: `tp` is a non-void primitive type
+  (aget primitive-conv-method (aidx-primitive tp)))
 
 ;;; boxing:
 (def ^:private box-factory
@@ -304,8 +337,8 @@
     (aset 10 nil)))
 
 (defn logical->box-factory ^DirectMethodHandleDesc [^Class tp]
-  ;; pre: `cl` is a non-void primitive type
-  (aget box-factory (jb/aidx jb/logical-types tp)))
+  ;; pre: `tp` is a non-void primitive type
+  (aget box-factory (aidx-primitive tp)))
 
 ;;; unboxing:
 (def ^:private primitive-accessor
@@ -322,9 +355,9 @@
     (aset 9 (mhd-virtual [Short "shortValue"] short []))
     (aset 10 nil)))
 
-(defn logical->accessor-mhd ^DirectMethodHandleDesc [^Class tp]
-  ;; pre: `cl` is a non-void primitive type
-  (aget primitive-accessor (jb/aidx jb/logical-types tp)))
+(defn logical->accessor-mhd ^DirectMethodHandleDesc [^TypeDescriptor$OfField tpd]
+  ;; pre: `tpd` is a non-void primitive type
+  (aget primitive-accessor (aidx-primitive tpd)))
 
 ;;; polymorphic MethodHandle invokes:
 (def mhd-MethodHandle-invoke (mhd-virtual [MethodHandle "invoke"]

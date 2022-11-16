@@ -946,7 +946,9 @@
        (dtp-class-def ^DeftypeDef [^Env env short-sym fq-sym binary-sym
                                    field-sig opts methods]
          (let [this-class (ClassDesc/of (name binary-sym))
-               cdef (sigclass/eph-dtp-class-def this-class field-sig opts
+               cdef (sigclass/eph-dtp-class-def (ctx/this-ns tl-ctx)
+                                                (.get-imports (ctx/tl-ctx* tl-ctx))
+                                                this-class field-sig opts
                                                 tl-ctx)
                
                ctx (ctx/tl-ctx* tl-ctx)

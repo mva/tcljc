@@ -423,14 +423,13 @@
 
 
 (deftype FieldDef [^String mnm
-                   ^Class tp
                    ^ClassDesc tpd
                    ^int flags
                    ^boolean pass-to-super?])
 
-(defn field-def ^FieldDef [^String mnm ^Class tp ^int flags
+(defn field-def ^FieldDef [^String mnm ^ClassDesc tpd ^int flags
                            ^boolean pass-to-super?]
-  (FieldDef. mnm tp (rt/describe-class tp) flags pass-to-super?))
+  (FieldDef. mnm tpd flags pass-to-super?))
 
 ;;; Holds just enough information to pass a definterface* class or a
 ;;; skeletal deftype* class to the emitter.

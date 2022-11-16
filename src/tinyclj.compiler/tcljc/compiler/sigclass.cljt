@@ -98,8 +98,8 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn itf-class-def ^ClassDef [^String pkg-name ^IPersistentMap imports
-                               [_ if-nm & methods :as form]]
+(defn- tag-desc-of ^ClassDesc [^String pkg-name ^IPersistentMap imports
+                               form ^boolean void? ^ClassDesc no-hint]
   (letfn [(as-class-desc ^ClassDesc [x]
             ;; used by definterface to accept class names without
             ;; existing definition
@@ -112,26 +112,28 @@
               (try
                 (rt/str-to-cld x)
                 (catch IllegalArgumentException _
-                  (wrong/syntax "invalid class name" x)))))
-          
-          (tag-desc-of ^ClassDesc [form ^boolean void? ^ClassDesc no-hint]
-            (if-some [tag (sig/get-tag form)]
-              (let [tp (as-class-desc tag)]
-                (when (and (not void?) (= rt/void tp))
-                  (wrong/syntax "`void` tag not applicable in this context"))
-                tp)
-              no-hint))
-          
-          (method-sig ^MethodTypeDesc [msig]
+                  (wrong/syntax "invalid class name" x)))))]
+    
+    (if-some [tag (sig/get-tag form)]
+      (let [tp (as-class-desc tag)]
+        (when (and (not void?) (= rt/void tp))
+          (wrong/syntax "`void` tag not applicable in this context"))
+        tp)
+      no-hint)))
+
+(defn itf-class-def ^ClassDef [^String pkg-name ^IPersistentMap imports
+                               [_ if-nm & methods :as form]]
+  (letfn [(method-sig ^MethodTypeDesc [msig]
             (loop [acc []
                    [p :as params] (seq msig)]
               (cond
                 (nil? params)
-                (rt/mtd-of (tag-desc-of msig true rt/object) acc)
+                (-> (tag-desc-of pkg-name imports msig true rt/object)
+                    (rt/mtd-of acc))
              
                 (= p '&)
                 (let [p (sig/ensure-parameter (second params))
-                      tp (tag-desc-of p false nil)
+                      tp (tag-desc-of pkg-name imports p false nil)
                       tp (cond
                            (nil? tp)
                            (wrong/syntax "method cannot have rest parameter")
@@ -143,7 +145,7 @@
                     (recur (conj acc tp) nil))) ;VARARGS flag is set by caller
 
                 :else
-                (let [tp (tag-desc-of p false rt/object)]
+                (let [tp (tag-desc-of pkg-name imports p false rt/object)]
                   (recur (conj acc tp) (next params))))))
 
 
@@ -223,12 +225,16 @@
           (let [const (rt/describe-const-expr (keyword nil (.mnm fdef)))]
             (.constantInstruction xb const)))
         (conv-to-field ^CodeBuilder [^CodeBuilder xb ^FieldDef fdef]
-          (let [tp (.tp fdef)]
-            (if (jb/reference? tp)
-              (cond-> xb (not (jb/object? tp)) (.checkcast (.tpd fdef)))
+          (let [tpd (.tpd fdef)]
+            (cond
+              (.isPrimitive tpd)
               ;; low-level variant of conv/primitive-unbox-expr:
-              (-> (.checkcast xb (rt/cd-of (jb/logical->box tp)))
-                  (cf/invoke (rt/logical->accessor-mhd tp))))))
+              (-> (.checkcast xb (rt/cd-of (rt/logical->box tpd)))
+                  (cf/invoke (rt/logical->accessor-mhd tpd)))
+
+              (.equals rt/object tpd) xb ;omit CHECKCAST
+
+              :else (.checkcast xb (.tpd fdef)))))
         (lookup+cast ^CodeBuilder [^CodeBuilder xb ^FieldDef fdef]
           (-> (.aload xb 0)
               (kw-instr fdef)
@@ -253,13 +259,14 @@
                               (cf/parameter-mtd rt/void [] primary-param-lds))
               (.areturn)))]
   
-  (defn eph-dtp-class-def ^ClassDef [^ClassDesc this-class field-sig opts
+  (defn eph-dtp-class-def ^ClassDef [^String pkg-name ^IPersistentMap imports
+                                     ^ClassDesc this-class field-sig opts
                                      tl-ctx]
     (letfn [(eph-field ^FieldDef [nm]
               ;; mirrors `field-bref` below
-              (let [tp (sig/tag-of nm false jb/Object tl-ctx)
+              (let [tpd (tag-desc-of pkg-name imports nm false rt/object)
                     mnm (cfg/munge-name nm)]
-                (cf/field-def mnm tp (field-flags nm) (pass-to-super? nm))))
+                (cf/field-def mnm tpd (field-flags nm) (pass-to-super? nm))))
 
             (constr-argn ^int [^DirectMethodHandleDesc mhd]
               (-> mhd .invocationType .parameterCount))

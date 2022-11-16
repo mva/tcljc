@@ -130,18 +130,18 @@
 ;;; ------------------------------------------------------------------------
 
 (defn primitive-unbox-expr ^Expr [^Class to-tp ^Expr arg]
-  (let [box-tp (jb/logical->box to-tp)
+  (let [box-tp (rt/logical->box to-tp)
         typed-x (xf/coerce arg box-tp)]
     (x/invoke-xref to-tp [typed-x] (rt/logical->accessor-mhd to-tp))))
 
 (defn primitive-conv-from-object ^Expr [^Class to-tp ^Expr arg]
-  (if (x/type? (jb/logical->box to-tp) arg)
+  (if (x/type? (rt/logical->box to-tp) arg)
     (primitive-unbox-expr to-tp arg)
     (x/invoke-xref to-tp [arg] (rt/logical->conv-object-mhd to-tp))))
 
 (defn box-expr ^Expr [^Expr prim-expr] ;pre: `prim-expr` is of primitive type
   (let [from-tp (x/type prim-expr)]
-    (x/invoke-xref (jb/logical->box from-tp) [prim-expr]
+    (x/invoke-xref (rt/logical->box from-tp) [prim-expr]
                    (rt/logical->box-factory from-tp))))
 
 (defn box-any-expr ^Expr [^Expr x]
