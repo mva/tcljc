@@ -39,29 +39,34 @@
 (def ^:private rt-lookup (cfg/get-rt-lookup app-ld))
 (def ^:private bootstrap-ns-str "tinyclj.lang.bootstrap")
 
-(defn ^FnMacroFn floor-mod [cenv form]
-  (wrong/check-argc 2 form)
-  (cons 'java.lang.Math/floorMod (rest form)))
-(defn ^FnMacroFn inc1 [cenv form]
-  (wrong/check-argc 1 form)
-  (list 'tinyclj.lang.primitive/xadd (second form) jb/jvm-int-one))
-(defn ^FnMacroFn dec1 [cenv form]
-  (wrong/check-argc 1 form)
-  (list 'tinyclj.lang.primitive/xsub (second form) jb/jvm-int-one))
+(def floor-mod
+  (^FnMacroFn fn [cenv form]
+   (wrong/check-argc 2 form)
+   (cons 'java.lang.Math/floorMod (rest form))))
+(def inc1
+  (^FnMacroFn fn [cenv form]
+   (wrong/check-argc 1 form)
+   (list 'tinyclj.lang.primitive/xadd (second form) jb/jvm-int-one)))
+(def dec1
+  (^FnMacroFn fn [cenv form]
+   (wrong/check-argc 1 form)
+   (list 'tinyclj.lang.primitive/xsub (second form) jb/jvm-int-one)))
 
 (defn macro-xnot [form]
   (list 'tinyclj.lang.primitive/xxor form -1))
-(defn ^FnMacroFn xnot [cenv form]
-  (wrong/check-argc 1 form)
-  (macro-xnot (second form)))
+(def xnot
+  (^FnMacroFn fn [cenv form]
+   (wrong/check-argc 1 form)
+   (macro-xnot (second form))))
 (defn macro-xand-not [a b]
   ;; order of I2L and bit-not does not matter, because I2L
   ;; replicates the most significant bit into the upper half of the
   ;; long value
   (list 'tinyclj.lang.primitive/xand a (macro-xnot b)))
-(defn ^FnMacroFn xand-not [cenv [_ a b :as form]]
-  (wrong/check-argc 2 form)
-  (macro-xand-not a b))
+(def xand-not
+  (^FnMacroFn fn [cenv [_ a b :as form]]
+   (wrong/check-argc 2 form)
+   (macro-xand-not a b)))
 
 (defn- shifted-one [discarded-form shift-form]
   (let [z (list 'tinyclj.lang.primitive/xdefault discarded-form)
@@ -69,20 +74,24 @@
     (list 'tinyclj.lang.primitive/xshl o shift-form)))
 (defn- macro-zero? [form]
   (list 'tinyclj.lang.primitive/eq form (object 0)))
-(defn ^FnMacroFn xbit-clear [cenv [_ x n :as form]]
-  (wrong/check-argc 2 form)
-  (macro-xand-not x (shifted-one x n)))
-(defn ^FnMacroFn xbit-set [cenv [_ x n :as form]]
-  (wrong/check-argc 2 form)
-  (list 'tinyclj.lang.primitive/xor x (shifted-one x n)))
-(defn ^FnMacroFn xbit-flip [cenv [_ x n :as form]]
-  (wrong/check-argc 2 form)
-  (list 'tinyclj.lang.primitive/xxor x (shifted-one x n)))
-(defn ^FnMacroFn xbit-test [cenv [_ x n :as form]]
-  (wrong/check-argc 2 form)
-  (->> (list 'tinyclj.lang.primitive/xand x (shifted-one x n))
-       (macro-zero?)
-       (list 'tinyclj.lang.primitive/not)))
+(def xbit-clear
+  (^FnMacroFn fn [cenv [_ x n :as form]]
+   (wrong/check-argc 2 form)
+   (macro-xand-not x (shifted-one x n))))
+(def xbit-set
+  (^FnMacroFn fn [cenv [_ x n :as form]]
+   (wrong/check-argc 2 form)
+   (list 'tinyclj.lang.primitive/xor x (shifted-one x n))))
+(def xbit-flip
+  (^FnMacroFn fn [cenv [_ x n :as form]]
+   (wrong/check-argc 2 form)
+   (list 'tinyclj.lang.primitive/xxor x (shifted-one x n))))
+(def xbit-test
+  (^FnMacroFn fn [cenv [_ x n :as form]]
+   (wrong/check-argc 2 form)
+   (->> (list 'tinyclj.lang.primitive/xand x (shifted-one x n))
+        (macro-zero?)
+        (list 'tinyclj.lang.primitive/not))))
 
 
 (defn- nary-bits [op form]
@@ -93,57 +102,71 @@
     (wrong/check-argc-min 2 form)
     (ex (rest form))))
 
-(defn ^FnMacroFn xand-nary [env form]
-  (nary-bits 'tinyclj.lang.primitive/xand form))
-(defn ^FnMacroFn xor-nary [env form]
-  (nary-bits 'tinyclj.lang.primitive/xor form))
-(defn ^FnMacroFn xxor-nary [env form]
-  (nary-bits 'tinyclj.lang.primitive/xxor form))
-;; (defn ^FnMacroFn xand-not-nary [env form]
-;;   (nary-bits 'tinyclj.lang.primitive/xand-not form))
+(def xand-nary
+  (^FnMacroFn fn [env form]
+   (nary-bits 'tinyclj.lang.primitive/xand form)))
+(def xor-nary
+  (^FnMacroFn fn [env form]
+   (nary-bits 'tinyclj.lang.primitive/xor form)))
+(def xxor-nary
+  (^FnMacroFn fn [env form]
+   (nary-bits 'tinyclj.lang.primitive/xxor form)))
+;; (def xand-not-nary
+;;   (^FnMacroFn fn [env form]
+;;    (nary-bits 'tinyclj.lang.primitive/xand-not form)))
 
-(defn ^FnMacroFn test-zero [env form]
-  (wrong/check-argc 1 form)
-  (list 'tinyclj.lang.primitive/eq (second form) 0))
-(defn ^FnMacroFn test-pos [env form]
-  (wrong/check-argc 1 form)
-  (list 'tinyclj.lang.primitive/gt (second form) 0))
-(defn ^FnMacroFn test-neg [env form]
-  (wrong/check-argc 1 form)
-  (list 'tinyclj.lang.primitive/lt (second form) 0))
-(defn ^FnMacroFn test-even [env form]
-  (wrong/check-argc 1 form)
-  (list 'tinyclj.lang.primitive/eq
-        (list 'tinyclj.lang.primitive/xand (second form) 1) 0))
-(defn ^FnMacroFn test-odd [env form]
-  (wrong/check-argc 1 form)
-  (list 'tinyclj.lang.primitive/not
-        (list 'tinyclj.lang.primitive/eq
-              (list 'tinyclj.lang.primitive/xand (second form) 1) 0)))
+(def test-zero
+  (^FnMacroFn fn [env form]
+   (wrong/check-argc 1 form)
+   (list 'tinyclj.lang.primitive/eq (second form) 0)))
+(def test-pos
+  (^FnMacroFn fn [env form]
+   (wrong/check-argc 1 form)
+   (list 'tinyclj.lang.primitive/gt (second form) 0)))
+(def test-neg
+  (^FnMacroFn fn [env form]
+   (wrong/check-argc 1 form)
+   (list 'tinyclj.lang.primitive/lt (second form) 0)))
+(def test-even
+  (^FnMacroFn fn [env form]
+   (wrong/check-argc 1 form)
+   (list 'tinyclj.lang.primitive/eq
+         (list 'tinyclj.lang.primitive/xand (second form) 1) 0)))
+(def test-odd
+  (^FnMacroFn fn [env form]
+   (wrong/check-argc 1 form)
+   (list 'tinyclj.lang.primitive/not
+         (list 'tinyclj.lang.primitive/eq
+               (list 'tinyclj.lang.primitive/xand (second form) 1) 0))))
 
-(defn ^FnMacroFn test-identical  [env form]
-  (wrong/check-argc 2 form)
-  (cons 'tinyclj.lang.primitive/acmpeq (rest form)))
-(defn ^FnMacroFn test-nil [env form]
-  (wrong/check-argc 1 form)
-  (list 'tinyclj.lang.primitive/acmpeq (second form) nil))
-(defn ^FnMacroFn test-some [env form]
-  (wrong/check-argc 1 form)
-  (list 'tinyclj.lang.primitive/acmpne (second form) nil))
+(def test-identical
+  (^FnMacroFn fn [env form]
+   (wrong/check-argc 2 form)
+   (cons 'tinyclj.lang.primitive/acmpeq (rest form))))
+(def test-nil
+  (^FnMacroFn fn [env form]
+   (wrong/check-argc 1 form)
+   (list 'tinyclj.lang.primitive/acmpeq (second form) nil)))
+(def test-some
+  (^FnMacroFn fn [env form]
+   (wrong/check-argc 1 form)
+   (list 'tinyclj.lang.primitive/acmpne (second form) nil)))
 
-(defn ^FnMacroFn xaload-nary [cenv [_ & args]]
-  (if (< (bounded-count 3 args) 3)
-    (cons 'tinyclj.lang.primitive/xaload args)
-    (recur cenv (list* 'tinyclj.lang.primitive/aget
-                       (list* 'tinyclj.lang.primitive/xaload (take 2 args))
-                       (drop 2 args)))))
-(defn ^FnMacroFn xastore-nary [cenv [_ & args]]
-  (if (< (bounded-count 4 args) 4)
-    (cons 'tinyclj.lang.primitive/xastore args)
-    (list* 'tinyclj.lang.primitive/xastore
-           (.expand xaload-nary cenv (cons 'tinyclj.lang.primitive/aget
-                                           (drop-last 2 args)))
-           (take-last 2 args))))
+(def xaload-nary
+  (^FnMacroFn fn [cenv [_ & args]]
+   (if (< (bounded-count 3 args) 3)
+     (cons 'tinyclj.lang.primitive/xaload args)
+     (recur cenv (list* 'tinyclj.lang.primitive/aget
+                        (list* 'tinyclj.lang.primitive/xaload (take 2 args))
+                        (drop 2 args))))))
+(def xastore-nary
+  (^FnMacroFn fn [cenv [_ & args]]
+   (if (< (bounded-count 4 args) 4)
+     (cons 'tinyclj.lang.primitive/xastore args)
+     (list* 'tinyclj.lang.primitive/xastore
+            (.expand xaload-nary cenv (cons 'tinyclj.lang.primitive/aget
+                                            (drop-last 2 args)))
+            (take-last 2 args)))))
 (defn- put-macros ^HashMap [^HashMap m]
   (letfn [(macro-ref ^MacroRef [^Symbol nm ^FnMacroFn mfn]
             (x/macro-ref nm bootstrap-ns-str mfn nil nil))

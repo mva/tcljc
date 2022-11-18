@@ -343,9 +343,7 @@
                     m))
               m (conj (if (meta name) (meta name) {}) m)]
           (list 'def (with-meta name m)
-                (if (:tag m)
-                  (cons (with-meta `fn {:tag (:tag m)}) fdecl)
-                  (cons `fn (cons name fdecl)))))))
+								(with-meta (cons `fn (if (:tag m) fdecl (cons name fdecl))) {:tag (:tag m)})))))
 
 ;; (. (var defn) (setMacro))
 
@@ -859,16 +857,15 @@
 (defmacro not= [& xs] `(not (= ~@xs)))
 
 
-(defn ^java.util.Comparator compare
-  "Comparator. Returns a negative number, zero, or a positive number
+(def compare
+  ^{:doc "Comparator. Returns a negative number, zero, or a positive number
   when x is logically 'less than', 'equal to', or 'greater than'
   y. Same as Java x.compareTo(y) except it also works for nil, and
   compares numbers and collections in a type-independent manner. x
   must implement Comparable"
-  {
-   :inline (fn [x y] `(. clojure.lang.Util compare ~x ~y))
    :added "1.0"}
-  [x y] (. clojure.lang.Util (compare x y)))
+  (^java.util.Comparator fn
+   [x y] (. clojure.lang.Util (compare x y))))
 
 (defmacro and
   "Evaluates exprs one at a time, from left to right. If a form

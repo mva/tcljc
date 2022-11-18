@@ -127,13 +127,15 @@
     (catch java.nio.file.NoSuchFileException _ ;thrown if `p` does not exist
       nil)))
 
-(defn- ^Predicate dir? [x]
-  (Files/isDirectory x))
+(def ^:private dir?
+  (^Predicate fn [x]
+   (Files/isDirectory x)))
 (defn recursive-directory-seq [^Path p]
   (path-seq p Integer/MAX_VALUE dir?))
 
-(defn- ^Predicate file? [x]
-  (Files/isRegularFile x))
+(def ^:private file?
+  (^Predicate fn [x]
+   (Files/isRegularFile x)))
 (defn file-seq [^Path p]
   (path-seq p Integer/MAX_VALUE file?))
 (defn- directory-file-seq [^Path p]

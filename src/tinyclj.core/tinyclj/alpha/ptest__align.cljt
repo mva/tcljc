@@ -356,15 +356,16 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn ^FnSideStyle plain-text-spaced [this-side-mask masks docs]
-  (let [a (pp/mk-array* (alength docs))]
-    (dotimes [i (alength a)]
-      (let [doc (aget docs i), doc-mask (aget masks i)]
-        (aset a i
-              (if (zero? (bit-and this-side-mask doc-mask))
-                (pp/pad-to pp/text-empty doc)
-                doc))))
-    a))
+(def plain-text-spaced
+  (^FnSideStyle fn [this-side-mask masks docs]
+   (let [a (pp/mk-array* (alength docs))]
+     (dotimes [i (alength a)]
+       (let [doc (aget docs i), doc-mask (aget masks i)]
+         (aset a i
+               (if (zero? (bit-and this-side-mask doc-mask))
+                 (pp/pad-to pp/text-empty doc)
+                 doc))))
+     a)))
 
 (def ^:private style-not-in-b (pp/text term/fg-red 0))
 (def ^:private style-not-in-a (pp/text term/fg-blue 0))
@@ -375,56 +376,58 @@
     style-not-in-b
     style-not-in-a))
 
-(defn ^FnSideStyle color-exclusive-spaced [this-side-mask masks docs]
-  (let [a (pp/mk-array* (alength docs))
-        style (side-style this-side-mask)]
-    (dotimes [i (alength a)]
-      (let [doc (aget docs i), doc-mask (aget masks i)]
-        (aset a i
-              (cond
-                (zero? (bit-and this-side-mask doc-mask))
-                (pp/pad-to pp/text-empty doc)
+(def color-exclusive-spaced
+  (^FnSideStyle fn [this-side-mask masks docs]
+   (let [a (pp/mk-array* (alength docs))
+         style (side-style this-side-mask)]
+     (dotimes [i (alength a)]
+       (let [doc (aget docs i), doc-mask (aget masks i)]
+         (aset a i
+               (cond
+                 (zero? (bit-and this-side-mask doc-mask))
+                 (pp/pad-to pp/text-empty doc)
 
-                (not= doc-mask part-of-both)
-                (pp/styled doc style style-revert)
-                
-                :else doc))))
-    a))
+                 (not= doc-mask part-of-both)
+                 (pp/styled doc style style-revert)
+                  
+                 :else doc))))
+     a)))
 
-(defn ^FnSideStyle color-exclusive-compact [this-side-mask masks docs]
-  (letfn [(end-of-exclusives ^int [^int i]
-            (if (or (= i (alength masks)) (= (aget masks i) part-of-both))
-              i
-              (recur (inc i))))
-          (collect-side-docs [^int mask ^int i ^int j]
-            (loop [acc [], i i]
-              (if (= i j)
-                acc
-                (recur (cond-> acc (= (aget masks i) mask) (conj (aget docs i)))
-                       (inc i)))))]
-    (let [style (side-style this-side-mask)]
-      (loop [acc [], i 0]
-        (cond
-          (= i (alength masks))
-          acc
+(def color-exclusive-compact
+  (^FnSideStyle fn [this-side-mask masks docs]
+   (letfn [(end-of-exclusives ^int [^int i]
+             (if (or (= i (alength masks)) (= (aget masks i) part-of-both))
+               i
+               (recur (inc i))))
+           (collect-side-docs [^int mask ^int i ^int j]
+             (loop [acc [], i i]
+               (if (= i j)
+                 acc
+                 (recur (cond-> acc (= (aget masks i) mask) (conj (aget docs i)))
+                        (inc i)))))]
+     (let [style (side-style this-side-mask)]
+       (loop [acc [], i 0]
+         (cond
+           (= i (alength masks))
+           acc
 
-          (= (aget masks i) part-of-both)
-          (recur (conj acc (aget docs i)) (inc i))
+           (= (aget masks i) part-of-both)
+           (recur (conj acc (aget docs i)) (inc i))
 
-          :else
-          (let [j (end-of-exclusives i)
-                this (-> this-side-mask
-                         (collect-side-docs i j))
-                other (-> (bit-xor part-of-both this-side-mask)
-                          (collect-side-docs i j))]
-            (recur (into acc
-                         (map (fn ^Doc [^int idx]
-                                (let [this-doc (nth this idx pp/text-empty)
-                                      other-doc (nth other idx pp/text-empty)]
-                                  (-> (pp/styled this-doc style style-revert)
-                                      (pp/pad-to other-doc)))))
-                         (range (max (count this) (count other))))
-                   j)))))))
+           :else
+           (let [j (end-of-exclusives i)
+                 this (-> this-side-mask
+                          (collect-side-docs i j))
+                 other (-> (bit-xor part-of-both this-side-mask)
+                           (collect-side-docs i j))]
+             (recur (into acc
+                          (map (fn ^Doc [^int idx]
+                                 (let [this-doc (nth this idx pp/text-empty)
+                                       other-doc (nth other idx pp/text-empty)]
+                                   (-> (pp/styled this-doc style style-revert)
+                                       (pp/pad-to other-doc)))))
+                          (range (max (count this) (count other))))
+                    j))))))))
 
 
 (def side-by-side-gap 4)

@@ -1446,60 +1446,66 @@
          (conv/primitive-conv-from-object to-tp arg)
          (conv/conv-to to-tp conv-to-fn arg))))))
 
-(defn ^FnPrimitiveFn identity-primitive [form argv tl-ctx]
-  (wrong/check-argc 1 form)
-  (x/identity (nth argv 0)))
+(def identity-primitive
+  (^FnPrimitiveFn fn [form argv tl-ctx]
+   (wrong/check-argc 1 form)
+   (x/identity (nth argv 0))))
 
-(defn ^FnPrimitiveFn boolean-primitive [form argv tl-ctx]
-  (wrong/check-argc 1 form)
-  (branch/conv-to-boolean (nth argv 0)))
+(def boolean-primitive
+  (^FnPrimitiveFn fn [form argv tl-ctx]
+   (wrong/check-argc 1 form)
+   (branch/conv-to-boolean (nth argv 0))))
 
-(defn ^FnPrimitiveFn object-primitive [form argv tl-ctx]
-  (wrong/check-argc 1 form)
-  (let [arg ^Expr (nth argv 0)]
-    (cond
-      (x/statement? arg) x/expr-nil-object
-      (x/reference? arg) arg
-      :else (conv/box-expr arg))))
+(def object-primitive
+  (^FnPrimitiveFn fn [form argv tl-ctx]
+   (wrong/check-argc 1 form)
+   (let [arg ^Expr (nth argv 0)]
+     (cond
+       (x/statement? arg) x/expr-nil-object
+       (x/reference? arg) arg
+       :else (conv/box-expr arg)))))
 
-(defn ^FnPrimitiveFn list-primitive [form argv tl-ctx]
-  ;; mirrors `collection-form`, with `args` being Exprs already
-  (coll-literal rt/clnm-list argv rt/mhd-list tl-ctx))
+(def list-primitive
+  (^FnPrimitiveFn fn [form argv tl-ctx]
+   ;; mirrors `collection-form`, with `args` being Exprs already
+   (coll-literal rt/clnm-list argv rt/mhd-list tl-ctx)))
 
-(defn ^FnPrimitiveFn not-primitive [form argv tl-ctx]
-  (-> (.assemble boolean-primitive form argv tl-ctx) ;also checks argc
-      (xf/icmp x/expr-false cf/eq)))
+(def not-primitive
+  (^FnPrimitiveFn fn [form argv tl-ctx]
+   (-> (.assemble boolean-primitive form argv tl-ctx) ;also checks argc
+       (xf/icmp x/expr-false cf/eq))))
 
-(defn ^FnPrimitiveFn concat-primitive [form argv tl-ctx] ;aka `str`
-  (letfn [(string-or-expr [^Expr x]
-            (cond
-              (x/const-value? x)
-              (let [c (.const-value x)]
-                (cond
-                  (.equals c jb/jvm-null)
-                  ""
-                  
-                  (x/primitive? x)
-                  (str (rt/recover-primitive c (x/type x)))
+(def concat-primitive
+  (^FnPrimitiveFn fn [form argv tl-ctx] ;aka `str`
+   (letfn [(string-or-expr [^Expr x]
+             (cond
+               (x/const-value? x)
+               (let [c (.const-value x)]
+                 (cond
+                   (.equals c jb/jvm-null)
+                   ""
+                    
+                   (x/primitive? x)
+                   (str (rt/recover-primitive c (x/type x)))
 
-                  (or (string? c) (symbol? c) (keyword? c) (class? c))
-                  (str c)
+                   (or (string? c) (symbol? c) (keyword? c) (class? c))
+                   (str c)
 
-                  (instance? Pattern c)
-                  (.pattern ^Pattern c)
-                  
-                  :else x))             ;non-null reference
-              
-              (x/reference? x)
-              (x/invoke-xref jb/Object [x] rt/mhd-null-string)
-              
-              :else x))]                ;is some non-null constant
-    (let [args (map string-or-expr argv)
-          rstr (apply str (map #(if (string? %) % "\u0001") args))
-          recipe (x/const jb/String rstr)]
-      (if-some [nc-args (seq (remove string? args))]
-        (x/invoke-dynamic jb/String (vec nc-args) rt/bsm-concat [recipe])
-        recipe))))
+                   (instance? Pattern c)
+                   (.pattern ^Pattern c)
+                    
+                   :else x))            ;non-null reference
+                
+               (x/reference? x)
+               (x/invoke-xref jb/Object [x] rt/mhd-null-string)
+                
+               :else x))]               ;is some non-null constant
+     (let [args (map string-or-expr argv)
+           rstr (apply str (map #(if (string? %) % "\u0001") args))
+           recipe (x/const jb/String rstr)]
+       (if-some [nc-args (seq (remove string? args))]
+         (x/invoke-dynamic jb/String (vec nc-args) rt/bsm-concat [recipe])
+         recipe)))))
 
 
 (defn- typed-opcode
@@ -1522,18 +1528,19 @@
      (xf/arith-2 to-tp (conv/widen-from to-tp arg0)
                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
-(defn ^FnPrimitiveFn arith-2-xdiv-int [form args tl-ctx]
-  (let [x (.assemble (arith-2 Opcode/IDIV) form args tl-ctx)]
-    ;; FIXME... this does not work if the result is out of range of
-    ;; long; maybe better: truncate with something along the line of
-    ;; `(if (neg? x) (Math/ceil x) (Math/floor x))` (or put this into
-    ;; a static method that first checks if the division result is in
-    ;; range for long, and only falls back to the ceil/floor variant
-    ;; if out of range)
-    (condp x/type? x
-      jb/float (-> (conv/to-long x) (conv/to-float))
-      jb/double (-> (conv/to-long x) (conv/to-double))
-      #_else x)))
+(def arith-2-xdiv-int
+  (^FnPrimitiveFn fn [form args tl-ctx]
+   (let [x (.assemble (arith-2 Opcode/IDIV) form args tl-ctx)]
+     ;; FIXME... this does not work if the result is out of range of
+     ;; long; maybe better: truncate with something along the line of
+     ;; `(if (neg? x) (Math/ceil x) (Math/floor x))` (or put this into
+     ;; a static method that first checks if the division result is in
+     ;; range for long, and only falls back to the ceil/floor variant
+     ;; if out of range)
+     (condp x/type? x
+       jb/float (-> (conv/to-long x) (conv/to-float))
+       jb/double (-> (conv/to-long x) (conv/to-double))
+       #_else x))))
 
 (defn- ensure-float ^Expr [^Expr from] ;returns float or double expression
   (if (x/numeric? from)
@@ -1587,9 +1594,10 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn ^FnPrimitiveFn xdefault [form [arg0] tl-ctx] ;discards argument!
-  (wrong/check-argc 1 form)
-  (conv/expr-default (x/type arg0)))
+(def xdefault
+  (^FnPrimitiveFn fn [form [arg0] tl-ctx] ;discards argument!
+   (wrong/check-argc 1 form)
+   (conv/expr-default (x/type arg0))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -1645,26 +1653,27 @@
 ;;; least with Clojure 1.11.1.  To match this, both (hash -0.0) and
 ;;; (hash 0.0) map to zero.  This means that `=` can be lowered to
 ;;; `==` for floating point types as well.
-(defn ^FnPrimitiveFn equiv [form [arg0 arg1] tl-ctx]
-  (letfn [(equiv-if-identical? ^boolean [^Expr x]
-            (let [tp (x/type x)]
-              (or (jb/same-class? Class tp)
-                  (.isAssignableFrom java.lang.Enum tp)
-                  (jb/same-classname? rt/clnm-keyword tp))))]
-    (wrong/check-argc 2 form)
-    (cond
-      (and (conv/computational-int? arg0)
-           (x/same-type? arg0 arg1)) ;includes boolean/boolean & char/char
-      (xf/icmp arg0 arg1 cf/eq)
-      
-      (or (x/primitive? arg0) (x/primitive? arg1))
-      (branch/xcmp cf/eq arg0 arg1)
+(def equiv
+  (^FnPrimitiveFn fn [form [arg0 arg1] tl-ctx]
+   (letfn [(equiv-if-identical? ^boolean [^Expr x]
+             (let [tp (x/type x)]
+               (or (jb/same-class? Class tp)
+                   (.isAssignableFrom java.lang.Enum tp)
+                   (jb/same-classname? rt/clnm-keyword tp))))]
+     (wrong/check-argc 2 form)
+     (cond
+       (and (conv/computational-int? arg0)
+            (x/same-type? arg0 arg1)) ;includes boolean/boolean & char/char
+       (xf/icmp arg0 arg1 cf/eq)
+        
+       (or (x/primitive? arg0) (x/primitive? arg1))
+       (branch/xcmp cf/eq arg0 arg1)
 
-      (or (equiv-if-identical? arg0) (equiv-if-identical? arg1))
-      (xf/acmp arg0 arg1 cf/eq)
-      
-      :else
-      (x/invoke-xref jb/boolean [arg0 arg1] rt/mhd-equiv))))
+       (or (equiv-if-identical? arg0) (equiv-if-identical? arg1))
+       (xf/acmp arg0 arg1 cf/eq)
+        
+       :else
+       (x/invoke-xref jb/boolean [arg0 arg1] rt/mhd-equiv)))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -1673,30 +1682,33 @@
     x
     (x/wrong-type "expect array expression" x)))
 
-(defn ^FnPrimitiveFn alength-form [form args tl-ctx]
-  (wrong/check-argc 1 form)
-  (let [a (ensure-array (nth args 0))
-        instr (jdk.classfile.instruction.OperatorInstruction/of Opcode/ARRAYLENGTH)]
-    (x/insn* jb/int [a] instr)))
+(def alength-form
+  (^FnPrimitiveFn fn [form args tl-ctx]
+   (wrong/check-argc 1 form)
+   (let [a (ensure-array (nth args 0))
+         instr (jdk.classfile.instruction.OperatorInstruction/of Opcode/ARRAYLENGTH)]
+     (x/insn* jb/int [a] instr))))
 
-(defn ^FnPrimitiveFn xaload-form [form args tl-ctx]
-  (wrong/check-argc 2 form)
-  (let [a (ensure-array (nth args 0))
-        i (ensure-int (nth args 1))
-        ccl (.componentType (x/type a))
-        opc (cf/bc2opc Opcode/IALOAD (cf/opcode-delta ccl))]
-    (x/insn* ccl [a i]
-             (jdk.classfile.instruction.ArrayLoadInstruction/of opc))))
+(def xaload-form
+  (^FnPrimitiveFn fn [form args tl-ctx]
+   (wrong/check-argc 2 form)
+   (let [a (ensure-array (nth args 0))
+         i (ensure-int (nth args 1))
+         ccl (.componentType (x/type a))
+         opc (cf/bc2opc Opcode/IALOAD (cf/opcode-delta ccl))]
+     (x/insn* ccl [a i]
+              (jdk.classfile.instruction.ArrayLoadInstruction/of opc)))))
 
-(defn ^FnPrimitiveFn xastore-form [form args tl-ctx]
-  ;; Unlike the xASTORE bytecode, this primitive returns the stored
-  ;; value.  If passed to `as-statement`, the final "DUP*" argument
-  ;; can be dropped in favour of doing the matching "POP*".
-  (wrong/check-argc 3 form)
-  (let [a (ensure-array (nth args 0))
-        i (ensure-int (nth args 1))
-        ccl (.componentType (x/type a))
-        v (conv/consume (nth args 2) ccl)
-        opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ccl))]
-    (x/insn* ccl [a i v (x/dup-x2 ccl)]
-             (jdk.classfile.instruction.ArrayStoreInstruction/of opc))))
+(def xastore-form
+  (^FnPrimitiveFn fn [form args tl-ctx]
+   ;; Unlike the xASTORE bytecode, this primitive returns the stored
+   ;; value.  If passed to `as-statement`, the final "DUP*" argument
+   ;; can be dropped in favour of doing the matching "POP*".
+   (wrong/check-argc 3 form)
+   (let [a (ensure-array (nth args 0))
+         i (ensure-int (nth args 1))
+         ccl (.componentType (x/type a))
+         v (conv/consume (nth args 2) ccl)
+         opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ccl))]
+     (x/insn* ccl [a i v (x/dup-x2 ccl)]
+              (jdk.classfile.instruction.ArrayStoreInstruction/of opc)))))

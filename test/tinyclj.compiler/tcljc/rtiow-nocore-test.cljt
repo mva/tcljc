@@ -18,10 +18,9 @@
   (:import
    (tcljc.context FnRequireNamespace)))
 
-
-
-(defn- ^FnRequireNamespace noop-require-namespace [ns-str provided-nmsp]
-  nil)
+(def ^:private noop-require-namespace
+  (^FnRequireNamespace fn [ns-str provided-nmsp]
+   nil))
 
 (defn- core-ns-globals [^java.lang.invoke.MethodHandles$Lookup l]
   (let [tp (.findClass l "clojure.lang.Namespace")
