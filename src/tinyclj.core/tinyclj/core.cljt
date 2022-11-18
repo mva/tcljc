@@ -343,7 +343,7 @@
                     m))
               m (conj (if (meta name) (meta name) {}) m)]
           (list 'def (with-meta name m)
-								(with-meta (cons `fn (if (:tag m) fdecl (cons name fdecl))) {:tag (:tag m)})))))
+								(cons `fn (if (:tag m) fdecl (cons name fdecl)))))))
 
 ;; (. (var defn) (setMacro))
 
