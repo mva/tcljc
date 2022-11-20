@@ -195,7 +195,7 @@
      (Classfile/build this-class ^java.util.Collection options cbh))))
 
 (defn with-version ^ClassBuilder [^ClassBuilder cb]
-  (let [major Classfile/JAVA_11_VERSION
+  (let [major Classfile/JAVA_17_VERSION
         minor 0 #_Classfile/PREVIEW_MINOR_VERSION]
     (.withVersion cb major minor)))
 
