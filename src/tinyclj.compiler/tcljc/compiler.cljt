@@ -1375,12 +1375,12 @@
                      (or (x/invoke-xref? x) (x/invoke-poly? x))
                      x                  ;dot form (Foo/bar ...)
                      
-                     (x/b-primitive? x)
+                     (and (x/bref? x) (x/b-primitive? x))
                      (let [p ^PrimitiveFnRef (x/root-bref x)]
                        (.assemble (.primitive-fn p) form
                                   (expr-forms (rest form)) tl-ctx))
                      
-                     (x/b-macro? x)
+                     (and (x/bref? x) (x/b-macro? x))
                      (let [m ^MacroRef (x/root-bref x)]
                        ;; note: recursive `compile-form` picks up error context
                        (compile-form env form-ctx (expand-macro m form tl-ctx)
