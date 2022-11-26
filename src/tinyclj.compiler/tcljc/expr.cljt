@@ -1042,6 +1042,20 @@
   (let [c (.const-value init-x)]
     (or (instance? Number c) (string? c))))
 
+;;; Rule of thumb: do not propagate constant description across
+;;; constant pools if the identity of the object may be important, or
+;;; if the constant's description can be somewhat large.  Right now,
+;;; only constant descriptors of primitives (which lack identity),
+;;; strings (which are interned as per JVMS 5.1), and classes (unique
+;;; if resolved from a single class loader) are classified as
+;;; singleton factories.
+(defn singleton-template ^Object [^Class tp ^Object const]
+  (when (and (some? const)
+             (or (.isPrimitive tp)      ;cannot be void
+                 (identical? String tp)
+                 (identical? Class tp)
+                 (identical? jb/jvm-null const)))
+    const))
 
 ;;; A LocalBinding marks the place of a parameter, let, or loop
 ;;; binding.
@@ -1503,26 +1517,19 @@
 (defn global-ref ^ValueRef [^Symbol simple-nm ^String ns-str ^Class tp
                             ^boolean redef? ^boolean clojure-var?
                             ^Expr init-x]
-  (letfn [(propagated-const-value [^Class tp const]
-            ;; Rule of thumb: do not propagate constant value if the
-            ;; identity of the object may be important, or if the
-            ;; constant's description can be somewhat large.
-            (when-some [const (some-> init-x .const-value)]
-              (when (cf/constant-loads-as-ldc? tp)
-                const)))]
-    (let [f (cond-> 0
-              (meta-flag? simple-nm :private) (bit-or b-private)
-              clojure-var? (bit-or b-def-var))
-          entity (if (meta-flag? simple-nm :macro) b-macro b-def)]
-      (if redef? 
-        (let [f (bit-or f b-mutable)]
-          (ValueRef. simple-nm tp [] nil
-                     ns-str (mk-flags b-value entity f 0) nil nil))
-        ;; also propagate fn-form if `init-x` is a let binding
-        (ValueRef. simple-nm tp []
-                   (propagated-const-value tp init-x)
-                   ns-str (mk-flags b-value entity f 0) nil
-                   (root-fn-form init-x))))))
+  (let [f (cond-> 0
+            (meta-flag? simple-nm :private) (bit-or b-private)
+            clojure-var? (bit-or b-def-var))
+        entity (if (meta-flag? simple-nm :macro) b-macro b-def)]
+    (if redef? 
+      (let [f (bit-or f b-mutable)]
+        (ValueRef. simple-nm tp [] nil
+                   ns-str (mk-flags b-value entity f 0) nil nil))
+      ;; also propagate fn-form if `init-x` is a let binding
+      (ValueRef. simple-nm tp []
+                 (singleton-template tp (some-> init-x .const-value))
+                 ns-str (mk-flags b-value entity f 0) nil
+                 (root-fn-form init-x)))))
 
 (defn field-ref ^ValueRef [^Symbol simple-nm ^Class tp ^boolean mutable?]
   (let [f (cond-> 0 mutable? (bit-or b-mutable))]

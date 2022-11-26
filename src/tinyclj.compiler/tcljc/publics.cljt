@@ -108,9 +108,9 @@
                     (cfg/demunge-name nm)))))
             (constant-init-x [^Class tp ^int mods ^Object value]
               (or (import-fn-form (.lookup-in-pkg ctx) arity-handles-mh tp value)
-                  (when (and (not (Modifier/isTransient mods))
-                             (cf/constant-loads-as-ldc? tp))
-                    (x/const tp value))))
+                  (when-not (Modifier/isTransient mods)
+                    (when-some [const (x/singleton-template tp value)]
+                      (x/const tp const)))))
             (public-def-info ^objects [^Member member]
               ^objects (.invokeExact pdf-mh (.lookup-in-pkg ctx) member))
             (resolve-sym ^BindingRef [^Symbol sym acc-publics]

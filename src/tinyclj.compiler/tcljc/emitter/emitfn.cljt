@@ -52,10 +52,14 @@
   (some? (.ld-st-instr ee)))
 
 (defn ee-materialized? ^boolean [^EnvEntry ee]
+  ;; Note: Any constant is considered as "not materialized", even if
+  ;; its identity may differ for a closure translated to another
+  ;; classfile.  That is, this predicate is less strict for constants
+  ;; than `x/singleton-template`.
   (cond
     (ee-ld-st-instr? ee) true
     (= x/lvl-global (x/b-level (.root-bref ee))) false
-    (some? (-> ee .root-bref .const-value)) false
+    (some? (-> ee .root-bref .const-value)) false ;*any* constant
     (some? (.root-fnc ee)) (and (.used-as-value? (.root-fnc ee))
                                 (.variable-environment? (.root-fnc ee)))
     :else true))
