@@ -10,14 +10,14 @@
             [tinyclj.alpha.ptest :refer :all]))
 
 (deftest adder
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
 
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
                     "five" "Ljava/lang/Object;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -122,14 +122,14 @@
                  (def seven ((adder 4) 3))]))))
 
 (deftest nested
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
                     "five0" "I")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -370,14 +370,14 @@
                  (def five2 (((n2 5))))]))))
 
 (deftest over-let
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "f" "Lpkg/ns0/f;")]
             
             [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
@@ -468,14 +468,14 @@
                              (f)))])))) ;should translate to GETSTATIC+INVOKEVIRTUAL
 
 (deftest over-rename
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "f~0" "()Ljava/lang/Object;"]]])
@@ -499,14 +499,14 @@
                                (g'))))]))))
 
 (deftest over-rename-global
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             
             [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
@@ -536,14 +536,14 @@
                                (g'))))]))))
 
 ;; (deftest over-rename-extern
-;;   (is (= '[[(CLASS Vx [PUBLIC] "pkg/exp/__ns" nil "pkg/exp/__ns100")
+;;   (is (= '[[(CLASS Vx [PUBLIC] "pkg/exp/_" nil "pkg/exp/_100")
 ;;             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
 ;;              (RETURN)]
 ;;             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
 ;;              (LDC "tinyclj.core")
 ;;              (ARETURN)]]
            
-;;            [(CLASS Vx [PUBLIC] "pkg/exp/__ns100")
+;;            [(CLASS Vx [PUBLIC] "pkg/exp/_100")
 ;;             (LDC "pkg.exp")
 ;;             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
             
@@ -555,23 +555,23 @@
 ;;              (ACONST_NULL)
 ;;              (ARETURN)]]
            
-;;            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+;;            [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
 ;;             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
 ;;              (RETURN)]
 ;;             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
 ;;              (LDC "pkg.exp,tinyclj.core")
 ;;              (ARETURN)]]
            
-;;            [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+;;            [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
 ;;             (LDC "pkg.ns0")
 ;;             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-;;             (INVOKESTATIC __ns "forceClinit~1" "()V")
+;;             (INVOKESTATIC _ "forceClinit~1" "()V")
 
 ;;             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
 ;;              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;" [[STATIC . "f~0" "()Ljava/lang/Object;"]]])
 ;;              (ARETURN)]
 ;;             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()Ljava/lang/Object;")
-;;              (INVOKESTATIC __ns100 "g~0" "()Ljava/lang/Object;")
+;;              (INVOKESTATIC _100 "g~0" "()Ljava/lang/Object;")
 ;;              (ARETURN)]]]
 ;;          (nmsp '[(ns pkg.exp)
 ;;                  (def g (fn* g []

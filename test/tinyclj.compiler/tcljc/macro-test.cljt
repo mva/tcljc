@@ -10,14 +10,14 @@
             [tinyclj.alpha.ptest :refer :all]))
 
 (def exp-one-macro
-  '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns101")
+  '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_101")
      [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
       (RETURN)]
      [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
       (LDC "tinyclj.core")
       (ARETURN)]]
            
-    [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+    [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
      [(METHOD [PUBLIC STATIC FINAL] "one-macro" "()Ltinyclj/lang/StaticFnMh;")
       (RuntimeVisibleAnnotations (Macro))
       (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
@@ -34,7 +34,7 @@
       (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
       (RETURN)]]
            
-    [(CLASS Vx [PUBLIC] "pkg/ns0/__ns101" nil "pkg/ns0/__ns100")
+    [(CLASS Vx [PUBLIC] "pkg/ns0/_101" nil "pkg/ns0/_100")
      [(FIELD [PUBLIC STATIC FINAL] "one" "I")
       (ConstantValue 1)]
      [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -61,14 +61,14 @@
 
 (deftest macro-call-to-same-segment
   ;; my-defn should call sigs from the same namespace segment
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns103")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_103")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC RT "cons" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;"]]])
@@ -103,7 +103,7 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns101" nil "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_101" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "my-fn" "()Ltinyclj/lang/StaticFnMh;")
              (RuntimeVisibleAnnotations (Macro))
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
@@ -133,7 +133,7 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (RETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns102" nil "pkg/ns0/__ns101")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_102" nil "pkg/ns0/_101")
             [(METHOD [PUBLIC STATIC FINAL] "first" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC RT "first" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
@@ -183,7 +183,7 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (RETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns103" nil "pkg/ns0/__ns102")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_103" nil "pkg/ns0/_102")
             [(FIELD [PUBLIC STATIC FINAL] "to-array" "Ljava/lang/Object;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -191,14 +191,14 @@
              (PUTSTATIC . "to-array" "Ljava/lang/Object;")
              (RETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 ;; pkg/ns0/__ns100.class
+                 ;; pkg/ns0/_100.class
                  (def cons (fn* cons ^clojure.lang.ISeq [x seq]
                                 (. clojure.lang.RT (cons x seq))))
                  (def ^:macro loop (fn* loop [&form &env & decl]
                                         (cons 'loop* decl)))
                  (def ^:macro my-fn (fn* my-fn [&form &env & decl]
                                          (cons 'fn* decl)))
-                 ;; pkg/ns0/__ns101.class
+                 ;; pkg/ns0/_101.class
                  (def first (my-fn first [coll]
                                    (. clojure.lang.RT (first coll))))
                  (def sigs (my-fn sigs [fdecl]
@@ -207,20 +207,20 @@
                                              (cons 'def
                                                    (cons name
                                                          (cons (sigs fdecl) nil)))))
-                 ;; pkg/ns0/__ns102.class
+                 ;; pkg/ns0/_102.class
                  (my-defn to-array ^objects [coll]
                           (. clojure.lang.RT (toArray coll)))]))))
 
 
 (deftest fallback-value-in-meta
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns101")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_101")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             
             [(METHOD [PUBLIC STATIC FINAL] "list" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
@@ -269,13 +269,13 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns101" nil "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_101" nil "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL] "x" "Z")
              (ConstantValue 0)]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "y" "Ljava/lang/Object;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
-             (INVOKESTATIC __ns100 "__nil-pred" "()Ltinyclj/lang/StaticFnMh;")
+             (INVOKESTATIC _100 "__nil-pred" "()Ltinyclj/lang/StaticFnMh;")
              (INVOKESTATIC Objects "requireNonNull" "(Ljava/lang/Object;)Ljava/lang/Object;")
              (PUTSTATIC . "y" "Ljava/lang/Object;")
              (RETURN)]]]

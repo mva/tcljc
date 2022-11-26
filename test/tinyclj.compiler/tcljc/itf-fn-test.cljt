@@ -23,14 +23,14 @@
   (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/FnInt2")
             [(METHOD [PUBLIC ABSTRACT] "arity-2" "(II)I")]]
 
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "add2" "Lpkg/ns0/FnInt2;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
             
@@ -66,14 +66,14 @@
 
 
 (deftest def-functional-itf-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
 
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "f" "Ljava/lang/Runnable;")]
             
             [(METHOD [PUBLIC STATIC FINAL] "Runnable~0" "()V")
@@ -106,14 +106,14 @@
                              (.run f)))]))))
 
 (deftest def-comparator-itf-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "f"
                     "Ljava/util/Comparator;")]
             
@@ -160,14 +160,14 @@
   (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/FnMyFn")
             [(METHOD [PUBLIC ABSTRACT] "fn0" "()I")]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "fn-1" "Lpkg/ns0/FnMyFn;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "fn-2" "Lpkg/ns0/FnMyFn;")]
             
@@ -221,14 +221,14 @@
                                nil)))]))))
 
 (deftest default-vs-provided-sig
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "Consumer~1" "(Ljava/lang/Object;)V")
              ["LOCAL 0: Object x"]
              (RETURN)]

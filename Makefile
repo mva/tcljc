@@ -15,7 +15,7 @@ JAVA_OPTS=--enable-preview --add-modules jdk.incubator.concurrent \
 #JAVA_OPTS += -Djdk.tracePinnedThreads
 
 #DET=--deterministic
-BOOTSTRAP_TCLJ_MAIN=$(if $(findstring /bootstrap-tcljc,$(BOOTSTRAP_TCLJ_MDIR)),tcljc.main.__ns,tinyclj.build.main.__ns)
+BOOTSTRAP_TCLJ_MAIN=$(if $(findstring /bootstrap-tcljc,$(BOOTSTRAP_TCLJ_MDIR)),tcljc.main._,tinyclj.build.main._)
 BOOTSTRAP_TCLJ_MOD_RT=$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.rt
 BOOTSTRAP_TCLJ=$(JAVA) --class-path $(BOOTSTRAP_TCLJ_MOD_RT):$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.core:$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.compiler $(JAVA_OPTS) $(BOOTSTRAP_TCLJ_MAIN) $(DET) --parent-loader :platform
 
@@ -37,7 +37,7 @@ watch-and-compile: $(TCLJC_MOD_RT)
 # var.  Only call this after compile, possibly while one of the
 # watch-and-xxx targets is running.
 test: $(TCLJC_MOD_RT)
-	$(JAVA) $(JAVA_OPTS) -cp $(BOOTSTRAP_TCLJ_MOD_RT):$(DEST_DIR) $(RUN_TESTS_NS).__ns
+	$(JAVA) $(JAVA_OPTS) -cp $(BOOTSTRAP_TCLJ_MOD_RT):$(DEST_DIR) $(RUN_TESTS_NS)._
 watch-and-test: $(TCLJC_MOD_RT)
 	$(BOOTSTRAP_TCLJ) --watch $(SOURCE_OPTS) $(RUN_TESTS_NS)/run
 
@@ -103,7 +103,7 @@ $(DEST_DIR).stageZero/DONE: $(wildcard $(BOOTSTRAP_TCLJ_MDIR)/commit-id.txt src/
 $(DEST_DIR).stageDI1/DONE: $(DEST_DIR).stageZero/DONE $(TCLJC_MOD_RT)
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(TIME_JAVA) -cp $(BOOTSTRAP_TCLJ_MDIR)/tinyclj.rt:$(dir $<) $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns --deterministic --parent-loader :platform -d "$(dir $@)" -s $(TCLJC_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
+	$(TIME_JAVA) -cp $(BOOTSTRAP_TCLJ_MDIR)/tinyclj.rt:$(dir $<) $(JAVA_OPTS) $(TCLJC_MAIN_NS)._ --deterministic --parent-loader :platform -d "$(dir $@)" -s $(TCLJC_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
 	touch "$@"
 
 # DI2: Build "tcljc" using the DI1 compiler from PREV_DEST_DIR (aka
@@ -111,7 +111,7 @@ $(DEST_DIR).stageDI1/DONE: $(DEST_DIR).stageZero/DONE $(TCLJC_MOD_RT)
 $(DEST_DIR).stageDI2/DONE: $(DEST_DIR).stageDI1/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(TIME_JAVA) -cp $(TCLJC_MOD_RT):$(dir $<) $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns --deterministic --parent-loader :platform -d "$(dir $@)" -s $(TCLJC_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
+	$(TIME_JAVA) -cp $(TCLJC_MOD_RT):$(dir $<) $(JAVA_OPTS) $(TCLJC_MAIN_NS)._ --deterministic --parent-loader :platform -d "$(dir $@)" -s $(TCLJC_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
 	touch "$@"
 	diff -Nrq "$(dir $<)" "$(dir $@)"
 
@@ -135,14 +135,14 @@ TINYCLJ_CORE_SOURCE := $(sort $(wildcard src/tinyclj.core/*/*.cljt src/tinyclj.c
 $(DEST_DIR).mod-tinyclj-core/module-info.class: $(DEST_DIR).mod-tinyclj-rt/module-info.class $(TINYCLJ_CORE_SOURCE) $(DEST_DIR).stageDI2/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(BUILD_JAVA) -cp $(TCLJC_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns --deterministic -d "$(dir $@)" --parent-loader :platform -s $(dir $<) -s src/tinyclj.core tinyclj.core.all
+	$(BUILD_JAVA) -cp $(TCLJC_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS)._ --deterministic -d "$(dir $@)" --parent-loader :platform -s $(dir $<) -s src/tinyclj.core tinyclj.core.all
 	$(BUILD_JAVAC) -p $(dir $<) -d "$(dir $@)" src/tinyclj.core/module-info.java
 
 TINYCLJ_COMPILER_SOURCE := $(sort $(wildcard src/tinyclj.compiler/*/*.cljt src/tinyclj.compiler/*/*/*.cljt)) src/tinyclj.compiler/module-info.java
 $(DEST_DIR).mod-tinyclj-compiler/module-info.class: $(DEST_DIR).mod-tinyclj-core/module-info.class $(TINYCLJ_COMPILER_SOURCE) $(DEST_DIR).stageDI2/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(BUILD_JAVA) -cp $(TCLJC_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns --deterministic -d "$(dir $@)" --parent-loader :platform -s $(DEST_DIR).mod-tinyclj-rt -s $(dir $<) -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
+	$(BUILD_JAVA) -cp $(TCLJC_MOD_RT):$(DEST_DIR).stageDI2 $(JAVA_OPTS) $(TCLJC_MAIN_NS)._ --deterministic -d "$(dir $@)" --parent-loader :platform -s $(DEST_DIR).mod-tinyclj-rt -s $(dir $<) -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
 	$(BUILD_JAVAC) -p $(DEST_DIR).mod-tinyclj-rt:$(dir $<) -d "$(dir $@)" src/tinyclj.compiler/module-info.java
 
 $(TCLJC_MOD_RT): $(DEST_DIR).mod-tinyclj-rt/module-info.class
@@ -154,7 +154,7 @@ $(TCLJC_MOD_RT): $(DEST_DIR).mod-tinyclj-rt/module-info.class
 $(DEST_DIR).mdir/DONE: $(TCLJC_MOD_RT) $(DEST_DIR).mod-tinyclj-core/module-info.class $(DEST_DIR).mod-tinyclj-compiler/module-info.class
 	@echo; echo "### $(dir $@)"
 	$(BUILD_JAR) --create --file="$(dir $@)"/tinyclj-core.jar -C $(DEST_DIR).mod-tinyclj-core .
-	$(BUILD_JAR) --create --file="$(dir $@)"/tinyclj-compiler.jar --main-class=$(TCLJC_MAIN_NS).__ns -C $(DEST_DIR).mod-tinyclj-compiler/ .
+	$(BUILD_JAR) --create --file="$(dir $@)"/tinyclj-compiler.jar --main-class=$(TCLJC_MAIN_NS)._ -C $(DEST_DIR).mod-tinyclj-compiler/ .
 	touch "$@"
 
 # ------------------------------------------------------------------------
@@ -163,7 +163,7 @@ $(DEST_DIR).mdir/DONE: $(TCLJC_MOD_RT) $(DEST_DIR).mod-tinyclj-core/module-info.
 # i.e. from the module path.
 
 DISTRIB_SOURCE_OPTS=-s $(TCLJC_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler
-BOOTSTRAP_DISTRIB_TCLJ=$(TIME_JAVA) $(JAVA_OPTS) -cp $(DEST_DIR).mdir/\* $(TCLJC_MAIN_NS).__ns
+BOOTSTRAP_DISTRIB_TCLJ=$(TIME_JAVA) $(JAVA_OPTS) -cp $(DEST_DIR).mdir/\* $(TCLJC_MAIN_NS)._
 
 $(DEST_DIR).stageFI1/DONE: $(DEST_DIR).mdir/DONE
 	@echo; echo "### $(dir $@)"
@@ -174,7 +174,7 @@ $(DEST_DIR).stageFI1/DONE: $(DEST_DIR).mdir/DONE
 $(DEST_DIR).stageFI2/DONE: $(DEST_DIR).stageFI1/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(TIME_JAVA) -cp $(TCLJC_MOD_RT):$(dir $<) $(JAVA_OPTS) $(TCLJC_MAIN_NS).__ns -d "$(dir $@)" --parent-loader :platform $(DISTRIB_SOURCE_OPTS) $(TCLJC_MAIN_NS)
+	$(TIME_JAVA) -cp $(TCLJC_MOD_RT):$(dir $<) $(JAVA_OPTS) $(TCLJC_MAIN_NS)._ -d "$(dir $@)" --parent-loader :platform $(DISTRIB_SOURCE_OPTS) $(TCLJC_MAIN_NS)
 	touch "$@"
 
 $(DEST_DIR).rtiowFS/DONE: $(DEST_DIR).stageFI2/DONE
@@ -182,10 +182,10 @@ $(DEST_DIR).rtiowFS/DONE: $(DEST_DIR).stageFI2/DONE
 	@rm -rf "$(dir $@)"
 	$(TIME_JAVA) --enable-preview --add-exports java.base/jdk.classfile=tinyclj.compiler --add-exports java.base/jdk.classfile.constantpool=tinyclj.compiler --add-exports java.base/jdk.classfile.instruction=tinyclj.compiler --add-exports java.base/jdk.classfile.attribute=tinyclj.compiler -p $(DEST_DIR).mdir -m tinyclj.compiler -d "$(dir $@)" -s test/tinyclj.compiler tcljc.rtiow-ref
 	@echo "\nRun from class path:"
-	$(JAVA) -cp $(DEST_DIR).mdir/\*:$(dir $@) tcljc.rtiow-ref.__ns >"$(dir $@)"ray.ppm
+	$(JAVA) -cp $(DEST_DIR).mdir/\*:$(dir $@) tcljc.rtiow-ref._ >"$(dir $@)"ray.ppm
 	@echo "3cf6c9b9f93edb0de2bc24015c610d78  $(dir $@)ray.ppm" | md5sum -c -
 	@echo "\nRun from module path:"
-	$(JAVA) -p $(DEST_DIR).mdir --add-modules tinyclj.core -cp $(dir $@) tcljc.rtiow-ref.__ns >"$(dir $@)"ray.ppm
+	$(JAVA) -p $(DEST_DIR).mdir --add-modules tinyclj.core -cp $(dir $@) tcljc.rtiow-ref._ >"$(dir $@)"ray.ppm
 	@echo "3cf6c9b9f93edb0de2bc24015c610d78  $(dir $@)ray.ppm" | md5sum -c -
 	touch "$@"
 

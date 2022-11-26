@@ -141,13 +141,13 @@
                        (.println System/out "Finally 2...")))))))
 
 (deftest try-expression-opnd
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "asm-expr~2"
                      "(DI)Ljava/lang/String;")
              ["LOCAL 0: double a"]
@@ -192,13 +192,13 @@
                                    (.println System/out "Finally...")))))]))))
 
 (deftest try-expression-statm
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "asm-expr~2"
                      "(DI)Ljava/lang/String;")
              ["LOCAL 0: double a"]
@@ -430,14 +430,14 @@
                          (.println System/out s))))))))
 
 (deftest finally-duplicates-function
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
              ["LOCAL 0: Object s"]
              (GETSTATIC System "out" "Ljava/io/PrintStream;")
@@ -480,14 +480,14 @@
                      ((fn f [s] (.println System/out s)) "finally")))]))))
 
 (deftest retain-body-type-over-nil
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns"
-                   nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_"
+                   nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Ljava/lang/String;")]
             
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")

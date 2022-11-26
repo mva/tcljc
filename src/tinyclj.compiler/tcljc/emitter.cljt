@@ -98,7 +98,7 @@
               (ctx/clone-thread-binding-frame) injected-file-forms arender-to)))
 
 (def first-segm-id 100)
-(def ns-class-name "__ns")
+(def ns-class-name "_")
 
 (deftype SegmState [^BuildEnv env
                     ^Ctx ctx

@@ -10,14 +10,14 @@
             [tinyclj.alpha.ptest :refer :all]))
 
 (deftest reify-with-meta
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/reify;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -79,14 +79,14 @@
                     (toString [this] "foo")))]))))
 
 (deftest reify-object
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/reify;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -146,14 +146,14 @@
                          (toString [this] "foo")))]))))
 
 (deftest reify-object-hinted
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/reify;")]
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -212,14 +212,14 @@
                          (toString ^String [this] "foo")))]))))
 
 (deftest reify-function-parameter
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/reify;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -279,14 +279,14 @@
                          (apply [this x] x)))]))))
 
 (deftest reify-predicate-parameter
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/reify;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -345,14 +345,14 @@
                                true)))]))))
 
 (deftest reify-protected-method
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/reify;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -413,14 +413,14 @@
                                        nil)))]))))
 
 (deftest reify-function-this
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/reify;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -480,14 +480,14 @@
                          (apply [this x] this)))]))))
 
 (deftest reify-closure-1
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "v" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "f~1" "(Ljava/lang/String;)Ljava/lang/Object;"]]])
@@ -561,14 +561,14 @@
                               (toString [this] x))))]))))
 
 (deftest reify-closure-2
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "v" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "f~1" "(Ljava/lang/String;)Ljava/lang/Object;"]]])
@@ -597,7 +597,7 @@
              ["LOCAL 0: f$reify this"]
              (ALOAD_0)
              (GETFIELD . "x" "Ljava/lang/String;")
-             (INVOKESTATIC __ns100 "f$reify$g~0" "(Ljava/lang/String;)Ljava/lang/String;")
+             (INVOKESTATIC _100 "f$reify$g~0" "(Ljava/lang/String;)Ljava/lang/String;")
              (ARETURN)]
             
             [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
@@ -645,14 +645,14 @@
                               (toString [this] ((fn* g ^String [] x))))))]))))
 
 (deftest reify-pseudo-proxy
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/reify;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -714,14 +714,14 @@
                          (mousePressed [this e] nil)))]))))
 
 (deftest reify-close-over-flyweight
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "g~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
@@ -753,7 +753,7 @@
              (ALOAD_0)
              (GETFIELD . "p1" "Ljava/lang/Object;")
              (ACONST_NULL)
-             (INVOKESTATIC __ns100 "g$fn1~1" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
+             (INVOKESTATIC _100 "g$fn1~1" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
              (ARETURN)]
             
             [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/Object;)V")
@@ -804,14 +804,14 @@
                                       (fn1 nil))))))]))))
 
 (deftest reify-writer-flush       ;used by tinyclj.core/PrintWriter-on
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/__ns" nil "pkg/ns0/__ns100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/__ns100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")

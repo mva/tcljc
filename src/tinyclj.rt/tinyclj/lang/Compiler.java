@@ -108,7 +108,7 @@ public class Compiler {
 
   // Problem in short: tinyclj/core.cljt loads core_print.cljt, which
   // refers via MultiFn.java to functions in tinyclj.core -- before
-  // tinyclj.core.__ns exists.  So track how far translation of the
+  // tinyclj.core._ exists.  So track how far translation of the
   // core namespace has progressed, and use the most recent class file
   // for lookups.  The other part of the puzzle is to hack (load
   // "core_print") to flush the current tinyclj.core namespace segment
@@ -120,7 +120,7 @@ public class Compiler {
     if (ns == null) {
       ns = l.lookupClass().getPackageName();
     }
-    String className = ns+".__ns";
+    String className = ns+"._";
     try {
       if (partialCoreNamespace.startsWith(className)) {
         return l.findClass(partialCoreNamespace);

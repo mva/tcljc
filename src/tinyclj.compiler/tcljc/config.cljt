@@ -31,7 +31,7 @@
 (defn set-flags! ^void [^boolean deterministic?]
   ;; FIXME... bug in tclj-in-tclj?  Clojure allows this, tcljc as well
   #_(def deterministic-namespace-compile? deterministic?)
-  (-> (Class/forName "tcljc.config.__ns100")
+  (-> (Class/forName "tcljc.config._100")
       (.getField "deterministic-namespace-compile?")
       (.setBoolean nil deterministic?)))
 

@@ -341,7 +341,7 @@
                      (= 'METHOD (first x))
                      (= mnm (nth x 2))))))]
     (->> (nmsp (ns-with-fnbody params form))
-         (filter (matches-class? "pkg/ns0/__ns100")) ;seq of at most one class
+         (filter (matches-class? "pkg/ns0/_100")) ;seq of at most one class
          (first)                        ;first class or nil
          (filter (matches-method? (method-name params))) ;methods for name
          (first)                        ;first method or nil
@@ -382,7 +382,7 @@
               (first ms)))]
     (let [dyn-ld (cfg/dyn-class-loader app-ld [])]
       (nmsp dyn-ld (ns-with-fnbody params form))
-      (let [cl (Class/forName "pkg.ns0.__ns" true dyn-ld)
+      (let [cl (Class/forName "pkg.ns0._" true dyn-ld)
             m (get-method cl (method-name params))]
         (.invoke m nil (.toArray args)))))) ;invoke static method
 
