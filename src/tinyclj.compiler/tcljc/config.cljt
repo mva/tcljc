@@ -210,6 +210,14 @@
 (defn dyn-class-loader ^URLClassLoader [^ClassLoader app-ld source-paths]
   (class-loader-instance app-ld "tclj-dyn" source-paths))
 
+(defn validate-defined-class ^Class [^Class cl]
+  (let [nm (.getName cl)]
+    (when-not (identical? cl (Class/forName nm false (.getClassLoader cl)))
+      (throw (IllegalStateException.
+              (str "failed to define class " nm " over existing class from "
+                   "classpath")))))
+  cl)
+
 (defn write-and-define-class ^Class [^Path dest-dir ^MethodHandles$Lookup l
                                      ^ClassDesc this-class ^bytes bs]
   (let [desc (.descriptorString this-class)
@@ -220,12 +228,13 @@
       (let [f (.resolve dest-dir (path-of (str owner-nm class-suffix)))]
         (with-open [w (Files/newOutputStream f)]
           (.write w bs))))
-    (try
-      (.defineClass l bs)
-      (catch NoClassDefFoundError _
-        ;; happens for example with "pkg/ns0/n2$n2-n1$n2-n1-n0" from
-        ;; test case tcljc.closure-test/nested
-        (.findClass l (str/replace owner-nm "/" "."))))))
+    (-> (try
+          (.defineClass l bs)
+          (catch NoClassDefFoundError _
+            ;; happens for example with "pkg/ns0/n2$n2-n1$n2-n1-n0" from
+            ;; test case tcljc.closure-test/nested
+            (.findClass l (str/replace owner-nm "/" "."))))
+        (validate-defined-class))))
 
 ;;; ------------------------------------------------------------------------
 

@@ -942,7 +942,8 @@
                ld (cfg/class-loader-instance dyn-ld "tclj-eph" nil)
                m (.getDeclaredMethod (class ld) "ephemeralClass"
                                      (.arrayType Byte/TYPE))]
-           (.invoke m ld (doto (new objects 1) (aset 0 bs)))))
+           (-> (.invoke m ld (doto (new objects 1) (aset 0 bs)))
+               (cfg/validate-defined-class))))
        (dtp-class-def ^DeftypeDef [^Env env short-sym fq-sym binary-sym
                                    field-sig opts methods]
          (let [this-class (ClassDesc/of (name binary-sym))
