@@ -204,6 +204,7 @@
 
 ;;; useful building blocks for descriptors:
 (def mtd-void-void (mtd void []))
+(def mtd-object-void (mtd Object []))
 (def mtd-object-object (mtd Object [Object]))
 (def mtd-object-object-object (mtd Object [Object Object]))
 (def mtd-map-object (mtd map [Object]))

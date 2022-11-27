@@ -290,60 +290,41 @@
                      ^:pass-to-super-constructor ^Class type
                      ^:pass-to-super-constructor ^IPersistentVector argv
                      ^:pass-to-super-constructor ^Object const-value
-                     ^DirectMethodHandleDesc$Kind kind
-                     ^ClassDesc owner
-                     ^String method-name
-                     ^String lookup-descriptor
-                     ^boolean owner-interface?
+                     ^DirectMethodHandleDesc mhd
                      ^boolean settable-field?]
   Expr
   (with-code [this tp argv]
-    (InvokeXref. (form this) tp argv (.const-value this) kind owner method-name
-                 lookup-descriptor owner-interface? settable-field?)))
+    (InvokeXref. (form this) tp argv (.const-value this) mhd settable-field?)))
 
 (defn invoke-xref
   (^InvokeXref [^Class type ^IPersistentVector argv ^DirectMethodHandleDesc mhd]
    (invoke-xref type argv nil mhd false))
   (^InvokeXref [^Class type ^IPersistentVector argv ^Object const-value
                 ^DirectMethodHandleDesc mhd ^boolean settable-field?]
-   (invoke-xref type argv const-value (.kind mhd) (.owner mhd)
-                (.methodName mhd) (.lookupDescriptor mhd)
-                (.isOwnerInterface mhd) settable-field?))
-  (^InvokeXref [^Class type ^IPersistentVector argv ^Object const-value
-                ^DirectMethodHandleDesc$Kind kind
-                ^ClassDesc owner ^String method-name
-                ^String lookup-descriptor ^boolean owner-interface?
-                ^boolean settable-field?]
-   (InvokeXref. nil type argv const-value
-                kind owner method-name lookup-descriptor owner-interface?
-                settable-field?)))
+   (InvokeXref. nil type argv const-value mhd settable-field?)))
 
 (defn invoke-xref? ^boolean [^Expr x]
   (instance? InvokeXref x))
 
 (defn invoke-xref-static? ^boolean [^Expr x]
   (and (invoke-xref? x)
-       (case (-> ^InvokeXref x .kind .refKind)
+       (case (-> ^InvokeXref x .mhd .refKind)
          (#_REF_getStatic 2 #_REF_putStatic 4 #_REF_invokeStatic 6) true
          #_else false)))
 
 (defn invoke-xref-not-special? ^boolean [^Expr x]
   (and (invoke-xref? x)
-       (case (-> ^InvokeXref x .kind .refKind)
+       (case (-> ^InvokeXref x .mhd .refKind)
          (#_REF_invokeSpecial 7 #_REF_newInvokeSpecial 8) false
          #_else true)))
 
 (defn settable-getter? ^boolean [^Expr x]
   (and (invoke-xref? x) (.settable-field? ^InvokeXref x)))
 
-(defn invoke-xref-mhd ^DirectMethodHandleDesc [^InvokeXref x]
-  (when (.isClassOrInterface (.owner x)) ;fails for T[].clone()
-    (MethodHandleDesc/of (.kind x) (.owner x) (.method-name x)
-                         (.lookup-descriptor x))))
-
 (defn invoke-force-clinit ^Expr [^ClassDesc owner]
-  (invoke-xref jb/void [] nil rt/mhk-static owner rt/name-force-clinit
-               "()V" false false))
+  (let [mhd (MethodHandleDesc/ofMethod rt/mhk-static owner rt/name-force-clinit
+                                       rt/mtd-void-void)]
+    (invoke-xref jb/void [] nil mhd false)))
 
 
 (deftype InvokeDynamic [^:pass-to-super-constructor ^Object _form
@@ -405,6 +386,18 @@
   (let [mhd (MethodHandleDesc/of kind owner method-name lookup-descriptor)
         mh-x (const jb/MethodHandle mhd)]
     (mh-invoke-inexact tp (cons mh-x argv) const-value)))
+
+
+(deftype InvokeArrayClone [^:pass-to-super-constructor ^Object _form
+                           ^:pass-to-super-constructor ^Class type
+                           ^:pass-to-super-constructor ^IPersistentVector argv
+                           ^:pass-to-super-constructor ^Object const-value]
+  Expr
+  (with-code [this tp argv]
+    (InvokeArrayClone. (form this) tp argv (.const-value this))))
+
+(defn invoke-array-clone ^InvokeArrayClone [^Expr arg]
+  (InvokeArrayClone. nil (type arg) [arg] nil))
 
 ;;; ------------------------------------------------------------------------
 

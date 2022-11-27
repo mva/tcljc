@@ -108,10 +108,9 @@
     (letfn [(arity-static* ^ArityCode [^DirectMethodHandleDesc load-mh-ext]
               (if (and (x/invoke-xref-not-special? body-expr)
                        (jb/same-class? (.rtype at) (x/type body-expr))
-                       (parameters-to-args? (.paramv at) (x/argv body-expr))
-                       (some? (x/invoke-xref-mhd ^InvokeXref body-expr)))
+                       (parameters-to-args? (.paramv at) (x/argv body-expr)))
                 ;; elide method definition, use wrapped invoke directly
-                (let [mhd (x/invoke-xref-mhd ^InvokeXref body-expr)]
+                (let [mhd (.mhd ^InvokeXref body-expr)]
                   (x/with-arity-impl ac load-mh-ext mhd false))
                 ;; emit static method definition
                 (let [mhd (at-mref-static statics-owner fspec at)]

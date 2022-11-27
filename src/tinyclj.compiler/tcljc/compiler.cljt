@@ -855,9 +855,7 @@
                (resolve/load-static owner f argv-prefix)))))
        (dot-form-virtual ^Expr [^Expr inst ^String nm arg-forms]
          (if (resolve/array-clone? inst nm arg-forms)
-           (let [owner (x/type inst)]
-             (-> (resolve/invoke-array-clone owner inst)
-                 (xf/checkcast owner)))
+           (x/invoke-array-clone inst)
            (let [argv (expr-forms arg-forms)
                  atypes (argument-types argv)
                  fields-only? (.startsWith nm "-")

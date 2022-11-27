@@ -14,7 +14,7 @@
   (:import
    (tcljc.expr Expr InvokeXref)
    (clojure.lang IPersistentVector)
-   (java.lang.constant MethodTypeDesc)
+   (java.lang.constant MethodTypeDesc MethodHandleDesc)
    (java.lang.reflect Executable Field Method Constructor Modifier)
    (java.util Arrays)))
 
@@ -98,19 +98,19 @@
           (not (Modifier/isFinal (.getModifiers f))))]
 
   (defn load-static ^Expr [^Class owner ^Field f ^IPersistentVector argv]
-    (x/invoke-xref (.getType f) argv nil rt/mhk-static-getter
-                   (rt/describe-class owner) (.getName f)
-                   (.descriptorString (.getType f))
-                   (.isInterface owner) (settable? f)))
+    (let [mhd (MethodHandleDesc/ofField rt/mhk-static-getter
+                                        (rt/describe-class owner) (.getName f)
+                                        (rt/cd-of (.getType f)))]
+      (x/invoke-xref (.getType f) argv nil mhd (settable? f))))
   (defn static-fields [^Class owner ^String nm ^"[Ljava.lang.Class;" atypes]
     (when (zero? (alength atypes))
       (fields-with true owner nm)))
 
   (defn load-virtual ^Expr [^Class owner ^Field f ^IPersistentVector argv]
-    (x/invoke-xref (.getType f) argv nil rt/mhk-getter
-                   (rt/describe-class owner) (.getName f)
-                   (.descriptorString (.getType f))
-                   (.isInterface owner) (settable? f)))
+    (let [mhd (MethodHandleDesc/ofField rt/mhk-getter
+                                        (rt/describe-class owner) (.getName f)
+                                        (rt/cd-of (.getType f)))]
+      (x/invoke-xref (.getType f) argv nil mhd (settable? f))))
   (defn virtual-fields [^Class owner ^String nm ^"[Ljava.lang.Class;" atypes]
     (when (zero? (alength atypes))
       (fields-with false owner nm))))
@@ -206,8 +206,9 @@
       (if (invoke-via-method-handle? c argv)
         (x/mh-invoke-xref owner argv nil rt/mhk-constructor
                           owner-cd cf/object-initializer-name desc)
-        (x/invoke-xref owner argv nil rt/mhk-constructor
-                       owner-cd cf/object-initializer-name desc false false))))
+        (let [mhd (MethodHandleDesc/of rt/mhk-constructor owner-cd
+                                       cf/object-initializer-name desc)]
+          (x/invoke-xref owner argv nil mhd false)))))
   (defn constructors [^Class owner ^"[Ljava.lang.Class;" atypes]
     (or (constructors-exact owner atypes)
         (->> (constructors-with owner (alength atypes))
@@ -228,9 +229,10 @@
         (x/mh-invoke-xref (.getReturnType m) argv nil k
                           owner-cd (.getName m) (method-descriptor m))
 
-        :else (x/invoke-xref (.getReturnType m) argv nil k
-                             owner-cd (.getName m) (method-descriptor m)
-                             (.isInterface owner) false))))
+        :else
+        (let [mhd (MethodHandleDesc/of k owner-cd (.getName m)
+                                       (method-descriptor m))]
+          (x/invoke-xref (.getReturnType m) argv nil mhd false)))))
   (defn static-methods [^Class owner ^String nm ^"[Ljava.lang.Class;" atypes]
     (or (methods-exact true owner nm atypes)
         (->> (methods-with true owner nm (alength atypes))
@@ -251,24 +253,18 @@
         (x/mh-invoke-xref (.getReturnType m) argv nil k
                           owner-cd (.getName m) (method-descriptor m))
 
-        :else (x/invoke-xref (.getReturnType m) argv nil k
-                             owner-cd (.getName m) (method-descriptor m)
-                             (.isInterface owner) false))))
+        :else
+        (let [mhd (MethodHandleDesc/of k owner-cd (.getName m)
+                                       (method-descriptor m))]
+          (x/invoke-xref (.getReturnType m) argv nil mhd false)))))
   (defn virtual-methods [^Class owner ^String nm ^"[Ljava.lang.Class;" atypes]
     (or (methods-exact false owner nm atypes)
         (->> (methods-with false owner nm (alength atypes))
              (filter #(compatible-args? atypes %))
              (filter-dominators)))))
 
-;;; ------------------------------------------------------------------------
-
 (defn array-clone? ^boolean [^Expr inst ^String nm arg-forms]
   (and (x/array? inst) (= "clone" nm) (nil? (seq arg-forms))))
-
-(defn invoke-array-clone ^Expr [^Class owner ^Expr arg]
-  (x/invoke-xref jb/Object [arg] nil rt/mhk-virtual
-                 (rt/describe-class owner) "clone"
-                 "()Ljava/lang/Object;" (.isInterface owner) false))
 
 ;;; ------------------------------------------------------------------------
 

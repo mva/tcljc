@@ -231,11 +231,11 @@
                     (.areturn))
                 (let [mtd (rt/mtd-of rt/MethodHandleArray
                                      (repeat (count aca) rt/MethodHandle))]
-                  (-> (reduce #(.constantInstruction ^CodeBuilder %1 %2)
+                  (-> ^CodeBuilder
+                      (reduce #(.constantInstruction ^CodeBuilder %1 %2)
                               (.constantInstruction xb rt/mhd-methodHandleArray*)
                               (map #(.load-mh-ext ^ArityCode %) aca))
-                      (cf/invoke rt/mhk-virtual rt/MethodHandle "invoke"
-                                 (.descriptorString mtd) false)
+                      (.invokevirtual rt/MethodHandle "invoke" mtd)
                       (.areturn)))))]
     (.withMethodBody cb rt/name-dmh-method rt/mtd-dmh-method
                      (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL) xbh)))

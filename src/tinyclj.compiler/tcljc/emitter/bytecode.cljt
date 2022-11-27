@@ -19,8 +19,8 @@
   (:import
    (tcljc.classfile ILdStInstr LdStMember)
    (tcljc.expr Expr Const Insn NewArray InvokeXref InvokeDynamic InvokePoly
-               InvokeArity Setter Progn Block Branch SplitJoin Guard Switch
-               TryHandler TryCatchFinally LoopBody Recur
+               InvokeArity InvokeArrayClone Setter Progn Block Branch
+               SplitJoin Guard Switch TryHandler TryCatchFinally LoopBody Recur
                Binding BindingRef AliasRef AssignDef VarRef
                FnForm ArityCode Arity FnPatch IEmitPlan IProvidedValue)
    (clojure.lang Symbol IPersistentVector IMeta)
@@ -188,13 +188,13 @@
             xb)
 
           (invoke-xref ^CodeBuilder [^CodeBuilder xb ^InvokeXref x]
-            (-> (cond-> xb
-                  (= (.kind x) rt/mhk-constructor)
-                  (-> (.new_ (.owner x)) (.dup)))
-                (exprv-insns (x/argv x))
-                (line-number x)
-                (cf/invoke (.kind x) (.owner x) (.method-name x)
-                           (.lookup-descriptor x) (.owner-interface? x))))
+            (let [mhd (.mhd x)]
+              (-> (cond-> xb
+                    (= (.kind mhd) rt/mhk-constructor)
+                    (-> (.new_ (.owner mhd)) (.dup)))
+                  (exprv-insns (x/argv x))
+                  (line-number x)
+                  (cf/invoke mhd))))
           (invoke-dynamic ^CodeBuilder [^CodeBuilder xb ^InvokeDynamic x]
             (let [mtd (rt/mtd-of (x/type x) (map x/type (x/argv x)))]
               (line-number xb x)
@@ -206,8 +206,7 @@
                   mtd (rt/mtd-of (x/type x) (map x/type (rest argv)))] ;virtual
               (-> (exprv-insns xb argv)
                   (line-number x)
-                  (cf/invoke (.kind x) (.owner x) (.method-name x)
-                             (.descriptorString mtd) (.owner-interface? x)))))
+                  (.invokevirtual (.owner x) (.method-name x) mtd))))
           (invoke-arity-fa ^void [^CodeBuilder xb ^InvokeArity x ^IEmitPlan ep
                                   ^Arity at ^DirectMethodHandleDesc mhd]
             (if (.invoke-arity-with-self? ep)
@@ -239,12 +238,12 @@
               xb))
 
           (invoke-setter ^CodeBuilder [^CodeBuilder xb ^InvokeXref x]
-            (let [k (if (= (.kind x) rt/mhk-getter)
-                      rt/mhk-setter
-                      rt/mhk-static-getter)]
+            (let [mhd (.mhd x)
+                  tpd (-> mhd .invocationType .returnType)]
               (line-number xb x)
-              (cf/invoke xb k (.owner x) (.method-name x)
-                         (.lookup-descriptor x) (.owner-interface? x))))
+              (if (= (.kind mhd) rt/mhk-getter)
+                (.putfield xb (.owner mhd) (.methodName mhd) tpd)
+                (.putstatic xb (.owner mhd) (.methodName mhd) tpd))))
           (setter ^CodeBuilder [^CodeBuilder xb ^Setter x]
             (let [v (x/first-arg x)]
               (cond
@@ -506,6 +505,11 @@
           AssignDef
           (-> (expr-insns xb es (x/first-arg x))
               (cf/st-insn (-> ^AssignDef x .bref (x/deref-load)) false))
+          InvokeArrayClone
+          (let [cld (rt/cd-of (x/type x))]
+            (-> (argv-insns xb)
+                (.invokevirtual cld "clone" rt/mtd-object-void)
+                (.checkcast cld)))
           #_else (throw (IllegalArgumentException. (str (class x)))))))))
 
 (defn emit-body

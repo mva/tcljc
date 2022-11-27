@@ -10,13 +10,14 @@
             [tcljc.compiler.resolve :refer :all]
             [tcljc.expr :as x]
             [tinyclj.alpha.ptest :refer :all])
-  (:import (tcljc.expr Expr InvokeXref InvokePoly)))
+  (:import (tcljc.expr Expr InvokeXref InvokePoly)
+           (java.lang.constant DirectMethodHandleDesc)))
 
-(letfn [(xref [^InvokeXref x]
-          (list 'INVOKE-XREF (symbol nil (-> x .kind (str)))
-                (.displayName (.owner x))
-                (.method-name x) (.lookup-descriptor x)
-                (if (.owner-interface? x) :owner-is-itf :owner-is-class)))
+(letfn [(xref [^DirectMethodHandleDesc mhd]
+          (list 'INVOKE-XREF (symbol nil (-> mhd .kind (str)))
+                (.displayName (.owner mhd))
+                (.methodName mhd) (.lookupDescriptor mhd)
+                (if (.isOwnerInterface mhd) :owner-is-itf :owner-is-class)))
         (poly [^InvokePoly x]
           (list 'INVOKE-POLY (symbol nil (-> x .kind (str)))
                 (.displayName (.owner x))
@@ -25,7 +26,7 @@
         (inv1 [^Expr x]
           (assert (some? x))
           (cond
-            (instance? InvokeXref x) (xref ^InvokeXref x)
+            (instance? InvokeXref x) (xref (.mhd ^InvokeXref x))
             (instance? InvokePoly x) (poly ^InvokePoly x)
             :else (throw (IllegalArgumentException. (str (class x))))))]
   (defn inv [xs]
@@ -142,10 +143,3 @@
                           :owner-is-itf)]
            (inv-virtual jdk.classfile.ClassBuilder "withInterfaceSymbols"
                         Object)))))
-
-
-(deftest invoke-array-clone-test
-  (is (= '[(INVOKE-XREF VIRTUAL "String[]" "clone"
-                        "()Ljava/lang/Object;"
-                        :owner-is-class)]
-         (inv [(invoke-array-clone (.arrayType String) x/expr-nil-object)]))))

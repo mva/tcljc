@@ -201,33 +201,27 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn invoke
-  (^CodeBuilder [^CodeBuilder xb ^DirectMethodHandleDesc$Kind kind
-                 ^ClassDesc owner ^String method-name
-                 ^String lookup-descriptor ^boolean owner-interface?]
-   (let [cp (.constantPool xb)
-         owner (.classEntry cp owner)
-         nm (.utf8Entry cp method-name)
-         tp (.utf8Entry cp lookup-descriptor)
-         nat (.natEntry cp nm tp)
-         opc (case (.refKind kind)
-               #_REF_getField 1 Opcode/GETFIELD
-               #_REF_getStatic 2 Opcode/GETSTATIC
-               #_REF_putField 3 Opcode/PUTFIELD
-               #_REF_putStatic 4 Opcode/PUTSTATIC
-               #_REF_invokeVirtual 5 Opcode/INVOKEVIRTUAL
-               #_REF_invokeStatic 6 Opcode/INVOKESTATIC
-               #_REF_invokeSpecial 7 Opcode/INVOKESPECIAL
-               #_REF_newInvokeSpecial 8 Opcode/INVOKESPECIAL
-               #_REF_invokeInterface 9 Opcode/INVOKEINTERFACE)]
-     (if (< (.refKind kind) #_REF_invokeVirtual 5)
-       (.fieldInstruction xb opc (.fieldRefEntry cp owner nat))
-       (.invokeInstruction xb opc (if owner-interface?
-                                    (.interfaceMethodRefEntry cp owner nat)
-                                    (.methodRefEntry cp owner nat))))))
-  (^CodeBuilder [^CodeBuilder xb ^DirectMethodHandleDesc mhd]
-   (invoke xb (.kind mhd) (.owner mhd) (.methodName mhd) (.lookupDescriptor mhd)
-           (.isOwnerInterface mhd))))
+(defn invoke ^CodeBuilder [^CodeBuilder xb ^DirectMethodHandleDesc mhd]
+  (let [cp (.constantPool xb)
+        owner (.classEntry cp (.owner mhd))
+        nm (.utf8Entry cp (.methodName mhd))
+        tp (.utf8Entry cp (.lookupDescriptor mhd))
+        nat (.natEntry cp nm tp)
+        opc (case (.refKind mhd)
+              #_REF_getField 1 Opcode/GETFIELD
+              #_REF_getStatic 2 Opcode/GETSTATIC
+              #_REF_putField 3 Opcode/PUTFIELD
+              #_REF_putStatic 4 Opcode/PUTSTATIC
+              #_REF_invokeVirtual 5 Opcode/INVOKEVIRTUAL
+              #_REF_invokeStatic 6 Opcode/INVOKESTATIC
+              #_REF_invokeSpecial 7 Opcode/INVOKESPECIAL
+              #_REF_newInvokeSpecial 8 Opcode/INVOKESPECIAL
+              #_REF_invokeInterface 9 Opcode/INVOKEINTERFACE)]
+    (if (< (.refKind mhd) #_REF_invokeVirtual 5)
+      (.fieldInstruction xb opc (.fieldRefEntry cp owner nat))
+      (.invokeInstruction xb opc (if (.isOwnerInterface mhd)
+                                   (.interfaceMethodRefEntry cp owner nat)
+                                   (.methodRefEntry cp owner nat))))))
 
 ;;; ------------------------------------------------------------------------
 
