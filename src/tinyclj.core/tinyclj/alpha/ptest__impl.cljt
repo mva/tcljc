@@ -270,8 +270,8 @@
                              (.expected oc)
                              (.actual oc))
             (align/print-cea (.msg oc)
-                             (pr-str (.expected oc))
-                             (pr-str (.actual oc))))
+                             (.expected oc)
+                             (.actual oc)))
           (print-stacktrace (.ex oc))
           (println))
         (print-outcome ^void [^Var v ^String output ^Outcome oc]

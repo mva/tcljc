@@ -433,13 +433,14 @@
 (def side-by-side-gap 4)
 (def ^:private side-by-side-width (quot (- term/page-width side-by-side-gap) 2))
 
-(defn- doc-string ^String [^int page-width ^tinyclj.alpha.ptest__pp.Doc doc]
-  (pp/lines-str (pp/pretty1* page-width doc)))
-
-(defn print-cea [^String msg ^String exp ^String act]
-  (println (term/dim "   cause:") msg)
-  (println (term/dim "expected:") exp)
-  (println (term/dim "  actual:") act))
+(defn print-cea [^String msg exp act]
+  (letfn [(print-into-str ^String [x]
+            (-> (StringBuilder.)
+                (pp/pretty0 (if (instance? Doc x) x (pp/doc-dup x)))
+                (.toString)))]
+    (println (term/dim "   cause:") msg)
+    (println (term/dim "expected:") (print-into-str exp))
+    (println (term/dim "  actual:") (print-into-str act))))
 
 (defn print-a-b [^String msg a b]
   (let [prefix-length 10                ;"expected:_" / "__actual:_"
@@ -451,9 +452,7 @@
         doc-b (alignment-doc style part-of-b al)]
     (assert (= (pp/width doc-a) (pp/width doc-b)))
     (if (<= (pp/width doc-a) (- term/page-width prefix-length))
-      (print-cea msg
-                 (doc-string term/page-width doc-a)
-                 (doc-string term/page-width doc-b))
+      (print-cea msg doc-a doc-b)
       (let [lines-a (pp/pretty1* side-by-side-width doc-a)
             lines-b (pp/pretty1* side-by-side-width doc-b)]
         (assert (= (count lines-a) (count lines-b)))
