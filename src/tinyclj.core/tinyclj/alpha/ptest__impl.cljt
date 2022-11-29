@@ -211,7 +211,7 @@
 (def ^:private select-all (^IntPredicate fn [_] true))
 
 (defn- run-test-var ^Report [^IntPredicate select ^Var v]
-  (let [line ^int (line-number v)
+  (let [line ^int (or (line-number v) (object -1))
         ctx (TestContext. (-> v .ns .name) (.sym v)
                           (if (.test select line) select-all select)
                           (StringWriter.) (ArrayList.) line)]
