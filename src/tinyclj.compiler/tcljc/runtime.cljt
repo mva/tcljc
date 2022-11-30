@@ -10,7 +10,7 @@
    [tcljc.javabase :as jb]
    [tinyclj.string :as str])
   (:import
-   (clojure.lang Named)
+   (clojure.lang Named ISeq IMeta)
    (java.lang.constant ClassDesc ConstantDescs ConstantDesc Constable
                        DirectMethodHandleDesc DirectMethodHandleDesc$Kind
                        MethodTypeDesc MethodHandleDesc DynamicConstantDesc)
@@ -355,7 +355,7 @@
 ;;; bootstrap methods:
 (def bsm-null ConstantDescs/BSM_NULL_CONSTANT)
 (def bsm-invoke ConstantDescs/BSM_INVOKE)
-(def bsm-concat
+(def bsm-concat ;note: "makeConcat" delegates to ""makeConcatWithConstants"
   (mhd-static [(ClassDesc/of "java.lang.invoke.StringConcatFactory")
                "makeConcatWithConstants"]
               CallSite [Lookup String MethodType String ObjectArray]))
@@ -377,28 +377,53 @@
 (defn boolean-desc ^Integer [^boolean x]
   (if x jb/jvm-int-one jb/jvm-int-zero))
 
-(defn recover-primitive [^Object c ^Class tp]
-  (if (instance? Integer c)
-    (condp jb/same-class? tp
-      jb/int c
-      jb/boolean (tinyclj.core/object (not (zero? ^int c)))
-      jb/byte (tinyclj.core/object (tinyclj.core/byte ^int c))
-      jb/short (tinyclj.core/object (tinyclj.core/short ^int c))
-      jb/char (tinyclj.core/object (tinyclj.core/char ^int c))
-      #_else (throw (IllegalArgumentException.)))
-    c))
+(defn describe-const-expr ^ConstantDesc [^Object c]
+  (letfn [(type-desc-meta ^ClassDesc [^Object c]
+            (cond
+              (symbol? c) symbol
+              (seq? c) list
+              (vector? c) vector
+              (map? c) map
+              (set? c) set
+              :else (throw (IllegalArgumentException. (str (class c))))))
+          (constant-desc-array ^"[Ljava.lang.constant.ConstantDesc;" [^ISeq cs]
+            (into-array ConstantDesc (tinyclj.core/map describe-const-expr cs)))
 
-(letfn [(dcd-named ^ConstantDesc [^String dcd-nm ^ClassDesc dcd-tp ^Named nm]
-          (if-some [nmsp (namespace nm)]
-            (DynamicConstantDesc/ofNamed bsm-quote dcd-nm dcd-tp nmsp (name nm))
-            (DynamicConstantDesc/ofNamed bsm-quote dcd-nm dcd-tp (name nm))))
-        (dcd-pattern ^ConstantDesc [^Pattern p]
-          (DynamicConstantDesc/ofNamed bsm-quote "re-pattern" pattern (.pattern p)))]
-  (defn describe-const-expr ^ConstantDesc [^Object c]
-    (cond
-      (instance? ConstantDesc c) c
-      (tinyclj.core/keyword? c) (dcd-named "keyword" keyword c)
-      (tinyclj.core/symbol? c) (dcd-named "symbol" symbol c)
-      (instance? Constable c) (describe-constable c)
-      (instance? Pattern c) (dcd-pattern c)
-      :else (throw (IllegalArgumentException. (str (class c)))))))
+          (dcd-named ^ConstantDesc [^String dcd-nm ^ClassDesc dcd-tp ^Named nm]
+            (if-some [nmsp (namespace nm)]
+              (DynamicConstantDesc/ofNamed bsm-quote dcd-nm dcd-tp
+                                           nmsp (name nm))
+              (DynamicConstantDesc/ofNamed bsm-quote dcd-nm dcd-tp
+                                           (name nm))))
+          (dcd-pattern ^ConstantDesc [^Pattern p]
+            (DynamicConstantDesc/ofNamed bsm-quote "re-pattern" pattern
+                                         (.pattern p)))
+          (dcd-coll ^ConstantDesc [^DirectMethodHandleDesc mhd ^ISeq cs]
+            (DynamicConstantDesc/ofNamed bsm-quote (.methodName mhd)
+                                         (-> mhd .invocationType .returnType)
+                                         (constant-desc-array cs)))
+          
+          (describe-imeta [^Object c]
+            (cond
+              (tinyclj.core/symbol? c) (dcd-named "symbol" symbol c)
+              (tinyclj.core/seq? c) (dcd-coll mhd-list c)
+              (tinyclj.core/vector? c) (dcd-coll mhd-vector (tinyclj.core/seq c))
+              (tinyclj.core/map? c) (dcd-coll mhd-map (mapcat identity c))
+              (tinyclj.core/set? c) (dcd-coll mhd-set (tinyclj.core/seq c))
+              :else (throw (IllegalArgumentException. (str (class c))))))
+          (describe-nometa [^Object c] ;describe `c` ignoring its meta value
+            (cond
+              (nil? c) jb/jvm-null   ;guard against nil in collections
+              (instance? ConstantDesc c) c
+              (instance? Constable c) (describe-constable c)
+              (tinyclj.core/keyword? c) (dcd-named "keyword" keyword c)
+              (instance? IMeta c) (describe-imeta c)
+              (instance? Pattern c) (dcd-pattern c)
+              :else (throw (IllegalArgumentException. (str (class c))))))]
+    
+    (if-some [m (meta c)]
+      (->> (doto (new "[Ljava.lang.constant.ConstantDesc;" 2)
+             (aset 0 (describe-imeta c)) ;(some? m) implies IMeta
+             (aset 1 (describe-const-expr m)))
+           (DynamicConstantDesc/ofNamed bsm-quote "with-meta" (type-desc-meta c)))
+      (describe-nometa c))))

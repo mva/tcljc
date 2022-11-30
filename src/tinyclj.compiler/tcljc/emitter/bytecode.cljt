@@ -196,11 +196,16 @@
                   (line-number x)
                   (cf/invoke mhd))))
           (invoke-dynamic ^CodeBuilder [^CodeBuilder xb ^InvokeDynamic x]
-            (let [mtd (rt/mtd-of (x/type x) (map x/type (x/argv x)))]
+            (let [dcsd (DynamicCallSiteDesc/of
+                        (.bsm x) (.invocation-name x)
+                        (rt/mtd-of (x/type x) (map x/type (x/argv x)))
+                        ^"[Ljava.lang.constant.ConstantDesc;"
+                        (->> (.cexprs x)
+                             (map #(-> (x/recover-primitive-const %)
+                                       (rt/describe-const-expr)))
+                             (into-array ConstantDesc)))]
               (line-number xb x)
-              (->> (DynamicCallSiteDesc/of (.bsm x) (.invocation-name x) mtd
-                                           (x/constant-desc-array (.cexprs x)))
-                   (.invokedynamic xb))))
+              (.invokedynamic xb dcsd)))
           (invoke-poly ^CodeBuilder [^CodeBuilder xb ^InvokePoly x]
             (let [argv (x/argv x)
                   mtd (rt/mtd-of (x/type x) (map x/type (rest argv)))] ;virtual

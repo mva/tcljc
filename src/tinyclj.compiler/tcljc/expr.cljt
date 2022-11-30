@@ -245,12 +245,19 @@
    (some? (.const-value x)))
   (^boolean [^Expr x ^Object const-value]
    (.equals const-value (.const-value x))))
-(defn constant-desc ^ConstantDesc [^Expr x]
-  (-> (.const-value x)
-      (rt/recover-primitive (type x))
-      (rt/describe-const-expr)))
-(defn constant-desc-array ^"[Ljava.lang.constant.ConstantDesc;" [xs]
-  (into-array ConstantDesc (map constant-desc xs)))
+
+(defn recover-primitive-const ^Object [^Expr x]
+  (let [c (.const-value x)]
+    (if (instance? Integer c)
+      (condp jb/same-class? (type x)
+        jb/int c
+        jb/boolean (tinyclj.core/object (not (zero? ^int c)))
+        jb/byte (tinyclj.core/object (tinyclj.core/byte ^int c))
+        jb/short (tinyclj.core/object (tinyclj.core/short ^int c))
+        jb/char (tinyclj.core/object (tinyclj.core/char ^int c))
+        #_else (throw (IllegalArgumentException.)))
+      (when-not (identical? jb/jvm-null c)
+        c))))
 
 (def expr-true (const jb/boolean jb/jvm-int-one))
 (def expr-false (const jb/boolean jb/jvm-int-zero))

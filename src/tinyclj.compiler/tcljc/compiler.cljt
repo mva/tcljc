@@ -36,8 +36,7 @@
    (clojure.lang Symbol Var ISeq IPersistentVector IPersistentMap IMeta
                  ExceptionInfo)
    (jdk.classfile Classfile Opcode)
-   (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
-                       DynamicConstantDesc)
+   (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc)
    (java.lang.invoke MethodHandle MethodHandles$Lookup)
    (java.lang.reflect Constructor Method Field Executable)
    (java.util.concurrent Future BlockingQueue CompletableFuture)
@@ -147,54 +146,64 @@
       :else (x/const (class form) form)))) ;Class and Pattern
 
 (defn- with-meta-literal ^Expr [^Expr x ^Expr m]
-  (let [mhd rt/mhd-with-meta
-        tp (x/type x)
-        argv [x m]
-        c (when (and (x/const-value? x) (x/const-value? m))
-            (let [nm (str/replace (.methodName mhd) "_" "-")]
-              (DynamicConstantDesc/ofNamed rt/bsm-quote nm (rt/cd-of tp)
-                                           (x/constant-desc-array argv))))]
-    (x/invoke-xref tp argv c mhd false)))
+  (let [tp (x/type x)]
+    (if (and (x/const-value? x) (x/const-value? m))
+      (x/const tp (with-meta (x/recover-primitive-const x)
+                    (x/recover-primitive-const m)))
+      (x/invoke-xref tp [x m] nil rt/mhd-with-meta false))))
 
 (defn- coll-literal ^Expr [^String tp-clnm elems ^DirectMethodHandleDesc mhd
                            tl-ctx]
-  (let [tp (ctx/get-type tp-clnm tl-ctx)
-        c (when (every? x/const-value? elems)
-            (let [nm (str/replace (.methodName mhd) "_" "-")]
-              (DynamicConstantDesc/ofNamed
-               rt/bsm-quote nm (ClassDesc/of tp-clnm)
-               (x/constant-desc-array elems))))]
-    (x/mh-invoke-inexact tp (cons (x/const jb/MethodHandle mhd) elems) c)))
+  (let [tp (ctx/get-type tp-clnm tl-ctx)]
+    (if (every? x/const-value? elems)
+      (let [cs (map x/recover-primitive-const elems)]
+        (x/const tp (condp identical? mhd
+                      rt/mhd-vector (vec cs)
+                      rt/mhd-map (into {} (map vec) (partition 2 cs))
+                      rt/mhd-set (set cs)
+                      rt/mhd-list (or (list* cs) ())
+                      (throw (IllegalArgumentException.)))))
+      (x/mh-invoke-inexact tp (cons (x/const jb/MethodHandle mhd) elems) nil))))
 
 (defn- compile-quote ^Expr [form tl-ctx]
-  (letfn [(quote-coll ^Expr [^String tp-clnm ^DirectMethodHandleDesc mhd forms]
-            (let [elems (mapv #(compile-quote % tl-ctx) forms)]
-              (coll-literal tp-clnm elems mhd tl-ctx)))]
-    (if (instance? IMeta form)          ;also covers seq
-      (let [x (cond
+  (letfn [(type-symbol-meta ^Symbol [form]
+            (cond
+              (symbol? form) 'symbol
+              (seq? form) 'list
+              (vector? form) 'vector
+              (map? form) 'map
+              (set? form) 'set
+              :else (throw (IllegalArgumentException. (str (class form))))))
+          (expand-nometa [form]   ;expand form ignoring its meta value
+            (if (instance? IMeta form)  ;also covers seq
+              (cond
                 (symbol? form)
-                (compile-named form rt/clnm-symbol tl-ctx)
+                form
                 
                 (seq? form)
-                (if (sq/syntax-quote? form)
-                  (-> (sq/syntax-quote form tl-ctx)
-                      (compile-quote tl-ctx))
-                  (quote-coll rt/clnm-list rt/mhd-list form))
+                (if (sq/syntax-quote? form) ;this is the reason for `expand`
+                  (expand (sq/syntax-quote form tl-ctx))
+                  (map expand form))
                 
                 (vector? form)
-                (quote-coll rt/clnm-vector rt/mhd-vector (seq form))
+                (into [] (map expand) form)
                 
                 (map? form)
-                (quote-coll rt/clnm-map rt/mhd-map (mapcat identity form))
+                (into {} (map #(vector (expand (key %)) (expand (val %)))) form)
                 
                 (set? form)
-                (quote-coll rt/clnm-set rt/mhd-set (seq form))
-
-                :else (throw (IllegalArgumentException. (str (class form)))))]
-        (if-some [m (sq/source-meta form)]
-          (with-meta-literal x (compile-quote m tl-ctx))
-          x))
-      (compile-constant-nometa form tl-ctx))))
+                (into #{} (map expand) form)
+                
+                :else (throw (IllegalArgumentException. (str (class form)))))
+              form))
+          (expand [form]
+            (if-some [m (sq/source-meta form)]
+              (with-meta (expand-nometa form) (expand m))
+              (expand-nometa form)))]
+    (let [form (expand form)]
+      (if (instance? IMeta form)
+        (x/const (ctx/get-type (type-symbol-meta form) tl-ctx) form)
+        (compile-constant-nometa form tl-ctx)))))
 
 
 (defn var-type ^Class [tl-ctx]
@@ -1479,21 +1488,11 @@
    (letfn [(string-or-expr [^Expr x]
              (cond
                (x/const-value? x)
-               (let [c (.const-value x)]
+               (let [c (x/recover-primitive-const x)]
                  (cond
-                   (.equals c jb/jvm-null)
-                   ""
-                    
-                   (x/primitive? x)
-                   (str (rt/recover-primitive c (x/type x)))
-
-                   (or (string? c) (symbol? c) (keyword? c) (class? c))
-                   (str c)
-
-                   (instance? Pattern c)
-                   (.pattern ^Pattern c)
-                    
-                   :else x))            ;non-null reference
+                   (seq? c) (str (list* c)) ;wrap LazySeq
+                   (instance? Pattern c) (.pattern ^Pattern c)
+                   :else (str c)))
                 
                (x/reference? x)
                (x/invoke-xref jb/Object [x] rt/mhd-null-string)

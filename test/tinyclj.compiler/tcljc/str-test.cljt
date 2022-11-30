@@ -56,21 +56,43 @@
   (is (= '[(LDC "class java.lang.Object") (ARETURN)]
          (asm-expr (str Object)))))
 
-;;; Constant collections are currently not expanded into compile time
-;;; strings.
 (deftest collection-const
-  #_(is (= '[(LDC "(1 2 3)") (ARETURN)]
-           (asm-expr (str '(1 2 3)))))
-  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;" [1 2 3]])
-           (INVOKEDYNAMIC "_" "(Lclojure/lang/IPersistentList;)Ljava/lang/String;"
-                          :bsm-concat ["\\u0001"])
-           (ARETURN)]
-         (asm-expr (str '(1 2 3)))))
-  
-  #_(is (= '[(LDC "[1 2 3]") (ARETURN)]
-           (asm-expr (str [1 2 3]))))
-  (is (= '[(LDC [:bsm-quote "vector" "Lclojure/lang/IPersistentVector;" [1 2 3]])
-           (INVOKEDYNAMIC "_" "(Lclojure/lang/IPersistentVector;)Ljava/lang/String;"
-                          :bsm-concat ["\\u0001"])
-           (ARETURN)]
-         (asm-expr (str [1 2 3])))))
+  (is (= '[(LDC "(1 2 3)") (ARETURN)]
+           (asm-expr (str '(1 2 3)))))  ;quoted form
+  (is (= '[(LDC "[1 2 3]") (ARETURN)]
+           (asm-expr (str [1 2 3])))))  ;vector literal with constants
+
+(deftest assert-expansion-test
+  ;; This assumes that defmacro assert uses just `(str ... '~x)`
+  ;; instead of Clojure's original `(str ... (pr-str '~x))`.  The
+  ;; expression `~x` is reader ouput, and unless it is the literal nil
+  ;; its `pr-str` and `str` should be equal.
+  (is (= '[["LOCAL 0: boolean x"]
+           (NEW AssertionError)
+           (DUP)
+           (LDC "Assert failed: (some-assertion \"abc\" 123.0 true java.lang.Object nil)")
+           (INVOKESPECIAL AssertionError "<init>" "(Ljava/lang/Object;)V")
+           (ATHROW)]
+         (asm-expr [^boolean x]
+                   (throw (new AssertionError
+                               (str "Assert failed: "
+                                    ;; omitting some? check here
+                                    '(some-assertion "abc"
+                                                     123.0
+                                                     true
+                                                     java.lang.Object
+                                                     nil)))))))
+
+  (is (= '[["LOCAL 0: boolean x"]
+           (NEW AssertionError)
+           (DUP)
+           (LDC "Assert failed: nil")
+           (INVOKESPECIAL AssertionError "<init>" "(Ljava/lang/Object;)V")
+           (ATHROW)]
+         (asm-expr [^boolean x]
+                   (if (not nil)
+                     (throw (new AssertionError
+                                 (str "Assert failed: "
+                                      (if (some? 'nil)
+                                        'nil
+                                        "nil")))))))))
