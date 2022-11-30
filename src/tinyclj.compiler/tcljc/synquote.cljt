@@ -24,9 +24,11 @@
 
 (def sym-quote 'quote)
 (def ^:private lacks-namespace "`") ;marks simple symbol inside syntax quote
-;;; note: the `syntax-quote` symbol is spliced into the core lib's
-;;; namespace (similar to e.g. `*ns*`) and bound to a predefined macro
+;;; note: the `syntax-quote` and `regex-literal` symbols are spliced
+;;; into the core lib's namespace (similar to e.g. `*ns*`) and bound
+;;; to predefined macros
 (def sym-syntax-quote (symbol cfg/core-lib "syntax-quote"))
+(def sym-regex-literal (symbol cfg/core-lib "regex-literal"))
 (def sym-unquote (symbol "," "unquote")) ;unreadable symbol
 (def sym-unquote-splicing (symbol "," "unquote-splicing")) ;unreadable symbol
 

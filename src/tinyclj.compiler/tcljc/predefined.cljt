@@ -96,12 +96,14 @@
                     (into (globals-ns-primitive)))]
     {cfg/primitive-ns-str globals}))
 
-(letfn [(assoc-syntax-quote [m]
-          (let [sym (symbol nil (name sq/sym-syntax-quote))
-                mfn (^FnMacroFn fn [ctx form]
-                     (sq/syntax-quote form ^Ctx ctx))]
-            (assoc m (name sq/sym-syntax-quote)
-                   (x/macro-ref sym cfg/core-lib mfn nil nil))))
+(def ^:private macro-syntax-quote
+  (^FnMacroFn fn [ctx form]
+   (sq/syntax-quote form ^Ctx ctx)))
+
+(letfn [(assoc-predef-macro [m ^Symbol sym ^FnMacroFn mfn]
+          (let [nm (name sym)]
+            (assoc m nm
+                   (x/macro-ref (symbol nil nm) cfg/core-lib mfn nil nil))))
         (mk-ld ^ILdStInstr [^String field-nm]
           (cf/ld-st-static rt/ClojureRT field-nm rt/Var))
         (conj-var! [acc ^String field-nm ^Class tp ^Symbol nm]
@@ -113,7 +115,9 @@
     (let [tp-Namespace (.findClass l "clojure.lang.Namespace")
           tp-Agent (.findClass l "clojure.lang.Agent")
           tp-Writer (.findClass l "java.io.Writer")]
-      (-> (assoc-syntax-quote {})
+      (-> {}
+          (assoc-predef-macro sq/sym-syntax-quote macro-syntax-quote)
+          (assoc-predef-macro sq/sym-regex-literal compiler/macro-regex-literal)
           (transient)
           (conj-var! "CURRENT_NS" tp-Namespace '*ns*)
           (conj-var! "AGENT" tp-Agent '*agent*)

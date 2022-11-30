@@ -95,10 +95,14 @@
   (is-asm Object [(LDC Object) (ARETURN)]))
 
 (deftest ldc-pattern-test
-  (is (= '[(LDC [:bsm-quote "re-pattern" "Ljava/util/regex/Pattern;" ["foo"]])
-           (ARETURN)]
-         (asm-expr #"foo")))
-  (is (= "foo" (.pattern ^java.util.regex.Pattern (call-expr #"foo")))))
+  (is-str-asm
+   "#\"foo\""
+   [(LDC [:bsm-quote "re-pattern" "Ljava/util/regex/Pattern;" ["foo"]])
+    (ARETURN)])
+
+  (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                        #"invalid regex: java.util.regex.PatternSyntaxException: Unclosed character class near index 0\n\[\n\^"
+                        (str-expr "#\"[\""))))
 
 (deftest empty-collection-test
   (is-asm []

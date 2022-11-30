@@ -397,7 +397,7 @@
                         (reads "\\u004g"))))
 
 (defn readr [^String s]
-  (.toString ^Pattern (read1 (str "#\"" s "\""))))
+  (second (read1 (str "#\"" s "\""))))
 
 (deftest regex-value-test
   (is (= "" (readr "")))
@@ -406,11 +406,6 @@
 
   (is (= "\\\"" (readr "\\\"")))
   (is (= "\\\\" (readr "\\\\"))))
-
-(deftest regex-error-test
-  (is (thrown-with-msg? ExceptionInfo
-                        #"invalid regex: java.util.regex.PatternSyntaxException: Unclosed character class near index 0\n\[\n\^"
-                        (readr "["))))
 
 ;;; ------------------------------------------------------------------------
 

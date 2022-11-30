@@ -174,7 +174,7 @@
             [(METHOD [PUBLIC STATIC FINAL] "FnMyFn~0" "()I")
              (ICONST_1)
              (IRETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "FnMyFn^47d8~0" "()I")
+            [(METHOD [PUBLIC STATIC FINAL] "FnMyFn^9e71~0" "()I")
              (ICONST_2)
              (IRETURN)]
             
@@ -206,7 +206,7 @@
              (PUTSTATIC . "fn-1" "Lpkg/ns0/FnMyFn;")
              (INVOKEDYNAMIC "fn0" "()Lpkg/ns0/FnMyFn;" :bsm-metafactory
                             ["MethodTypeDesc[()int]"
-                             [STATIC . "FnMyFn^47d8~0" "()I"]
+                             [STATIC . "FnMyFn^9e71~0" "()I"]
                              "MethodTypeDesc[()int]"])
              (PUTSTATIC . "fn-2" "Lpkg/ns0/FnMyFn;")
              (RETURN)]]]
@@ -232,7 +232,7 @@
             [(METHOD [PUBLIC STATIC FINAL] "Consumer~1" "(Ljava/lang/Object;)V")
              ["LOCAL 0: Object x"]
              (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "Consumer^77b2~1" "(Ljava/lang/String;)V")
+            [(METHOD [PUBLIC STATIC FINAL] "Consumer^ca69~1" "(Ljava/lang/String;)V")
              ["LOCAL 0: String s"]
              (RETURN)]
             
@@ -253,7 +253,7 @@
                             "()Ljava/util/function/Consumer;"
                             :bsm-metafactory
                             ["MethodTypeDesc[(Object)void]"
-                             [STATIC . "Consumer^77b2~1" "(Ljava/lang/String;)V"]
+                             [STATIC . "Consumer^ca69~1" "(Ljava/lang/String;)V"]
                              "MethodTypeDesc[(String)void]"])
              (LDC "foo")
              (INVOKEINTERFACE Consumer "accept" "(Ljava/lang/Object;)V" :itf)

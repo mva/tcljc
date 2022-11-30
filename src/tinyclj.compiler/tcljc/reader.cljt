@@ -13,7 +13,7 @@
            (java.net URL)
            (java.nio.file Path Files)
            (java.util ArrayList ArrayDeque)
-           (java.util.regex Matcher Pattern PatternSyntaxException)))
+           (java.util.regex Matcher)))
 
 ;;; Part 1: Parser.  Performs *very* coarse grained and lossless
 ;;; parsing of a source file.  Input scenarios are reading largish
@@ -652,15 +652,16 @@
             (append-chars (.this-string c tk))
             (recur tk)))))))
 
+(defn- line-meta ^IPersistentMap [^Cursor c]
+  {:line (inc (.nl-count c))})
+
 (defn- read-regex [^Cursor c ^int tk]   ;see RegexReader.invoke()
-  (let [sb (StringBuilder.)]
+  (let [lmeta (line-meta c)
+        sb (StringBuilder.)]
     (loop [tk tk]
       (.advance-tk c tk)
       (if (skipped-close? c)
-        (try
-          (Pattern/compile (.toString sb))
-          (catch PatternSyntaxException e
-            (wrong c (str "invalid regex: " e))))
+        (with-meta (list 'tinyclj.core/regex-literal (.toString sb)) lmeta)
         (do (.append sb (.this-string c (.token c)))
             (recur (.token c)))))))
 
@@ -681,8 +682,6 @@
             (let [x (read-form c ns-alias)]
               (skip-ws c)
               x))
-          (line-meta ^IPersistentMap [^Cursor c]
-            {:line (inc (.nl-count c))})
           
           (read-map [^Cursor c ^int tk] ;pre: at "{"
             (skip-open+ws c tk)

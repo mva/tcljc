@@ -41,7 +41,7 @@
    (java.lang.reflect Constructor Method Field Executable)
    (java.util.concurrent Future BlockingQueue CompletableFuture)
    (java.util.function Consumer)
-   (java.util.regex Pattern))
+   (java.util.regex Pattern PatternSyntaxException))
   (:refer-clojure :exclude [type]))
 
 (defn wrong-unresolved
@@ -165,6 +165,13 @@
                       (throw (IllegalArgumentException.)))))
       (x/mh-invoke-inexact tp (cons (x/const jb/MethodHandle mhd) elems) nil))))
 
+(def macro-regex-literal
+  (^FnMacroFn fn [ctx form]
+   (try
+     (Pattern/compile (second form))
+     (catch PatternSyntaxException e
+       (wrong/other (str "invalid regex: " e) form)))))
+
 (defn- compile-quote ^Expr [form tl-ctx]
   (letfn [(type-symbol-meta ^Symbol [form]
             (cond
@@ -181,9 +188,10 @@
                 form
                 
                 (seq? form)
-                (if (sq/syntax-quote? form) ;this is the reason for `expand`
-                  (expand (sq/syntax-quote form tl-ctx))
-                  (map expand form))
+                (condp = (first form)
+                  sq/sym-syntax-quote (expand (sq/syntax-quote form tl-ctx))
+                  ;; sq/sym-regex-literal (.expand macro-regex-literal nil form)
+                  #_else (map expand form))
                 
                 (vector? form)
                 (into [] (map expand) form)
@@ -515,12 +523,7 @@
           mnm (str (.mnm-path env) (when (some? (.mnm-path env)) "$")
                    (cfg/munge-name nm))
           s (if (.containsKey pn-map mnm)
-              ;; Note: Must hash the *string* of the form, because
-              ;; Pattern has no stable equivalence.  Alternatively the
-              ;; reader could not produce Pattern instances, but this
-              ;; would deviate from Clojure's behaviour.
-              ;; FIXME... find a less expensive solution for this?
-              (loop [n (hash (str (cons mnm form)))]
+              (loop [n (hash (cons mnm form))]
                 (let [s* (str mnm tag-sep (format-tag n))]
                   (if (.containsKey pn-map s*)
                     (recur (inc n))     ;linear probing

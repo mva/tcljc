@@ -16,6 +16,7 @@
    [tcljc.expr :as x]
    [tcljc.context :as ctx]
    [tcljc.emitter :as em]
+   [tcljc.compiler :as compiler]
    [tcljc.predefined :as predefined]
    [tinyclj.alpha.ptest :as ptest]             ;for is
    [tinyclj.alpha.ptest__impl :as ptest__impl] ;for get-test-context
@@ -176,6 +177,9 @@
             (let [mfn (^FnMacroFn fn [env form]
                        (cons base (rest form)))]
               (.put m (name nm) (macro-ref nm mfn))))]
+    ;; reader support
+    (put-macro 'regex-literal compiler/macro-regex-literal)
+    
     ;; primitive conversion functions
     (put-alias 'object 'tinyclj.lang.primitive/object)
     (put-alias 'boolean 'tinyclj.lang.primitive/boolean)
@@ -240,7 +244,8 @@
     (put-alias 'identity 'tinyclj.lang.primitive/identity))
   m)
 
-(def bootstrap-globals (->> (put-macros (HashMap.)) (into {})))
+(def bootstrap-globals-core (into {cfg/key-force-clinit x/expr-empty}
+                                  (put-macros (HashMap.))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -288,8 +293,7 @@
          ans-strs (->> ns-forms-seq
                        (map (comp nmsp-name-str first))
                        ^"[Ljava.lang.String;" (into-array String))
-         provided-nmsp (em/mk-provided-nmsp cfg/core-lib {cfg/key-force-clinit
-                                                          x/expr-empty})]
+         provided-nmsp (em/mk-provided-nmsp cfg/core-lib bootstrap-globals-core)]
      
      ;; manual unrolled reduce to reduce stack trace noise; during
      ;; development, `emit-namespace` will die uncountable times
@@ -301,7 +305,7 @@
                req-fn (^FnRequireNamespace fn [ns-str provided-nmsp]
                        (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
                nmsp (em/compile-and-emit env ns-str req-fn true provided-nmsp
-                                         bootstrap-globals)]
+                                         {})]
            (doseq [^bytes bs (.bytesv nmsp)
                    :let [x (classdata/extract bs)]]
              (.put !render-to (classdata/class-name x) x))
