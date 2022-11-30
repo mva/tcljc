@@ -30,7 +30,35 @@
 (deftest unary-str-test
   (is (= '[(LDC "123")
            (ARETURN)]
-         (asm-expr (str 123)))))
+         (asm-expr (str 123))))
+  (is (= '[(LDC "abc")
+           (ARETURN)]
+         (asm-expr (str "abc"))))
+  (is (= '[(LDC "regex")
+           (ARETURN)]
+         (asm-expr (str #"regex"))))
+  (is (= '[["LOCAL 0: String s"]
+           (ALOAD_0)
+           (LDC "")
+           (INVOKESTATIC Objects "toString"
+                         "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/String;")
+           (ARETURN)]
+         (asm-expr [^String s] (str s))))
+
+  ;; nil arguments passed to str have no effect:
+  (is (= '[(LDC "")
+           (ARETURN)]
+         (asm-expr (str nil))))
+  (is (= '[(LDC "123")
+           (ARETURN)]
+         (asm-expr (str nil 123 nil))))
+  (is (= '[["LOCAL 0: String s"]
+           (ALOAD_0)
+           (LDC "")
+           (INVOKESTATIC Objects "toString"
+                         "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/String;")
+           (ARETURN)]
+         (asm-expr [^String s] (str nil s nil)))))
 
 (deftest compile-time-const
   (is (= '[(LDC "") (ARETURN)]

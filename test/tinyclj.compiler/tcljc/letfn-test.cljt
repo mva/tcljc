@@ -400,8 +400,6 @@
              (GETFIELD . "n" "Ljava/lang/Object;")
              (LDC "")
              (INVOKESTATIC Objects "toString" "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/String;")
-             (INVOKEDYNAMIC "_" "(Ljava/lang/String;)Ljava/lang/String;"
-                            :bsm-concat ["\\u0001"])
              (POP)
              (ALOAD_0)
              (ARETURN)]

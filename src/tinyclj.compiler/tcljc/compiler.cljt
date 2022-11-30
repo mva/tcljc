@@ -1485,7 +1485,7 @@
 
 (def concat-primitive
   (^FnPrimitiveFn fn [form argv tl-ctx] ;aka `str`
-   (letfn [(string-or-expr [^Expr x]
+   (letfn [(recipe-or-non-nil [^Expr x]
              (cond
                (x/const-value? x)
                (let [c (x/recover-primitive-const x)]
@@ -1498,12 +1498,20 @@
                               rt/mhd-Objects-toString)
                
                :else x))]               ;is some non-null constant
-     (let [args (map string-or-expr argv)
-           rstr (apply str (map #(if (string? %) % "\u0001") args))
-           recipe (x/const jb/String rstr)]
-       (if-some [nc-args (seq (remove string? args))]
-         (x/invoke-dynamic jb/String (vec nc-args) rt/bsm-concat [recipe])
-         recipe)))))
+     (let [args (map recipe-or-non-nil argv)
+           nc-arg-marker "\u0001"
+           rstr (apply str (map #(if (string? %) % nc-arg-marker) args))
+           recipe (x/const jb/String rstr)
+           nc-args (seq (remove string? args))]
+       (cond
+         (nil? nc-args)
+         recipe
+         
+         (and (= rstr nc-arg-marker) (x/reference? (first nc-args)))
+         (first nc-args)          ;output of mhd-Objects-toString call
+
+         :else
+         (x/invoke-dynamic jb/String (vec nc-args) rt/bsm-concat [recipe]))))))
 
 
 (defn- typed-opcode
