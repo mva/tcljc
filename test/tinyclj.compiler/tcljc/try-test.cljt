@@ -157,7 +157,7 @@
              (ILOAD_2)
              (INVOKESTATIC . "asm-expr$try~0" "(I)I")
              (INVOKEDYNAMIC "_" "(DII)Ljava/lang/String;"
-                            :bsm-concat ["\\u0001\\u0001\\u0001"])
+                            :bsm-concat ["\u0001\u0001\u0001"])
              (ARETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "asm-expr$try~0" "(I)I")
@@ -209,7 +209,7 @@
              (INVOKESTATIC . "asm-expr$try~0" "(I)F")
              (POP)
              (ICONST_3)
-             (INVOKEDYNAMIC "_" "(DII)Ljava/lang/String;" :bsm-concat ["\\u0001\\u0001\\u0001"])
+             (INVOKEDYNAMIC "_" "(DII)Ljava/lang/String;" :bsm-concat ["\u0001\u0001\u0001"])
              (ARETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "asm-expr$try~0" "(I)F")

@@ -95,7 +95,7 @@
              (DUP_X1)
              (PUTFIELD . "x" "I")
              (INVOKEDYNAMIC "_" "(I)Ljava/lang/String;"
-                            :bsm-concat ["foo\\u0001"])
+                            :bsm-concat ["foo\u0001"])
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
@@ -186,7 +186,7 @@
              (DUP_X1)
              (PUTFIELD . "x" "I")
              (INVOKEDYNAMIC "_" "(I)Ljava/lang/String;"
-                            :bsm-concat ["foo\\u0001"])
+                            :bsm-concat ["foo\u0001"])
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
@@ -236,7 +236,7 @@
              (PUTFIELD . "x" "I")
              (ILOAD_1)
              (INVOKEDYNAMIC "_" "(I)Ljava/lang/String;"
-                            :bsm-concat ["foo\\u0001"])
+                            :bsm-concat ["foo\u0001"])
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")

@@ -383,7 +383,7 @@
              ["LOCAL 0: int n"]
              (ILOAD_0)
              (INVOKEDYNAMIC "_" "(I)Ljava/lang/String;"
-                            :bsm-concat ["fn\\u0001"])
+                            :bsm-concat ["fn\u0001"])
              (ARETURN)]
             
 

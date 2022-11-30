@@ -64,9 +64,7 @@
             (if (= cld owner-cld)
               '.
               (let [s (.displayName cld)]
-                (symbol nil s))))
-          (escape-char ^String [^String c]
-            (String/format "\\u%04x" (object (int (.charAt c 0)))))]
+                (symbol nil s))))]
     (switch-on-type
      const
 
@@ -77,7 +75,7 @@
      const
 
      String
-     (str/replace const #"[\u0000-\u001f]" escape-char)
+     const
              
      java.lang.constant.DirectMethodHandleDesc
      (or (get named-mhd const nil)
