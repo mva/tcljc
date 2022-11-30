@@ -60,6 +60,16 @@
            (ARETURN)]
          (asm-expr [^String s] (str nil s nil)))))
 
+(deftest argument-marker-test
+  (is (= '[(INVOKEDYNAMIC "_" "()Ljava/lang/String;" :bsm-concat
+                          ["\u0002\u0002" "\u0001" "\u0002"])
+           (ARETURN)]
+         (asm-expr (str "\u0001" "\u0002"))))
+  (is (= '[(LDC "[\"\u0001\"]") (ARETURN)]
+         (asm-expr (str ["\u0001"]))))
+  (is (= '[(LDC "[\"\u0002\"]") (ARETURN)]
+         (asm-expr (str ["\u0002"])))))
+
 (deftest compile-time-const
   (is (= '[(LDC "") (ARETURN)]
          (asm-expr (str nil))))

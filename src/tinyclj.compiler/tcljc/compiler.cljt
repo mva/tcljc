@@ -1483,35 +1483,46 @@
    (-> (.assemble boolean-primitive form argv tl-ctx) ;also checks argc
        (xf/icmp x/expr-false cf/eq))))
 
+(def ^:private dyn-mark "\u0001")
+(def ^:private const-mark "\u0002")
+(def ^:private re-marks #"[\u0001\u0002]") ;note: hash of Pattern is not stable
 (def concat-primitive
   (^FnPrimitiveFn fn [form argv tl-ctx] ;aka `str`
-   (letfn [(recipe-or-non-nil [^Expr x]
-             (cond
-               (x/const-value? x)
-               (let [c (x/recover-primitive-const x)]
-                 (if (seq? c)
-                   (str (list* c))      ;wrap LazySeq
-                   (str c)))
-               
-               (x/reference? x)
-               (x/invoke-xref jb/String [x x/expr-empty-string]
-                              rt/mhd-Objects-toString)
-               
-               :else x))]               ;is some non-null constant
-     (let [args (map recipe-or-non-nil argv)
-           nc-arg-marker "\u0001"
-           rstr (apply str (map #(if (string? %) % nc-arg-marker) args))
-           recipe (x/const jb/String rstr)
-           nc-args (seq (remove string? args))]
-       (cond
-         (nil? nc-args)
-         recipe
-         
-         (and (= rstr nc-arg-marker) (x/reference? (first nc-args)))
-         (first nc-args)          ;output of mhd-Objects-toString call
+   (loop [rparts nil, dyn-args nil, const-args nil, i 0]
+     (if (= i (count argv))
+       (let [rstr (str/join "" (reverse rparts))
+             recipe (x/const jb/String rstr)]
+         (cond
+           (and (nil? const-args) (nil? dyn-args))
+           recipe
+           
+           (and (= rstr dyn-mark) (x/reference? (first dyn-args)))
+           (first dyn-args)       ;output of mhd-Objects-toString call
+           
+           (= rstr const-mark)
+           (first const-args)
 
-         :else
-         (x/invoke-dynamic jb/String (vec nc-args) rt/bsm-concat [recipe]))))))
+           :else
+           (x/invoke-dynamic jb/String (vec (reverse dyn-args)) rt/bsm-concat
+                             (into [recipe] (reverse const-args)))))
+       
+       (let [x (nth argv i)]
+         (if (x/const-value? x)
+           (let [c (x/recover-primitive-const x)
+                 s (if (seq? c)
+                     (str (list* c))    ;wrap LazySeq
+                     (str c))
+                 x-str (x/const String s)]
+             (if (re-find re-marks s)
+               (recur (cons const-mark rparts) dyn-args (cons x-str const-args)
+                      (inc i))
+               (recur (cons s rparts) dyn-args const-args (inc i))))
+           (let [x-non-nil (if (x/reference? x)
+                             (x/invoke-xref jb/String [x x/expr-empty-string]
+                                            rt/mhd-Objects-toString)
+                             x)]
+             (recur (cons dyn-mark rparts) (cons x-non-nil dyn-args) const-args
+                    (inc i)))))))))
 
 
 (defn- typed-opcode
