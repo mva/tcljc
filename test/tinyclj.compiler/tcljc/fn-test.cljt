@@ -170,7 +170,7 @@
              (IADD)
              (IRETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "fn^2fdc~3" "(Ljava/lang/Object;II)I")
+            [(METHOD [PUBLIC STATIC FINAL] "fn^fbd8~3" "(Ljava/lang/Object;II)I")
              ["LOCAL 0: Object f"]
              ["LOCAL 1: int a"]
              ["LOCAL 2: int b"]
@@ -185,7 +185,7 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
-                   [[STATIC . "fn^2fdc~3" "(Ljava/lang/Object;II)I"]]])
+                   [[STATIC . "fn^fbd8~3" "(Ljava/lang/Object;II)I"]]])
              (PUTSTATIC . "apply2-int" "Ltinyclj/lang/StaticFnMh;")
 
              (GETSTATIC . "apply2-int" "Ltinyclj/lang/StaticFnMh;")
@@ -779,3 +779,24 @@
                         (nmsp '[(ns pkg.ns0)
                                 ((fn* f [^float x] nil) 0.0)]))))
 
+(deftest hash-over-pattern-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "fn~0" "()Ljava/lang/Object;")
+             (ACONST_NULL)
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "fn^04ca~0" "()Ljava/lang/Object;")
+             (LDC [:bsm-quote "re-pattern" "Ljava/util/regex/Pattern;" ["foo"]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (fn* [] nil)
+                 (fn* [] #"foo")]))))

@@ -515,7 +515,12 @@
           mnm (str (.mnm-path env) (when (some? (.mnm-path env)) "$")
                    (cfg/munge-name nm))
           s (if (.containsKey pn-map mnm)
-              (loop [n (hash (cons mnm form))]
+              ;; Note: Must hash the *string* of the form, because
+              ;; Pattern has no stable equivalence.  Alternatively the
+              ;; reader could not produce Pattern instances, but this
+              ;; would deviate from Clojure's behaviour.
+              ;; FIXME... find a less expensive solution for this?
+              (loop [n (hash (str (cons mnm form)))]
                 (let [s* (str mnm tag-sep (format-tag n))]
                   (if (.containsKey pn-map s*)
                     (recur (inc n))     ;linear probing

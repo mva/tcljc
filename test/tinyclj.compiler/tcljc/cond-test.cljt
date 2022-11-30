@@ -321,9 +321,9 @@
             
             [(METHOD [PUBLIC STATIC FINAL] "h" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
-                   [[STATIC . "g^5857~1" "(J)V"]]])
+                   [[STATIC . "g^b295~1" "(J)V"]]])
              (ARETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "g^5857~1" "(J)V")
+            [(METHOD [PUBLIC STATIC FINAL] "g^b295~1" "(J)V")
              ["LOCAL 0: long x"]
              (LLOAD_0)
              (LCONST_0)
