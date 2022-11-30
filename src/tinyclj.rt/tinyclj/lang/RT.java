@@ -31,10 +31,6 @@ public final class RT {
     return x ? 1 : 0;
   }
 
-  public static Object nullToEmptyString (Object opt) {
-    return (opt == null) ?  "" : opt;
-  }
-
   private static final Integer DEFAULT_CLAUSE_CODE = -1;
   public static int caseClauseCode(clojure.lang.IPersistentMap m, Object select) {
     return ((Integer)m.valAt(select, DEFAULT_CLAUSE_CODE)).intValue();

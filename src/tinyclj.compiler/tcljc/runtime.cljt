@@ -267,8 +267,10 @@
 
 ;;; type conversion:
 (def mhd-truthy-reference (mhd-static [RT "truthyReference"] boolean [Object]))
-(def mhd-null-string (mhd-static [RT "nullToEmptyString"] Object [Object]))
 (def mhd-boolean-to-zero-one (mhd-static [RT "booleanToZeroOne"] int [boolean]))
+(def mhd-Objects-toString
+  (mhd-static [(ClassDesc/of "java.util.Objects") "toString"]
+              String [Object String]))
 
 
 (defn- aidx-primitive ^int [^TypeDescriptor$OfField tpd]

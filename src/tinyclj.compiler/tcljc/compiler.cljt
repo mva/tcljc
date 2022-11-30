@@ -1489,14 +1489,14 @@
              (cond
                (x/const-value? x)
                (let [c (x/recover-primitive-const x)]
-                 (cond
-                   (seq? c) (str (list* c)) ;wrap LazySeq
-                   (instance? Pattern c) (.pattern ^Pattern c)
-                   :else (str c)))
-                
+                 (if (seq? c)
+                   (str (list* c))      ;wrap LazySeq
+                   (str c)))
+               
                (x/reference? x)
-               (x/invoke-xref jb/Object [x] rt/mhd-null-string)
-                
+               (x/invoke-xref jb/String [x x/expr-empty-string]
+                              rt/mhd-Objects-toString)
+               
                :else x))]               ;is some non-null constant
      (let [args (map string-or-expr argv)
            rstr (apply str (map #(if (string? %) % "\u0001") args))

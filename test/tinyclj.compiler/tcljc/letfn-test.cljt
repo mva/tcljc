@@ -398,8 +398,9 @@
              ["LOCAL 0: f$self-ref self-ref"]
              (ALOAD_0)
              (GETFIELD . "n" "Ljava/lang/Object;")
-             (INVOKESTATIC RT "nullToEmptyString" "(Ljava/lang/Object;)Ljava/lang/Object;")
-             (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)Ljava/lang/String;"
+             (LDC "")
+             (INVOKESTATIC Objects "toString" "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/String;")
+             (INVOKEDYNAMIC "_" "(Ljava/lang/String;)Ljava/lang/String;"
                             :bsm-concat ["\\u0001"])
              (POP)
              (ALOAD_0)

@@ -15,8 +15,9 @@
          (asm-expr (str "one is " 210000))))
 
   (is (= '[(GETSTATIC System "out" "Ljava/io/PrintStream;")
-           (INVOKESTATIC RT "nullToEmptyString" "(Ljava/lang/Object;)Ljava/lang/Object;")
-           (INVOKEDYNAMIC "_" "(Ljava/lang/Object;)Ljava/lang/String;"
+           (LDC "")
+           (INVOKESTATIC Objects "toString" "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/String;")
+           (INVOKEDYNAMIC "_" "(Ljava/lang/String;)Ljava/lang/String;"
                           :bsm-concat ["test if nil: \\u0001"])
            (ARETURN)]
          (asm-expr (str "test if nil: " java.lang.System/out)))))
