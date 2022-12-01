@@ -7,9 +7,11 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.reader
   (:require [tcljc.config :as cfg]
+            tcljc.context
             [tcljc.synquote :as sq]
             [tinyclj.string :as str])
-  (:import (clojure.lang Symbol Keyword Cons ISeq IPersistentMap IMeta)
+  (:import (tcljc.context Ctx)
+           (clojure.lang Symbol Keyword Cons ISeq IPersistentMap IMeta)
            (java.net URL)
            (java.nio.file Path Files)
            (java.util ArrayList ArrayDeque)
@@ -457,7 +459,7 @@
       (wrong c "octal escape sequence must be in range [0, 377]"))
     uc))
 
-(defn- read-token [^Cursor c ^int tk ^IPersistentMap ns-alias]
+(defn- read-token [^Cursor c ^int tk ^Ctx ctx]
   (letfn [(parse-dispatch-token [^String s] ;pre: looking at "#..."
             (case (.charAt s 1)
               \# (or (get {"##Inf" Double/POSITIVE_INFINITY
@@ -479,10 +481,11 @@
                           (not= (.indexOf s "::" 1) -1))
               (if (.startsWith s ":")
                 (if (.startsWith s "::")
-                  (let [ks (Symbol/intern (.substring s 2))
-                        lookup-key (or (namespace ks) cfg/this-namespace-key)]
-                    (when-some [nstr (get ns-alias lookup-key)]
-                      (Keyword/intern nstr (name ks))))
+                  (let [ks (Symbol/intern (.substring s 2))]
+                    (if-some [lookup-key (namespace ks)]
+                      (when-some [nstr (get (.get-ns-alias-map ctx) lookup-key)]
+                        (Keyword/intern nstr (name ks)))
+                      (Keyword/intern (.ns-str ctx) (name ks))))
                   (-> (.substring s 1)
                       (Symbol/intern)
                       (Keyword/intern)))
@@ -665,7 +668,8 @@
         (do (.append sb (.this-string c (.token c)))
             (recur (.token c)))))))
 
-(defn- read-form [^Cursor c ^IPersistentMap ns-alias]
+;;; `ctx` provides ns-str & ns-alias map.
+(defn- read-form [^Cursor c ^Ctx ctx]
   (letfn [(fork ^Cursor [^Cursor c ^ISeq synquote-stack ^ArrayList arg-env]
             ;; Returns a new cursor at the position of `c` that is
             ;; assigned `synquote-stack` and `arg-env`.
@@ -679,7 +683,7 @@
             (.advance-tk c tk)
             (skip-ws c))
           (read-form+ws [^Cursor c]
-            (let [x (read-form c ns-alias)]
+            (let [x (read-form c ctx)]
               (skip-ws c)
               x))
           
@@ -737,21 +741,21 @@
           (read-meta [^Cursor c ^int tk]
             (skip-open+ws c tk)
             (let [dm (read-form+ws c)
-                  x (read-form c ns-alias)]
+                  x (read-form c ctx)]
               (if (instance? IMeta x)
                 (register-meta! x (merge-meta (meta x) dm) (.arg-env c))
                 (wrong c "metadata can only be applied to IMeta instances"))))
           (read-prefix-as-list [^Cursor c ^int tk op]
             (let [lmeta (line-meta c)]
               (skip-open+ws c tk)
-              (with-meta (list op (read-form c ns-alias)) lmeta)))
+              (with-meta (list op (read-form c ctx)) lmeta)))
           (read-syntax-quote [^Cursor c ^int tk]
             (let [lmeta (line-meta c)
                   c* (fork c (cons (sq/mk-gensym-map) (.synquote-stack c))
                            (.arg-env c))]
               (.advance-tk c* tk)
               (.join c (with-meta (list sq/sym-syntax-quote
-                                        (read-form (skip-ws c*) ns-alias))
+                                        (read-form (skip-ws c*) ctx))
                          lmeta)
                      c*)))
           (read-unquote [^Cursor c ^int tk op]
@@ -792,34 +796,25 @@
                            \@ (read-unquote c tk sq/sym-unquote-splicing) ;~@
                            \( (read-fnlit c tk)
                            \' (read-prefix-as-list c tk 'var))
-        #_token 4 (read-token c tk ns-alias)
+        #_token 4 (read-token c tk ctx)
         #_number 5 (read-number c tk)))))
 
 (definterface IReader
-  (read-1 [^IPersistentMap ns-alias eof-value]))
+  (read-1 [^Ctx ctx eof-value]))
 
 (defn mk-reader ^IReader [^Tokens t]
   (let [c (cursor t)]
-    (^IReader fn [ns-alias eof-value]
+    (^IReader fn [ctx eof-value]
      (while (and (.more? c) (try-skip-ws-1 c)))
      (if (.more? c)
-       (read-form c ns-alias)
+       (read-form c ctx)
        eof-value))))
 
 ;;; ------------------------------------------------------------------------
 
-;;; Materializes the reader as a seq.  All forms use the same
-;;; `ns-alias` map to rewrite auto-resolved keywords.
-(defn read-all [^IReader rdr ^IPersistentMap ns-alias]
-  ((fn read-step []
-     (lazy-seq
-      (let [x (.read-1 rdr ns-alias ::eof)]
-        (when-not (identical? ::eof x)
-          (cons x (read-step))))))))
-
 (deftype SeqReader [^:unsynchronized-mutable ^ISeq xs]
   IReader
-  (read-1 [_ ns-alias eof-value]
+  (read-1 [_ ctx eof-value]
     (if (some? xs)
       (let [[x & xr] xs]
         (set! xs xr)

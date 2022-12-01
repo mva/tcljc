@@ -7,12 +7,13 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.reader-test
   (:require [tcljc.config :as cfg]
+            [tcljc.context :as ctx]
             [tcljc.synquote :as sq]
             [tcljc.reader :as rd]
             [tinyclj.string :as str]
             [tinyclj.alpha.ptest :refer :all])
-  (:import (tcljc.reader Tokens)
-           (clojure.lang ExceptionInfo)
+  (:import (tcljc.reader Tokens IReader)
+           (clojure.lang IPersistentMap ExceptionInfo)
            (java.util.regex Pattern)))
 
 ;;; Part 1: Parser.
@@ -118,13 +119,31 @@
 
 ;;; Part 2: Reader.
 
-(defn read-all [^String s ^clojure.lang.IPersistentMap ns-alias]
-  (-> (rd/tokenize s)
-      (rd/mk-reader)
-      (rd/read-all ns-alias)))
+;;; Materializes the reader as a seq.  All forms use the same
+;;; `ns-alias` map to rewrite auto-resolved keywords.
+(defn read-all* [^IReader rdr ^String ns-str ^IPersistentMap ns-alias]
+  (let [ctx (tcljc.context.Ctx.
+             {} ns-alias {} {}                    ;_known-ns
+             ns-str nil nil nil nil               ;ns-str
+             nil (ctx/clone-thread-binding-frame) ;!private-names
+             nil nil nil                          ;emit-q
+             nil true 0 0)]                       ;arity-task-scope
+    ((fn read-step []
+       (lazy-seq
+        (let [x (.read-1 rdr ctx ::eof)]
+          (when-not (identical? ::eof x)
+            (cons x (read-step)))))))))
+
+(defn read-all
+  ([^String s]
+   (read-all s "NO_NS" {}))
+  ([^String s ^String ns-str ^clojure.lang.IPersistentMap ns-alias]
+   (-> (rd/tokenize s)
+       (rd/mk-reader)
+       (read-all* ns-str ns-alias))))
 
 (defn read1 [^String s]         ;one form, no syntax-quote processing
-  (let [forms (seq (read-all s {}))]
+  (let [forms (seq (read-all s))]
     (when (nil? forms)
       (throw (IllegalArgumentException. "no data in input")))
     (when (some? (next forms))
@@ -137,7 +156,7 @@
                         (read1 "#<"))))
 
 (deftest discard-test
-  (is (= () (read-all "#_a" {})))
+  (is (= () (read-all "#_a")))
   
   ;; discards stack
   (is (= 'b (read1 "#_a b")))
@@ -231,15 +250,15 @@
   (is (= :nil/nil (read1 ":nil/nil"))))
 
 (deftest keyword-auto-resolving-test
-  (let [ns-alias {cfg/this-namespace-key "this-namespace"
-                  "alias" "aliased-namespace"
+  (let [ns-str "this-namespace"
+        ns-alias {"alias" "aliased-namespace"
                   "known-namespace" "known-namespace"}]
     (is (= [:this-namespace/bar]
-           (read-all "::bar" ns-alias)))
+           (read-all "::bar" ns-str ns-alias)))
     (is (= [:aliased-namespace/bar]
-           (read-all "::alias/bar" ns-alias)))
+           (read-all "::alias/bar" ns-str ns-alias)))
     (is (= [:known-namespace/bar]
-           (read-all "::known-namespace/bar" ns-alias)))
+           (read-all "::known-namespace/bar" ns-str ns-alias)))
 
     (is (thrown-with-msg? ExceptionInfo #"invalid token: ::foo/bar"
                           (read1 "::foo/bar")))))

@@ -264,7 +264,7 @@
                     ^StructuredTaskScope arity-task-scope
                     binding-frame]
   (let [known-ns {}
-        ns-alias {cfg/this-namespace-key ns-str}
+        ns-alias {}
         capacity-q 16 ;prevent compilation from reaching too far ahead
         emit-q (ArrayBlockingQueue. capacity-q)
         next-id-mh (resolve-mh rt-lookup rt/mhd-nextID)

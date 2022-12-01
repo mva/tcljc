@@ -58,8 +58,6 @@
 
 (def primitive-ns-str "tinyclj.lang.primitive")
 
-(def this-namespace-key "")             ;for tcljc.reader
-
 (def key-force-clinit nil)
 
 (def wait-cyclic-ms (* 5 1000l))

@@ -18,6 +18,7 @@
    [tcljc.emitter :as em]
    [tcljc.compiler :as compiler]
    [tcljc.predefined :as predefined]
+   [tcljc.reader-test :as reader-test]
    [tinyclj.alpha.ptest :as ptest]             ;for is
    [tinyclj.alpha.ptest__impl :as ptest__impl] ;for get-test-context
    [tcljc.classdata :as classdata])
@@ -406,7 +407,7 @@
 (defn str-to-form [s]
   (let [forms (-> (rd/tokenize s)
                   (rd/mk-reader)
-                  (rd/read-all {}))]
+                  (reader-test/read-all* "NO_NS" {}))]
     (assert (nil? (nnext forms)) "string holds multiple forms")
     (first forms)))
 

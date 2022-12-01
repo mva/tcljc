@@ -263,8 +263,7 @@
           (try
             (let [rdr (.forms-reader (.env nmsp) rurl)]
               (loop [nmsp (with-rpath nmsp rpath)]
-                (let [ns-alias (.get-ns-alias-map (.ctx nmsp))
-                      form (.read-1 rdr ns-alias ::eof)]
+                (let [form (.read-1 rdr (.ctx nmsp) ::eof)]
                   (cond
                     (identical? ::eof form) nmsp
                     (seq? form) (recur
