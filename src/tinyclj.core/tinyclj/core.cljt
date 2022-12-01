@@ -4751,6 +4751,7 @@
   (when (instance? Throwable ex)
     (.getCause ^Throwable ex)))
 
+;;; redefined after core_print with ~(pr-str x) instead of (pr-str '~x)
 (defmacro assert
   "Evaluates expr and throws an exception if it does not evaluate to
   logical true."
@@ -6787,6 +6788,21 @@
 ;; (alter-meta! (find-ns 'clojure.core) assoc :doc "Fundamental library of the Clojure language")
 ;; (load "core_proxy")
 (load "core_print")
+
+;;; redefinition using core_print's pr-str at compilation time
+(defmacro assert
+  "Evaluates expr and throws an exception if it does not evaluate to
+  logical true."
+  {:added "1.0"}
+  ([x]
+     (when *assert*
+       `(when-not ~x
+          (throw (new AssertionError (str "Assert failed: " ~(pr-str x)))))))
+  ([x message]
+     (when *assert*
+       `(when-not ~x
+          (throw (new AssertionError (str "Assert failed: " ~message "\n" ~(pr-str x))))))))
+
 ;; (load "genclass")
 (load "core_deftype")
 (require 'tinyclj.core.protocols)
