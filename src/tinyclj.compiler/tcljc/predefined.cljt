@@ -11,8 +11,8 @@
    [tcljc.config :as cfg]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
+   [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
-   [tcljc.synquote :as sq]   
    [tcljc.compiler :as compiler])
   (:import
    (tcljc.classfile ILdStInstr)
@@ -21,7 +21,8 @@
    (clojure.lang Symbol IPersistentMap)
    (jdk.classfile Opcode)
    (java.lang.invoke MethodHandles$Lookup)
-   (java.util HashMap)))
+   (java.util HashMap)
+   (java.util.regex Pattern PatternSyntaxException)))
 
 (defn- globals-ns-primitive []
   (letfn [(put-prim [m ^Symbol nm ^FnPrimitiveFn pfn]
@@ -96,9 +97,12 @@
                     (into (globals-ns-primitive)))]
     {cfg/primitive-ns-str globals}))
 
-(def ^:private macro-syntax-quote
+(def macro-regex-literal
   (^FnMacroFn fn [ctx form]
-   (sq/syntax-quote form ^Ctx ctx)))
+   (try
+     (Pattern/compile (second form))
+     (catch PatternSyntaxException e
+       (wrong/other (str "invalid regex: " e) form)))))
 
 (letfn [(assoc-predef-macro [m ^Symbol sym ^FnMacroFn mfn]
           (let [nm (name sym)]
@@ -116,8 +120,7 @@
           tp-Agent (.findClass l "clojure.lang.Agent")
           tp-Writer (.findClass l "java.io.Writer")]
       (-> {}
-          (assoc-predef-macro sq/sym-syntax-quote macro-syntax-quote)
-          (assoc-predef-macro sq/sym-regex-literal compiler/macro-regex-literal)
+          (assoc-predef-macro cfg/sym-regex-literal macro-regex-literal)
           (transient)
           (conj-var! "CURRENT_NS" tp-Namespace '*ns*)
           (conj-var! "AGENT" tp-Agent '*agent*)

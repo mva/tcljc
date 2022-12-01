@@ -56,6 +56,11 @@
 ;; (def core-lib-sym (symbol nil core-lib))
 (defn core-lib? ^boolean [^String ns-str] (= core-lib ns-str))
 
+;;; note: the `regex-literal` symbols is spliced into the core lib's
+;;; namespace (similar to e.g. `*ns*`) and bound to a predefined macro
+(def sym-regex-literal (symbol core-lib "regex-literal"))
+(def sym-quote 'quote)
+
 (def primitive-ns-str "tinyclj.lang.primitive")
 
 (def key-force-clinit nil)
@@ -235,6 +240,18 @@
         (validate-defined-class))))
 
 ;;; ------------------------------------------------------------------------
+
+;;; Return the source code meta information of `x`.  For non-empty
+;;; list `x`, first strip :line/:column information added by the
+;;; reader.
+(defn source-meta [x]
+  (let [m (meta x)]
+    (if (and (some? m) (seq? x) (some? (seq x)))
+      (let [m' (dissoc m :line)]
+        (when (pos? (count m'))
+          m'))
+      m)))
+
 
 ;;; Because application and compiler can live in different class
 ;;; loaders with a different runtime (e.g. when bootstrapping

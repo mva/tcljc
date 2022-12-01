@@ -179,7 +179,8 @@
                        (cons base (rest form)))]
               (.put m (name nm) (macro-ref nm mfn))))]
     ;; reader support
-    (put-macro 'regex-literal compiler/macro-regex-literal)
+    (put-macro (symbol nil (name cfg/sym-regex-literal))
+               predefined/macro-regex-literal)
     
     ;; primitive conversion functions
     (put-alias 'object 'tinyclj.lang.primitive/object)
@@ -407,7 +408,7 @@
 (defn str-to-form [s]
   (let [forms (-> (rd/tokenize s)
                   (rd/mk-reader)
-                  (reader-test/read-all* "NO_NS" {}))]
+                  (reader-test/read-all* (reader-test/stub-ctx)))]
     (assert (nil? (nnext forms)) "string holds multiple forms")
     (first forms)))
 

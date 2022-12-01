@@ -11,7 +11,7 @@
             [tcljc.synquote :as sq]
             [tinyclj.string :as str])
   (:import (tcljc.context Ctx)
-           (clojure.lang Symbol Keyword Cons ISeq IPersistentMap IMeta)
+           (clojure.lang Symbol Keyword Cons ISeq IPersistentMap IMeta IObj)
            (java.net URL)
            (java.nio.file Path Files)
            (java.util ArrayList ArrayDeque)
@@ -664,11 +664,12 @@
     (loop [tk tk]
       (.advance-tk c tk)
       (if (skipped-close? c)
-        (with-meta (list 'tinyclj.core/regex-literal (.toString sb)) lmeta)
+        (with-meta (list cfg/sym-regex-literal (.toString sb)) lmeta)
         (do (.append sb (.this-string c (.token c)))
             (recur (.token c)))))))
 
-;;; `ctx` provides ns-str & ns-alias map.
+;;; `ctx` provides ns-str & ns-alias map, and is also passed on to
+;;; `sq/encode`.
 (defn- read-form [^Cursor c ^Ctx ctx]
   (letfn [(fork ^Cursor [^Cursor c ^ISeq synquote-stack ^ArrayList arg-env]
             ;; Returns a new cursor at the position of `c` that is
@@ -754,9 +755,10 @@
                   c* (fork c (cons (sq/mk-gensym-map) (.synquote-stack c))
                            (.arg-env c))]
               (.advance-tk c* tk)
-              (.join c (with-meta (list sq/sym-syntax-quote
-                                        (read-form (skip-ws c*) ctx))
-                         lmeta)
+              (.join c (let [form (-> (read-form (skip-ws c*) ctx)
+                                      (sq/encode ctx))]
+                         (cond-> form
+                           (instance? IObj form) (with-meta lmeta)))
                      c*)))
           (read-unquote [^Cursor c ^int tk op]
             (if (some? (.synquote-stack c))
@@ -786,7 +788,7 @@
                            \" (read-string c tk)
 
                            \^ (read-meta c tk)
-                           \' (read-prefix-as-list c tk sq/sym-quote)
+                           \' (read-prefix-as-list c tk cfg/sym-quote)
                            \@ (read-prefix-as-list c tk 'deref)
                            \` (read-syntax-quote c tk)
                            \~ (read-unquote c tk sq/sym-unquote))

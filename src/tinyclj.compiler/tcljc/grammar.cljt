@@ -6,8 +6,8 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.grammar
-  (:require [tcljc.wrong :as wrong]
-            [tcljc.synquote :as sq])
+  (:require [tcljc.config :as cfg]
+            [tcljc.wrong :as wrong])
   (:import (clojure.lang Symbol ISeq IPersistentVector IPersistentMap)))
 
 (def refer-clojure-map {:tag :require, :refer-clojure true,
@@ -25,7 +25,7 @@
     (concat [refer-clojure-all-map] reqs)))
 
 (defn- strip-quote [x]
-  (if (and (seq? x) (= sq/sym-quote (first x)) (nil? (nnext x)))
+  (if (and (seq? x) (= cfg/sym-quote (first x)) (nil? (nnext x)))
     (second x)
     x))
 

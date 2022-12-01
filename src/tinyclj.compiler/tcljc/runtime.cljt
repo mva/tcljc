@@ -7,6 +7,7 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.runtime      ;symbolic descriptors for stuff from tinyclj.rt
   (:require
+   [tcljc.config :as cfg]
    [tcljc.javabase :as jb]
    [tinyclj.string :as str])
   (:import
@@ -423,7 +424,7 @@
               (instance? Pattern c) (dcd-pattern c)
               :else (throw (IllegalArgumentException. (str (class c))))))]
     
-    (if-some [m (meta c)]
+    (if-some [m (cfg/source-meta c)]
       (->> (doto (new "[Ljava.lang.constant.ConstantDesc;" 2)
              (aset 0 (describe-imeta c)) ;(some? m) implies IMeta
              (aset 1 (describe-const-expr m)))

@@ -7,12 +7,14 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.reader-test
   (:require [tcljc.config :as cfg]
+            [tcljc.javabase :as jb]
             [tcljc.context :as ctx]
             [tcljc.synquote :as sq]
             [tcljc.reader :as rd]
             [tinyclj.string :as str]
             [tinyclj.alpha.ptest :refer :all])
-  (:import (tcljc.reader Tokens IReader)
+  (:import (tcljc.context Ctx)
+           (tcljc.reader Tokens IReader)
            (clojure.lang IPersistentMap ExceptionInfo)
            (java.util.regex Pattern)))
 
@@ -119,36 +121,45 @@
 
 ;;; Part 2: Reader.
 
+(defn stub-ctx
+  (^Ctx []
+   (stub-ctx "NO_NS" {}))
+  (^Ctx [^String ns-str ^IPersistentMap ns-alias]
+   (let [lookup-in-pkg (java.lang.invoke.MethodHandles/lookup)]
+     (tcljc.context.Ctx.
+      {} ns-alias {} jb/jvm-imports        ;_known-ns
+      ns-str nil nil lookup-in-pkg nil     ;ns-str
+      nil (ctx/clone-thread-binding-frame) ;!private-names
+      nil nil nil                          ;emit-q
+      nil false 0 0))))                    ;arity-task-scope
+    
 ;;; Materializes the reader as a seq.  All forms use the same
 ;;; `ns-alias` map to rewrite auto-resolved keywords.
-(defn read-all* [^IReader rdr ^String ns-str ^IPersistentMap ns-alias]
-  (let [ctx (tcljc.context.Ctx.
-             {} ns-alias {} {}                    ;_known-ns
-             ns-str nil nil nil nil               ;ns-str
-             nil (ctx/clone-thread-binding-frame) ;!private-names
-             nil nil nil                          ;emit-q
-             nil true 0 0)]                       ;arity-task-scope
-    ((fn read-step []
-       (lazy-seq
-        (let [x (.read-1 rdr ctx ::eof)]
-          (when-not (identical? ::eof x)
-            (cons x (read-step)))))))))
+(defn read-all* [^IReader rdr ^Ctx ctx]
+  ((fn read-step []
+     (lazy-seq
+      (let [x (.read-1 rdr ctx ::eof)]
+        (when-not (identical? ::eof x)
+          (cons x (read-step))))))))
 
 (defn read-all
   ([^String s]
-   (read-all s "NO_NS" {}))
-  ([^String s ^String ns-str ^clojure.lang.IPersistentMap ns-alias]
+   (read-all s (stub-ctx)))
+  ([^String s ^Ctx ctx]
    (-> (rd/tokenize s)
        (rd/mk-reader)
-       (read-all* ns-str ns-alias))))
+       (read-all* ctx))))
 
-(defn read1 [^String s]         ;one form, no syntax-quote processing
-  (let [forms (seq (read-all s))]
-    (when (nil? forms)
-      (throw (IllegalArgumentException. "no data in input")))
-    (when (some? (next forms))
-      (throw (IllegalArgumentException. "unexpected data after form")))
-    (first forms)))
+(defn read1                      ;one form, no syntax-quote processing
+  ([^String s]
+   (read1 s (stub-ctx)))
+  ([^String s ^Ctx ctx]
+   (let [forms (seq (read-all s ctx))]
+     (when (nil? forms)
+       (throw (IllegalArgumentException. "no data in input")))
+     (when (some? (next forms))
+       (throw (IllegalArgumentException. "unexpected data after form")))
+     (first forms))))
 
 
 (deftest unreadable-test
@@ -252,13 +263,14 @@
 (deftest keyword-auto-resolving-test
   (let [ns-str "this-namespace"
         ns-alias {"alias" "aliased-namespace"
-                  "known-namespace" "known-namespace"}]
+                  "known-namespace" "known-namespace"}
+        ctx (stub-ctx ns-str ns-alias)]
     (is (= [:this-namespace/bar]
-           (read-all "::bar" ns-str ns-alias)))
+           (read-all "::bar" ctx)))
     (is (= [:aliased-namespace/bar]
-           (read-all "::alias/bar" ns-str ns-alias)))
+           (read-all "::alias/bar" ctx)))
     (is (= [:known-namespace/bar]
-           (read-all "::known-namespace/bar" ns-str ns-alias)))
+           (read-all "::known-namespace/bar" ctx)))
 
     (is (thrown-with-msg? ExceptionInfo #"invalid token: ::foo/bar"
                           (read1 "::foo/bar")))))
@@ -559,12 +571,8 @@
   (is (= '(quote :foo/bar#) (read1 "':foo/bar#")))
   (is (= '(quote :foo#) (read1 "':foo#")))
 
-  ;; FIXME... tclj eats `(tinyclj.core/syntax-quote ...)`, so go the
-  ;; manual route
-  (is (= (list sq/sym-syntax-quote :foo/bar#)
-         (read1 "`:foo/bar#")))
-  (is (= (list sq/sym-syntax-quote :foo#)
-         (read1 "`:foo#")))
+  (is (= :foo/bar# (read1 "`:foo/bar#")))
+  (is (= :foo# (read1 "`:foo#")))
   
   ;; In Clojure (as of 1.11-rc1) the symbol suffix "...#" has no
   ;; special meaning outside of a syntax quote form "`...".
@@ -576,17 +584,15 @@
   (is (= (list 'quote (symbol "foo" "bar#")) (read1 "'foo/bar#")))
   (is (= (list 'quote (symbol nil "foo#")) (read1 "'foo#")))
   
-  (is (= (list sq/sym-syntax-quote (symbol "foo" "bar#"))
+  (is (= (list 'quote (symbol "foo" "bar#"))
          (read1 "`foo/bar#")))
-  (is (= (list sq/sym-syntax-quote 'foo__$1$__auto__)
+  (is (= (list 'quote 'foo__$1$__auto__)
          (-> (read1 "`foo#")
              (deterministic-gensyms))))
-  (is (= (list 'quote (list sq/sym-syntax-quote
-                            'foo__$1$__auto__))
+  (is (= (list 'quote (list 'quote 'foo__$1$__auto__))
          (-> (read1 "'`foo#")
              (deterministic-gensyms))))
-  (is (= (list sq/sym-syntax-quote (list 'quote
-                                         'foo__$1$__auto__))
+  (is (= (list 'quote (list 'quote 'foo__$1$__auto__))
          (-> (read1 "`'foo#")
              (deterministic-gensyms)))))
 

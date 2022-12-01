@@ -13,30 +13,26 @@
    [tcljc.synquote :as sq]
    [tinyclj.alpha.ptest :refer :all])
   (:import
-   (tcljc.synquote SyntaxQuoteState)
+   (tcljc.context Ctx)
    (clojure.lang Symbol ExceptionInfo)
    (java.lang.invoke MethodHandles MethodType)
    (java.util HashMap)
    (java.util.regex Pattern)))
 
-(defn mk-sqs ^SyntaxQuoteState [^Symbol this-namespace]
-  (let [l (MethodHandles/lookup)
-        ctx (ctx/mk-ctx* {} (name this-namespace) nil nil l nil l nil
-                         (ctx/clone-thread-binding-frame))]
+(defn sqs-ctx ^Ctx [^Symbol this-namespace]
+  (let [ctx (rdt/stub-ctx (name this-namespace) {})]
     (.put-global ctx "imported-var"
                  (x/global-ref 'remote-var "my.name.space" Object
                                false false nil))
     (.put-ns-alias ctx "my.name.space" "my.name.space") ;required namespace
     (.put-ns-alias ctx "space" "my.name.space") ;namespace alias
-    (sq/mk-syntax-quote-state this-namespace ctx)))
+    ctx))
 
 (defn rdr                            ;pre: `cs` is a syntax-quote form
   ([^String cs]
    (rdr cs 'name.space))
   ([^String cs ^Symbol this-namespace]
-   (let [x (rdt/read1 cs)]
-     (assert (sq/syntax-quote? x) (str x))
-     (sq/encode (mk-sqs this-namespace) (second x)))))
+   (rdt/read1 cs (sqs-ctx this-namespace))))
 
 (deftest reader-autoquote-test
   (is (= nil (rdr "`nil")))
@@ -47,7 +43,7 @@
 
 (deftest autoquote-test
   (let [sq (fn [form]
-             (sq/encode (mk-sqs 'name.space) form))
+             (sq/encode form (rdt/stub-ctx "name.space" {})))
         auto? (fn ^boolean [form]
                 (identical? form (sq form)))]
     (is (auto? nil))
@@ -132,8 +128,12 @@
 (deftest unquote-test
   (is (= 'a
          (rdr "`~a")))
+  (is (= 'a
+         (rdr "``~~a")))
   (is (= '(quote a)
          (rdr "`~'a")))
+  (is (= '(quote a)
+         (rdr "``~~'a")))
   
   (is (= '(tinyclj.core/seq
            (tinyclj.core/list (quote name.space/a) (quote name.space/b) x))
