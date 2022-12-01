@@ -30,8 +30,9 @@
    (jdk.classfile.instruction SwitchCase)
    (jdk.classfile.attribute ConstantValueAttribute SignatureAttribute
                             RuntimeVisibleAnnotationsAttribute)
+   (jdk.classfile.constantpool LoadableConstantEntry)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc$Kind
-                       DirectMethodHandleDesc Constable DynamicCallSiteDesc)
+                       DirectMethodHandleDesc Constable)
    (java.lang.invoke TypeDescriptor$OfField)))
 
 (def acc-static (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC Classfile/ACC_FINAL))
@@ -196,16 +197,17 @@
                   (line-number x)
                   (cf/invoke mhd))))
           (invoke-dynamic ^CodeBuilder [^CodeBuilder xb ^InvokeDynamic x]
-            (let [dcsd (DynamicCallSiteDesc/of
-                        (.bsm x) (.invocation-name x)
-                        (rt/mtd-of (x/type x) (map x/type (x/argv x)))
-                        ^"[Ljava.lang.constant.ConstantDesc;"
-                        (->> (.cexprs x)
-                             (map #(-> (x/recover-primitive-const %)
-                                       (rt/describe-const-expr)))
-                             (into-array ConstantDesc)))]
+            (let [cpb (.constantPool xb)
+                  bs-args (for [x (.cexprs x)
+                                :let [c (x/recover-primitive-const x)]]
+                            (rt/loadable-entry cpb c))
+                  bsm (.bsmEntry cpb (.methodHandleEntry cpb (.bsm x))
+                                 ^java.util.List bs-args)
+                  nat (.natEntry cpb (.invocation-name x)
+                                 (->> (map x/type (x/argv x))
+                                      (rt/mtd-of (x/type x))))]
               (line-number xb x)
-              (.invokedynamic xb dcsd)))
+              (.invokeDynamicInstruction xb (.invokeDynamicEntry cpb bsm nat))))
           (invoke-poly ^CodeBuilder [^CodeBuilder xb ^InvokePoly x]
             (let [argv (x/argv x)
                   mtd (rt/mtd-of (x/type x) (map x/type (rest argv)))] ;virtual
@@ -460,8 +462,7 @@
     #_(prn :expr-insns (class x))
     (if-some [c (.const-value x)]
       (cond-> xb
-        (not (x/expr-empty? x))
-        (.constantInstruction (rt/describe-const-expr c)))
+        (not (x/expr-empty? x)) (rt/load-constant c))
       (do
         ;; This line covers the arguments, which may overwrite it.
         ;; The instruction is emitted at the end and should repeat its
@@ -606,7 +607,7 @@
             (let [mnm (x/mnm bref)
                   mtd (rt/mtd-of member-tp [])
                   xbh (cf/with-xbh [xb]
-                        (-> (.constantInstruction xb ^ConstantDesc const)
+                        (-> (rt/load-constant xb const)
                             (.areturn)))
                   mbh (cf/with-mbh [mb]
                         (macro-annotation mb bref)
@@ -625,5 +626,6 @@
             
             (let [tpd (cf/member-tp ^LdStMember ld-st)
                   const (or (x/root-fn-const init-x)
-                            (rt/describe-const-expr (.const-value init-x)))]
+                            (rt/loadable-entry (.constantPool cb)
+                                               (.const-value init-x)))]
               (lazy-const! bref tpd const))))))))

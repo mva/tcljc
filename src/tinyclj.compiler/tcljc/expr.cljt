@@ -53,7 +53,8 @@
      ;; representation of the value `nil`: no other non-nil
      ;; `const-value` must ever evaluate to `nil` at runtime(!).
      ;; Computational int values are represented by Integer instances.
-     ;; tcljc.runtime/describe-const-expr maps this to a ConstantDesc.
+     ;; tcljc.runtime/describe-const-expr maps this to the classfile
+     ;; level.
      ;;
      ;; The marker `const-value-void` signals the empty statement, a
      ;; form of constant that does not emit any code.  It can only

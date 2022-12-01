@@ -12,11 +12,15 @@
    [tinyclj.string :as str])
   (:import
    (clojure.lang Named ISeq IMeta)
+   (jdk.classfile CodeBuilder)
+   (jdk.classfile.constantpool ConstantPoolBuilder LoadableConstantEntry
+                               ConstantDynamicEntry)
    (java.lang.constant ClassDesc ConstantDescs ConstantDesc Constable
                        DirectMethodHandleDesc DirectMethodHandleDesc$Kind
-                       MethodTypeDesc MethodHandleDesc DynamicConstantDesc)
+                       MethodTypeDesc MethodHandleDesc)
    (java.lang.invoke MethodHandles$Lookup MethodHandle TypeDescriptor$OfField)
    (java.lang.reflect Method Constructor)
+   (java.util List)
    (java.util.regex Pattern))
   (:refer-clojure
    :exclude [symbol keyword vector map set seq list object objects
@@ -59,7 +63,7 @@
 (defn null-value-pred ^Boolean [const-value]
   ;; This function assumes that any `const-value` is produced by
   ;; compiler code, and that all non-NULL values (including
-  ;; DynamicConstantDesc= always describe some literal and known to be
+  ;; DynamicConstantDesc) always describe some literal and known to be
   ;; non-null value.
   (cond
     (nil? const-value) nil                            ;may be null
@@ -380,7 +384,8 @@
 (defn boolean-desc ^Integer [^boolean x]
   (if x jb/jvm-int-one jb/jvm-int-zero))
 
-(defn describe-const-expr ^ConstantDesc [^Object c]
+(defn loadable-entry ^LoadableConstantEntry [^ConstantPoolBuilder cpb
+                                              ^Object c]
   (letfn [(type-desc-meta ^ClassDesc [^Object c]
             (cond
               (symbol? c) symbol
@@ -389,44 +394,52 @@
               (map? c) map
               (set? c) set
               :else (throw (IllegalArgumentException. (str (class c))))))
-          (constant-desc-array ^"[Ljava.lang.constant.ConstantDesc;" [^ISeq cs]
-            (into-array ConstantDesc (tinyclj.core/map describe-const-expr cs)))
-
-          (dcd-named ^ConstantDesc [^String dcd-nm ^ClassDesc dcd-tp ^Named nm]
-            (if-some [nmsp (namespace nm)]
-              (DynamicConstantDesc/ofNamed bsm-quote dcd-nm dcd-tp
-                                           nmsp (name nm))
-              (DynamicConstantDesc/ofNamed bsm-quote dcd-nm dcd-tp
-                                           (name nm))))
-          (dcd-pattern ^ConstantDesc [^Pattern p]
-            (DynamicConstantDesc/ofNamed bsm-quote "re-pattern" pattern
-                                         (.pattern p)))
-          (dcd-coll ^ConstantDesc [^DirectMethodHandleDesc mhd ^ISeq cs]
-            (DynamicConstantDesc/ofNamed bsm-quote (.methodName mhd)
-                                         (-> mhd .invocationType .returnType)
-                                         (constant-desc-array cs)))
+          (cde-quote ^ConstantDynamicEntry [^String fnm ^ClassDesc tp bs-args]
+            (let [bsm (.bsmEntry cpb (.methodHandleEntry cpb bsm-quote)
+                                 ^java.util.List bs-args)
+                  nat (.natEntry cpb fnm tp)]
+              (.constantDynamicEntry cpb bsm nat)))
           
-          (describe-imeta [^Object c]
+          (cde-named ^ConstantDynamicEntry [^String fnm ^ClassDesc tp ^Named c]
+            (let [nm-entry (.stringEntry cpb (name c))]
+              (cde-quote fnm tp (if-some [nmsp (namespace c)]
+                                  [(.stringEntry cpb nmsp) nm-entry]
+                                  [nm-entry]))))
+          (cde-pattern ^ConstantDynamicEntry [^Pattern c]
+            (cde-quote "re-pattern" pattern [(.stringEntry cpb (.pattern c))]))
+          (cde-coll ^ConstantDynamicEntry [^DirectMethodHandleDesc mhd ^ISeq cs]
+            (cde-quote (.methodName mhd) (-> mhd .invocationType .returnType)
+                       (for [c cs] (loadable-entry cpb c))))
+          
+          (entry-imeta ^ConstantDynamicEntry [^Object c]
             (cond
-              (tinyclj.core/symbol? c) (dcd-named "symbol" symbol c)
-              (tinyclj.core/seq? c) (dcd-coll mhd-list c)
-              (tinyclj.core/vector? c) (dcd-coll mhd-vector (tinyclj.core/seq c))
-              (tinyclj.core/map? c) (dcd-coll mhd-map (mapcat identity c))
-              (tinyclj.core/set? c) (dcd-coll mhd-set (tinyclj.core/seq c))
+              (symbol? c) (cde-named "symbol" symbol c)
+              (seq? c) (cde-coll mhd-list c)
+              (vector? c) (cde-coll mhd-vector (tinyclj.core/seq c))
+              (map? c) (cde-coll mhd-map (mapcat identity c))
+              (set? c) (cde-coll mhd-set (tinyclj.core/seq c))
               :else (throw (IllegalArgumentException. (str (class c))))))
-          (describe-nometa [^Object c] ;describe `c` ignoring its meta value
+          (entry-nometa ^LoadableConstantEntry [^Object c]
+            ;; describe `c` ignoring its meta value
             (cond
-              (nil? c) jb/jvm-null   ;guard against nil in collections
-              (instance? ConstantDesc c) c
-              (instance? Constable c) (describe-constable c)
-              (tinyclj.core/keyword? c) (dcd-named "keyword" keyword c)
-              (instance? IMeta c) (describe-imeta c)
-              (instance? Pattern c) (dcd-pattern c)
+              (nil? c) (recur jb/jvm-null) ;guard against nil in collections
+              (instance? ConstantDesc c) (.loadableConstantEntry cpb c)
+              (instance? Constable c) (recur (describe-constable c))
+              (tinyclj.core/keyword? c) (cde-named "keyword" keyword c)
+              (instance? IMeta c) (entry-imeta c)
+              (instance? Pattern c) (cde-pattern c)
               :else (throw (IllegalArgumentException. (str (class c))))))]
     
     (if-some [m (cfg/source-meta c)]
-      (->> (doto (new "[Ljava.lang.constant.ConstantDesc;" 2)
-             (aset 0 (describe-imeta c)) ;(some? m) implies IMeta
-             (aset 1 (describe-const-expr m)))
-           (DynamicConstantDesc/ofNamed bsm-quote "with-meta" (type-desc-meta c)))
-      (describe-nometa c))))
+      ;; (instance? IMeta c) is implied by (some? m)
+      (let [bs-args ^List [(entry-imeta c) (loadable-entry cpb m)]
+            bsm (.bsmEntry cpb (.methodHandleEntry cpb bsm-quote) bs-args)
+            nat (.natEntry cpb "with-meta" (type-desc-meta c))]
+        (.constantDynamicEntry cpb bsm nat))
+      (entry-nometa c))))
+
+(defn load-constant ^CodeBuilder [^CodeBuilder xb ^Object c]
+  (cond
+    (instance? ConstantDesc c) (.constantInstruction xb ^ConstantDesc c)
+    (instance? LoadableConstantEntry c) (.ldc xb ^LoadableConstantEntry c)
+    :else (recur xb (loadable-entry (.constantPool xb) c))))

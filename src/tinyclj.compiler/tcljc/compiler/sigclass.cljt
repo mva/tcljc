@@ -222,8 +222,7 @@
                    (= "__hasheq" (nth-last-mnm 1))))))
         
         (kw-instr ^CodeBuilder [^CodeBuilder xb ^FieldDef fdef]
-          (let [const (rt/describe-const-expr (keyword nil (.mnm fdef)))]
-            (.constantInstruction xb const)))
+          (rt/load-constant xb (keyword nil (.mnm fdef))))
         (conv-to-field ^CodeBuilder [^CodeBuilder xb ^FieldDef fdef]
           (let [tpd (.tpd fdef)]
             (cond
