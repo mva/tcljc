@@ -30,6 +30,7 @@ module tinyclj.compiler {
   exports tcljc.main.efmt;
   exports tcljc.main.options;
   exports tcljc.main.tclj0;
+  exports tcljc.parser;
   exports tcljc.predefined;
   exports tcljc.publics;
   exports tcljc.reader;

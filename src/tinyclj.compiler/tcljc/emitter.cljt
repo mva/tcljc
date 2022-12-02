@@ -85,7 +85,7 @@
   (forms-reader [_ rurl]
     (if-some [xs (get injected-file-forms rurl)]
       (rd/mk-seq-reader xs)
-      (rd/mk-reader (rd/tokenize rurl)))))
+      (rd/mk-reader (slurp rurl)))))
 
 (defn mk-build-env
   (^BuildEnv [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld

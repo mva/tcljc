@@ -36,6 +36,7 @@ public final class Literal {
     return Keyword.intern(ns, name);
   }
   
+  /** pre: keys in `init` are distinct */
   public static IPersistentMap map(Object... init) {
     return clojure.lang.RT.mapUniqueKeys((init.length == 0) ? null : init);
   }
@@ -48,6 +49,7 @@ public final class Literal {
     }
   }
   
+  /** pre: elements `init` will remain unchanged */
   public static IPersistentVector vector(Object... init) {
     if (init.length == 0) {
       return PersistentVector.EMPTY;

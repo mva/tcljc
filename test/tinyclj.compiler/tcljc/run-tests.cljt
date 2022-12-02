@@ -8,7 +8,7 @@
 (ns tcljc.run-tests
   (:require
    (tinyclj.alpha ptest-test ptest__align-test ptest__pp-test)
-   (tcljc reader-test synquote-test grammar-test
+   (tcljc parser-test reader-test synquote-test grammar-test
 
           resolve-test bootstrap-test
           
@@ -32,6 +32,7 @@
     tinyclj.alpha.ptest__align-test
     tinyclj.alpha.ptest__pp-test
     
+    tcljc.parser-test
     tcljc.reader-test
     tcljc.synquote-test
     tcljc.grammar-test

@@ -1,0 +1,214 @@
+(ns tcljc.parser
+  (:require [tcljc.wrong :as wrong])
+  (:import (clojure.lang Symbol ExceptionInfo)))
+
+;;; The parser performs *very* coarse grained and lossless parsing of
+;;; a source file.  Input scenarios are reading largish program texts
+;;; either as a resource or from a file, and parsing smaller strings
+;;; from parts of a larger program (and from unit tests).
+
+(definterface FormBuilder
+  ;; error support
+  (update-pos ^ExceptionInfo [^ExceptionInfo ex ^int pos])
+  
+  ;; atoms: whitespace, number/token, part of string
+  (number ^int [^int end])
+  (token ^int [^int end])
+  (text ^int [^int end]) ;part of string or regex (if nl: single one at end)
+  (ws ^int [^int end]) ;whitespace including comments (if nl: single one at end)
+
+  ;; groups: collection, meta, discard, string, regex, etc.  
+  (start ^int [^int end-of-open])
+  (end ^int [^int end-of-close ^int start-of-open]))
+
+(defn after-nl? ^boolean [^String cs ^int end] ;pre: (pos? end)
+  (= (.charAt cs (dec end)) \newline))
+
+
+;;; "End of text" character virtually appended to program text to
+;;; enable one or more additional characters of lookahead without the
+;;; need to check the string's length first.  The assumption is that
+;;; this character does not appear in valid input text.  To simplify
+;;; program logic, `parse-form` treats it like an unexpected closing
+;;; parenthesis.
+(def ^:private eot \u0000) ;or from private use area in Unicode's BMP(0)?
+
+(defn- whitespace? ^boolean [^char ch]
+  (or (Character/isWhitespace ch) (= ch \,)))
+
+(defn- macro? ^boolean [^char ch]
+  ;; A macro character starts a group form (\" \# \( \[ \{ \' \@ \` \~
+  ;; \^), starts a comment (\;), starts a character literal (\\),
+  ;; starts an argument token (\%), or ends a group (\" \) \] \}).
+  (case ch                      ;see `macros` array in LispReader.java
+    (\" \; \' \@ \^ \` \~ \( \) \[ \] \{ \} \\ \% \#) true
+    #_else false))
+
+(defn- terminating-macro? ^boolean [^char ch]
+  ;; A terminating macro character is a subset of `macro?` that
+  ;; excludes the characters (\# \% \').  As a consequence, all of
+  ;; "a'", "a#", and "a%" are valid symbols.
+  (case ch                              ;see isTerminatingMacro()
+    (\" \; \@ \^ \` \~ \( \) \[ \] \{ \} \\) true
+    #_else false))
+          
+(defn- at-eol? ^boolean [^char ch]
+  (case ch
+    (\newline \return #_eot \u0000) true
+    false))
+
+;;; Skip any text to just past the first \newline.
+(defn- skip-to-eol ^int [^String cs ^int pos]
+  (let [pos (.indexOf cs (int \newline) pos)]
+    (if (neg? pos) (.length cs) (inc pos))))
+
+(defn- skip-number-cont ^int [^String cs ^int pos]
+  (let [n (.length cs)]
+    (loop [pos pos]
+      (if (< pos n)
+        (let [ch (.charAt cs pos)]
+          (cond (whitespace? ch) pos
+                (macro? ch) pos
+                :else (recur (inc pos))))
+        pos))))
+
+(defn- skip-token-cont ^int [^String cs ^int pos]
+  (let [n (.length cs)]
+    (loop [pos pos]
+      (if (< pos n)
+        (let [ch (.charAt cs pos)]
+          (cond (whitespace? ch) pos
+                (terminating-macro? ch) pos
+                :else (recur (inc pos))))
+        pos))))
+
+(defn parse-1 ^int [^int pos ^FormBuilder fb ^String cs]
+  (letfn [(char-at ^char [^int pos]
+            (if (>= pos (.length cs))
+              eot
+              (.charAt cs pos)))
+          (start-group ^int [^int pos]
+            (.start fb pos))
+          (end-group ^int [^int pos ^int start-of-open]
+            (.end fb pos start-of-open))
+          
+          (wrong ^int [^int pos msg]
+            (throw (.update-pos fb (wrong/mk-e msg) pos))
+            -1)
+
+          (skip-to-eol ^int [^int pos]
+            (case (char-at pos)
+              \newline (inc pos)
+              #_eot \u0000 pos
+              #_else (recur (inc pos))))
+          (parse-ws ^int [^int pos]
+            ;; post: position is either `eot` or not `whitespace?`
+            (let [ch (char-at pos), pos-1 (inc pos)]
+              (cond
+                (whitespace? ch) (recur (if (= ch \newline)
+                                          (.ws fb pos-1)
+                                          pos-1))
+                (= ch \;) (let [pos (skip-to-eol pos-1)]
+                            (recur (.ws fb pos)))
+                :else (do (.ws fb pos)
+                          (if (and (= ch \#) (= (char-at pos-1) \_))
+                            (recur (parse-prefix pos 2))
+                            pos)))))
+          (parse-ws+form ^int [^int pos]
+            (-> pos (parse-ws) (parse-form)))
+          (parse-forms ^int [^int pos ^char ch-end]
+            (let [pos (parse-ws pos)]
+              (if (= (char-at pos) ch-end)
+                (inc pos)
+                (recur (parse-form pos) ch-end))))
+          
+          (parse-number ^int [^int pos] ;see readNumber()
+            (.number fb (skip-number-cont cs pos)))
+          (parse-token ^int [^int pos]  ;see readToken()
+            (.token fb (skip-token-cont cs pos)))
+          (parse-number-or-token ^int [^int pos ^char ch]
+            ;; pre: not looking at whitespace or starting character of a macro
+            (if (Character/isDigit ch)
+              (parse-number (inc pos))
+              (parse-token (inc pos))))
+
+          (parse-texts ^int [^int pos ^int start-of-open]
+            (case (char-at pos)
+              \" (inc (.text fb pos))
+              \\ (if (at-eol? (char-at (inc pos)))
+                   (wrong pos "incomplete quote at end of line")
+                   (recur (+ pos 2) start-of-open))
+              \newline (recur (.text fb (inc pos)) start-of-open)
+              #_eot \u0000 (wrong start-of-open "unterminated string")
+              #_else (recur (inc pos) start-of-open)))
+          
+          (parse-collection ^int [^int start-of-open ^char ch-end]
+            (-> (start-group (inc start-of-open))
+                (parse-forms ch-end)
+                (end-group start-of-open)))
+          (parse-map ^int [^int start-of-open] ;parses elements in pairs
+            (loop [pos (start-group (inc start-of-open))]
+              (let [pos (parse-ws pos)]
+                (if (= (char-at pos) \})
+                  (end-group (inc pos) start-of-open)
+                  (recur (-> pos (parse-form) (parse-ws+form)))))))
+          (parse-prefix ^int [^int start-of-open ^int length-of-open]
+            (-> (start-group (+ start-of-open length-of-open))
+                (parse-ws+form)
+                (end-group start-of-open)))
+          (parse-meta ^int [^int start-of-open] ;pre: looking at "^"
+            (-> (start-group (inc start-of-open))
+                (parse-ws+form)
+                (parse-ws+form)
+                (end-group start-of-open)))
+          
+          (parse-form ^int [^int pos]
+            ;; pre: looking at start of a non-discard form
+            (let [ch (char-at pos)]
+              (case ch
+                (\+ \-) (parse-number-or-token pos (char-at (inc pos)))
+                \" (-> (start-group (inc pos))
+                       (parse-texts pos)
+                       (end-group pos))
+                \# (-> (start-group (+ pos 2))
+                       (parse-dispatch*)
+                       (end-group pos))
+                \( (parse-collection pos \))
+                \[ (parse-collection pos \])
+                \{ (parse-map pos)
+                (\) \] \} #_eot \u0000) (wrong pos "invalid start of token")
+                (\' \@ \`) (parse-prefix pos 1)
+                \~ (parse-prefix pos (inc (int (= (char-at (inc pos)) \@))))
+                \^ (parse-meta pos)
+                \\ (let [not-eot-1? (not= (char-at (inc pos)) eot)]
+                     (parse-token (+ (inc pos) (int not-eot-1?))))
+                #_else ;token includes argument `%...` & character `\...`
+                (parse-number-or-token pos ch))))
+          
+          (parse-dispatch* ^int [^int pos]
+            ;; pre: after "#." but not "#_"; see `dispatchMacros`
+            ;; array in LispReader.java
+            (let [ch (char-at (dec pos))]
+              (case ch
+                ;; \^ (MetaReader; old meta syntax?)
+                \# (parse-ws+form pos)         ;symbolic value
+                \' (parse-ws+form pos)         ;var
+                \" (parse-texts pos (- pos 2)) ;regex
+                \{ (parse-forms pos \})        ;set
+                \( (parse-forms pos \))        ;anonymous fn
+                ;; \= (EvalReader?)
+                ;; \! (CommentReader?)
+                \< pos                              ;unreadable
+                \_ (throw (IllegalStateException.)) ;parse-ws handles discard
+                ;; \? (ConditionalReader?)
+                ;; \: (NamespaceMapReader?)
+                #_else (wrong (dec pos) (str "invalid dispatch character: \\" ch)))))]
+    
+    (let [pos (parse-ws pos)]
+      (cond-> pos (< pos (.length cs)) (parse-form)))))
+
+(defmacro with-error-pos [^Symbol fb ^Symbol pos & body]
+  `(try
+     ~@body
+     (catch ExceptionInfo ex#
+       (throw (.update-pos ~fb ex# ~pos)))))

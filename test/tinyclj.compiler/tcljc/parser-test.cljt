@@ -1,0 +1,264 @@
+(ns tcljc.parser-test
+  (:require [tcljc.parser :as p]
+            [tinyclj.alpha.ptest :refer :all])
+  (:import (clojure.lang ExceptionInfo)
+           (java.util ArrayList)))
+
+(deftype StringsFormBuilder [^String cs
+                             ^ArrayList strs
+                             ^:unsynchronized-mutable ^int start]
+  tcljc.parser.FormBuilder
+  (update-pos [_ ex pos]
+    ex)
+  
+  (number [_ end]
+    (.add strs [:number start (.substring cs start end)])
+    (set! start end))
+  (token [_ end]
+    (.add strs [:token start (.substring cs start end)])
+    (set! start end))
+  (text [_ end]
+    (when (not= start end)              ;implies: (pos? end)
+      (.add strs [(if (p/after-nl? cs end) :text-nl :text) start
+                  (.substring cs start end)]))
+    (set! start end))
+  (ws [_ end]
+    (when (not= start end)              ;implies: (pos? end)
+      (.add strs [(if (p/after-nl? cs end) :ws-nl :ws) start
+                  (.substring cs start end)]))
+    (set! start end))
+
+  (start [_ end-of-open]
+    (.add strs [:open start (.substring cs start end-of-open)])
+    (set! start end-of-open))
+  (end [_ end-of-close start-of-open]
+    (.add strs [:close start-of-open start (.substring cs start end-of-close)])
+    (set! start end-of-close)))
+
+(defn strings [^String cs]
+  (let [fb (StringsFormBuilder. cs (ArrayList.) 0)]
+    (loop [pos 0]
+      (let [pos' (p/parse-1 pos fb cs)]
+        (when-not (= pos' pos)
+          (recur pos'))))
+    (vec (.strs fb))))
+
+
+(deftest whitespace-only ;some combinations of space, comma, and newline
+  ;; no newline at end of file
+  (is (= []
+         (strings "")))
+  (is (= [[:ws 0 " "]]
+         (strings " ")))
+  (is (= [[:ws 0 "  "]]
+         (strings "  ")))
+  (is (= [[:ws-nl 0 "\n"]
+          [:ws 1 " "]]
+         (strings "\n ")))
+  (is (= [[:ws 0 ","]]
+         (strings ",")))
+  (is (= [[:ws 0 ";"]]
+         (strings ";")))
+
+  ;; newline at end of file
+  (is (= [[:ws-nl 0 "\n"]] (strings "\n")))
+  (is (= [[:ws-nl 0 " \n"]] (strings " \n")))
+  (is (= [[:ws-nl 0 ",\n"]] (strings ",\n")))
+  (is (= [[:ws-nl 0 ";\n"]] (strings ";\n"))))
+
+(deftest numbers
+  (is (= [[:number 0 "1"]]
+         (strings "1")))
+  (is (= [[:number 0 "+1"]]
+         (strings "+1")))
+  (is (= [[:number 0 "-1"]]
+         (strings "-1")))
+  (is (= [[:number 0 "123.0"]]
+         (strings "123.0")))
+
+  ;; everything but a macro character continues a number string
+  (is (= [[:number 0 "1!"]]
+         (strings "1!")))
+  (is (= [[:number 0 "+1!"]]
+         (strings "+1!")))
+  (is (= [[:number 0 "-1!"]]
+         (strings "-1!"))))
+
+(deftest tokens
+  (is (= [[:token 0 "a"]]
+         (strings "a")))
+  
+  ;; standalone sign is a token, as is sign followed by non-digit
+  (is (= [[:token 0 "+"]]
+         (strings "+")))
+  (is (= [[:token 0 "-"]]
+         (strings "-")))
+  (is (= [[:token 0 "+a"]]
+         (strings "+a")))
+  (is (= [[:token 0 "-a"]]
+         (strings "-a")))
+  
+  ;; everything but a terminating macro character continues a token
+  ;; string
+  (is (= [[:token 0 "a!"]]
+         (strings "a!")))
+  (is (= [[:token 0 "+a!"]]
+         (strings "+a!")))
+  (is (= [[:token 0 "-a!"]]
+         (strings "-a!")))
+  (is (= [[:token 0 "a+"]]
+         (strings "a+")))
+  (is (= [[:token 0 "a-"]]
+         (strings "a-")))
+  (is (= [[:token 0 "foo/bar"]]
+         (strings "foo/bar")))
+  (is (= [[:token 0 ":foo/bar"]]
+         (strings ":foo/bar")))
+  
+  ;; characters are tokens
+  (is (= [[:token 0 "\\newline"]]
+         (strings "\\newline")))
+  (is (= [[:token 0 "\\a"]]
+         (strings "\\a")))
+  (is (= [[:token 0 "\\"]]              ;this is a syntax error!
+         (strings "\\")))
+
+  ;; arguments are tokens
+  (is (= [[:token 0 "%"]]
+         (strings "%")))
+  (is (= [[:token 0 "%1"]]
+         (strings "%1")))
+  (is (= [[:token 0 "%&"]]
+         (strings "%&"))))
+
+(deftest symbolic-value-test
+  (is (= [[:open 0 "##"] [:token 2 "Inf"] [:close 0 5 ""]]
+         (strings "##Inf")))
+  (is (= [[:open 0 "##"] [:ws 2 " "] [:token 3 "Inf"] [:close 0 6 ""]]
+         (strings "## Inf")))
+
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid start of token"
+                        (strings "##"))))
+
+(deftest unreadable-test
+  (is (= [[:open 0 "#<"] [:close 0 2 ""]]
+         (strings "#<"))))
+
+(deftest strings-and-regexs
+  (is (= [[:open 0 "\""] [:close 0 1 "\""]]
+         (strings "\"\"")))             ;""
+  (is (= [[:open 0 "\""] [:text 1 "abc"] [:close 0 4 "\""]]
+         (strings "\"abc\"")))          ;"abc"
+  (is (= [[:open 0 "\""] [:text-nl 1 "\n"] [:close 0 2 "\""]]
+         (strings "\"\n\"")))           ;"<newline>"
+  (is (= [[:open 0 "\""] [:text-nl 1 "a\n"] [:text 3 "b"] [:close 0 4 "\""]]
+         (strings "\"a\nb\"")))         ;"a<newline>b"
+  (is (= [[:open 0 "\""] [:text 1 "\\\""] [:close 0 3 "\""]]
+         (strings "\"\\\"\"")))         ;"\""
+  (is (= [[:open 0 "\""] [:text 1 "a b"] [:close 0 4 "\""]]
+         (strings "\"a b\"")))          ;"a b"
+
+  (is (thrown-with-msg? ExceptionInfo
+                        #"unterminated string"
+                        (strings "\"")))
+  (is (thrown-with-msg? ExceptionInfo
+                        #"incomplete quote at end of line"
+                        (strings "\"\\")))
+  
+  ;; and the same for regexs
+  (is (= [[:open 0 "#\""] [:close 0 2 "\""]]
+         (strings "#\"\"")))
+  (is (= [[:open 0 "#\""] [:text 2 "abc"] [:close 0 5 "\""]]
+         (strings "#\"abc\"")))
+  (is (= [[:open 0 "#\""] [:text 2 "[\\u0000-\\u001f]"] [:close 0 17 "\""]]
+         (strings "#\"[\\u0000-\\u001f]\""))))
+
+(deftest collections
+  ;; list, vector, set
+  (is (= [[:open 0 "("] [:close 0 1 ")"]]
+         (strings "()")))
+  (is (= [[:open 0 "("] [:token 1 "a"] [:close 0 2 ")"]]
+         (strings "(a)")))
+  (is (= [[:open 0 "("] [:ws 1 " "] [:token 2 "a"] [:close 0 3 ")"]]
+         (strings "( a)")))
+  (is (= [[:open 0 "("] [:token 1 "a"] [:ws 2 " "] [:close 0 3 ")"]]
+         (strings "(a )")))
+  (is (= [[:open 0 "("]
+          [:token 1 "nil"] [:ws 4 " "] [:token 5 "nil"]
+          [:close 0 8 ")"]]
+         (strings "(nil nil)")))
+
+  ;; map entries are pairs
+  (is (= [[:open 0 "{"] [:close 0 1 "}"]]
+         (strings "{}")))
+  (is (= [[:open 0 "{"] [:token 1 ":a"]
+          [:ws 3 " "] [:number 4 "1"] [:close 0 5 "}"]]
+         (strings "{:a 1}")))
+
+  (is (thrown-with-msg? ExceptionInfo
+                        #"invalid start of token"
+                        (strings ")"))))
+
+(deftest prefix-forms
+  (is (= [[:open 0 "'"] [:token 1 "a"] [:close 0 2 ""]]
+         (strings "'a")))
+  (is (= [[:open 0 "^"] [:token 1 "a"]
+          [:ws 2 " "] [:token 3 "b"] [:close 0 4 ""]]
+         (strings "^a b")))
+
+  (is (= [[:open 0 "#_"] [:token 2 "a"] [:close 0 3 ""]]
+         (strings "#_a")))
+  (is (= [[:open 0 "#_"] [:number 2 "1"] [:close 0 3 ""]
+          [:open 3 "#_"] [:number 5 "2"] [:close 3 6 ""]]
+         (strings "#_1#_2")))
+  (is (= [[:open 0 "#_"]                ;first/outer discard
+          [:open 2 "#_"]                ;second/inner discard
+          [:token 4 "a"]
+          [:close 2 5 ""]               ;closes inner discard
+          [:ws 5 " "]
+          [:token 6 "b"]
+          [:close 0 7 ""]]              ;closes outer discard
+         (strings "#_#_a b"))))
+
+(deftest meta-forms
+  (is (= [[:open 0 "^"] [:token 1 ":foo"] [:ws 5 " "]
+          [:token 6 "sym"] [:close 0 9 ""]]
+         (strings "^:foo sym")))
+  (is (= [[:open 0 "^"] [:token 1 ":foo"] [:ws 5 " "]
+          [:open 6 "^"] [:token 7 ":bar"] [:ws 11 " "]
+          [:token 12 "sym"] [:close 6 15 ""] [:close 0 15 ""]]
+      (strings "^:foo ^:bar sym"))))
+
+(deftest character-literals
+  (is (= [[:token 0 "\\a:foo"]]
+         (strings "\\a:foo")))
+  (is (= [[:token 0 "\\a"] [:open 2 "("] [:close 2 3 ")"]]
+         (strings "\\a()")))
+  (is (= [[:token 0 "\\ "] [:open 2 "("] [:close 2 3 ")"]]
+         (strings "\\ ()")))
+  (is (= [[:token 0 "\\\n"] [:open 2 "("] [:close 2 3 ")"]]
+         (strings "\\\n()")))
+  (is (= [[:token 0 "\\("] [:open 2 "("] [:close 2 3 ")"]]
+         (strings "\\(()")))
+  ;; FIXME... problematic case: backslash at end of file; maybe
+  ;; represent character literal as a prefix group with zero or one
+  ;; atom?
+  (is (= [[:token 0 "\\"]]
+         (strings "\\"))))
+
+;; Adding a single character, turning a number into a token, can
+;; change the interpretation of following characters drastically.
+(deftest cascading-change-test
+  (is (= [[:open 0 "'"] [:number 1 "1"] [:close 0 2 ""]
+          [:open 2 "#_"] [:token 4 "discard"] [:close 2 11 ""]]
+         (strings "'1#_discard")))
+  (is (= [[:open 0 "'"] [:token 1 "a1#_discard"] [:close 0 12 ""]]
+         (strings "'a1#_discard")))
+
+  (is (= [[:open 0 "'"] [:number 1 "1"] [:close 0 2 ""]
+          [:open 2 "#("] [:close 2 4 ")"]]
+         (strings "'1#()")))
+  (is (= [[:open 0 "'"] [:token 1 "a1#"] [:close 0 4 ""]
+          [:open 4 "("] [:close 4 5 ")"]]
+         (strings "'a1#()"))))

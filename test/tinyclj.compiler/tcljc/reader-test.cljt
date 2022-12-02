@@ -9,117 +9,12 @@
   (:require [tcljc.config :as cfg]
             [tcljc.javabase :as jb]
             [tcljc.context :as ctx]
-            [tcljc.synquote :as sq]
             [tcljc.reader :as rd]
             [tinyclj.string :as str]
             [tinyclj.alpha.ptest :refer :all])
   (:import (tcljc.context Ctx)
-           (tcljc.reader Tokens IReader)
-           (clojure.lang IPersistentMap ExceptionInfo)
-           (java.util.regex Pattern)))
-
-;;; Part 1: Parser.
-
-(defn to-str ^String [^Tokens t]
-  (let [sb (StringBuilder.)
-        tokens (.tokens t)]
-    (loop [pos 0, i 0]
-      (if (< i (alength tokens))
-        (let [tk (rd/get-tk tokens i)
-              len (rd/tk-length tk)]
-          (.append sb (.substring (.cs t) pos (+ pos len)))
-          (recur (+ pos len) (inc i)))
-        (.toString sb)))))
-
-(defn tag-name [^int tk]
-  (nth [:open-discard :open-delim-1 :open-delim-2 :close-delim
-        :token :number :text :text-nl] tk))
-
-(defn token-seq [^Tokens t]
-  ((fn t* [^int i ^int pos]
-     (lazy-seq
-      (when (not= i (alength (.tokens t)))
-        (let [tk (rd/get-tk (.tokens t) i)
-              end (+ pos (rd/tk-length tk))]
-          (cons [(tag-name (rd/tk-tag tk)) (.substring (.cs t) pos end)]
-                (t* (inc i) end))))))
-   0 0))
-
-(defn tokens [^String s]
-  (let [t (rd/tokenize s)]
-    (is (= s (to-str t)))
-    (token-seq t)))
-
-;;; ------------------------------------------------------------------------
-
-(deftest whitespace-tokens
-  (is (= [] (tokens "")))
-  (is (= [[:text-nl " "]] (tokens " ")))
-  (is (= [[:text-nl ","]] (tokens ",")))
-  (is (= [[:text-nl "\n"]] (tokens "\n")))
-  (is (= [[:text-nl ";\n"]] (tokens ";\n")))
-  (is (= [[:text-nl ";"]] (tokens ";"))))
-
-(deftest number-tokens
-  (is (= [[:number "123"]] (tokens "123")))
-  (is (= [[:number "+123"]] (tokens "+123")))
-  (is (= [[:number "-123"]] (tokens "-123")))
-  (is (= [[:number "123.0"]] (tokens "123.0"))))
-
-(deftest token-tokens
-  (is (= [[:token "nil"]] (tokens "nil")))
-  (is (= [[:token "abc"]] (tokens "abc")))
-  (is (= [[:token "foo/bar"]] (tokens "foo/bar")))
-  (is (= [[:token ":abc"]] (tokens ":abc")))
-  (is (= [[:token ":foo/bar"]] (tokens ":foo/bar")))
-  (is (= [[:token "\\a"]] (tokens "\\a"))))
-
-(deftest string-tokens
-  (is (= [[:open-delim-1 "\""] [:text ""] [:close-delim "\""]]
-         (tokens "\"\"")))
-  (is (= [[:open-delim-1 "\""] [:text "foo"] [:close-delim "\""]]
-         (tokens "\"foo\"")))
-  (is (= [[:open-delim-1 "\""] [:text "a b"] [:close-delim "\""]]
-         (tokens "\"a b\"")))
-  
-  (is (= [[:open-delim-1 "\""] [:text-nl "a\n"] [:text "b"] [:close-delim "\""]]
-         (tokens "\"a\nb\"")))
-  (is (= [[:open-delim-1 "\""] [:text "a\\nb"] [:close-delim "\""]]
-         (tokens "\"a\\nb\"")))
-  
-  (is (= [[:open-delim-2 "#\""] [:text "[\\u0000-\\u001f]"] [:close-delim "\""]]
-         (tokens "#\"[\\u0000-\\u001f]\""))))
-
-(deftest collection-tokens
-  (is (= [[:open-delim-1 "("] [:close-delim ")"]]
-         (tokens "()")))
-  (is (= [[:open-delim-1 "("] [:token "nil"] [:close-delim ")"]]
-         (tokens "(nil)")))
-  (is (= [[:open-delim-1 "("]
-          [:token "nil"] [:text " "] [:token "nil"]
-          [:close-delim ")"]]
-         (tokens "(nil nil)"))))
-
-(deftest discard-tokens
-  (is (= [[:open-discard "#_"] [:number "1"]]
-         (tokens "#_1")))
-  (is (= [[:open-discard "#_"] [:number "1"]
-          [:open-discard "#_"] [:number "2"]]
-         (tokens "#_1#_2")))
-  (is (= [[:open-discard "#_"] [:open-discard "#_"] [:number "1"]
-          [:text " "] [:number "2"]]
-         (tokens "#_#_1 2"))))
-
-(deftest meta-tokens
-  (is (= [[:open-delim-1 "^"] [:token ":foo"] [:text " "] [:token "sym"]]
-         (tokens "^:foo sym")))
-  (is (= [[:open-delim-1 "^"] [:token ":foo"] [:text " "]
-          [:open-delim-1 "^"] [:token ":bar"] [:text " "] [:token "sym"]]
-         (tokens "^:foo ^:bar sym"))))
-
-;;; ------------------------------------------------------------------------
-
-;;; Part 2: Reader.
+           (tcljc.reader IReader)
+           (clojure.lang IPersistentMap ExceptionInfo)))
 
 (defn stub-ctx
   (^Ctx []
@@ -146,9 +41,7 @@
   ([^String s]
    (read-all s (stub-ctx)))
   ([^String s ^Ctx ctx]
-   (-> (rd/tokenize s)
-       (rd/mk-reader)
-       (read-all* ctx))))
+   (read-all* (rd/mk-reader s) ctx)))
 
 (defn read1                      ;one form, no syntax-quote processing
   ([^String s]

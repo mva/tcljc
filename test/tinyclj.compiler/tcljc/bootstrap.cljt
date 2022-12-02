@@ -406,9 +406,7 @@
 ;;; ------------------------------------------------------------------------
 
 (defn str-to-form [s]
-  (let [forms (-> (rd/tokenize s)
-                  (rd/mk-reader)
-                  (reader-test/read-all* (reader-test/stub-ctx)))]
+  (let [forms (reader-test/read-all* (rd/mk-reader s) (reader-test/stub-ctx))]
     (assert (nil? (nnext forms)) "string holds multiple forms")
     (first forms)))
 
