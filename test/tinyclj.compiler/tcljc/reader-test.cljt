@@ -467,18 +467,14 @@
   (is (= '(quote a) (read1 "'a")))
   (is (= '(deref a) (read1 "@a")))
   
-  (is (thrown-with-msg? ExceptionInfo
-                        #"unquote outside of syntax quote `\.\.\."
-                        (read1 "~a")))
-  (is (thrown-with-msg? ExceptionInfo
-                        #"unquote outside of syntax quote `\.\.\."
-                        (read1 "`~~a")))
-  (is (thrown-with-msg? ExceptionInfo
-                        #"unquote outside of syntax quote `\.\.\."
-                        (read1 "~@a")))
-  (is (thrown-with-msg? ExceptionInfo
-                        #"unquote outside of syntax quote `\.\.\."
-                        (read1 "`~~@a"))))
+  (is (= '(tinyclj.core/unquote a)
+         (read1 "~a")))
+  (is (= '(tinyclj.core/unquote a)
+         (read1 "`~~a")))
+  (is (= '(tinyclj.core/unquote-splicing a)
+         (read1 "~@a")))
+  (is (= '(tinyclj.core/unquote-splicing a)
+         (read1 "`~~@a"))))
 
 (deftest meta-value-test
   (is (= '{:k v} (meta (read1 "^{:k v} a"))))

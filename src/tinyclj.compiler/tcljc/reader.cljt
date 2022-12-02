@@ -761,11 +761,9 @@
                            (instance? IObj form) (with-meta lmeta)))
                      c*)))
           (read-unquote [^Cursor c ^int tk op]
-            (if (some? (.synquote-stack c))
-              (let [c* (fork c (next (.synquote-stack c)) (.arg-env c))]
-                (.join c (read-prefix-as-list c* tk op)
-                       c*))
-              (wrong c "unquote outside of syntax quote `...")))
+            (let [c* (fork c (next (.synquote-stack c)) (.arg-env c))]
+              (.join c (read-prefix-as-list c* tk op)
+                     c*)))
 
           ;; Note: The whole function literal is parsed eagerly and
           ;; single threaded.  All information is collected into

@@ -145,6 +145,10 @@
            (tinyclj.core/list x (quote name.space/a) (quote name.space/b)))
          (rdr "`(~x a b)"))))
 
+(deftest quoted-unquote-test
+  (is (= '(quote (tinyclj.core/unquote a))
+         (rdr "'~a"))))
+
 (deftest unquote-splicing-test
   (is (= '(tinyclj.core/seq
            (tinyclj.core/concat (tinyclj.core/list (quote name.space/a))

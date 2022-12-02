@@ -22,8 +22,8 @@
                  definterface* instanceof*})
 
 (def ^:private lacks-namespace "`") ;marks simple symbol inside syntax quote
-(def sym-unquote (symbol "," "unquote")) ;unreadable symbol
-(def sym-unquote-splicing (symbol "," "unquote-splicing")) ;unreadable symbol
+(def sym-unquote (symbol cfg/core-lib "unquote"))
+(def sym-unquote-splicing (symbol cfg/core-lib "unquote-splicing"))
 
 (defn unquote? ^boolean [form]
   (and (seq? form) (= sym-unquote (first form))))
