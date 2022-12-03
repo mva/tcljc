@@ -11,13 +11,7 @@
             [tinyclj.alpha.ptest :refer :all]))
 
 (deftest primitive-int-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "fn~2" "(II)I"]]])
@@ -33,18 +27,18 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
-         (nmsp '[(ns pkg.ns0)
-                 (def f (fn* ^int [^int a ^int b] (+ a b)))]))))
-
-(deftest widen-result-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
-             (ARETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* ^int [^int a ^int b] (+ a b)))]))))
+
+(deftest widen-result-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "fn~1" "(Z)F"]]])
@@ -64,19 +58,18 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
-         (nmsp '[(ns pkg.ns0)
-                 (def f (fn* ^float [^boolean b] (if b 1 0)))]))))
-
-(deftest def-fn-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
-             (ARETURN)]]
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def f (fn* ^float [^boolean b] (if b 1 0)))]))))
 
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+(deftest def-fn-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "add2" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "fn~2" "(II)I"]]])
@@ -92,19 +85,18 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
-         (nmsp '[(ns pkg.ns0)
-                 (def add2 (fn* ^int [^int a ^int b] (+ a b)))]))))
-
-(deftest invoke-redef-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
-             (ARETURN)]]
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (def add2 (fn* ^int [^int a ^int b] (+ a b)))]))))
 
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+(deftest invoke-redef-test
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC VOLATILE]
                     "add2" "Ltinyclj/lang/StaticFnMh;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -133,7 +125,13 @@
                             :bsm-invoke-fn [])
              (PUTSTATIC . "two" "Ljava/lang/Object;")
 
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          ;; Not implemented: Take the first def as the methods'
          ;; signature specification and then use .invokeExact() to
          ;; call it.  May make a difference in compiled code.  Less so
@@ -145,14 +143,7 @@
                  (def two (add2 1 1))]))))
 
 (deftest invoke-generic-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC VOLATILE]
                     "apply2-int" "Ltinyclj/lang/StaticFnMh;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -196,7 +187,13 @@
                             :bsm-invoke-fn [])
              (PUTSTATIC . "two" "Ljava/lang/Object;")
              
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def add2 (fn* ^int [^int a ^int b] (+ a b)))
                  ;; Type hint on call to f is propagated into the
@@ -207,14 +204,7 @@
                  (def two (apply2-int add2 1 1))]))))
 
 (deftest defn-test                    ;but minus the actual defn macro
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC VOLATILE]
                     "add2" "Ltinyclj/lang/StaticFnMh;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -245,7 +235,13 @@
                             :bsm-invoke-fn [])
              (PUTSTATIC . "two" "Ljava/lang/Object;")
              
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^:redef add2 (fn* ^:redef add2 ^int [^int a ^int b]
                                         (+ a b)))
@@ -254,14 +250,7 @@
                  (def two (add2 1 1))]))))
 
 (deftest defn-multi-arity-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC VOLATILE]
                     "add" "Ltinyclj/lang/StaticFnMh;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -314,7 +303,13 @@
                             :bsm-invoke-fn [])
              (PUTSTATIC . "two" "Ljava/lang/Object;")
              
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^:redef add (fn* ^:redef add
                                        (^int []
@@ -328,14 +323,7 @@
                  (def two (add 1 1))]))))
 
 (deftest invoke-static-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
             
             [(METHOD [PUBLIC STATIC FINAL] "add2" "()Ltinyclj/lang/StaticFnMh;")
@@ -359,20 +347,19 @@
              (INVOKESTATIC . "fn~2" "(II)I")
              (PUTSTATIC . "two" "I")
              
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def add2 (fn* ^int [^int a ^int b] (+ a b)))
                  (def two (add2 1 1))]))))
 
 (deftest delegating-str-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "res" "Ljava/lang/String;")]
             
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
@@ -395,7 +382,13 @@
              (INVOKESTATIC . "f~1" "(I)Ljava/lang/String;")
              (PUTSTATIC . "res" "Ljava/lang/String;")
              
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          ;; `str` is mapped to invoke dynamic and cannot be delegated
          ;; to, i.e. a regular static method implements function `f`
          (nmsp '[(ns pkg.ns0)
@@ -404,14 +397,7 @@
                  (def res (f 123))]))))
 
 (deftest static-recursive-call-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "inc-fn" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "inc~1" "(I)I"]
@@ -435,7 +421,13 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def inc-fn (fn* inc
                                   (^int [^int a ^int b]
@@ -444,14 +436,7 @@
                                    (inc a 1))))]))))
 
 (deftest virtual-recursive-call-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
                     "inc-fn" "Ltinyclj/lang/AFnMh;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -481,6 +466,12 @@
              (PUTSTATIC . "three" "Ljava/lang/Object;")
              
              (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
            
            [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/mk-inc-fn$inc" nil "tinyclj/lang/AFnMh")
             [(FIELD [PRIVATE FINAL] "n" "I")]
@@ -570,14 +561,7 @@
                  (def three (inc-fn 2))]))))
 
 (deftest fn-recur-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "fn-recur" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "fn-recur~1" "(I)Ljava/lang/Object;"]]])
@@ -598,7 +582,13 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def fn-recur (fn* fn-recur [^int i]
                                     (if (< i 100)
@@ -608,14 +598,7 @@
 ;;; counterpart, otherwise the expansion of #(...) is not properly
 ;;; type hinted.
 (deftest def-fn-literal-hinted-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "fn~2" "(II)I"]]])
@@ -631,18 +614,19 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (-> (nmsp '[(ns pkg.ns0)
                      (def f #(+ ^int %1 ^int %2))])
              (deterministic-gensyms)))))
 
 (deftest delegate-to-interface
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "key" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[INTERFACE_VIRTUAL Map$Entry "getKey" "()Ljava/lang/Object;"]]])
@@ -664,7 +648,12 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def key (fn* key [^java.util.Map$Entry e]
                                (. e (getKey))))
@@ -672,50 +661,44 @@
                              (key e)))]))))
 
 (deftest auto-return-nil
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()Ljava/lang/Object;")
              (ACONST_NULL)
              (ARETURN)]
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (fn* f ^auto-return-type []
                       nil)]))))
 
 (deftest auto-return-void
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (fn* f ^auto-return-type []
                       (do))]))))
 
 (deftest auto-return-throw
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
              (NEW Exception)
              (DUP)
@@ -724,19 +707,19 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (fn* f ^auto-return-type []
                       (throw (Exception.)))]))))
 
 (deftest auto-return-polymorphic
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "f~1"
                      "(Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object;")
              ["LOCAL 0: MethodHandle mh"]
@@ -746,19 +729,19 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (fn* f ^auto-return-type [^java.lang.invoke.MethodHandle mh]
                       (.invoke mh))]))))
 
 (deftest auto-return-dead-code
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()I")
              (NEW Exception)
              (DUP)
@@ -767,7 +750,13 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (fn* f ^auto-return-type []
                       (throw (Exception.))
@@ -780,13 +769,7 @@
                                 ((fn* f [^float x] nil) 0.0)]))))
 
 (deftest hash-over-pattern-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "fn~0" "()Ljava/lang/Object;")
              (ACONST_NULL)
              (ARETURN)]
@@ -796,7 +779,13 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          ;; Once the bootstrap compiler changes to tcljc, there is the
          ;; option to use the #"foo" syntax below.
          (nmsp '[(ns pkg.ns0)

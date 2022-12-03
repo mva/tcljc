@@ -18,6 +18,7 @@
    [tcljc.emitter :as em]
    [tcljc.compiler :as compiler]
    [tcljc.predefined :as predefined]
+   [tcljc.emitter :as emitter]
    [tcljc.reader-test :as reader-test]
    [tinyclj.alpha.ptest :as ptest]             ;for is
    [tinyclj.alpha.ptest__impl :as ptest__impl] ;for get-test-context
@@ -388,7 +389,8 @@
               (first ms)))]
     (let [dyn-ld (cfg/dyn-class-loader app-ld [])]
       (nmsp dyn-ld (ns-with-fnbody params form))
-      (let [cl (Class/forName "pkg.ns0._" true dyn-ld)
+      (let [cl (Class/forName (str "pkg.ns0." emitter/capstone-class-name)
+                              true dyn-ld)
             m (get-method cl (method-name params))]
         (.invoke m nil (.toArray args)))))) ;invoke static method
 

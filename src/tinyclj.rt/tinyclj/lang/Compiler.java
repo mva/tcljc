@@ -108,7 +108,7 @@ public class Compiler {
 
   // Problem in short: tinyclj/core.cljt loads core_print.cljt, which
   // refers via MultiFn.java to functions in tinyclj.core -- before
-  // tinyclj.core._ exists.  So track how far translation of the
+  // tinyclj.core.___ exists.  So track how far translation of the
   // core namespace has progressed, and use the most recent class file
   // for lookups.  The other part of the puzzle is to hack (load
   // "core_print") to flush the current tinyclj.core namespace segment

@@ -98,7 +98,8 @@
               (ctx/clone-thread-binding-frame) injected-file-forms arender-to)))
 
 (def first-segm-id 100)
-(def ns-class-name "_")
+(def capstone-class-name "___")
+(def segment-class-prefix "_") ;followed by number: not parsed as symbol if empty
 
 (deftype SegmState [^BuildEnv env
                     ^Ctx ctx
@@ -118,7 +119,7 @@
 (defn- segment-ns-str ^String [^SegmState segm]
   (-> segm .ctx .ns-str))
 (defn- segment-name ^String [^SegmState segm ^int id-delta]
-  (str (segment-ns-str segm) "." ns-class-name (+ (.segm-id segm) id-delta)))
+  (str (segment-ns-str segm) "." segment-class-prefix (+ (.segm-id segm) id-delta)))
 (defn- segment-cld ^ClassDesc [^SegmState segm ^int id-delta]
   (if (zero? id-delta)
     (.segm-cld segm)
@@ -155,7 +156,7 @@
                 (.!delayed-macros segm) (.!private-names segm) bytesv' [])))
 
 (defn- capstone-cld ^ClassDesc [^SegmState segm]
-  (ClassDesc/of (-> segm .ctx .ns-str) ns-class-name))
+  (ClassDesc/of (-> segm .ctx .ns-str) capstone-class-name))
 
 (defn with-force-clinit ^ClassBuilder [^ClassBuilder cb]
   ;; Static method with zero parameters, cannot clash with a regular
@@ -280,7 +281,7 @@
                       (let [s (.getPath rurl)]
                         (subs s (inc (.lastIndexOf s "/")))))
         cld (ClassDesc/of (.ns-str ctx)
-                          (str ns-class-name first-segm-id))]
+                          (str segment-class-prefix first-segm-id))]
     (SegmState. env ctx source-file first-segm-id cld
                 [] (ArrayDeque.) (HashSet.) (when collect-bytesv? []) [])))
 
@@ -480,7 +481,7 @@
 
 (defn- try-load-capstone ^Class [^BuildEnv env ^String ns-str]
   (try
-    (Class/forName (str ns-str "." ns-class-name) false (.dyn-ld env))
+    (Class/forName (str ns-str "." capstone-class-name) false (.dyn-ld env))
     (catch ClassNotFoundException _
       nil)))
 

@@ -51,18 +51,17 @@
              (LDC "foo")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
            [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (deftype*
                    pkg.ns0/T
@@ -98,18 +97,17 @@
                             :bsm-concat ["foo\u0001"])
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
            [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (deftype*
                    pkg.ns0/T
@@ -142,18 +140,17 @@
              (LDC "foo")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
            [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (deftype*
                    pkg.ns0/T
@@ -189,18 +186,17 @@
                             :bsm-concat ["foo\u0001"])
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
            [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (deftype*
                    pkg.ns0/T
@@ -239,18 +235,17 @@
                             :bsm-concat ["foo\u0001"])
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
            [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
 
          (nmsp '[(ns pkg.ns0)
                  (deftype*
@@ -299,18 +294,17 @@
              (LDC "foo")
              (ARETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
            [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (deftype*
                    pkg.ns0/T
@@ -325,14 +319,7 @@
                              "foo"))]))))
 
 (deftest set-var-statement-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
             
@@ -355,7 +342,13 @@
                     [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "v" "Lclojure/lang/Var;")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^:var v "foo")
                  ;; IllegalStateException: Can't change/establish root
@@ -363,14 +356,7 @@
                  #_(set! v "bar")
                  (fn* [] (set! v "bar"))])))
   
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/String;>;")]
             
@@ -396,7 +382,13 @@
                     [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "v" "Lclojure/lang/Var;")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^:var ^String v "foo")
                  ;; IllegalStateException: Can't change/establish root
@@ -405,14 +397,7 @@
                  (fn* [] (set! v "bar"))]))))
 
 (deftest set-var-expression-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_" nil "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
-             (LDC "tinyclj.core")
-             (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
             
@@ -438,7 +423,13 @@
                     [:bsm-get-static-final "TRUE" "Ljava/lang/Boolean;" [Boolean]]]])
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "v" "Lclojure/lang/Var;")
-             (RETURN)]]]
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def ^:var v "foo")
                  ;; IllegalStateException: Can't change/establish root
