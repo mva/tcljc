@@ -11,7 +11,7 @@
             [tinyclj.alpha.ptest :refer :all]))
 
 (deftest primitive-int-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "fn~2" "(II)I"]]])
@@ -28,7 +28,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -38,7 +38,7 @@
                  (def f (fn* ^int [^int a ^int b] (+ a b)))]))))
 
 (deftest widen-result-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "fn~1" "(Z)F"]]])
@@ -59,7 +59,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -69,7 +69,7 @@
                  (def f (fn* ^float [^boolean b] (if b 1 0)))]))))
 
 (deftest def-fn-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "add2" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "fn~2" "(II)I"]]])
@@ -86,7 +86,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -96,7 +96,7 @@
                  (def add2 (fn* ^int [^int a ^int b] (+ a b)))]))))
 
 (deftest invoke-redef-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(FIELD [PUBLIC STATIC VOLATILE]
                     "add2" "Ltinyclj/lang/StaticFnMh;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -126,7 +126,7 @@
              (PUTSTATIC . "two" "Ljava/lang/Object;")
 
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -143,7 +143,7 @@
                  (def two (add2 1 1))]))))
 
 (deftest invoke-generic-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(FIELD [PUBLIC STATIC VOLATILE]
                     "apply2-int" "Ltinyclj/lang/StaticFnMh;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -188,7 +188,7 @@
              (PUTSTATIC . "two" "Ljava/lang/Object;")
              
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -204,7 +204,7 @@
                  (def two (apply2-int add2 1 1))]))))
 
 (deftest defn-test                    ;but minus the actual defn macro
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(FIELD [PUBLIC STATIC VOLATILE]
                     "add2" "Ltinyclj/lang/StaticFnMh;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -236,7 +236,7 @@
              (PUTSTATIC . "two" "Ljava/lang/Object;")
              
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -250,7 +250,7 @@
                  (def two (add2 1 1))]))))
 
 (deftest defn-multi-arity-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(FIELD [PUBLIC STATIC VOLATILE]
                     "add" "Ltinyclj/lang/StaticFnMh;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -304,7 +304,7 @@
              (PUTSTATIC . "two" "Ljava/lang/Object;")
              
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -323,7 +323,7 @@
                  (def two (add 1 1))]))))
 
 (deftest invoke-static-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
             
             [(METHOD [PUBLIC STATIC FINAL] "add2" "()Ltinyclj/lang/StaticFnMh;")
@@ -348,7 +348,7 @@
              (PUTSTATIC . "two" "I")
              
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -359,7 +359,7 @@
                  (def two (add2 1 1))]))))
 
 (deftest delegating-str-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "res" "Ljava/lang/String;")]
             
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
@@ -383,7 +383,7 @@
              (PUTSTATIC . "res" "Ljava/lang/String;")
              
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -397,7 +397,7 @@
                  (def res (f 123))]))))
 
 (deftest static-recursive-call-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "inc-fn" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "inc~1" "(I)I"]
@@ -422,7 +422,7 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -436,7 +436,7 @@
                                    (inc a 1))))]))))
 
 (deftest virtual-recursive-call-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
                     "inc-fn" "Ltinyclj/lang/AFnMh;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -467,7 +467,7 @@
              
              (RETURN)]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
@@ -561,7 +561,7 @@
                  (def three (inc-fn 2))]))))
 
 (deftest fn-recur-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "fn-recur" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "fn-recur~1" "(I)Ljava/lang/Object;"]]])
@@ -583,7 +583,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -598,7 +598,7 @@
 ;;; counterpart, otherwise the expansion of #(...) is not properly
 ;;; type hinted.
 (deftest def-fn-literal-hinted-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "fn~2" "(II)I"]]])
@@ -615,7 +615,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -626,7 +626,7 @@
              (deterministic-gensyms)))))
 
 (deftest delegate-to-interface
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "key" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[INTERFACE_VIRTUAL Map$Entry "getKey" "()Ljava/lang/Object;"]]])
@@ -649,7 +649,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
@@ -661,7 +661,7 @@
                              (key e)))]))))
 
 (deftest auto-return-nil
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()Ljava/lang/Object;")
              (ACONST_NULL)
              (ARETURN)]
@@ -669,7 +669,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -680,14 +680,14 @@
                       nil)]))))
 
 (deftest auto-return-void
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -698,7 +698,7 @@
                       (do))]))))
 
 (deftest auto-return-throw
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
              (NEW Exception)
              (DUP)
@@ -708,7 +708,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -719,7 +719,7 @@
                       (throw (Exception.)))]))))
 
 (deftest auto-return-polymorphic
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "f~1"
                      "(Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object;")
              ["LOCAL 0: MethodHandle mh"]
@@ -730,7 +730,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -741,7 +741,7 @@
                       (.invoke mh))]))))
 
 (deftest auto-return-dead-code
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()I")
              (NEW Exception)
              (DUP)
@@ -751,7 +751,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -769,7 +769,7 @@
                                 ((fn* f [^float x] nil) 0.0)]))))
 
 (deftest hash-over-pattern-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "fn~0" "()Ljava/lang/Object;")
              (ACONST_NULL)
              (ARETURN)]
@@ -780,7 +780,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")

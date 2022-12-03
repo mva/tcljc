@@ -29,7 +29,12 @@
                    (set! (.__methodImplCache pf) nil)))))
 
 (deftest set-volatile-mutable-statm
-  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
                    nil "java/lang/Object" [IType])
             [(FIELD [PRIVATE VOLATILE] "x" "I")]
             
@@ -50,13 +55,7 @@
              (PUTFIELD . "x" "I")
              (LDC "foo")
              (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
-             (LDC "pkg.ns0")
-             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -73,7 +72,12 @@
                              "foo"))]))))
 
 (deftest set-volatile-mutable-expr
-  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
                    nil "java/lang/Object" [IType])
             [(FIELD [PRIVATE VOLATILE] "x" "I")]
             
@@ -96,13 +100,7 @@
              (INVOKEDYNAMIC "_" "(I)Ljava/lang/String;"
                             :bsm-concat ["foo\u0001"])
              (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
-             (LDC "pkg.ns0")
-             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -118,7 +116,12 @@
                              (str "foo" (set! x 1))))]))))
 
 (deftest set-unsynchronized-mutable-statm
-  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
                    nil "java/lang/Object" [IType])
             [(FIELD [PRIVATE] "x" "I")]
             
@@ -139,13 +142,7 @@
              (PUTFIELD . "x" "I")
              (LDC "foo")
              (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
-             (LDC "pkg.ns0")
-             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -162,7 +159,12 @@
                              "foo"))]))))
 
 (deftest set-unsynchronized-mutable-expr
-  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
                    nil "java/lang/Object" [IType])
             [(FIELD [PRIVATE] "x" "I")]
             
@@ -185,13 +187,7 @@
              (INVOKEDYNAMIC "_" "(I)Ljava/lang/String;"
                             :bsm-concat ["foo\u0001"])
              (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
-             (LDC "pkg.ns0")
-             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -207,7 +203,12 @@
                              (str "foo" (set! x 1))))]))))
 
 (deftest overwrite-unsynchronized-mutable-statm
-  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
                    nil "java/lang/Object" [IType])
             [(FIELD [PRIVATE] "x" "I")]
             
@@ -234,13 +235,7 @@
              (INVOKEDYNAMIC "_" "(I)Ljava/lang/String;"
                             :bsm-concat ["foo\u0001"])
              (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
-             (LDC "pkg.ns0")
-             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -259,7 +254,12 @@
                                (str "foo" t))))]))))
 
 (deftest swap-unsynchronized-mutable-statm
-  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
                    nil "java/lang/Object" [IType])
             [(FIELD [PRIVATE] "x" "I")]
             [(FIELD [PRIVATE] "y" "I")]
@@ -293,13 +293,7 @@
              (PUTFIELD . "y" "I")
              (LDC "foo")
              (ARETURN)]]
-           
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
-            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
-             (LDC "pkg.ns0")
-             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -319,7 +313,7 @@
                              "foo"))]))))
 
 (deftest set-var-statement-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
             
@@ -343,7 +337,7 @@
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "v" "Lclojure/lang/Var;")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -356,7 +350,7 @@
                  #_(set! v "bar")
                  (fn* [] (set! v "bar"))])))
   
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/String;>;")]
             
@@ -383,7 +377,7 @@
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "v" "Lclojure/lang/Var;")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -397,7 +391,7 @@
                  (fn* [] (set! v "bar"))]))))
 
 (deftest set-var-expression-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "v" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
             
@@ -424,7 +418,7 @@
              (INVOKEVIRTUAL Var "setMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/Var;")
              (PUTSTATIC . "v" "Lclojure/lang/Var;")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")

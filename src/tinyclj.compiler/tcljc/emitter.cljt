@@ -99,7 +99,7 @@
 
 (def first-segm-id 100)
 (def capstone-class-name "___")
-(def segment-class-prefix "_") ;followed by number: not parsed as symbol if empty
+(def segment-class-prefix "") ;followed by number: not parsed as symbol if empty
 
 (deftype SegmState [^BuildEnv env
                     ^Ctx ctx

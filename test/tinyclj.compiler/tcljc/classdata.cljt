@@ -96,9 +96,11 @@
 (defn- type-name [tp]                   ;returns symbol or string
   (condp instance? tp
     ClassDesc
-    (let [cd ^ClassDesc tp]
-      (cond->> (.displayName cd)
-        (not (.isArray cd)) (symbol nil)))
+    (let [cd ^ClassDesc tp, s (.displayName cd)]
+      (cond
+        (.isArray cd) s
+        (Character/isDigit (.charAt s 0)) (object (Integer/parseInt s))
+        :else (symbol nil s)))
     ClassEntry
     (recur (.asSymbol ^ClassEntry tp))
     #_else (throw (IllegalArgumentException. (str (class tp))))))

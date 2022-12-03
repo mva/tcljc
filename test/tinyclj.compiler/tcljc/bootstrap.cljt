@@ -348,7 +348,7 @@
                      (= 'METHOD (first x))
                      (= mnm (nth x 2))))))]
     (->> (nmsp (ns-with-fnbody params form))
-         (filter (matches-class? "pkg/ns0/_100")) ;seq of at most one class
+         (filter (matches-class? "pkg/ns0/100")) ;seq of at most one class
          (first)                        ;first class or nil
          (filter (matches-method? (method-name params))) ;methods for name
          (first)                        ;first method or nil
