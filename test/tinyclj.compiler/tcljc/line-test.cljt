@@ -18,10 +18,10 @@
 ;;; 
 ;;; make test TEST=tcljc.line-test/line-numbers-present
 ;;;
-;;; javap -l -c /tmp/$USER/tinyclj/tcljc.test/tcljc.line-test/line-numbers-present/pkg/ns0/100.class
+;;; javap -l -c /tmp/$USER/tinyclj/tcljc.test/tcljc.line-test/line-numbers-present/pkg/ns0/_100.class
 
 (deftest line-numbers-present
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             
             [(METHOD [PUBLIC STATIC FINAL] "const-body"
                      "()Ltinyclj/lang/StaticFnMh;")
@@ -61,7 +61,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")

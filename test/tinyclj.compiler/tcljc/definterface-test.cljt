@@ -10,15 +10,16 @@
             [tinyclj.alpha.ptest :refer :all]))
 
 (deftest simple-method-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+  (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/IInterface")
+            [(METHOD [PUBLIC ABSTRACT] "foo" "(Ljava/lang/Class;)I")]]
+
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC VOLATILE] "a" "[Lpkg/ns0/IInterface;")]
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/IInterface")
-            [(METHOD [PUBLIC ABSTRACT] "foo" "(Ljava/lang/Class;)I")]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -30,15 +31,16 @@
                  (def ^"[Lpkg.ns0.IInterface;" a)]))))
 
 (deftest default-type-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+  (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/IInterface")
+            [(METHOD [PUBLIC ABSTRACT] "foo"
+                     "(Ljava/lang/Object;)Ljava/lang/Object;")]]
+
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/IInterface")
-            [(METHOD [PUBLIC ABSTRACT] "foo"
-                     "(Ljava/lang/Object;)Ljava/lang/Object;")]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -49,15 +51,16 @@
                    (foo [a]))]))))
 
 (deftest varargs-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+  (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/IInterface")
+            [(METHOD [PUBLIC VARARGS ABSTRACT] "foo"
+                     "([Ljava/lang/Object;)Ljava/lang/Object;")]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/IInterface")
-            [(METHOD [PUBLIC VARARGS ABSTRACT] "foo"
-                     "([Ljava/lang/Object;)Ljava/lang/Object;")]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -68,7 +71,10 @@
                    (foo [& ^objects a]))]))))
 
 (deftest function-itf-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+  (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/FnBinaryInt")
+            [(METHOD [PUBLIC ABSTRACT] "fn2" "(II)I")]]
+
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "add-int"
                     "Lpkg/ns0/FnBinaryInt;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
@@ -101,9 +107,7 @@
              (PUTSTATIC . "two" "I")
              
              (RETURN)]]
-           [(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/FnBinaryInt")
-            [(METHOD [PUBLIC ABSTRACT] "fn2" "(II)I")]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -120,14 +124,15 @@
                  (def two (apply-binary-int add-int 1 1))]))))
 
 (def exp-self-ref
-  '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+  '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/ISucc")
+     [(METHOD [PUBLIC ABSTRACT] "succ" "(Lpkg/ns0/ISucc;)Lpkg/ns0/ISucc;")]]
+
+    [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
      [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
       (LDC "pkg.ns0")
       (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
       (RETURN)]]
-    [(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/ISucc")
-     [(METHOD [PUBLIC ABSTRACT] "succ" "(Lpkg/ns0/ISucc;)Lpkg/ns0/ISucc;")]]
-    [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
+    [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
      [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
       (RETURN)]
      [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -150,14 +155,15 @@
                                 (succ ^"pkg.ns0.ISucc" [^"pkg.ns0.ISucc" a]))]))))
 
 (deftest forward-ref-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/100")
+  (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/ISucc")
+            [(METHOD [PUBLIC ABSTRACT] "succ" "(Lpkg/ns0/IForward;)Lpkg/ns0/IForward;")]]
+
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/ISucc")
-            [(METHOD [PUBLIC ABSTRACT] "succ" "(Lpkg/ns0/IForward;)Lpkg/ns0/IForward;")]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")

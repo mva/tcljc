@@ -120,7 +120,7 @@ public class Compiler {
     if (ns == null) {
       ns = l.lookupClass().getPackageName();
     }
-    String className = ns+".";
+    String className = ns+"._";
     try {
       if (partialCoreNamespace.startsWith(className)) {
         return l.findClass(partialCoreNamespace);
