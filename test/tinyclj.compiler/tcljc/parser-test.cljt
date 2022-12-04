@@ -17,14 +17,14 @@
   (token [_ end]
     (.add strs [:token start (.substring cs start end)])
     (set! start end))
-  (text [_ end]
+  (text [_ end nl-before-end?]
     (when (not= start end)              ;implies: (pos? end)
-      (.add strs [(if (p/after-nl? cs end) :text-nl :text) start
+      (.add strs [(if nl-before-end? :text-nl :text) start
                   (.substring cs start end)]))
     (set! start end))
-  (ws [_ end]
+  (ws [_ end comment? nl-before-end?]
     (when (not= start end)              ;implies: (pos? end)
-      (.add strs [(if (p/after-nl? cs end) :ws-nl :ws) start
+      (.add strs [(if nl-before-end? :ws-nl :ws) start
                   (.substring cs start end)]))
     (set! start end))
 

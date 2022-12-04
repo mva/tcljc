@@ -11,18 +11,16 @@
   ;; error support
   (update-pos ^ExceptionInfo [^ExceptionInfo ex ^int pos])
   
-  ;; atoms: whitespace, number/token, part of string
+  ;; atoms: whitespace, number/token, part of string; text and ws can
+  ;; have at most one newline just before `end`
   (number ^int [^int end])
   (token ^int [^int end])
-  (text ^int [^int end]) ;part of string or regex (if nl: single one at end)
-  (ws ^int [^int end]) ;whitespace including comments (if nl: single one at end)
+  (text ^int [^int end ^boolean nl-before-end?]) ;part of string or regex
+  (ws ^int [^int end ^boolean comment? ^boolean nl-before-end?])
 
   ;; groups: collection, meta, discard, string, regex, etc.  
   (start ^int [^int end-of-open])
   (end ^int [^int end-of-close ^int start-of-open]))
-
-(defn after-nl? ^boolean [^String cs ^int end] ;pre: (pos? end)
-  (= (.charAt cs (dec end)) \newline))
 
 
 ;;; "End of text" character virtually appended to program text to
@@ -51,16 +49,6 @@
   (case ch                              ;see isTerminatingMacro()
     (\" \; \@ \^ \` \~ \( \) \[ \] \{ \} \\) true
     #_else false))
-          
-(defn- at-eol? ^boolean [^char ch]
-  (case ch
-    (\newline \return #_eot \u0000) true
-    false))
-
-;;; Skip any text to just past the first \newline.
-(defn- skip-to-eol ^int [^String cs ^int pos]
-  (let [pos (.indexOf cs (int \newline) pos)]
-    (if (neg? pos) (.length cs) (inc pos))))
 
 (defn- skip-number-cont ^int [^String cs ^int pos]
   (let [n (.length cs)]
@@ -96,22 +84,20 @@
             (throw (.update-pos fb (wrong/mk-e msg) pos))
             -1)
 
-          (skip-to-eol ^int [^int pos]
+          (parse-comment ^int [^int pos]
             (case (char-at pos)
-              \newline (inc pos)
-              #_eot \u0000 pos
+              \newline (.ws fb (inc pos) true true)
+              #_eot \u0000 (.ws fb pos true false)
               #_else (recur (inc pos))))
           (parse-ws ^int [^int pos]
             ;; post: position is either `eot` or not `whitespace?`
-            (let [ch (char-at pos), pos-1 (inc pos)]
+            (let [ch (char-at pos), pos+1 (inc pos)]
               (cond
-                (whitespace? ch) (recur (if (= ch \newline)
-                                          (.ws fb pos-1)
-                                          pos-1))
-                (= ch \;) (let [pos (skip-to-eol pos-1)]
-                            (recur (.ws fb pos)))
-                :else (do (.ws fb pos)
-                          (if (and (= ch \#) (= (char-at pos-1) \_))
+                (= ch \newline) (recur (.ws fb pos+1 false true))
+                (whitespace? ch) (recur pos+1)
+                (= ch \;) (recur (parse-comment pos+1))
+                :else (do (.ws fb pos false false)
+                          (if (and (= ch \#) (= (char-at pos+1) \_))
                             (recur (parse-prefix pos 2))
                             pos)))))
           (parse-ws+form ^int [^int pos]
@@ -132,13 +118,17 @@
               (parse-number (inc pos))
               (parse-token (inc pos))))
 
+          (at-eol? ^boolean [^char ch]
+            (case ch
+              (\newline \return #_eot \u0000) true
+              false))
           (parse-texts ^int [^int pos ^int start-of-open]
             (case (char-at pos)
-              \" (inc (.text fb pos))
+              \" (inc (.text fb pos false))
               \\ (if (at-eol? (char-at (inc pos)))
                    (wrong pos "incomplete quote at end of line")
                    (recur (+ pos 2) start-of-open))
-              \newline (recur (.text fb (inc pos)) start-of-open)
+              \newline (recur (.text fb (inc pos) true) start-of-open)
               #_eot \u0000 (wrong start-of-open "unterminated string")
               #_else (recur (inc pos) start-of-open)))
           

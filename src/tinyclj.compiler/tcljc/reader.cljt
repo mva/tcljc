@@ -364,17 +364,13 @@
                            
                            :else (parse-sym-or-kw s synquote-stack ctx))))))
     (set! start end))
-  (text [_ end]
-    (when (not= start end)
-      (when (p/after-nl? cs end)        ;here holds: (pos? end)
-        (set! nl-count (inc nl-count)))
-      (when (zero? discard-level)
-        (.add elements (.substring cs start end))))
+  (text [_ end nl-before-end?]
+    (set! nl-count (+ nl-count (int nl-before-end?)))
+    (when (and (not= start end) (zero? discard-level))
+      (.add elements (.substring cs start end)))
     (set! start end))
-  (ws [_ end]
-    (when (not= start end)
-      (when (p/after-nl? cs end)        ;here holds: (pos? end)
-        (set! nl-count (inc nl-count))))
+  (ws [_ end comment? nl-before-end?]
+    (set! nl-count (+ nl-count (int nl-before-end?)))
     (set! start end))
 
   (start [_ end-of-open]
