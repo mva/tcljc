@@ -131,7 +131,7 @@
   clojure.lang.IChunkedSeq
   (internal-reduce
     [s f val]
-    (loop [s ^clojure.lang.ISeq s, f f, val val] ;recur-ing with non-IChunkedSeq
+    (loop [^clojure.lang.ISeq s s, f f, val val] ;recur-ing with non-IChunkedSeq
       (if-let [s (seq s)]
         (if (chunked-seq? s)
           (let [ret (.reduce (chunk-first s) f val)]

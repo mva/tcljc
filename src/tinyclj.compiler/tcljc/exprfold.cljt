@@ -178,9 +178,12 @@
 ;;; ------------------------------------------------------------------------
 
 (defn checkcast ^Expr [^Expr x ^Class to-tp]
-  (if (.isAssignableFrom to-tp (x/type x))
-    x
-    (x/type-check x Opcode/CHECKCAST to-tp)))
+  (let [from-tp (x/type x)]
+    (cond
+      (jb/same-class? to-tp from-tp) x
+      (.isAssignableFrom to-tp from-tp) (x/identity to-tp x)
+      (x/identity? x) (recur (x/first-arg x) to-tp)
+      :else (x/type-check x Opcode/CHECKCAST to-tp))))
 
 (defn- coerce* ^Expr [^Expr x ^Class to-tp]
   ;; pre: `x` returns and is not branching
@@ -204,10 +207,9 @@
     (str "coerce-" (.getName to-tp))))
 
 (defn coerce ^Expr [^Expr x ^Class to-tp]
-  (cond
-    (jb/object? to-tp) x
-    (x/adapting? x) (x/with-adapt-paths x to-tp (AdaptCoerce. to-tp))
-    :else (coerce* x to-tp)))
+  (if (x/adapting? x)
+    (x/with-adapt-paths x to-tp (AdaptCoerce. to-tp))
+    (coerce* x to-tp)))
 
 (defn coerce-static ^Expr [^Expr x ^Class to-tp]
   (cond
