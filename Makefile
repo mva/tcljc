@@ -16,6 +16,7 @@ JAVA_OPTS=--enable-preview --add-modules jdk.incubator.concurrent \
 
 #DET=--deterministic
 BOOTSTRAP_TCLJ_MAIN=$(if $(findstring /bootstrap-tcljc,$(BOOTSTRAP_TCLJ_MDIR)),tcljc.main.___,tinyclj.build.main.___)
+BOOTSTRAP_TCLJ_SOURCE_CORE=$(if $(findstring /bootstrap-tcljc,$(BOOTSTRAP_TCLJ_MDIR)),,../jvm-stuff/tclj-in-tclj/)src/tinyclj.core
 BOOTSTRAP_TCLJ_MOD_RT=$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.rt
 BOOTSTRAP_TCLJ=$(JAVA) --class-path $(BOOTSTRAP_TCLJ_MOD_RT):$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.core:$(BOOTSTRAP_TCLJ_MDIR)/tinyclj.compiler $(JAVA_OPTS) $(BOOTSTRAP_TCLJ_MAIN) $(DET) --parent-loader :platform
 
@@ -24,7 +25,7 @@ PROJECT_DIR ?= $(notdir $(PWD))
 DEST_DIR=/tmp/$(USER)/tinyclj/$(PROJECT_DIR)
 TCLJC_MOD_RT=$(DEST_DIR).mdir/tinyclj-rt.jar
 
-SOURCE_OPTS=-s $(BOOTSTRAP_TCLJ_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler -s test/tinyclj.core -s test/tinyclj.compiler
+SOURCE_OPTS=-s $(BOOTSTRAP_TCLJ_MOD_RT) -s  $(BOOTSTRAP_TCLJ_SOURCE_CORE) -s src/tinyclj.compiler -s test/tinyclj.core -s test/tinyclj.compiler
 RUN_TESTS_NS=tcljc.run-tests
 
 compile: $(TCLJC_MOD_RT)
@@ -93,7 +94,7 @@ bootstrap-check-with-all: \
 $(DEST_DIR).stageZero/DONE: $(wildcard $(BOOTSTRAP_TCLJ_MDIR)/commit-id.txt src/tinyclj.compiler/tcljc/*.cljt src/tinyclj.compiler/tcljc/*/*.cljt)
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(BOOTSTRAP_TCLJ) -d "$(dir $@)" -s $(BOOTSTRAP_TCLJ_MOD_RT) -s src/tinyclj.core -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
+	$(BOOTSTRAP_TCLJ) -d "$(dir $@)" -s $(BOOTSTRAP_TCLJ_MOD_RT) -s $(BOOTSTRAP_TCLJ_SOURCE_CORE) -s src/tinyclj.compiler $(TCLJC_MAIN_NS)
 	touch "$@"
 
 # DI1: Build "tcljc" using the initial compiler from PREV_DEST_DIR
