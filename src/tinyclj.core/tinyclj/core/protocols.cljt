@@ -130,17 +130,18 @@
   ;; handles vectors and ranges
   clojure.lang.IChunkedSeq
   (internal-reduce
-   [s f val]
-   (if-let [s (seq s)]
-     (if (chunked-seq? s)
-       (let [ret (.reduce (chunk-first s) f val)]
-         (if (reduced? ret)
-           @ret
-           (recur (chunk-next s)
-                  f
-                  ret)))
-       (interface-or-naive-reduce s f val))
-     val))
+    [s f val]
+    (loop [s ^clojure.lang.ISeq s, f f, val val] ;recur-ing with non-IChunkedSeq
+      (if-let [s (seq s)]
+        (if (chunked-seq? s)
+          (let [ret (.reduce (chunk-first s) f val)]
+            (if (reduced? ret)
+              @ret
+              (recur (chunk-next s)
+                     f
+                     ret)))
+          (interface-or-naive-reduce s f val))
+        val)))
  
   clojure.lang.StringSeq
   (internal-reduce
