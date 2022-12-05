@@ -19,7 +19,9 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class PersistentVector extends APersistentVector implements IObj, IEditableCollection, IReduce, IKVReduce{
+public class PersistentVector extends APersistentVector implements IObj, IEditableCollection, IReduce, IKVReduce, IDrop{
+
+private static final long serialVersionUID = -7896022351281214157L;
 
 public static class Node implements Serializable {
 	transient public final AtomicReference<Thread> edit;
@@ -378,7 +380,18 @@ public Object kvreduce(IFn f, Object init){
     }
 }
 
-static public final class ChunkedSeq extends ASeq implements IChunkedSeq,Counted{
+public Sequential drop(int n) {
+	if(n < 0) {
+		return this;
+	} else if(n < cnt) {
+		int offset = n%32;
+		return new ChunkedSeq(this, this.arrayFor(n), n-offset, offset);
+	} else {
+		return null;
+	}
+}
+
+static public final class ChunkedSeq extends ASeq implements IChunkedSeq,Counted,IReduce,IDrop{
 
 	public final PersistentVector vec;
 	final Object[] node;
@@ -442,6 +455,83 @@ static public final class ChunkedSeq extends ASeq implements IChunkedSeq,Counted
 
 	public int count(){
 		return vec.cnt - (i + offset);
+	}
+
+	public Iterator iterator() {
+		return vec.rangedIterator(i +offset, vec.cnt);
+	}
+
+	public Object reduce(IFn f) {
+		Object acc;
+		if (i +offset < vec.cnt)
+			acc = node[offset];
+		else
+			return f.invoke();
+
+        var mh = IFn.__arity(f, 2);
+        try {
+            for(int j=offset+1;j<node.length;++j){
+                acc = mh.invoke(f,acc,node[j]);
+                if(RT.isReduced(acc))
+                    return ((IDeref)acc).deref();
+            }
+
+            int step = 0;
+            for(int ii = i +node.length; ii<vec.cnt; ii+=step){
+                Object[] array = vec.arrayFor(ii);
+                for(int j = 0;j<array.length;++j){
+                    acc = mh.invoke(f,acc,array[j]);
+                    if(RT.isReduced(acc))
+                        return ((IDeref)acc).deref();
+                }
+                step = array.length;
+            }
+            return acc;
+        } catch (Throwable t) {
+            throw clojure.lang.Util.sneakyThrow(t);
+        }
+	}
+
+	public Object reduce(IFn f, Object init) {
+        var mh = IFn.__arity(f, 2);
+        try {
+            Object acc = init;
+            for(int j=offset;j<node.length;++j){
+                acc = mh.invoke(f,acc,node[j]);
+                if(RT.isReduced(acc))
+                    return ((IDeref)acc).deref();
+            }
+
+            int step = 0;
+            for(int ii = i +node.length; ii<vec.cnt; ii+=step){
+                Object[] array = vec.arrayFor(ii);
+                for(int j = 0;j<array.length;++j){
+                    acc = mh.invoke(f,acc,array[j]);
+                    if(RT.isReduced(acc))
+                        return ((IDeref)acc).deref();
+                }
+                step = array.length;
+            }
+            return acc;
+        } catch (Throwable t) {
+            throw clojure.lang.Util.sneakyThrow(t);
+        }
+	}
+
+	public Sequential drop(int n) {
+		int o = offset + n;
+		if(o < node.length) { // in current array
+			return new ChunkedSeq(vec, node, i, o);
+		} else {
+			int i = this.i +o;
+			if(i < vec.cnt) { // in vec
+				Object[] array = vec.arrayFor(i);
+				int newOffset = i%32;
+				return new ChunkedSeq(vec, vec.arrayFor(i), i-newOffset, newOffset);
+			} else {
+				return null;
+			}
+		}
 	}
 }
 

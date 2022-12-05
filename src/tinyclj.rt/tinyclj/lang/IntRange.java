@@ -1,10 +1,3 @@
-// Copyright (c) Michael van Acken. All rights reserved.
-// The use and distribution terms for this software are covered by the
-// Eclipse Public License 2.0 (https://www.eclipse.org/legal/epl-v20.html)
-// which can be found in the file epl-v20.html at the root of this distribution.
-// By using this software in any fashion, you are agreeing to be bound by
-// the terms of this license.
-// You must not remove this notice, or any other, from this software.
 /**
  *   Copyright (c) Rich Hickey. All rights reserved.
  *   The use and distribution terms for this software are covered by the
@@ -15,95 +8,96 @@
  *   You must not remove this notice, or any other, from this software.
  **/
 
-package clojure.lang;
+package tinyclj.lang;
 
 import java.io.Serializable;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-/**
- * Implements the special common case of a finite range based on int start, end, and step.
- */
-public class IntRange extends ASeq implements Counted, IChunkedSeq, IReduce {
+import clojure.lang.*;
 
-private static final int CHUNK_SIZE = 32;
+/**
+ * Implements the special common case of a finite range based on int start, end, and step,
+ * with no more than Integer.MAX_VALUE items.
+ */
+public class IntRange extends ASeq implements Counted, IChunkedSeq, IReduce, IDrop {
+
+private static final long serialVersionUID = -1467242400566893909L;
 
 // Invariants guarantee this is never an empty or infinite seq
 //   assert(start != end && step != 0)
 final int start;
 final int end;
 final int step;
-final BoundsCheck boundsCheck;
-private volatile IntChunk _chunk;  // lazy
-private volatile ISeq _chunkNext;        // lazy
-private volatile ISeq _next;             // cached
+final int count;
 
-private static interface BoundsCheck extends Serializable {
-    boolean exceededBounds(long val);
-}
-
-private static BoundsCheck positiveStep(final long end) {
-    return new BoundsCheck() {
-        public boolean exceededBounds(long val){
-            return (val >= end);
-        }
-    };
-}
-
-private static BoundsCheck negativeStep(final long end) {
-    return new BoundsCheck() {
-        public boolean exceededBounds(long val){
-            return (val <= end);
-        }
-    };
-}
-
-private IntRange(int start, int end, int step, BoundsCheck boundsCheck){
+private IntRange(int start, int end, int step, int count){
     this.start = start;
     this.end = end;
     this.step = step;
-    this.boundsCheck = boundsCheck;
+    this.count = count;
 }
 
-private IntRange(int start, int end, int step, BoundsCheck boundsCheck, IntChunk chunk, ISeq chunkNext){
-    this.start = start;
-    this.end = end;
-    this.step = step;
-    this.boundsCheck = boundsCheck;
-    this._chunk = chunk;
-    this._chunkNext = chunkNext;
-}
-
-private IntRange(IPersistentMap meta, int start, int end, int step, BoundsCheck boundsCheck, IntChunk chunk, ISeq chunkNext){
+private IntRange(IPersistentMap meta, int start, int end, int step, int count){
     super(meta);
     this.start = start;
     this.end = end;
     this.step = step;
-    this.boundsCheck = boundsCheck;
-    this._chunk = chunk;
-    this._chunkNext = chunkNext;
+    this.count = count;
+}
+
+// returns exact size of remaining items OR throws ArithmeticException for overflow case
+static long rangeCount(long start, long end, long step) {
+    // (1) count = ceiling ( (end - start) / step )
+    // (2) ceiling(a/b) = (a+b+o)/b where o=-1 for positive stepping and +1 for negative stepping
+    // thus: count = end - start + step + o / step
+    return Numbers.add(Numbers.add(Numbers.minus(end, start), step), step > 0 ? -1 : 1) / step;
 }
 
 public static ISeq create(int end) {
-    if(end > 0)
-        return new IntRange(0, end, 1, positiveStep(end));
-    return PersistentList.EMPTY;
+    if(end > 0) {
+        try {
+            return new IntRange(0, end, 1, Math.toIntExact(rangeCount(0L, end, 1L)));
+        } catch(ArithmeticException e) {
+            throw clojure.lang.Util.sneakyThrow(e); // FIXME... return wrapped Range
+            //return Range.create(end);  // count > Integer.MAX_VALUE
+        }
+    } else {
+        return PersistentList.EMPTY;
+    }
 }
 
 public static ISeq create(int start, int end) {
-    if(start >= end)
+    if(start >= end) {
         return PersistentList.EMPTY;
-    return new IntRange(start, end, 1, positiveStep(end));
+    } else {
+        try {
+            return new IntRange(start, end, 1, Math.toIntExact(rangeCount(start, end, 1L)));
+        } catch(ArithmeticException e) {
+            throw clojure.lang.Util.sneakyThrow(e); // FIXME... return wrapped Range
+            //return Range.create(start, end);
+        }
+    }
 }
 
 public static ISeq create(final int start, int end, int step) {
     if(step > 0) {
         if(end <= start) return PersistentList.EMPTY;
-        return new IntRange(start, end, step, positiveStep(end));
+        try {
+            return new IntRange(start, end, step, Math.toIntExact(rangeCount(start, end, step)));
+        } catch(ArithmeticException e) {
+            throw clojure.lang.Util.sneakyThrow(e); // FIXME... return wrapped Range
+            //return Range.create(start, end, step);
+        }
     } else if(step < 0) {
         if(end >= start) return PersistentList.EMPTY;
-        return new IntRange(start, end, step, negativeStep(end));
+        try {
+            return new IntRange(start, end, step, Math.toIntExact(rangeCount(start, end, step)));
+        } catch(ArithmeticException e) {
+            throw clojure.lang.Util.sneakyThrow(e); // FIXME... return wrapped Range
+            //return Range.create(start, end, step);
+        }
     } else {
         if(end == start) return PersistentList.EMPTY;
         return Repeat.create(start);
@@ -111,126 +105,60 @@ public static ISeq create(final int start, int end, int step) {
 }
 
 public Obj withMeta(IPersistentMap meta){
-    if(meta == _meta)
+    if(meta == this.meta())
         return this;
-    return new IntRange(meta, start, end, step, boundsCheck, _chunk, _chunkNext);
+    return new IntRange(meta, start, end, step, count);
 }
 
 public Object first() {
-    return (int)start;
-}
-
-public void forceChunk() {
-    if(_chunk != null) return;
-
-    long count;
-    try {
-        count = rangeCount(start, end, step);
-    } catch(ArithmeticException e) {
-        // size of total range is > Long.MAX_VALUE so must step to count
-        // this only happens in pathological range cases like:
-        // (range -9223372036854775808 9223372036854775807 9223372036854775807)
-        count = steppingCount(start, end, step);
-    }
-
-    if (count > CHUNK_SIZE) { // not last chunk
-        int nextStart = start + (step * CHUNK_SIZE);   // cannot overflow, must be < end
-        _chunkNext = new IntRange(nextStart, end, step, boundsCheck);
-        _chunk = new IntChunk(start, step, CHUNK_SIZE);
-    } else {  // last chunk
-        _chunk = new IntChunk(start, step, (int) count);   // count must be <= CHUNK_SIZE
-    }
+    return start;
 }
 
 public ISeq next() {
-    if(_next != null)
-        return _next;
-
-    forceChunk();
-    if(_chunk.count() > 1) {
-        IntChunk smallerChunk = _chunk.dropFirst();
-        _next = new IntRange(smallerChunk.first(), end, step, boundsCheck, smallerChunk, _chunkNext);
-        return _next;
+    if(count > 1) {
+        return new IntRange(start + step, end, step, count-1);
+    } else {
+        return null;
     }
-    return chunkedNext();
 }
 
 public IChunk chunkedFirst() {
-    forceChunk();
-    return _chunk;
+    return new IntChunk(start, step, count);
 }
 
 public ISeq chunkedNext() {
-    return chunkedMore().seq();
+    return null;
 }
 
 public ISeq chunkedMore() {
-    forceChunk();
-    if(_chunkNext == null)
-        return PersistentList.EMPTY;
-    return _chunkNext;
+    return PersistentList.EMPTY;
 }
 
-// fallback count mechanism for pathological cases
-// returns either exact count or CHUNK_SIZE+1
-long steppingCount(long start, long end, long step) {
-    long count = 1;
-    long s = start;
-    while(count <= CHUNK_SIZE) {
-        try {
-            s = Numbers.add(s, step);
-            if(boundsCheck.exceededBounds(s))
-                break;
-            else
-                count++;
-        } catch(ArithmeticException e) {
-            break;
-        }
+public Sequential drop(int n) {
+    if(n <= 0) {
+        return this;
+    } else if(n < count) {
+        return new IntRange(start+(step*n), end, step, count - n);
+    } else {
+        return null;
     }
-    return count;
-}
-
-// returns exact size of remaining items OR throws ArithmeticException for overflow case
-long rangeCount(long start, long end, long step) {
-    // (1) count = ceiling ( (end - start) / step )
-    // (2) ceiling(a/b) = (a+b+o)/b where o=-1 for positive stepping and +1 for negative stepping
-    // thus: count = end - start + step + o / step
-    return Numbers.add(Numbers.add(Numbers.minus(end, start), step), this.step > 0 ? -1 : 1) / step;
 }
 
 public int count() {
-    try {
-        long c = rangeCount(start, end, step);
-        if(c > Integer.MAX_VALUE) {
-            return Numbers.throwIntOverflow();
-        } else {
-            return (int) c;
-        }
-    } catch(ArithmeticException e) {
-        // rare case from large range or step, fall back to iterating and counting
-        Iterator iter = this.iterator();
-        long count = 0;
-        while(iter.hasNext()) {
-            iter.next();
-            count++;
-        }
-
-        if(count > Integer.MAX_VALUE)
-            return Numbers.throwIntOverflow();
-        else
-            return (int)count;
-    }
+    return count;
 }
 
 public Object reduce(IFn f) {
+    Object acc = start;
+    int i = start + step;
+    int n = count;
     var mh = IFn.__arity(f, 2);
     try {
-        Object acc = start;
-        int i = start + step;
-        while(! boundsCheck.exceededBounds(i)) {
+        while(n > 1) {
             acc = mh.invoke(f, acc, i);
             if (acc instanceof Reduced) return ((Reduced)acc).deref();
             i += step;
+            n--;
         }
         return acc;
     } catch (Throwable t) {
@@ -239,15 +167,17 @@ public Object reduce(IFn f) {
 }
 
 public Object reduce(IFn f, Object val) {
+    Object acc = val;
+    int n = count;
+    int i = start;
     var mh = IFn.__arity(f, 2);
     try {
-        Object acc = val;
-        int i = start;
         do {
             acc = mh.invoke(f, acc, i);
-            if (RT.isReduced(acc)) return ((Reduced)acc).deref();
+            if (clojure.lang.RT.isReduced(acc)) return ((Reduced)acc).deref();
             i += step;
-        } while(! boundsCheck.exceededBounds(i));
+            n--;
+        } while(n > 0);
         return acc;
     } catch (Throwable t) {
         throw clojure.lang.Util.sneakyThrow(t);
@@ -259,28 +189,24 @@ public Iterator iterator() {
 }
 
 class IntRangeIterator implements Iterator {
-    private long next;
-    private boolean hasNext;
+    private int next;
+    private int remaining;
 
     public IntRangeIterator() {
         this.next = start;
-        this.hasNext = true;
+        this.remaining = count;
     }
 
     public boolean hasNext() {
-        return hasNext;
+        return remaining > 0;
     }
 
     public Object next() {
-        if (hasNext) {
-            long ret = next;
-            try {
-                next = Numbers.add(next, step);
-                hasNext = ! boundsCheck.exceededBounds(next);
-            } catch(ArithmeticException e) {
-                hasNext = false;
-            }
-            return (int)ret;
+        if (remaining > 0) {
+            int ret = next;
+            next = next + step;
+            remaining = remaining - 1;
+            return ret;
         } else {
             throw new NoSuchElementException();
         }
@@ -327,13 +253,13 @@ private static class IntChunk implements IChunk, Serializable {
     }
 
     public Object reduce(IFn f, Object init) {
+        int x = start;
+        Object ret = init;
         var mh = IFn.__arity(f, 2);
         try {
-            int x = start;
-            Object ret = init;
             for(int i=0; i<count; i++) {
                 ret = mh.invoke(f, ret, x);
-                if(RT.isReduced(ret))
+                if(clojure.lang.RT.isReduced(ret))
                     return ret;
                 x += step;
             }
