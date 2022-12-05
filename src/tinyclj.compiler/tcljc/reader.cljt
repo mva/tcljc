@@ -75,22 +75,33 @@
         (update-tag-count arg-env idx (get m :tag) +1))))
   (with-meta x m))
 
-(letfn [(with-line-meta [x ^int nl-count]
-          (with-meta x {:line (inc nl-count)}))]
+(deftype Accumulator [^int nl-count-at-open, ^ArrayList elements])
+(defn- mk-acc ^Accumulator [^int nl-count]
+  (Accumulator. nl-count (ArrayList.)))
+(defn- add-element ^void [^Accumulator acc element]
+  (.add (.elements acc) element))
+(defn- push+mk-acc ^Accumulator [^LinkedList parents acc ^int nl-count]
+  (.addFirst parents acc)
+  (mk-acc nl-count))
+(defn- pop-acc ^Accumulator [^LinkedList parents]
+  (.removeFirst parents))
+
+(letfn [(with-line-meta [x ^Accumulator acc]
+          (with-meta x {:line (inc (.nl-count-at-open acc))}))]
   (defn list-with-line
-    ([^ArrayList es ^int nl-count]
-     (cond-> (tinyclj.lang.Literal/listOfList es)
-       (not (.isEmpty es))
-       (with-line-meta nl-count)))
-    ([^Symbol op ^ArrayList single-e ^int nl-count]
-     (-> (list op (.get single-e 0))
-         (with-line-meta nl-count))))
+    ([^Accumulator acc]
+     (cond-> (tinyclj.lang.Literal/listOfList (.elements acc))
+       (not (.isEmpty (.elements acc)))
+       (with-line-meta acc)))
+    ([^Symbol op ^Accumulator acc1]
+     (-> (list op (.get (.elements acc1) 0))
+         (with-line-meta acc1))))
 
-  (defn parse-syntax-quote [^Ctx ctx ^ArrayList single-e ^int nl-count]
-    (let [x (sq/encode (.get single-e 0) ctx)]
-      (cond-> x (instance? IObj x) (with-line-meta nl-count)))))
+  (defn parse-syntax-quote [^Ctx ctx ^Accumulator acc1]
+    (let [x (sq/encode (.get (.elements acc1) 0) ctx)]
+      (cond-> x (instance? IObj x) (with-line-meta acc1)))))
 
-(defn- parse-fnlit [^ArrayList elements ^ArrayList arg-env ^int nl-count]
+(defn- parse-fnlit [^Accumulator acc ^ArrayList arg-env]
   (letfn [(type-str [x]
             (if (nil? x) "(none)" (str x)))
           (tagged-parameter [^int idx]
@@ -112,7 +123,7 @@
                              (tagged-parameter ^int idx)))
                    (vec))
               {:tag 'auto-return-type}))]
-    (let [expr (list-with-line elements nl-count)]
+    (let [expr (list-with-line acc)]
       (with-meta (list 'fn* (fnlit-sig) expr) (meta expr)))))
 
 ;;; ------------------------------------------------------------------------
@@ -325,8 +336,8 @@
 
 (deftype Reader [^String cs
                  ^:unsynchronized-mutable ^int start
-                 ^:unsynchronized-mutable ^ArrayList elements
-                 ^LinkedList parents    ;used as stack
+                 ^:unsynchronized-mutable ^Accumulator acc
+                 ^LinkedList parents    ;used as stack of Accumulators
                  ^:unsynchronized-mutable ^int nl-count
                  
                  ^:unsynchronized-mutable ^Ctx ctx
@@ -348,26 +359,26 @@
   
   (number [this end]
     (when (zero? discard-level)
-      (.add elements (p/with-error-pos this start
-                       (parse-number (.substring cs start end)))))
+      (add-element acc (p/with-error-pos this start
+                         (parse-number (.substring cs start end)))))
     (set! start end))
   (token [this end]
     (when (zero? discard-level)
       (let [s (.substring cs start end)
             c (.charAt s 0)]
-        (.add elements (p/with-error-pos this start
-                         (cond
-                           (and (some? arg-env) (= c \%))
-                           (parse-arg-literal s arg-env)
+        (add-element acc (p/with-error-pos this start
+                           (cond
+                             (and (some? arg-env) (= c \%))
+                             (parse-arg-literal s arg-env)
 
-                           (= c \\) (parse-character s)
+                             (= c \\) (parse-character s)
                            
-                           :else (parse-sym-or-kw s synquote-stack ctx))))))
+                             :else (parse-sym-or-kw s synquote-stack ctx))))))
     (set! start end))
   (text [_ end nl-before-end?]
     (set! nl-count (+ nl-count (int nl-before-end?)))
     (when (and (not= start end) (zero? discard-level))
-      (.add elements (.substring cs start end)))
+      (add-element acc (.substring cs start end)))
     (set! start end))
   (ws [_ end comment? nl-before-end?]
     (set! nl-count (+ nl-count (int nl-before-end?)))
@@ -377,8 +388,7 @@
     (cond
       (zero? discard-level)
       (do 
-        (.addFirst parents elements)
-        (set! elements (ArrayList.))
+        (set! acc (push+mk-acc parents acc nl-count))
         ;; Push new state for the during of the group, but only if outside
         ;; of any discards.  `end` below pops the state.
         (case (.charAt cs start)
@@ -390,7 +400,7 @@
                     (wrong "nested fn literals #(...) are not allowed")
                     (set! arg-env (mk-arg-env)))
                \_ (do (set! discard-level (inc discard-level))
-                      (set! elements (.removeFirst parents))) ;undo
+                      (set! acc (pop-acc parents))) ;undo
                #_else nil)
           #_else nil))
 
@@ -404,45 +414,46 @@
       (zero? discard-level)
       (let [x (p/with-error-pos this start-of-open
                 (case (.charAt cs start-of-open)
-                  \( (list-with-line elements nl-count)
-                  \[ (tinyclj.lang.Literal/vector (.toArray elements))
-                  \{ (checked-map elements)
-                  \" (parse-string elements)
+                  \( (list-with-line acc)
+                  \[ (tinyclj.lang.Literal/vector (.toArray (.elements acc)))
+                  \{ (checked-map (.elements acc))
+                  \" (parse-string (.elements acc))
 
-                  \^ (let [dm (.get elements 0), x (.get elements 1)]
+                  \^ (let [dm (.get (.elements acc) 0)
+                           x (.get (.elements acc) 1)]
                        (if (instance? IMeta x)
                          (register-meta! x (merge-meta (meta x) dm) arg-env)
                          (wrong "metadata can only be applied to IMeta instances")))
-                  \@ (list-with-line 'deref elements nl-count)
-                  \' (list-with-line cfg/sym-quote elements nl-count)
+                  \@ (list-with-line 'deref acc)
+                  \' (list-with-line cfg/sym-quote acc)
                   \` (do (set! synquote-stack (next synquote-stack))
-                         (parse-syntax-quote ctx elements nl-count))
+                         (parse-syntax-quote ctx acc))
                   \~ (let [op (if (.startsWith cs "~@" start-of-open)
                                 sq/sym-unquote-splicing
                                 sq/sym-unquote)]
                        (set! synquote-stack (first unquote-stack))
                        (set! unquote-stack (next unquote-stack))
-                       (list-with-line op elements nl-count))
+                       (list-with-line op acc))
                   
                   \#
                   (case (.charAt cs (inc start-of-open))
-                    \{ (checked-set elements)
-                    \( (let [x (parse-fnlit elements arg-env nl-count)]
+                    \{ (checked-set (.elements acc))
+                    \( (let [x (parse-fnlit acc arg-env)]
                          (set! arg-env nil)
                          x)
-                    \" (let [s (str/join "" elements)]
-                         (.clear elements)
-                         (.add elements s)
-                         (list-with-line cfg/sym-regex-literal elements nl-count))
-                    \' (list-with-line 'var elements nl-count)
-                    \# (let [sval (.get elements 0)]
+                    \" (let [s (str/join "" (.elements acc))]
+                         (.clear (.elements acc))
+                         (.add (.elements acc) s)
+                         (list-with-line cfg/sym-regex-literal acc))
+                    \' (list-with-line 'var acc)
+                    \# (let [sval (.get (.elements acc) 0)]
                          (or (get {'Inf Double/POSITIVE_INFINITY
                                    '-Inf Double/NEGATIVE_INFINITY
                                    'NaN Double/NaN} sval)
                              (wrong (str "unknown symbolic value: ##" sval))))
                     \< (wrong "unreadable form"))))]
-        (set! elements (.removeFirst parents))
-        (.add elements x)
+        (set! acc (pop-acc parents))
+        (add-element acc x)
         nil)
 
       (.startsWith cs "#_" start-of-open)
@@ -461,13 +472,13 @@
     (set! ctx form-ctx)
     (p/parse-1 start this cs)
     (set! ctx nil)
-    (if (.isEmpty elements)
+    (if (.isEmpty (.elements acc))
       eof-value
       (do #_(assert (= (.size elements) 1))
-          (.remove elements 0)))))
+          (.remove (.elements acc) 0)))))
 
 (defn mk-reader ^Reader [^String cs]
-  (Reader. cs 0 (ArrayList.) (LinkedList.) 0 nil nil nil nil 0))
+  (Reader. cs 0 (mk-acc 0) (LinkedList.) 0 nil nil nil nil 0))
 
 ;;; ------------------------------------------------------------------------
 
