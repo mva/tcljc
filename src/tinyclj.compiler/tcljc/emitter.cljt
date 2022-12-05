@@ -97,7 +97,7 @@
               dyn-ld (cf/mk-chr dyn-ld)
               (ctx/clone-thread-binding-frame) injected-file-forms arender-to)))
 
-(def first-segm-id 100)
+(def first-segm-id 10)
 (def capstone-class-name "___")
 (def segment-class-prefix "_") ;followed by number: not parsed as symbol if empty
 

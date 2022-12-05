@@ -10,12 +10,12 @@
             [tinyclj.alpha.ptest :refer :all]))
 
 (deftest empty-namespace-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -24,7 +24,7 @@
          (nmsp '[(ns pkg.ns0)]))))
 
 (deftest static-init-test-dot
-  (is (= '[[(CLASS Vx [PUBLIC] "tinyclj/core/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "tinyclj/core/_10")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "tinyclj.core")
              (INVOKESTATIC RT "createNamespace"
@@ -35,10 +35,10 @@
              (INVOKESTATIC RT "setCoreLookup"
                            "(Ljava/lang/invoke/MethodHandles$Lookup;)V")
 
-             (LDC "tinyclj.core._100")
+             (LDC "tinyclj.core._10")
              (INVOKESTATIC RT "markCoreInitialization" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "tinyclj/core/___" nil "tinyclj/core/_100")
+           [(CLASS Vx [PUBLIC] "tinyclj/core/___" nil "tinyclj/core/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -48,7 +48,7 @@
                  (. tinyclj.lang.RT (setCoreLookup (. java.lang.invoke.MethodHandles (lookup))))]))))
 
 (deftest static-init-test-sugar
-  (is (= '[[(CLASS Vx [PUBLIC] "tinyclj/core/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "tinyclj/core/_10")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "tinyclj.core")
              (INVOKESTATIC RT "createNamespace"
@@ -59,10 +59,10 @@
              (INVOKESTATIC RT "setCoreLookup"
                            "(Ljava/lang/invoke/MethodHandles$Lookup;)V")
              
-             (LDC "tinyclj.core._100")
+             (LDC "tinyclj.core._10")
              (INVOKESTATIC RT "markCoreInitialization" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "tinyclj/core/___" nil "tinyclj/core/_100")
+           [(CLASS Vx [PUBLIC] "tinyclj/core/___" nil "tinyclj/core/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -72,7 +72,7 @@
                  (tinyclj.lang.RT/setCoreLookup (java.lang.invoke.MethodHandles/lookup))]))))
 
 (deftest static-method-wrapper
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
                    [[STATIC . "rcons~2"
@@ -91,7 +91,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -102,7 +102,7 @@
                                 (clojure.lang.RT/cons x seq)))]))))
 
 (deftest static-method-wrapper-elided
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             
             [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFnMh;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
@@ -114,7 +114,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")

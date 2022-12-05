@@ -23,7 +23,7 @@
   (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/FnInt2")
             [(METHOD [PUBLIC ABSTRACT] "arity-2" "(II)I")]]
 
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "add2" "Lpkg/ns0/FnInt2;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
             
@@ -50,7 +50,7 @@
              (INVOKEINTERFACE FnInt2 "arity-2" "(II)I" :itf)
              (PUTSTATIC . "two" "I")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -65,7 +65,7 @@
 
 
 (deftest def-functional-itf-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "f" "Ljava/lang/Runnable;")]
             
             [(METHOD [PUBLIC STATIC FINAL] "Runnable~0" "()V")
@@ -90,7 +90,7 @@
                              "MethodTypeDesc[()void]"])
              (PUTSTATIC . "f" "Ljava/lang/Runnable;")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -104,7 +104,7 @@
                              (.run f)))]))))
 
 (deftest def-comparator-itf-test
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "f"
                     "Ljava/util/Comparator;")]
             
@@ -138,7 +138,7 @@
                              "MethodTypeDesc[(Object,Object)int]"])
              (PUTSTATIC . "f" "Ljava/util/Comparator;")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -157,7 +157,7 @@
   (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/FnMyFn")
             [(METHOD [PUBLIC ABSTRACT] "fn0" "()I")]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "fn-1" "Lpkg/ns0/FnMyFn;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "fn-2" "Lpkg/ns0/FnMyFn;")]
             
@@ -200,7 +200,7 @@
                              "MethodTypeDesc[()int]"])
              (PUTSTATIC . "fn-2" "Lpkg/ns0/FnMyFn;")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -217,7 +217,7 @@
                                nil)))]))))
 
 (deftest default-vs-provided-sig
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "Consumer~1" "(Ljava/lang/Object;)V")
              ["LOCAL 0: Object x"]
              (RETURN)]
@@ -247,7 +247,7 @@
              (LDC "foo")
              (INVOKEINTERFACE Consumer "accept" "(Ljava/lang/Object;)V" :itf)
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")

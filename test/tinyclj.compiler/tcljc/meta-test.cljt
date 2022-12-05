@@ -63,7 +63,7 @@
          (asm-expr '[^int n]))))
 
 (deftest fn-with-meta
-  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
                     "sfn" "Lclojure/lang/IPersistentMap;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
@@ -109,7 +109,7 @@
              (PUTSTATIC . "cfn" "Lclojure/lang/IPersistentMap;")
 
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")

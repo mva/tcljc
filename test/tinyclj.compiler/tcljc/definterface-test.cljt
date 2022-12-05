@@ -13,13 +13,13 @@
   (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/IInterface")
             [(METHOD [PUBLIC ABSTRACT] "foo" "(Ljava/lang/Class;)I")]]
 
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(FIELD [PUBLIC STATIC VOLATILE] "a" "[Lpkg/ns0/IInterface;")]
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -35,12 +35,12 @@
             [(METHOD [PUBLIC ABSTRACT] "foo"
                      "(Ljava/lang/Object;)Ljava/lang/Object;")]]
 
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -55,12 +55,12 @@
             [(METHOD [PUBLIC VARARGS ABSTRACT] "foo"
                      "([Ljava/lang/Object;)Ljava/lang/Object;")]]
            
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -74,7 +74,7 @@
   (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/FnBinaryInt")
             [(METHOD [PUBLIC ABSTRACT] "fn2" "(II)I")]]
 
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "add-int"
                     "Lpkg/ns0/FnBinaryInt;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
@@ -107,7 +107,7 @@
              (PUTSTATIC . "two" "I")
              
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -127,12 +127,12 @@
   '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/ISucc")
      [(METHOD [PUBLIC ABSTRACT] "succ" "(Lpkg/ns0/ISucc;)Lpkg/ns0/ISucc;")]]
 
-    [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+    [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
      [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
       (LDC "pkg.ns0")
       (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
       (RETURN)]]
-    [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+    [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
      [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
       (RETURN)]
      [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
@@ -158,12 +158,12 @@
   (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/ISucc")
             [(METHOD [PUBLIC ABSTRACT] "succ" "(Lpkg/ns0/IForward;)Lpkg/ns0/IForward;")]]
 
-           [(CLASS Vx [PUBLIC] "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
-           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_100")
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
              (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
