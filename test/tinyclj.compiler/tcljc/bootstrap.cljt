@@ -246,7 +246,8 @@
     (put-alias 'str 'tinyclj.lang.primitive/str)
     (put-alias 'identity 'tinyclj.lang.primitive/identity)
     (put-macro 'macroexpand-1 compiler/macroexpand-1-form)
-    (put-macro 'macroexpand compiler/macroexpand-form))
+    (put-macro 'macroexpand compiler/macroexpand-form)
+    (put-macro 'read-string compiler/read-string-form))
   m)
 
 (def bootstrap-globals-core (into {cfg/key-force-clinit x/expr-empty}

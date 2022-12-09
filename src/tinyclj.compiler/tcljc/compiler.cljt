@@ -13,6 +13,7 @@
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
    [tcljc.wrong :as wrong]
+   [tcljc.reader :as rd]
    [tcljc.grammar :as grammar]
    [tcljc.macro :as macro]
    [tcljc.context :as ctx]
@@ -1746,3 +1747,14 @@
              (list cfg/sym-quote form)
              (recur ex))))
        (wrong/other "argument of macroexpand must be a quote")))))
+
+(def read-string-form
+  (^FnMacroFn fn [ctx [_ arg :as form]]
+   (wrong/check-argc 1 form)
+   (if (string? arg)
+     (let [rd (rd/mk-reader arg)
+           x (.read-1 rd ctx ::EOF)]
+       (if (= x ::EOF)
+         (wrong/other "EOF while reading")
+         (list cfg/sym-quote x)))
+     (wrong/other "argument of read-string must be a string literal"))))

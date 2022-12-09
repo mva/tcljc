@@ -96,7 +96,8 @@
         (put-prim 'str compiler/concat-primitive)
         (put-prim 'identity compiler/identity-primitive)
         (put-macro 'macroexpand-1 compiler/macroexpand-1-form)
-        (put-macro 'macroexpand compiler/macroexpand-form))))
+        (put-macro 'macroexpand compiler/macroexpand-form)
+        (put-macro 'read-string compiler/read-string-form))))
 
 (def implicit-known-ns
   (let [globals (-> {cfg/key-force-clinit x/expr-empty}

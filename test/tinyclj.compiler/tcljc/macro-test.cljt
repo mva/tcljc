@@ -331,3 +331,12 @@
            (ARETURN)]
          (asm-expr (macroexpand '(inc 123))))))
 
+(deftest read-string-test
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;"
+                 [[:bsm-quote "symbol" "Lclojure/lang/Symbol;"
+                   ["quote"]]
+                  [:bsm-quote "symbol" "Lclojure/lang/Symbol;"
+                   ["pkg.ns0" "foo"]]]])
+           (ARETURN)]
+         (asm-expr (read-string "`foo")))))
+

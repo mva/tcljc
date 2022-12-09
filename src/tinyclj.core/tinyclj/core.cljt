@@ -3735,6 +3735,7 @@
     (.readLine ^clojure.lang.LineNumberingPushbackReader *in*)
     (.readLine ^java.io.BufferedReader *in*)))
 
+(def read-string tinyclj.lang.primitive/read-string) ;macro instead of fn
 ;; (defn read-string
 ;;   "Reads one object from the string s. Optionally include reader
 ;;   options, as specified in read.
