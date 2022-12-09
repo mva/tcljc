@@ -61,6 +61,13 @@
 (def sym-regex-literal (symbol core-lib "regex-literal"))
 (def sym-quote 'quote)
 
+;;; note: a copy of this lives in tinyclj.core/specials
+(def specials '#{def loop* recur if case* let* letfn*
+                 do fn* quote var import* . set! deftype* reify* try throw
+                 monitor-enter monitor-exit catch finally new &
+                 ;; special forms that are not special in Clojure:
+                 definterface* instanceof*})
+
 (def primitive-ns-str "tinyclj.lang.primitive")
 
 (def key-force-clinit nil)

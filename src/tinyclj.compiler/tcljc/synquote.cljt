@@ -14,13 +14,6 @@
            (tcljc.context Ctx)
            (clojure.lang Symbol IPersistentVector IMapEntry IRecord)))
 
-;;; note: a copy of this lives in tinyclj.core/specials
-(def specials '#{def loop* recur if case* let* letfn*
-                 do fn* quote var import* . set! deftype* reify* try throw
-                 monitor-enter monitor-exit catch finally new &
-                 ;; special forms that are not special in Clojure:
-                 definterface* instanceof*})
-
 (def ^:private lacks-namespace "`") ;marks simple symbol inside syntax quote
 (def sym-unquote (symbol cfg/core-lib "unquote"))
 (def sym-unquote-splicing (symbol cfg/core-lib "unquote-splicing"))
@@ -54,7 +47,7 @@
     (if (str/ends-with? (name sym) "#")
       (or (get @agensym-map sym)
           (get (swap! agensym-map update sym replacement-symbol sym) sym))
-      (if (contains? specials sym)
+      (if (contains? cfg/specials sym)
         sym
         ;; mark symbol for further processing by synquote/encode-symbol
         (symbol lacks-namespace (name sym))))))
@@ -157,7 +150,7 @@
                          "unknown collection type"))))]
 
       (let [tmpl (cond
-                   (contains? specials form)
+                   (contains? cfg/specials form)
                    (q form)
 
                    (symbol? form)

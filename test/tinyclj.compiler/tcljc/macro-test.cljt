@@ -6,7 +6,7 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.macro-test
-  (:require [tcljc.bootstrap :refer [nmsp]]
+  (:require [tcljc.bootstrap :refer [nmsp asm-expr]]
             [tinyclj.alpha.ptest :refer :all]))
 
 (def exp-one-macro
@@ -300,3 +300,34 @@
                                     (fn* one-macro ^int [&form &env]
                                          1))
                                   (def one (one-macro)))]))))
+
+(deftest macroexpand-1-test
+  (is (= '[(ACONST_NULL)
+           (ARETURN)]
+         (asm-expr (macroexpand-1 'nil))))
+  (is (= '[(LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["foo"]])
+           (ARETURN)]
+         (asm-expr (macroexpand-1 ':foo))))
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;"
+                 [[:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["foo"]]
+                  [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["bar"]]]])
+           (ARETURN)]
+         (asm-expr (macroexpand-1 '(foo :bar)))))
+
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;"
+                 [[:bsm-quote "symbol" "Lclojure/lang/Symbol;"
+                   ["+"]] 123 1]])
+           (ARETURN)]
+         (asm-expr (macroexpand-1 '(inc 123))))))
+
+(deftest macroexpand-test
+  (is (= '[(LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["foo"]])
+           (ARETURN)]
+         (asm-expr (macroexpand ':foo))))
+  
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;"
+                 [[:bsm-quote "symbol" "Lclojure/lang/Symbol;"
+                   ["tinyclj.lang.primitive" "xadd-nary"]] 123 1]])
+           (ARETURN)]
+         (asm-expr (macroexpand '(inc 123))))))
+

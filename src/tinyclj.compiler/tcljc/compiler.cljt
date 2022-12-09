@@ -451,10 +451,13 @@
 (defn- resolve-qname-global ^Expr [^Symbol sym tl-ctx]
   (ctx/lookup-qname-global sym tl-ctx))
 
+(defn- try-resolve-global ^Expr [^Symbol sym tl-ctx]
+  (if (namespace sym)
+    (resolve-qname-global sym tl-ctx)
+    (resolve-sname-global sym tl-ctx)))
+
 (defn- ensure-resolve-global ^Expr [^Symbol sym tl-ctx]
-  (or (if (namespace sym)
-        (resolve-qname-global sym tl-ctx)
-        (resolve-sname-global sym tl-ctx))
+  (or (try-resolve-global sym tl-ctx)
       (wrong-unresolved sym)))
 
 (defn- expand-macro [^MacroRef x form tl-ctx]
@@ -1699,3 +1702,47 @@
          opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ccl))]
      (x/insn* ccl [a i v (x/dup-x2 ccl)]
               (jdk.classfile.instruction.ArrayStoreInstruction/of opc)))))
+
+;;; ------------------------------------------------------------------------
+
+(letfn [(resolve-mfn ^FnMacroFn [op ^Ctx ctx]
+          (when (and (symbol? op) (not (contains? cfg/specials op)))
+            (when-some [x (try-resolve-global op ctx)]
+              (let [bref (x/root-bref ^BindingRef x)]
+                (when (instance? MacroRef bref)
+                  (.macro-fn ^MacroRef bref))))))
+        (macroexpand-once [form ^Ctx ctx]
+          (if (seq? form)
+            (if-some [mfn (resolve-mfn (first form) ctx)]
+              (.expand mfn ctx form)
+              form)
+            form))
+        (form-when-quote [form]
+          (when (and (seq? form)
+                     (= (count form) 2)
+                     (= (first form) cfg/sym-quote))
+            form))]
+  ;; Half-assed macroexpansion is done by a predefined macro, not a
+  ;; regular function.  As such the argument must be a quoted
+  ;; expression (with the quoted argument being the expansion input),
+  ;; and by symmetry the result is a quote of the expanded form.  The
+  ;; returned quote is then evaluated in the usual way, producing the
+  ;; expanded form as a runtime value.
+  
+  (def macroexpand-1-form
+    (^FnMacroFn fn [ctx [_ arg :as form]]
+     (wrong/check-argc 1 form)
+     (if-some [[_ q-arg] (form-when-quote arg)]
+       (list cfg/sym-quote (macroexpand-once q-arg ctx))
+       (wrong/other "argument of macroexpand-1 must be a quote"))))
+
+  (def macroexpand-form
+    (^FnMacroFn fn [ctx [_ arg :as form]]
+     (wrong/check-argc 1 form)
+     (if-some [[_ q-arg] (form-when-quote arg)]
+       (loop [form q-arg]
+         (let [ex (macroexpand-once form ctx)]
+           (if (identical? ex form)
+             (list cfg/sym-quote form)
+             (recur ex))))
+       (wrong/other "argument of macroexpand must be a quote")))))

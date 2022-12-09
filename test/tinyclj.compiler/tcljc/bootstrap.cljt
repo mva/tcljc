@@ -49,11 +49,11 @@
 (def inc1
   (^FnMacroFn fn [cenv form]
    (wrong/check-argc 1 form)
-   (list 'tinyclj.lang.primitive/xadd (second form) jb/jvm-int-one)))
+   (list '+ (second form) jb/jvm-int-one)))
 (def dec1
   (^FnMacroFn fn [cenv form]
    (wrong/check-argc 1 form)
-   (list 'tinyclj.lang.primitive/xsub (second form) jb/jvm-int-one)))
+   (list '- (second form) jb/jvm-int-one)))
 
 (defn macro-xnot [form]
   (list 'tinyclj.lang.primitive/xxor form -1))
@@ -244,7 +244,9 @@
     (put-alias 'fn 'fn*) ;letfn* depends on a `fn` macro being present
     (put-alias 'not 'tinyclj.lang.primitive/not)
     (put-alias 'str 'tinyclj.lang.primitive/str)
-    (put-alias 'identity 'tinyclj.lang.primitive/identity))
+    (put-alias 'identity 'tinyclj.lang.primitive/identity)
+    (put-macro 'macroexpand-1 compiler/macroexpand-1-form)
+    (put-macro 'macroexpand compiler/macroexpand-form))
   m)
 
 (def bootstrap-globals-core (into {cfg/key-force-clinit x/expr-empty}

@@ -3940,6 +3940,7 @@
           (recur (inc i) (next xs))))
       ret))
 
+(def macroexpand-1 tinyclj.lang.primitive/macroexpand-1) ;macro instead of fn
 ;; (defn macroexpand-1
 ;;   "If form represents a macro form, returns its expansion,
 ;;   else returns form."
@@ -3948,6 +3949,7 @@
 ;;   [form]
 ;;     (. clojure.lang.Compiler (macroexpand1 form)))
 
+(def macroexpand tinyclj.lang.primitive/macroexpand) ;macro instead of fn
 ;; (defn macroexpand
 ;;   "Repeatedly calls macroexpand-1 on form until it no longer
 ;;   represents a macro form, then returns it.  Note neither
@@ -4915,7 +4917,7 @@
      (comp seq :content)
      root))
 
-(def ^:private specials    ;copy of tinyclj.frontend.synquote/specials
+(def ^:private specials                 ;copy of tcljc.config/specials
   '#{def loop* recur if case* let* letfn*
      do fn* quote var import* . set! deftype* reify* try throw
      monitor-enter monitor-exit catch finally new &
