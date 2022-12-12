@@ -31,10 +31,10 @@
 ;;; parenthesis.
 (def ^:private eot \u0000) ;or from private use area in Unicode's BMP(0)?
 
-(defn- whitespace? ^boolean [^char ch]
+(defn whitespace? ^boolean [^char ch]
   (or (Character/isWhitespace ch) (= ch \,)))
 
-(defn- macro? ^boolean [^char ch]
+(defn macro? ^boolean [^char ch]
   ;; A macro character starts a group form (\" \# \( \[ \{ \' \@ \` \~
   ;; \^), starts a comment (\;), starts a character literal (\\),
   ;; starts an argument token (\%), or ends a group (\" \) \] \}).
@@ -42,7 +42,7 @@
     (\" \; \' \@ \^ \` \~ \( \) \[ \] \{ \} \\ \% \#) true
     #_else false))
 
-(defn- terminating-macro? ^boolean [^char ch]
+(defn terminating-macro? ^boolean [^char ch]
   ;; A terminating macro character is a subset of `macro?` that
   ;; excludes the characters (\# \% \').  As a consequence, all of
   ;; "a'", "a#", and "a%" are valid symbols.
@@ -50,7 +50,7 @@
     (\" \; \@ \^ \` \~ \( \) \[ \] \{ \} \\) true
     #_else false))
 
-(defn- skip-number-cont ^int [^String cs ^int pos]
+(defn skip-number-cont ^int [^String cs ^int pos]
   (let [n (.length cs)]
     (loop [pos pos]
       (if (< pos n)
@@ -60,7 +60,7 @@
                 :else (recur (inc pos))))
         pos))))
 
-(defn- skip-token-cont ^int [^String cs ^int pos]
+(defn skip-token-cont ^int [^String cs ^int pos]
   (let [n (.length cs)]
     (loop [pos pos]
       (if (< pos n)
