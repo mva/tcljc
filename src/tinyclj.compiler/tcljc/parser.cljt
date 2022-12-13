@@ -50,24 +50,28 @@
     (\" \; \@ \^ \` \~ \( \) \[ \] \{ \} \\) true
     #_else false))
 
+(defn number-cont? ^boolean [^char ch]
+  (cond
+    (whitespace? ch) false
+    (macro? ch) false
+    :else true))
 (defn skip-number-cont ^int [^String cs ^int pos]
   (let [n (.length cs)]
     (loop [pos pos]
-      (if (< pos n)
-        (let [ch (.charAt cs pos)]
-          (cond (whitespace? ch) pos
-                (macro? ch) pos
-                :else (recur (inc pos))))
+      (if (and (< pos n) (number-cont? (.charAt cs pos)))
+        (recur (inc pos))
         pos))))
 
+(defn token-cont? ^boolean [^char ch]
+  (cond
+    (whitespace? ch) false
+    (terminating-macro? ch) false
+    :else true))
 (defn skip-token-cont ^int [^String cs ^int pos]
   (let [n (.length cs)]
     (loop [pos pos]
-      (if (< pos n)
-        (let [ch (.charAt cs pos)]
-          (cond (whitespace? ch) pos
-                (terminating-macro? ch) pos
-                :else (recur (inc pos))))
+      (if (and (< pos n) (token-cont? (.charAt cs pos)))
+        (recur (inc pos))
         pos))))
 
 (defn parse-1 ^int [^int pos ^FormBuilder fb ^String cs]
