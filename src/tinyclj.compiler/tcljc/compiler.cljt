@@ -465,9 +465,11 @@
   ;; Note: Macro in an isolated runtime setup is much more expensive
   ;; than in the shared setup, where the compiler can call directly
   ;; into the macro function.
-  (let [ex (.expand (.macro-fn x) tl-ctx form)]
-    #_(prn :ex ex)
-    ex))
+  (let [ex (.expand (.macro-fn x) tl-ctx form)
+        line (-> form (meta) :line)]
+    (cond-> ex
+      (and (some? line) (instance? clojure.lang.IObj ex))
+      (with-meta (assoc (meta ex) :line line)))))
 
 (let [tag-sep "^"                       ;alternative infix [`,;^"]
       tag-width 4
@@ -1706,16 +1708,16 @@
 
 ;;; ------------------------------------------------------------------------
 
-(letfn [(resolve-mfn ^FnMacroFn [op ^Ctx ctx]
+(letfn [(resolve-mref ^MacroRef [op ^Ctx ctx]
           (when (and (symbol? op) (not (contains? cfg/specials op)))
             (when-some [x (try-resolve-global op ctx)]
               (let [bref (x/root-bref ^BindingRef x)]
                 (when (instance? MacroRef bref)
-                  (.macro-fn ^MacroRef bref))))))
+                  ^MacroRef bref)))))
         (macroexpand-once [form ^Ctx ctx]
           (if (seq? form)
-            (if-some [mfn (resolve-mfn (first form) ctx)]
-              (.expand mfn ctx form)
+            (if-some [mref (resolve-mref (first form) ctx)]
+              (expand-macro mref form ctx)
               form)
             form))
         (form-when-quote [form]
