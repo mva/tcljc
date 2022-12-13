@@ -100,8 +100,9 @@
                 (let [adpt-paths (.after adpt-res (.adpt-paths x))
                       a (doto (trace-paths x 1 0 adpt-paths)
                           (aset 0 branch))]
-                  (if (x/const-value? branch)
-                    (aget a (if (x/const-value-true? branch) 1 2))
+                  (if (x/const-value? branch) ;unpack constant test
+                    (-> (aget a (if (x/const-value-true? branch) 1 2))
+                        (x/identity-using-form x)) ;preserve if's :line
                     (x/with-code x (returning-type x a 1 0) (vec a))))
                 branch)))
           (trace-switch ^Expr [^Switch x]

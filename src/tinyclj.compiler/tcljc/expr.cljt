@@ -572,6 +572,8 @@
 (defn identity? ^boolean [^Expr x]
   (and (instance? Progn x) (= (arg-count x) 1)))
 
+(defn identity-using-form ^Expr [^Expr arg ^Expr x]
+  (Progn. (form x) (type arg) [arg] (.const-value arg) adpt-identity))
 
 ;;; Lexically scoped block: the lifetime of locals created within the
 ;;; block ends with the end of the block.  It contains a non-empty
