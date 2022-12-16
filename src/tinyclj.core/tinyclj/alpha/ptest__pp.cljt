@@ -240,6 +240,11 @@
          (if (identical? ex form)
            (text (str form))
            (doc ex))))
+
+     (array? ^boolean [form]
+       (if (some? form)
+         (.isArray (class form))
+         false))
      
      (doc ^Doc [form]
        (cond
@@ -251,6 +256,9 @@
 
          (instance? Datafiable form)
          (doc-datafiable form)
+
+         (array? form)
+         (recur (vec form))
          
          :else
          (cond
