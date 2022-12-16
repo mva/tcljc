@@ -6,7 +6,9 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 (ns tinyclj.alpha.ptest__pp
+  (:require [tinyclj.core.protocols :refer [datafy]])
   (:import (clojure.lang IMeta IPersistentMap IPersistentVector)
+           (tinyclj.core.protocols Datafiable)
            (java.util ArrayList Map$Entry)
            (java.util.regex Pattern))
   (:refer-clojure :exclude [empty format]))
@@ -228,7 +230,17 @@
          (pair (aggr text-meta (doc (meta-value m)))
                (doc-imeta-value form))
          (doc-imeta-value form)))
-
+     (doc-datafiable ^Doc [^Datafiable form]
+       ;; Right now, this only picks up *classes* implementing
+       ;; Datafiable.  Probably better: always call the protocol
+       ;; function datafy and then produce the Doc.  But this would
+       ;; expand Class, which should be rendered as just the name
+       ;; text.  See https://corfield.org/blog/2018/12/03/datafy-nav/
+       (let [ex (datafy form)]
+         (if (identical? ex form)
+           (text (str form))
+           (doc ex))))
+     
      (doc ^Doc [form]
        (cond
          (instance? IMeta form)
@@ -237,6 +249,9 @@
          (instance? Map$Entry form)
          (pair (doc (key form)) (doc (val form)))
 
+         (instance? Datafiable form)
+         (doc-datafiable form)
+         
          :else
          (cond
            (nil? form) text-nil
