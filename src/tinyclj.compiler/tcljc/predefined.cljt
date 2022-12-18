@@ -89,6 +89,7 @@
         (put-prim 'alength compiler/alength-form)
         (put-prim 'xaload compiler/xaload-form)
         (put-prim 'xastore compiler/xastore-form)
+        (put-prim 'array-copy-of compiler/array-copy-of-form)
 
         ;; misc
         (put-prim 'list compiler/list-primitive)

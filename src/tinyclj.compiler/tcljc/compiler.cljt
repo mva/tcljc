@@ -839,25 +839,23 @@
                    f ^Field (pick-member fs member-label owner nm atypes)]
                (resolve/load-static owner f argv-prefix)))))
        (dot-form-virtual ^Expr [^Expr inst ^String nm arg-forms]
-         (if-some [x (resolve/array-clone inst nm arg-forms)]
-           (xf/coerce x (x/type inst))
-           (let [argv (expr-forms arg-forms)
-                 atypes (argument-types argv)
-                 fields-only? (.startsWith nm "-")
-                 nm (cond-> nm fields-only? (.substring 1))
-                 owner (x/type inst)
-                 member-label (cond fields-only? "virtual field"
-                                    (pos? (alength atypes)) "virtual method"
-                                    :else "virtual member")
-                 argv-prefix [inst]]
-             (if-some [ms (when-not fields-only?
-                            (seq (resolve/virtual-methods owner nm atypes)))]
-               (let [m ^Method (pick-member ms member-label owner nm atypes)]
-                 (->> (consume-args argv-prefix argv m)
-                      (resolve/invoke-virtual owner m)))
-               (let [fs (resolve/virtual-fields owner nm atypes)
-                     f ^Field (pick-member fs member-label owner nm atypes)]
-                 (resolve/load-virtual owner f argv-prefix))))))
+         (let [argv (expr-forms arg-forms)
+               atypes (argument-types argv)
+               fields-only? (.startsWith nm "-")
+               nm (cond-> nm fields-only? (.substring 1))
+               owner (x/type inst)
+               member-label (cond fields-only? "virtual field"
+                                  (pos? (alength atypes)) "virtual method"
+                                  :else "virtual member")
+               argv-prefix [inst]]
+           (if-some [ms (when-not fields-only?
+                          (seq (resolve/virtual-methods owner nm atypes)))]
+             (let [m ^Method (pick-member ms member-label owner nm atypes)]
+               (->> (consume-args argv-prefix argv m)
+                    (resolve/invoke-virtual owner m)))
+             (let [fs (resolve/virtual-fields owner nm atypes)
+                   f ^Field (pick-member fs member-label owner nm atypes)]
+               (resolve/load-virtual owner f argv-prefix)))))
        (dot-form* ^Expr [^Expr cl-or-inst ^String nm arg-forms]
          (if-some [owner (x/classname-type cl-or-inst)]
            (dot-form-static owner nm arg-forms)
@@ -1679,6 +1677,20 @@
   (^FnPrimitiveFn fn [form args tl-ctx]
    (wrong/check-argc 1 form)
    (x/array-length (ensure-array (nth args 0)))))
+
+(def array-copy-of-form
+  (^FnPrimitiveFn fn [form args tl-ctx]
+   (wrong/check-argc 1 form)
+   (let [a (ensure-array (nth args 0))
+         atp (x/type a)
+         ms (resolve/static-methods java.util.Arrays "copyOf"
+                                    (doto (new "[Ljava.lang.Class;" 2)
+                                      (aset 0 atp)
+                                      (aset 1 jb/int)))
+         x (resolve/invoke-static java.util.Arrays (first ms)
+                                  [a (x/array-length (x/dup atp))])]
+     (assert (= (count ms) 1))
+     (xf/coerce x atp))))
 
 (def xaload-form
   (^FnPrimitiveFn fn [form args tl-ctx]

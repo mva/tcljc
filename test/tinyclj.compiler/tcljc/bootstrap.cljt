@@ -239,6 +239,7 @@
     (put-alias 'alength 'tinyclj.lang.primitive/alength)
     (put-macro 'aget xaload-nary)
     (put-macro 'aset xastore-nary)
+    (put-alias 'aclone 'tinyclj.lang.primitive/array-copy-of)
 
     ;; misc
     (put-alias 'fn 'fn*) ;letfn* depends on a `fn` macro being present

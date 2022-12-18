@@ -263,19 +263,6 @@
              (filter #(compatible-args? atypes %))
              (filter-dominators)))))
 
-;;; If this is a `T[].clone()`, then return the matching static method
-;;; invocation for `Arrays.copyOf(T[],int)`.
-(defn array-clone ^Expr [^Expr inst ^String nm arg-forms]
-  (when (and (x/array? inst) (= "clone" nm) (nil? (seq arg-forms)))
-    (let [ms (static-methods java.util.Arrays "copyOf"
-                             (doto (new "[Ljava.lang.Class;" 2)
-                               (aset 0 (x/type inst))
-                               (aset 1 jb/int)))
-          x (invoke-static java.util.Arrays (first ms)
-                           [inst (x/array-length (x/dup (x/type inst)))])]
-      (assert (= (count ms) 1))
-      x)))
-
 ;;; ------------------------------------------------------------------------
 
 (letfn [(vp? ^boolean [^Method m]

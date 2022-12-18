@@ -3839,7 +3839,7 @@
   types."
   {:inline (fn [a] `(. clojure.lang.RT (aclone ~a)))
    :added "1.0"}
-  [array] `(.clone ~array))
+  [array] `(tinyclj.lang.primitive/array-copy-of ~array))
 
 (defmacro aget
   "Returns the value at the index/indices. Works on Java arrays of all
