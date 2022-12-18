@@ -19,7 +19,7 @@
   (:import
    (tcljc.classfile ILdStInstr LdStMember)
    (tcljc.expr Expr Const Insn NewArray InvokeXref InvokeDynamic InvokePoly
-               InvokeArity InvokeArrayClone Setter Progn Block Branch
+               InvokeArity Setter Progn Block Branch
                SplitJoin Guard Switch TryHandler TryCatchFinally LoopBody Recur
                Binding BindingRef AliasRef AssignDef VarRef
                FnForm ArityCode Arity FnPatch IEmitPlan IProvidedValue)
@@ -511,11 +511,6 @@
           AssignDef
           (-> (expr-insns xb es (x/first-arg x))
               (cf/st-insn (-> ^AssignDef x .bref (x/deref-load)) false))
-          InvokeArrayClone
-          (let [cld (rt/cd-of (x/type x))]
-            (-> (argv-insns xb)
-                (.invokevirtual cld "clone" rt/mtd-object-void)
-                (.checkcast cld)))
           #_else (throw (IllegalArgumentException. (str (class x)))))))))
 
 (defn emit-body

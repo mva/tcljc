@@ -839,8 +839,8 @@
                    f ^Field (pick-member fs member-label owner nm atypes)]
                (resolve/load-static owner f argv-prefix)))))
        (dot-form-virtual ^Expr [^Expr inst ^String nm arg-forms]
-         (if (resolve/array-clone? inst nm arg-forms)
-           (x/invoke-array-clone inst)
+         (if-some [x (resolve/array-clone inst nm arg-forms)]
+           (xf/coerce x (x/type inst))
            (let [argv (expr-forms arg-forms)
                  atypes (argument-types argv)
                  fields-only? (.startsWith nm "-")
@@ -1678,9 +1678,7 @@
 (def alength-form
   (^FnPrimitiveFn fn [form args tl-ctx]
    (wrong/check-argc 1 form)
-   (let [a (ensure-array (nth args 0))
-         instr (jdk.classfile.instruction.OperatorInstruction/of Opcode/ARRAYLENGTH)]
-     (x/insn* jb/int [a] instr))))
+   (x/array-length (ensure-array (nth args 0)))))
 
 (def xaload-form
   (^FnPrimitiveFn fn [form args tl-ctx]

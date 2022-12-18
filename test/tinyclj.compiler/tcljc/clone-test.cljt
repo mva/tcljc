@@ -12,15 +12,18 @@
 (deftest clone-ints-test
   (is (= '[["LOCAL 0: int[] x"]
            (ALOAD_0)
-           (INVOKEVIRTUAL "int[]" "clone" "()Ljava/lang/Object;")
-           (CHECKCAST "int[]")
+           (DUP)
+           (ARRAYLENGTH)
+           (INVOKESTATIC Arrays "copyOf" "([II)[I")
            (ARETURN)]
          (asm-expr [^ints x] (.clone x)))))
 
 (deftest clone-strings-test
   (is (= '[["LOCAL 0: String[] x"]
            (ALOAD_0)
-           (INVOKEVIRTUAL "String[]" "clone" "()Ljava/lang/Object;")
+           (DUP)
+           (ARRAYLENGTH)
+           (INVOKESTATIC Arrays "copyOf" "([Ljava/lang/Object;I)[Ljava/lang/Object;")
            (CHECKCAST "String[]")
            (ARETURN)]
          (asm-expr [^"[Ljava.lang.String;" x] (.clone x)))))
@@ -28,7 +31,9 @@
 (deftest clone-multi-test
   (is (= '[["LOCAL 0: int[][] x"]
            (ALOAD_0)
-           (INVOKEVIRTUAL "int[][]" "clone" "()Ljava/lang/Object;")
+           (DUP)
+           (ARRAYLENGTH)
+           (INVOKESTATIC Arrays "copyOf" "([Ljava/lang/Object;I)[Ljava/lang/Object;")
            (CHECKCAST "int[][]")
            (ARETURN)]
          (asm-expr [^"[[I" x] (.clone x)))))
@@ -36,8 +41,9 @@
 (deftest clone-then-toString-test
   (is (= '[["LOCAL 0: int[] x"]
            (ALOAD_0)
-           (INVOKEVIRTUAL "int[]" "clone" "()Ljava/lang/Object;")
-           (CHECKCAST "int[]")
+           (DUP)
+           (ARRAYLENGTH)
+           (INVOKESTATIC Arrays "copyOf" "([II)[I")
            (INVOKEVIRTUAL Object "toString" "()Ljava/lang/String;")
            (ARETURN)]
          (asm-expr [^ints x] (.toString (.clone x))))))

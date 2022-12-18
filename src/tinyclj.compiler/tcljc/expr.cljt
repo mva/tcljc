@@ -396,18 +396,6 @@
         mh-x (const jb/MethodHandle mhd)]
     (mh-invoke-inexact tp (cons mh-x argv) const-value)))
 
-
-(deftype InvokeArrayClone [^:pass-to-super-constructor ^Object _form
-                           ^:pass-to-super-constructor ^Class type
-                           ^:pass-to-super-constructor ^IPersistentVector argv
-                           ^:pass-to-super-constructor ^Object const-value]
-  Expr
-  (with-code [this tp argv]
-    (InvokeArrayClone. (form this) tp argv (.const-value this))))
-
-(defn invoke-array-clone ^InvokeArrayClone [^Expr arg]
-  (InvokeArrayClone. nil (type arg) [arg] nil))
-
 ;;; ------------------------------------------------------------------------
 
 (deftype Insn [^:pass-to-super-constructor ^Object _form
@@ -440,6 +428,10 @@
 (defn dup-x2 ^Insn [^Class tp]
   (insn* tp [] (-> (cf/by-slot-size tp Opcode/DUP_X2 Opcode/DUP2_X2)
                    (jdk.classfile.instruction.StackInstruction/of))))
+
+(defn array-length ^Insn [^Expr x]
+  (let [instr (jdk.classfile.instruction.OperatorInstruction/of Opcode/ARRAYLENGTH)]
+     (insn* jb/int [x] instr)))
 
 (defn throw ^Expr [^Expr arg]
   (insn* jb/void [arg] (jdk.classfile.instruction.ThrowInstruction/of)))
