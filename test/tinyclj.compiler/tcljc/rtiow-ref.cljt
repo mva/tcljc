@@ -135,7 +135,7 @@
 (def world (mk-world))
 
 (defn -main [& args]
-  (.setSeed rnd -3958032860745263531)
+  (.setSeed rnd -3958032860745263531l)
   (let [w (java.io.StringWriter. (int (* 13.15 nx ny)))]
     (.append w (str "P3\n" nx " " ny "\n255\n"))
     (loop [j (dec ny)]

@@ -141,15 +141,17 @@
           (parse-int [^Matcher m ^String n ^int radix]
             (let [bn (cond-> (BigInteger. n radix)
                        (= "-" (.group m 1)) (.negate))
-                  int? (if-some [x (.group m 8)]
-                         (case (.charAt x 0)
-                           \N (do (unsupported-big-int) false)
-                           (\l \L) false)
-                         true)]
-              (cond
-                (and int? (< (.bitLength bn) 32)) (object (.intValue bn))
-                (< (.bitLength bn) 64) (object (.longValue bn))
-                :else (unsupported-big-int))))
+                  x (.group m 8)]
+              (if (some? x)
+                (case (.charAt x 0)
+                  \N (unsupported-big-int)
+                  (\l \L) (if (< (.bitLength bn) 64)
+                            (object (.longValue bn))
+                            (wrong (str "value out of range for long: " bn)))
+                  #_else (wrong (str "unsupported number suffix: " x)))
+                (if (< (.bitLength bn) 32)
+                  (object (.intValue bn))
+                  (wrong (str "value out of range for int: " bn))))))
           (match-int [^Matcher m]
             (if-some [n (or (.group m 2) (.group m 3))]
               (parse-int m n 10)
