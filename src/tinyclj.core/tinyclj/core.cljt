@@ -3505,6 +3505,10 @@
    :static true}
   [num div]
   (list 'java.lang.Math/floorMod num div))
+(defmacro div
+  "Experimental - Quotient of num and div such that (div x y)*y + (mod x y) == x."
+  [num div]
+  (list 'java.lang.Math/floorDiv num div))
 
 (defn ratio?
   "Returns true if n is a Ratio"
