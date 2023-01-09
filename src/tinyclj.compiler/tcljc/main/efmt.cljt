@@ -39,13 +39,17 @@
          :else (recur (inc cnt) (inc i)))))))
 
 
-(defn- file-line-column [emap]
-  (or (:reader/line emap)
-      (when-some [coll (->> (:form/context emap)
-                            (reverse)
-                            (filter #(-> % (meta) :line))
-                            (first))]
-        (:line (meta coll)))))
+(defn- file-line-column ^String [emap]
+  (if-some [line (or (:reader/line emap)
+                     (->> (:form/context emap)
+                          (reverse)
+                          (filter #(-> % (meta) :line))
+                          (first) (meta) :line))]
+    (str ":" (term/highlight (str line))
+         (if-some [column (:reader/column emap)]
+           (str ":" column)
+           ""))
+    ""))
 
 (defn- relative-path ^String [^java.net.URL url] ;relative to working directory
   (if (some? url)
@@ -226,8 +230,7 @@
     (println (fit-string (term/error "###") msg))
     (println (term/error "@@@")
              (str (relative-path (:file/resource-url data))
-                  (when-some [line (file-line-column data)]
-                    (str ":" (term/highlight (str line))))))
+                  (file-line-column data)))
     (when-some [t (ex-cause e)]
       (if (and (instance? IllegalArgumentException t)
                (some? (ex-message t))
@@ -265,6 +268,7 @@
                       (update :form/context last)
                       (dissoc :file/resource-url
                               :reader/line
+                              :reader/column
                               :emitter/namespaces
                               :form/context
                               :invoke/owner :invoke/name :invoke/arg-types

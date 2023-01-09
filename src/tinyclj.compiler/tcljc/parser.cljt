@@ -156,6 +156,12 @@
                 (parse-ws+form)
                 (end-group start-of-open)))
           
+          (wrong-start-of-token ^int [^int pos ^char ch]
+            (let [s (if (<= (int ch) (int \space))
+                      (str "\\u" (.toHexDigits (java.util.HexFormat/of) ch))
+                      (str "\\" ch))]
+              (wrong pos
+                     (str "invalid start of token: " s))))
           (parse-form ^int [^int pos]
             ;; pre: looking at start of a non-discard form
             (let [ch (char-at pos)]
@@ -170,7 +176,7 @@
                 \( (parse-collection pos \))
                 \[ (parse-collection pos \])
                 \{ (parse-map pos)
-                (\) \] \} #_eot \u0000) (wrong pos "invalid start of token")
+                (\) \] \} #_eot \u0000) (wrong-start-of-token pos ch)
                 (\' \@ \`) (parse-prefix pos 1)
                 \~ (parse-prefix pos (inc (int (= (char-at (inc pos)) \@))))
                 \^ (parse-meta pos)
