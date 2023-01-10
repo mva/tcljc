@@ -156,9 +156,7 @@
      (cntrl? ^boolean [^char c]
        (or (< (int c) (int \u0020)) (= c \u007f)))
      (escape-char ^String [^Character c]
-       (let [args (doto (new objects 1)
-                    (aset 0 (object (int ^char c))))]
-         (String/format "\\u%04x" args)))
+       (str "\\u" (.toHexDigits (java.util.HexFormat/of) ^char c)))
      (text-string ^Doc [^String s]
        (let [sb (StringBuilder. "\"")]
          (loop [i 0]
