@@ -756,7 +756,8 @@
          (let [fn-formv (mapv (fn ^FnForm [form]
                                 (let [level (level-fn-form env)
                                       mnm (pick-unique-mnm env 'fn form tl-ctx)]
-                                  (sig/destructure-fn*-form form level mnm tl-ctx)))
+                                  (wrong/with-list-context form
+                                    (sig/destructure-fn*-form form level mnm tl-ctx))))
                               (macroexpand-fnvec fnv))
                bexprv (mapv (fn [^FnForm fn-form]
                               (value-binding fn-form x/b-let
