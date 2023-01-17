@@ -336,30 +336,45 @@
                     (member-def-fresh nm redef?)))
                 (member-def-noinit nm))))))))
 
+;;; Returns component type of the varargs parameter, or nil if no
+;;; arguments are collected into an array.  If `e` is polymorphic,
+;;; result is always `cl-polymorphic-type`.
+(defn- collecting-vararg-type ^Class [^Executable e ^IPersistentVector argv]
+  (when (.isVarArgs e)
+    (if (resolve/signature-polymorphic? e)
+      jb/cl-polymorphic-type
+      (let [n (.getParameterCount e)
+            va-param-tp (aget (.getParameterTypes e) (dec n))]
+        (if (and (= n (count argv))
+                 (.isAssignableFrom va-param-tp (x/type (peek argv))))
+          nil                           ;array already provided
+          (.componentType va-param-tp))))))
+
 (defn- consume-args
   (^IPersistentVector [^IPersistentVector acc
                        ^IPersistentVector argv
                        ^Executable e]
    (let [ptypes (.getParameterTypes e)]
-     (if (.isVarArgs e)
-       ;; For a varargs method, skip adapting of arguments starting with
-       ;; the position of the vararg parameter.  FIXME... After
-       ;; Valhalla, revise this to check type of vararg arguments as
-       ;; well?
-       (consume-args acc argv ptypes
-                     (dec (alength ptypes)) jb/cl-polymorphic-type)
-       (consume-args acc argv ptypes
-                     Integer/MAX_VALUE jb/Object))))
+     (if-some [vararg-tp (collecting-vararg-type e argv)]
+       ;; For a polymorphic method, skip adapting of arguments
+       ;; starting with the position of the vararg parameter.  For a
+       ;; varargs method, only adapt reference arguments passed to the
+       ;; vararg parameter.  FIXME... After Valhalla, revise this to
+       ;; check type of vararg arguments as well?
+       (consume-args acc argv ptypes (dec (alength ptypes)) vararg-tp)
+       (consume-args acc argv ptypes Integer/MAX_VALUE jb/Object))))
   (^IPersistentVector [^IPersistentVector acc
                        ^IPersistentVector argv
                        ^"[Ljava.lang.Class;" ptypes
-                       ^int start ^Class other-tp]
+                       ^int vararg-start ^Class vararg-tp]
    (loop [acc acc, i 0]
      (if (= i (count argv))
        acc
-       (let [ptype (if (>= i start) other-tp (aget ptypes i))]
-         (recur (conj acc (conv/consume (nth argv i) ptype))
-                (inc i)))))))
+       (recur (conj acc (if (>= i vararg-start)
+                          (-> (conv/consume-poly (nth argv i))
+                              (xf/coerce-vararg vararg-tp))
+                          (conv/consume (nth argv i) (aget ptypes i))))
+              (inc i))))))
 
 ;;; ------------------------------------------------------------------------
 

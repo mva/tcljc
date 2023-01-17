@@ -217,6 +217,13 @@
     (.isAssignableFrom to-tp (x/type x)) (x/identity to-tp x)
     :else (coerce x to-tp)))
 
+;;; FIXME... does this change with Valhalla?
+(defn coerce-vararg ^Expr [^Expr x ^Class to-tp]
+  (if (and (not (jb/polymorphic? to-tp)) (jb/reference? to-tp)
+           (x/reference? x))
+    (coerce x to-tp)
+    x))
+
 (defn coerce-to-statm ^Expr [^Expr x]
   (coerce x jb/void))
 

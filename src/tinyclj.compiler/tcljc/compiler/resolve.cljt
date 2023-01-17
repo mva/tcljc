@@ -163,7 +163,7 @@
                             (-> (aget as i) (.annotationType) (.getName))) true
                          :else (recur (dec i)))))))]
   
-  (defn signature-polymorphic? ^boolean [^Executable e]
+  (defn signature-polymorphic? ^boolean [^Executable e] ;pre: e.isVarArgs()
     (and (instance? Method e) (signature-polymorphic* ^Method e)))
   
   (defn- compatible-args? ^boolean [^"[Ljava.lang.Class;" atypes ^Executable e]

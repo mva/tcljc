@@ -235,13 +235,13 @@
          (asm-expr (java.util.Objects/hash))))
   (is (= '[(LDC [STATIC Objects "hash" "([Ljava/lang/Object;)I"])
            (LDC "a")
-           (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/String;)I")
+           (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)I")
            (IRETURN)]
          (asm-expr (java.util.Objects/hash "a"))))
   (is (= '[(LDC [STATIC Objects "hash" "([Ljava/lang/Object;)I"])
            (LDC "a")
            (LDC "b")
-           (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/String;Ljava/lang/String;)I")
+           (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;Ljava/lang/Object;)I")
            (IRETURN)]
          (asm-expr (java.util.Objects/hash "a" "b")))))
 
@@ -269,14 +269,12 @@
   (is (= '[(LDC [STATIC Objects "hash" "([Ljava/lang/Object;)I"])
            (ICONST_0)
            (NEWARRAY "int[]")
-           (INVOKEVIRTUAL MethodHandle "invoke" "([I)I")
+           (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)I")
            (IRETURN)]
          (asm-expr (java.util.Objects/hash (new ints 0)))))
   ;; At the moment, ints cannot be passed to an objects vararg
-  ;; directly.  As such there is no need to cast them to object if
-  ;; they appear in a vararg argument position.  This will probably
-  ;; change with Valhalla.  (Also applies to call to variadic
-  ;; function.)
+  ;; directly.  This will probably change with Valhalla.  (Also
+  ;; applies to call to variadic function.)
   (is (not (.isAssignableFrom objects ints))))
 
 (deftest dot-call-varargs-newOutputStream
@@ -289,7 +287,7 @@
            (GETSTATIC StandardOpenOption "CREATE_NEW"
                       "Ljava/nio/file/StandardOpenOption;")
            (INVOKEVIRTUAL MethodHandle
-                          "invoke" "(Ljava/nio/file/Path;Ljava/nio/file/StandardOpenOption;Ljava/nio/file/StandardOpenOption;)Ljava/io/OutputStream;")
+                          "invoke" "(Ljava/nio/file/Path;Ljava/nio/file/OpenOption;Ljava/nio/file/OpenOption;)Ljava/io/OutputStream;")
            (ARETURN)]
          (asm-expr [^java.nio.file.Path path]
                    (java.nio.file.Files/newOutputStream
@@ -342,7 +340,7 @@
            (INVOKEVIRTUAL MethodHandle "invoke"
                           "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
            (INVOKEVIRTUAL MethodHandle "invoke"
-                          "(Ljava/lang/invoke/MethodHandle;Lclojure/lang/IPersistentVector;)Ljava/lang/Object;")
+                          "(Ljava/lang/invoke/MethodHandle;Ljava/lang/Object;)Ljava/lang/Object;")
            (ARETURN)]
          ;; Awkward: IPersistentVector does not implement java.util.List!
          (asm-expr [^java.lang.invoke.MethodHandle mh ^Object x]
