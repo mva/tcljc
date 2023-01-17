@@ -211,12 +211,6 @@
     (x/with-adapt-paths x to-tp (AdaptCoerce. to-tp))
     (coerce* x to-tp)))
 
-(defn coerce-static ^Expr [^Expr x ^Class to-tp]
-  (cond
-    (x/type? to-tp x) x
-    (.isAssignableFrom to-tp (x/type x)) (x/identity to-tp x)
-    :else (coerce x to-tp)))
-
 ;;; FIXME... does this change with Valhalla?
 (defn coerce-vararg ^Expr [^Expr x ^Class to-tp]
   (if (and (not (jb/polymorphic? to-tp)) (jb/reference? to-tp)
