@@ -252,7 +252,7 @@
                    ["tinyclj.lang.primitive" "acmpeq"]])
              (ALOAD_2)
              (ACONST_NULL)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(Lclojure/lang/Symbol;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
+             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
              (ARETURN)]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")

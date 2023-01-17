@@ -1171,15 +1171,16 @@
                (x/invoke-xref jb/boolean [cn-expr arg] rt/mhd-isInstance)))))
 
        
-       (adapt-args [op+argv ^Arity at ^int vararg-idx]
+       (adapt-args [op+argv ^Arity at ^int vararg-start ^Class vararg-tp]
          (loop [acc op+argv, i 1]
            (if (< i (count op+argv))
              (let [arg (nth op+argv i)]
                (recur
-                (if (>= i vararg-idx)
+                (if (>= i vararg-start)
                   ;; FIXME... After Valhalla, revise this to adapt
                   ;; vararg arguments to parameter type as well?
-                  (assoc acc (object i) (conv/consume-poly arg))
+                  (assoc acc (object i) (-> (conv/consume-poly arg)
+                                            (xf/coerce-vararg vararg-tp)))
                   (let [param-tp (x/at-parameter-type at (dec i))]
                     (cond ;assume that acc isn't modified most of the time
                       (jb/same-class? param-tp (x/type arg)) acc
@@ -1197,10 +1198,10 @@
              (let [rt (.rtype at)]
                (when (jb/compile-time-entity? rt)
                  (wrong/other "calling function arity with unknown result type"))
-               (let [argv (if (x/at-extern-varargs? at)
-                            (-> (adapt-args op+argv at (x/at-n at))
+               (let [argv (if-some [vararg-tp (x/at-extern-vararg-type at)]
+                            (-> (adapt-args op+argv at (x/at-n at) vararg-tp)
                                 (x/fix-vararg-array at))
-                            (adapt-args op+argv at Integer/MAX_VALUE))]
+                            (adapt-args op+argv at Integer/MAX_VALUE jb/Object))]
                  (x/invoke-arity rt argv fn-form (.at-idx at)))))
            (catch clojure.lang.ExceptionInfo e
              (throw (assoc-fn-form e fn-form op+argv))

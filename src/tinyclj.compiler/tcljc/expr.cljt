@@ -1095,8 +1095,8 @@
      ;; Number of parameters.  Initialized from (count paramv).
      
      ^boolean varargs?
-     ;; JVM varargs method with an `Object...` parameter.  Mutually
-     ;; exclusive with `variadic?`.
+     ;; JVM varargs method with an array parameter like `Object...` or
+     ;; `int...`.  Mutually exclusive with `variadic?`.
      
      ^boolean variadic?
      ;; Clojure variadic arity with an `ISeq` rest parameter.
@@ -1156,8 +1156,11 @@
 (defn at-parameter-types [^Arity at]
   (for [^Binding b (.paramv at)] (-> b .bref (type))))
 
-(defn at-extern-varargs? ^boolean [^Arity at]
-  (or (.varargs? at) (.variadic? at)))
+(defn at-extern-vararg-type ^Class [^Arity at]
+  (cond
+    (.varargs? at) (.componentType (at-parameter-type at (dec (at-n at))))
+    (.variadic? at) jb/Object
+    :else nil))
 
 (defn at-mtd
   (^MethodTypeDesc [^Arity at]
@@ -1422,7 +1425,7 @@
   (letfn [(accepts? ^boolean [^Arity at ^int an]
             (let [pn (at-n at)]
               (or (= an pn)
-                  (and (at-extern-varargs? at) (>= an (dec pn))))))]
+                  (and (some? (at-extern-vararg-type at)) (>= an (dec pn))))))]
     (let [atv (.at-sigs fn-form)]
       (loop [i 0]
         (when (< i (count atv))

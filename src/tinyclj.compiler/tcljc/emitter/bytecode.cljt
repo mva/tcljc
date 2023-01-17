@@ -239,7 +239,7 @@
             (let [fnc (-> x .fn-form .!fnc)
                   ac (.arity-code fnc (.at-idx x))
                   ep (.emit-plan fnc)]
-              (if (x/at-extern-varargs? (.at ac))
+              (if (some? (x/at-extern-vararg-type (.at ac)))
                 (invoke-arity-va xb x ep (.at ac) (.load-mh-ext ac))
                 (invoke-arity-fa xb x ep (.at ac) (.load-mh-ext ac)))
               xb))

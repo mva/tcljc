@@ -220,8 +220,8 @@
 
 (defn print-arity [^Arity at  ^"[Ljava.lang.Class;" arg-types]
   (let [ptypes (into-array Class (x/at-parameter-types at))]
-    (print-sig (String/format "%4d" (x/at-n at))
-               ptypes (x/at-extern-varargs? at) (alength arg-types))))
+    (print-sig (String/format "%4d" (x/at-n at)) ptypes
+               (some? (x/at-extern-vararg-type at)) (alength arg-types))))
 
 (defn print-compiler-emap [^ExceptionInfo e]
   (let [msg (ex-message e)

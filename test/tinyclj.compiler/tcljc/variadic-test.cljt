@@ -122,7 +122,7 @@
                    "([Ljava/lang/Object;)Ljava/util/List;"])
              (ICONST_0)
              (NEWARRAY "int[]")
-             (INVOKEVIRTUAL MethodHandle "invoke" "([I)Ljava/util/List;")
+             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Ljava/util/List;")
              (PUTSTATIC . "lints" "Ljava/util/List;")
              
              (RETURN)]]
@@ -929,7 +929,7 @@
              (ANEWARRAY "Object[]")
              (ICONST_0)
              (ANEWARRAY "Integer[]")
-             (INVOKEVIRTUAL MethodHandle "invoke" "([Ljava/lang/Object;[Ljava/lang/Object;[Ljava/lang/Integer;)Ljava/lang/Object;")
+             (INVOKEVIRTUAL MethodHandle "invoke" "([Ljava/lang/Object;[Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
              (PUTSTATIC . "x" "Ljava/lang/Object;")
 
              (RETURN)]]
