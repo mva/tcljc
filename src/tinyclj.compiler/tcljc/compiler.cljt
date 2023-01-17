@@ -162,7 +162,8 @@
                       rt/mhd-set (set cs)
                       rt/mhd-list (or (list* cs) ())
                       (throw (IllegalArgumentException.)))))
-      (x/mh-invoke-inexact tp (cons (x/const jb/MethodHandle mhd) elems) nil))))
+      (x/mh-invoke-inexact tp (->> (map #(xf/coerce-vararg % jb/Object) elems)
+                                   (cons (x/const jb/MethodHandle mhd))) nil))))
 
 (defn- compile-quote ^Expr [form tl-ctx]
   (if (instance? IMeta form)

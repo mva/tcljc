@@ -211,3 +211,25 @@
                     (double 0) (double 1)
                     (double 2)]))))
 
+(deftest collecting-vararg-type
+  ;; constants carry their own type in the constant pool, i.e. the
+  ;; method arguments passed to the bootstrap method are of type
+  ;; string
+  (is (= '[(LDC [:bsm-quote "set" "Lclojure/lang/IPersistentSet;"
+                 ["foo" "bar"]])
+           (ARETURN)]
+         (asm-expr #{"foo" "bar"})))
+
+  ;; the invoked method handle's arguments are coerced to the
+  ;; component type of the collecting array
+  (is (= '[["LOCAL 0: String foo"]
+           ["LOCAL 1: String bar"]
+           (LDC [STATIC Literal "set"
+                 "([Ljava/lang/Object;)Lclojure/lang/IPersistentSet;"])
+           (ALOAD_1)
+           (ALOAD_0)
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IPersistentSet;")
+           (ARETURN)]
+         (asm-expr [^String foo ^String bar]
+                   #{foo bar}))))
