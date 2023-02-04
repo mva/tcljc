@@ -155,7 +155,7 @@
     (apply-to-instr [_ x]
       (x/insn* x/no-return [x]
                (-> (cf/type-kind (x/type x))
-                   (jdk.classfile.instruction.ReturnInstruction/of))))
+                   (jdk.internal.classfile.instruction.ReturnInstruction/of))))
     (after [this before]
       (x/adpt-comp this before))
     (safe-instructions? [_]

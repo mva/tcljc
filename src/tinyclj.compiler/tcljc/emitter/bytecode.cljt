@@ -24,13 +24,13 @@
                Binding BindingRef AliasRef AssignDef VarRef
                FnForm ArityCode Arity FnPatch IEmitPlan IProvidedValue)
    (clojure.lang Symbol IPersistentVector IMeta)
-   (jdk.classfile Classfile ClassfileBuilder ClassBuilder CodeBuilder
+   (jdk.internal.classfile Classfile ClassfileBuilder ClassBuilder CodeBuilder
                   FieldBuilder Opcode Label
                   Annotation AnnotationElement AnnotationValue Signature)
-   (jdk.classfile.instruction SwitchCase)
-   (jdk.classfile.attribute ConstantValueAttribute SignatureAttribute
+   (jdk.internal.classfile.instruction SwitchCase)
+   (jdk.internal.classfile.attribute ConstantValueAttribute SignatureAttribute
                             RuntimeVisibleAnnotationsAttribute)
-   (jdk.classfile.constantpool LoadableConstantEntry)
+   (jdk.internal.classfile.constantpool LoadableConstantEntry)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc$Kind
                        DirectMethodHandleDesc Constable)
    (java.lang.invoke TypeDescriptor$OfField)))
@@ -539,11 +539,11 @@
   (letfn [(macro-annotation ^void [^ClassfileBuilder b ^BindingRef bref]
             (when (x/b-macro? bref)
               (let [ae (if-some [macro-v ^BindingRef (.const-value bref)]
-                         (doto (new "[Ljdk.classfile.AnnotationElement;" 1)
+                         (doto (new "[Ljdk.internal.classfile.AnnotationElement;" 1)
                            (aset 0 (AnnotationElement/ofString
                                     "macroValue" (str (x/qname macro-v)))))
-                         (new "[Ljdk.classfile.AnnotationElement;" 0))
-                    ann (doto (new "[Ljdk.classfile.Annotation;" 1)
+                         (new "[Ljdk.internal.classfile.AnnotationElement;" 0))
+                    ann (doto (new "[Ljdk.internal.classfile.Annotation;" 1)
                           (aset 0 (Annotation/of rt/Macro ae)))]
                 (.with b (RuntimeVisibleAnnotationsAttribute/of ann)))))
           (static-flags ^int [^BindingRef bref]
@@ -581,11 +581,11 @@
                           (.with (ConstantValueAttribute/of
                                   ^ConstantDesc (.const-value init-x)))))]
               (.withField cb mnm member-tp fbh)))
-          (alias-annotation ^"[Ljdk.classfile.Annotation;" [^AliasRef bref]
+          (alias-annotation ^"[Ljdk.internal.classfile.Annotation;" [^AliasRef bref]
             (let [qnm (-> (.alias-for bref) (x/qname) (str))
-                  ae (doto (new "[Ljdk.classfile.AnnotationElement;" 1)
+                  ae (doto (new "[Ljdk.internal.classfile.AnnotationElement;" 1)
                        (aset 0 (AnnotationElement/ofString "of" qnm)))]
-              (doto (new "[Ljdk.classfile.Annotation;" 1)
+              (doto (new "[Ljdk.internal.classfile.Annotation;" 1)
                 (aset 0 (Annotation/of rt/Alias ae)))))
           (alias-field! ^void [^AliasRef bref]
             (let [member-tp rt/object

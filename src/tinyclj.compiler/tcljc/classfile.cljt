@@ -11,11 +11,11 @@
    [tcljc.runtime :as rt])
   (:import
    (clojure.lang IPersistentVector)
-   (jdk.classfile Classfile Classfile$Option ClassHierarchyResolver
+   (jdk.internal.classfile Classfile Classfile$Option ClassHierarchyResolver
                   ClassHierarchyResolver$ClassHierarchyInfo
                   Opcode TypeKind ClassBuilder MethodBuilder CodeBuilder Label)
-   (jdk.classfile.attribute SourceFileAttribute)
-   (jdk.classfile.instruction SwitchCase)
+   (jdk.internal.classfile.attribute SourceFileAttribute)
+   (jdk.internal.classfile.instruction SwitchCase)
    (java.lang.constant ConstantDesc ClassDesc MethodTypeDesc MethodHandleDesc
                        DirectMethodHandleDesc DirectMethodHandleDesc$Kind)
    (java.lang.invoke MethodHandle TypeDescriptor$OfField MethodHandles$Lookup)
@@ -53,7 +53,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(def ^:private bytecode2opcode (new "[Ljdk.classfile.Opcode;" 256))
+(def ^:private bytecode2opcode (new "[Ljdk.internal.classfile.Opcode;" 256))
 (doseq [^Opcode opc (Opcode/values)]
   (when-not (.isWide opc)
     (aset bytecode2opcode (.bytecode opc) opc)))
@@ -119,7 +119,7 @@
   (assert (= (count sig) 1))
   (let [[nm] sig]
     `(^java.util.function.Consumer fn [~nm]
-      (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.ClassBuilder})]
+      (let* [~nm ~(with-meta nm {:tag 'jdk.internal.classfile.ClassBuilder})]
         #_(.println System/out ":accept ClassBuilder start")
         ~@body
         #_(.println System/out ":accept ClassBuilder end")))))
@@ -133,7 +133,7 @@
   (assert (= (count sig) 1))
   (let [[nm] sig]
     `(^java.util.function.Consumer fn [~nm]
-      (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.MethodBuilder})]
+      (let* [~nm ~(with-meta nm {:tag 'jdk.internal.classfile.MethodBuilder})]
         #_(.println System/out ":accept MethodBuilder start")
         ~@body
         #_(.println System/out ":accept MethodBuilder end")))))
@@ -143,7 +143,7 @@
   (assert (= (count sig) 1))
   (let [[nm] sig]
     `(^java.util.function.Consumer fn [~nm]
-      (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.CodeBuilder})]
+      (let* [~nm ~(with-meta nm {:tag 'jdk.internal.classfile.CodeBuilder})]
         #_(.println System/out "\n:accept CodeBuilder start")
         ~@body
         #_(.println System/out ":accept CodeBuilder end\n")))))
@@ -153,7 +153,7 @@
   (assert (= (count sig) 1))
   (let [[nm] sig]
     `(^java.util.function.Consumer fn [~nm]
-      (let* [~nm ~(with-meta nm {:tag 'jdk.classfile.FieldBuilder})]
+      (let* [~nm ~(with-meta nm {:tag 'jdk.internal.classfile.FieldBuilder})]
         #_(.println System/out ":accept FieldBuilder start")
         ~@body
         #_(.println System/out ":accept FieldBuilder end")))))

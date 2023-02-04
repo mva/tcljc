@@ -22,7 +22,7 @@
    (tcljc.classfile ClassDef FieldDef ILdStInstr)
    (tcljc.expr Arity Binding)
    (clojure.lang Symbol IPersistentMap IPersistentVector)
-   (jdk.classfile Classfile ClassBuilder CodeBuilder)
+   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder)
    (java.lang.constant ClassDesc MethodTypeDesc DirectMethodHandleDesc
                        ConstantDesc)
    (java.lang.reflect Method)

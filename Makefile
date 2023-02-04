@@ -7,10 +7,10 @@ JAVAC=$(JAVA_BIN)javac
 JAVAP=$(JAVA_BIN)javap
 
 JAVA_OPTS=--enable-preview --add-modules jdk.incubator.concurrent \
-  --add-exports java.base/jdk.classfile=ALL-UNNAMED \
-  --add-exports java.base/jdk.classfile.constantpool=ALL-UNNAMED \
-  --add-exports java.base/jdk.classfile.instruction=ALL-UNNAMED \
-  --add-exports java.base/jdk.classfile.attribute=ALL-UNNAMED
+  --add-exports java.base/jdk.internal.classfile=ALL-UNNAMED \
+  --add-exports java.base/jdk.internal.classfile.constantpool=ALL-UNNAMED \
+  --add-exports java.base/jdk.internal.classfile.instruction=ALL-UNNAMED \
+  --add-exports java.base/jdk.internal.classfile.attribute=ALL-UNNAMED
 #JAVA_OPTS += -XX:+UseZGC -Xlog:gc
 #JAVA_OPTS += -Djdk.tracePinnedThreads
 
@@ -181,7 +181,7 @@ $(DEST_DIR).stageFI2/DONE: $(DEST_DIR).stageFI1/DONE
 $(DEST_DIR).rtiowFS/DONE: $(DEST_DIR).stageFI2/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(TIME_JAVA) --enable-preview --add-exports java.base/jdk.classfile=tinyclj.compiler --add-exports java.base/jdk.classfile.constantpool=tinyclj.compiler --add-exports java.base/jdk.classfile.instruction=tinyclj.compiler --add-exports java.base/jdk.classfile.attribute=tinyclj.compiler -p $(DEST_DIR).mdir -m tinyclj.compiler -d "$(dir $@)" -s test/tinyclj.compiler tcljc.rtiow-ref
+	$(TIME_JAVA) --enable-preview --add-exports java.base/jdk.internal.classfile=tinyclj.compiler --add-exports java.base/jdk.internal.classfile.constantpool=tinyclj.compiler --add-exports java.base/jdk.internal.classfile.instruction=tinyclj.compiler --add-exports java.base/jdk.internal.classfile.attribute=tinyclj.compiler -p $(DEST_DIR).mdir -m tinyclj.compiler -d "$(dir $@)" -s test/tinyclj.compiler tcljc.rtiow-ref
 	@echo "\nRun from class path:"
 	$(JAVA) -cp $(DEST_DIR).mdir/\*:$(dir $@) tcljc.rtiow-ref.___ >"$(dir $@)"ray.ppm
 	@echo "3cf6c9b9f93edb0de2bc24015c610d78  $(dir $@)ray.ppm" | md5sum -c -

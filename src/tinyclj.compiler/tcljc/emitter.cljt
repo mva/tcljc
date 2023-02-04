@@ -35,7 +35,7 @@
    (tcljc.expr Expr Binding BindingRef FnForm)
    (clojure.lang ISeq IPersistentMap IPersistentVector ExceptionInfo)
    (jdk.incubator.concurrent StructuredTaskScope)
-   (jdk.classfile Classfile ClassBuilder CodeBuilder TypeKind)
+   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.nio.file Path)
    (java.lang.constant ClassDesc MethodTypeDesc)
    (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)

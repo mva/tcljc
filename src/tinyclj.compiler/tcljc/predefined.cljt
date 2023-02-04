@@ -19,7 +19,7 @@
    (tcljc.expr Expr BindingRef FnPrimitiveFn FnMacroFn)
    (tcljc.context Ctx)
    (clojure.lang Symbol IPersistentMap)
-   (jdk.classfile Opcode)
+   (jdk.internal.classfile Opcode)
    (java.lang.invoke MethodHandles$Lookup)
    (java.util HashMap)
    (java.util.regex Pattern PatternSyntaxException)))

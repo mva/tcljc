@@ -139,7 +139,7 @@
     ;; this should not match the varargs array overload, i.e. there is
     ;; no implicit Object to ClassDesc cast for vararg elements
     (is (= '[(INVOKE-XREF INTERFACE_VIRTUAL "ClassBuilder" "withInterfaceSymbols"
-                          "(Ljava/util/List;)Ljdk/classfile/ClassBuilder;"
+                          "(Ljava/util/List;)Ljdk/internal/classfile/ClassBuilder;"
                           :owner-is-itf)]
-           (inv-virtual jdk.classfile.ClassBuilder "withInterfaceSymbols"
+           (inv-virtual jdk.internal.classfile.ClassBuilder "withInterfaceSymbols"
                         Object)))))

@@ -35,7 +35,7 @@
                DeftypeDef MethodDef)
    (clojure.lang Symbol Var ISeq IPersistentVector IPersistentMap IMeta
                  ExceptionInfo)
-   (jdk.classfile Classfile Opcode)
+   (jdk.internal.classfile Classfile Opcode)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc)
    (java.lang.invoke MethodHandle MethodHandles$Lookup)
    (java.lang.reflect Constructor Method Field Executable)
@@ -1109,7 +1109,7 @@
            (when-not (x/reference? lockee)
              (x/wrong-type "monitor operation requires a reference" lockee))
            (x/insn* jb/void [lockee]
-                    (jdk.classfile.instruction.MonitorInstruction/of opc))))
+                    (jdk.internal.classfile.instruction.MonitorInstruction/of opc))))
 
        (class-const-or-expr ^Expr [form]
          (-> (cond
@@ -1712,7 +1712,7 @@
          ccl (.componentType (x/type a))
          opc (cf/bc2opc Opcode/IALOAD (cf/opcode-delta ccl))]
      (x/insn* ccl [a i]
-              (jdk.classfile.instruction.ArrayLoadInstruction/of opc)))))
+              (jdk.internal.classfile.instruction.ArrayLoadInstruction/of opc)))))
 
 (def xastore-form
   (^FnPrimitiveFn fn [form args tl-ctx]
@@ -1726,7 +1726,7 @@
          v (conv/consume (nth args 2) ccl)
          opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ccl))]
      (x/insn* ccl [a i v (x/dup-x2 ccl)]
-              (jdk.classfile.instruction.ArrayStoreInstruction/of opc)))))
+              (jdk.internal.classfile.instruction.ArrayStoreInstruction/of opc)))))
 
 ;;; ------------------------------------------------------------------------
 

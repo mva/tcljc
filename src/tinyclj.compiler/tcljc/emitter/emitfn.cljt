@@ -20,7 +20,7 @@
    (tcljc.expr FnForm Arity FnCode ArityCode BindingRef IEmitPlan)
    (tcljc.emitter.bytecode EmitState)
    (clojure.lang IPersistentVector ISeq)
-   (jdk.classfile Classfile ClassBuilder CodeBuilder TypeKind)
+   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.lang.constant ClassDesc MethodTypeDesc MethodHandleDesc
                        ConstantDesc DynamicConstantDesc
                        DirectMethodHandleDesc DynamicCallSiteDesc)
@@ -367,7 +367,7 @@
       xb)
 
     (fn-class-hierarchy-info [_]
-      (jdk.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
+      (jdk.internal.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
        this-class false (.owner super-mhd)))
     (fn-cbh [_]
       (let [aca (arity-code-array fspec)
@@ -479,7 +479,7 @@
       xb)
 
     (fn-class-hierarchy-info [_]
-      (jdk.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
+      (jdk.internal.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
        this-class false (.owner super-mhd)))
     (fn-cbh [_]
       (let [aca (arity-code-array fspec)

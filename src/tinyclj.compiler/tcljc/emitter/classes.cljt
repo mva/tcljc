@@ -16,7 +16,7 @@
   (:import
    (tcljc.expr Arity Expr Binding BindingRef)
    (clojure.lang Symbol)
-   (jdk.classfile Classfile ClassBuilder CodeBuilder)
+   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder)
    (java.lang.constant MethodTypeDesc DirectMethodHandleDesc ClassDesc)))
 
 (defn member-mtd ^MethodTypeDesc [^ClassDesc rtype member-lds]

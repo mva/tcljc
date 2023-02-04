@@ -7,7 +7,7 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.emitter.beachhead
   (:require [tcljc.classfile :as cf])
-  (:import (jdk.classfile Classfile)
+  (:import (jdk.internal.classfile Classfile)
            (java.lang.constant ClassDesc MethodTypeDesc)
            (java.lang.invoke MethodHandles$Lookup MethodType)))
 

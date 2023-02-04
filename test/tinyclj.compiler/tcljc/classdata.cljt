@@ -11,14 +11,14 @@
    [tinyclj.string :as str])
   (:import
    (clojure.lang Symbol IPersistentVector)
-   (jdk.classfile Classfile ClassModel MethodModel FieldModel
+   (jdk.internal.classfile Classfile ClassModel MethodModel FieldModel
                   CodeElement Attribute Instruction PseudoInstruction Label
                   AccessFlags)
-   (jdk.classfile.constantpool ClassEntry)
-   (jdk.classfile.instruction LocalVariable BranchInstruction SwitchCase
+   (jdk.internal.classfile.constantpool ClassEntry)
+   (jdk.internal.classfile.instruction LocalVariable BranchInstruction SwitchCase
                               TableSwitchInstruction LookupSwitchInstruction
                               ExceptionCatch LabelTarget)
-   (jdk.classfile.attribute CodeAttribute RuntimeVisibleAnnotationsAttribute)
+   (jdk.internal.classfile.attribute CodeAttribute RuntimeVisibleAnnotationsAttribute)
    (java.lang.constant ConstantDesc ConstantDescs ClassDesc)
    (java.lang.reflect AccessFlag)
    (java.util HashMap LinkedList)))
@@ -90,7 +90,7 @@
       (.descriptorString (.constantType const))
       (mapv const-desc (.bootstrapArgsList const))]
              
-     jdk.classfile.constantpool.LoadableConstantEntry
+     jdk.internal.classfile.constantpool.LoadableConstantEntry
      (recur (.constantValue const) owner-cld))))
 
 (defn- type-name [tp]                   ;returns symbol or string
@@ -133,87 +133,87 @@
     (switch-on-type
      insn
      
-     jdk.classfile.instruction.OperatorInstruction
+     jdk.internal.classfile.instruction.OperatorInstruction
      (simple-insn insn)
 
-     jdk.classfile.instruction.ConvertInstruction
+     jdk.internal.classfile.instruction.ConvertInstruction
      (simple-insn insn)
 
-     jdk.classfile.instruction.TypeCheckInstruction
+     jdk.internal.classfile.instruction.TypeCheckInstruction
      (list (opcode insn) (type-name (.type insn)))
      
-     jdk.classfile.instruction.ConstantInstruction
+     jdk.internal.classfile.instruction.ConstantInstruction
      (simple-insn insn (constant-desc (.constantValue insn) owner-cld))
      
-     jdk.classfile.instruction.StackInstruction
+     jdk.internal.classfile.instruction.StackInstruction
      (simple-insn insn)
 
-     jdk.classfile.instruction.NewObjectInstruction
+     jdk.internal.classfile.instruction.NewObjectInstruction
      (simple-insn insn (type-name (.className insn)))
-     jdk.classfile.instruction.NewReferenceArrayInstruction
+     jdk.internal.classfile.instruction.NewReferenceArrayInstruction
      (simple-insn insn (type-name (-> insn .componentType .asSymbol .arrayType)))
-     jdk.classfile.instruction.NewPrimitiveArrayInstruction
+     jdk.internal.classfile.instruction.NewPrimitiveArrayInstruction
      (simple-insn insn (type-name (-> insn .typeKind .descriptor ClassDesc/ofDescriptor .arrayType)))
-     jdk.classfile.instruction.NewMultiArrayInstruction
+     jdk.internal.classfile.instruction.NewMultiArrayInstruction
      (list (opcode insn) (type-name (.arrayType insn)) (.dimensions insn))
      
-     jdk.classfile.instruction.LoadInstruction
+     jdk.internal.classfile.instruction.LoadInstruction
      (simple-insn insn (object (.slot insn)))
-     jdk.classfile.instruction.StoreInstruction
+     jdk.internal.classfile.instruction.StoreInstruction
      (simple-insn insn (object (.slot insn)))
-     jdk.classfile.instruction.IncrementInstruction
+     jdk.internal.classfile.instruction.IncrementInstruction
      (list (opcode insn) (.slot insn) (.constant insn))
-     jdk.classfile.instruction.ArrayLoadInstruction
+     jdk.internal.classfile.instruction.ArrayLoadInstruction
      (simple-insn insn)
-     jdk.classfile.instruction.ArrayStoreInstruction
+     jdk.internal.classfile.instruction.ArrayStoreInstruction
      (simple-insn insn)
      
-     jdk.classfile.instruction.FieldInstruction
+     jdk.internal.classfile.instruction.FieldInstruction
      (list (opcode insn) (owner-name (.owner insn))
            (.stringValue (.name insn)) (.stringValue (.type insn)))
-     jdk.classfile.instruction.InvokeInstruction
+     jdk.internal.classfile.instruction.InvokeInstruction
      (list* (opcode insn) (owner-name (.owner insn))
             (.stringValue (.name insn)) (.stringValue (.type insn))
             (when (.isInterface insn) [:itf]))
-     jdk.classfile.instruction.InvokeDynamicInstruction
+     jdk.internal.classfile.instruction.InvokeDynamicInstruction
      (list (opcode insn)
            (.stringValue (.name insn)) (.stringValue (.type insn))
            (constant-desc (.bootstrapMethod insn) owner-cld)
            (mapv #(constant-desc % owner-cld) (.bootstrapArgs insn)))
      
-     jdk.classfile.instruction.ReturnInstruction
+     jdk.internal.classfile.instruction.ReturnInstruction
      (simple-insn insn)
-     jdk.classfile.instruction.ThrowInstruction
+     jdk.internal.classfile.instruction.ThrowInstruction
      (simple-insn insn)
      
-     jdk.classfile.instruction.LabelTarget
+     jdk.internal.classfile.instruction.LabelTarget
      (when-some [nm (label-name (.label insn))] [nm])
-     jdk.classfile.instruction.BranchInstruction
+     jdk.internal.classfile.instruction.BranchInstruction
      (simple-insn insn (label-name (.target insn)))
-     jdk.classfile.instruction.TableSwitchInstruction
+     jdk.internal.classfile.instruction.TableSwitchInstruction
      (let [lv (mapv label-name (.cases insn))] ;assign names before default
        (list (opcode insn) (.lowValue insn) (.highValue insn)
              (label-name (.defaultTarget insn)) lv))
-     jdk.classfile.instruction.LookupSwitchInstruction
+     jdk.internal.classfile.instruction.LookupSwitchInstruction
      (let [lv (mapv label-name (.cases insn))] ;assign names before default
        (list (opcode insn) (label-name (.defaultTarget insn))
              (mapv #(.caseValue ^SwitchCase %) (.cases insn)) lv))
      
-     jdk.classfile.instruction.LocalVariable
+     jdk.internal.classfile.instruction.LocalVariable
      [(str "LOCAL " (.slot insn) ": "
            (.displayName (.typeSymbol insn)) " "
            (.stringValue (.name insn))
            ;; " [startBci=" (.labelToBci xm (.startScope insn))
            ;; ", endBci=" (.labelToBci xm (.endScope insn)) "]"
            )]
-     jdk.classfile.instruction.ExceptionCatch
+     jdk.internal.classfile.instruction.ExceptionCatch
      (list (opcode insn)
            (label-name (.tryStart insn)) (label-name (.tryEnd insn))
            (label-name (.handler insn)) (if (.isEmpty (.catchType insn))
                                           'any
                                           (type-name (.get (.catchType insn)))))
      
-     jdk.classfile.instruction.NopInstruction
+     jdk.internal.classfile.instruction.NopInstruction
      (simple-insn insn))))
 
 (defn- instructions-into [acc ^CodeAttribute xm ^ClassDesc owner-cld
@@ -315,16 +315,16 @@
             (keep #(instruction-data % owner-cld label-names))
             (rearrange elements)))))
 
-(letfn [(annotation-value [^jdk.classfile.AnnotationValue av]
+(letfn [(annotation-value [^jdk.internal.classfile.AnnotationValue av]
           (switch-on-type
            av
 
-           jdk.classfile.AnnotationValue$OfString
+           jdk.internal.classfile.AnnotationValue$OfString
            (.stringValue av)))
-        (annotation-element [^jdk.classfile.AnnotationElement ae]
+        (annotation-element [^jdk.internal.classfile.AnnotationElement ae]
           (vector (constant-desc (.name ae) nil)
                   (annotation-value (.value ae))))
-        (annotation [^jdk.classfile.Annotation ann]
+        (annotation [^jdk.internal.classfile.Annotation ann]
           (list* (constant-desc (.classSymbol ann) nil)
                  (map annotation-element (.elements ann))))
         
@@ -392,11 +392,11 @@
            AccessFlags
            nil
            
-           jdk.classfile.attribute.ConstantValueAttribute
+           jdk.internal.classfile.attribute.ConstantValueAttribute
            (list (symbol nil (.attributeName elem))
                  (constant-desc (.constant elem) nil))
 
-           jdk.classfile.attribute.SignatureAttribute
+           jdk.internal.classfile.attribute.SignatureAttribute
            (list (symbol nil (.attributeName elem))
                  (.stringValue (.signature elem)))
 

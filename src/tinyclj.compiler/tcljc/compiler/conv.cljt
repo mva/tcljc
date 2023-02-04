@@ -17,7 +17,7 @@
   (:import
    (tcljc.expr Expr Progn IAdaptResult)
    (clojure.lang IPersistentVector)
-   (jdk.classfile Opcode)
+   (jdk.internal.classfile Opcode)
    (java.lang.reflect Executable)))
 
 (def ^:private show-class-loader false)
