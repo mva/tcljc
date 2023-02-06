@@ -70,7 +70,7 @@
                        sourcev               ;sourcev
                        (list (str var-name)) ;targets
                        false                 ;deterministic?
-                       5000                  ;wait-cyclic-ms
+                       15000                 ;wait-cyclic-ms
                        true                  ;watch-mode?
                        20)                   ;wait-after-change-ms
         on-completion (^Consumer fn [opt-nmsp-map]
