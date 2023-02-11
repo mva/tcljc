@@ -160,14 +160,16 @@
 
         (signature-polymorphic* ^boolean [^Method m] ;pre: m.isVarArgs()
           ;; problem: class MethodHandle.PolymorphicSignature is not public
-          (and (jb/object? (.getReturnType m)) ;valid assumption?
-               (= (.getParameterCount m) 1)    ;always just Object[]?
-               (let [as (.getAnnotations m)]
-                 (loop [i (dec (alength as))]
-                   (cond (neg? i) false
-                         (= "java.lang.invoke.MethodHandle$PolymorphicSignature"
-                            (-> (aget as i) (.annotationType) (.getName))) true
-                         :else (recur (dec i)))))))]
+          (let [rt (.getReturnType m)]
+            (and (or (jb/object? rt) (jb/statement? rt)) ;valid assumption?
+                 (= (.getParameterCount m) 1) ;always just Object[]?
+                 (let [as (.getAnnotations m)]
+                   (loop [i (dec (alength as))]
+                     (cond
+                       (neg? i) false
+                       (= "java.lang.invoke.MethodHandle$PolymorphicSignature"
+                          (-> (aget as i) (.annotationType) (.getName))) true
+                       :else (recur (dec i))))))))]
   
   (defn signature-polymorphic? ^boolean [^Executable e] ;pre: e.isVarArgs()
     (and (instance? Method e) (signature-polymorphic* ^Method e)))
