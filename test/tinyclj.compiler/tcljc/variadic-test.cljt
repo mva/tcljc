@@ -1063,3 +1063,15 @@
                           "(Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/String;")
            (ARETURN)]
       (asm-expr (.formatted "%3.1f %3.1f" (object 1.0) (object 2.0))))))
+
+(deftest varargs-array-element-var-handle
+  (is (= '[(GETSTATIC ValueLayout "JAVA_FLOAT"
+                      "Ljava/lang/foreign/ValueLayout$OfFloat;")
+           (ICONST_0)
+           (NEWARRAY "int[]")
+           (INVOKEINTERFACE ValueLayout$OfFloat "arrayElementVarHandle"
+                            "([I)Ljava/lang/invoke/VarHandle;" :itf)
+           (ARETURN)]
+         (asm-expr (.arrayElementVarHandle
+                    java.lang.foreign.ValueLayout/JAVA_FLOAT
+                    (new ints 0))))))

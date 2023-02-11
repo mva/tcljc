@@ -53,8 +53,14 @@
     (catch NoSuchFieldException _
       nil)))
 
+(defn- invocation-parameter-count ^int [^Executable e]
+  (cond-> (.getParameterCount e)
+    (and (instance? Method e)           ;exclude Constructor
+         (not (Modifier/isStatic (.getModifiers e))))
+    (inc)))                      ;receiver is passed as extra argument
+
 (letfn [(parameter-count-match? ^boolean [^int arg-count ^Executable e]
-          (let [n (.getParameterCount e)]
+          (let [n (invocation-parameter-count e)]
             (or (= n arg-count)
                 (and (.isVarArgs e) (>= arg-count (dec n))))))]
 
@@ -192,7 +198,7 @@
         (invoke-via-method-handle? ^boolean [^Executable e
                                              ^IPersistentVector argv]
           (and (.isVarArgs e)
-               (or (not= (.getParameterCount e) (count argv))
+               (or (not= (invocation-parameter-count e) (count argv))
                    (let [ptypes (.getParameterTypes e)
                          ptype (aget ptypes (dec (alength ptypes)))
                          atype (x/type (peek argv))]
@@ -257,8 +263,10 @@
                                        (method-descriptor m))]
           (x/invoke-xref (.getReturnType m) argv nil mhd false)))))
   (defn virtual-methods [^Class owner ^String nm ^"[Ljava.lang.Class;" atypes]
+    ;; `atypes` does not include receiver, but the receiver is counted
+    ;; as an implicit invocation argument
     (or (methods-exact false owner nm atypes)
-        (->> (methods-with false owner nm (alength atypes))
+        (->> (methods-with false owner nm (inc (alength atypes)))
              (filter #(compatible-args? atypes %))
              (filter-dominators)))))
 
