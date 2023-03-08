@@ -397,7 +397,7 @@
           (cde-quote ^ConstantDynamicEntry [^String fnm ^ClassDesc tp bs-args]
             (let [bsm (.bsmEntry cpb (.methodHandleEntry cpb bsm-quote)
                                  ^java.util.List bs-args)
-                  nat (.natEntry cpb fnm tp)]
+                  nat (.nameAndTypeEntry cpb fnm tp)]
               (.constantDynamicEntry cpb bsm nat)))
           
           (cde-named ^ConstantDynamicEntry [^String fnm ^ClassDesc tp ^Named c]
@@ -434,7 +434,7 @@
       ;; (instance? IMeta c) is implied by (some? m)
       (let [bs-args ^List [(entry-imeta c) (loadable-entry cpb m)]
             bsm (.bsmEntry cpb (.methodHandleEntry cpb bsm-quote) bs-args)
-            nat (.natEntry cpb "with-meta" (type-desc-meta c))]
+            nat (.nameAndTypeEntry cpb "with-meta" (type-desc-meta c))]
         (.constantDynamicEntry cpb bsm nat))
       (entry-nometa c))))
 

@@ -206,7 +206,7 @@
         owner (.classEntry cp (.owner mhd))
         nm (.utf8Entry cp (.methodName mhd))
         tp (.utf8Entry cp (.lookupDescriptor mhd))
-        nat (.natEntry cp nm tp)
+        nat (.nameAndTypeEntry cp nm tp)
         opc (case (.refKind mhd)
               #_REF_getField 1 Opcode/GETFIELD
               #_REF_getStatic 2 Opcode/GETSTATIC
