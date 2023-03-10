@@ -122,16 +122,23 @@ public ISeq next() {
     }
 }
 
+private static final int CHUNK_SIZE = 32;
+
 public IChunk chunkedFirst() {
-    return new IntChunk(start, step, count);
+    return new IntChunk(start, step, Math.min(count, CHUNK_SIZE));
 }
 
 public ISeq chunkedNext() {
-    return null;
+    return chunkedMore().seq();
 }
 
 public ISeq chunkedMore() {
-    return PersistentList.EMPTY;
+    if(count <= CHUNK_SIZE) {
+        return PersistentList.EMPTY;
+    } else {
+        return IntRange.create(start + (step * CHUNK_SIZE), end, step);
+    }
+
 }
 
 public Sequential drop(int n) {

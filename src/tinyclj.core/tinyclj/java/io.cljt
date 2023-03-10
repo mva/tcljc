@@ -387,7 +387,7 @@
 (defmethod do-copy [byte-array-type Writer] [^"[B" input ^Writer output opts]
   (do-copy (ByteArrayInputStream. input) output opts))
 
-(defmethod do-copy [byte-array-type File] [^"[B" input ^Writer output opts]
+(defmethod do-copy [byte-array-type File] [^"[B" input ^File output opts]
   (do-copy (ByteArrayInputStream. input) output opts))
 
 (defn copy
