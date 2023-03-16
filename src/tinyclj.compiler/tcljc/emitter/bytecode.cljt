@@ -25,11 +25,12 @@
                FnForm ArityCode Arity FnPatch IEmitPlan IProvidedValue)
    (clojure.lang Symbol IPersistentVector IMeta)
    (jdk.internal.classfile Classfile ClassfileBuilder ClassBuilder CodeBuilder
-                  FieldBuilder Opcode Label
-                  Annotation AnnotationElement AnnotationValue Signature)
+                           FieldBuilder Opcode Label TypeKind
+                           Annotation AnnotationElement AnnotationValue
+                           Signature)
    (jdk.internal.classfile.instruction SwitchCase)
    (jdk.internal.classfile.attribute ConstantValueAttribute SignatureAttribute
-                            RuntimeVisibleAnnotationsAttribute)
+                                     RuntimeVisibleAnnotationsAttribute)
    (jdk.internal.classfile.constantpool LoadableConstantEntry)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc$Kind
                        DirectMethodHandleDesc Constable)
@@ -142,7 +143,7 @@
             (^CodeBuilder [^CodeBuilder xb ^Binding b ^Expr v
                            ^TypeDescriptor$OfField tp]
              (let [bref (.bref b)
-                   slot (.allocateLocal xb (cf/type-kind tp))
+                   slot (.allocateLocal xb (TypeKind/from tp))
                    ld-st (cf/ld-st-local tp (x/mnm bref) slot)]
                (.deliver-load bref ld-st)
                (-> xb (expr-insns es v) (cf/st-insn ld-st true)))))
@@ -452,7 +453,7 @@
               (if (= ln 1)
                 (let [ctp (.componentType tp)]
                   (if (.isPrimitive ctp)
-                    (.newarray xb (cf/type-kind ctp))
+                    (.newarray xb (TypeKind/from ctp))
                     (.anewarray xb (rt/cd-of ctp))))
                 (.multianewarray xb (rt/cd-of tp) ln))))]
 

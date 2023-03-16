@@ -16,7 +16,7 @@
   (:import
    (tcljc.expr Arity Expr Binding BindingRef)
    (clojure.lang Symbol)
-   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder)
+   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.lang.constant MethodTypeDesc DirectMethodHandleDesc ClassDesc)))
 
 (defn member-mtd ^MethodTypeDesc [^ClassDesc rtype member-lds]
@@ -34,11 +34,11 @@
           (when virtual?
             (.aload xb (.receiverSlot xb)))
           (dotimes [i (.parameterCount mtd)]
-            (.loadInstruction xb (cf/type-kind (.parameterType mtd i))
+            (.loadInstruction xb (TypeKind/from (.parameterType mtd i))
                               (.parameterSlot xb i)))
           (-> (cf/invoke xb rt/mhd-array-to-iseq)
               (cf/invoke mhd-to)
-              (.returnInstruction (cf/type-kind (.returnType mtd)))))]
+              (.returnInstruction (TypeKind/from (.returnType mtd)))))]
   
   (defn bridge-method ^ClassBuilder [^ClassBuilder cb
                                      ^DirectMethodHandleDesc mhd-from

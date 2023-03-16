@@ -64,11 +64,6 @@
   (^Opcode [^Opcode base-opcode ^int delta]
    (aget bytecode2opcode (+ (.bytecode base-opcode) delta))))
 
-(defn type-kind ^TypeKind [^TypeDescriptor$OfField tp]
-  (if (.isPrimitive tp)
-    (TypeKind/fromDescriptor (.descriptorString tp))
-    TypeKind/ReferenceType))    ;no need to compute descriptorString()
-
 (defn between ^boolean [^int start-incl ^Opcode opc ^int end-excl]
   (let [bytecode (.bytecode opc)]
     (and (<= start-incl bytecode) (< bytecode end-excl))))
@@ -288,11 +283,11 @@
                         ^int param-no]
   ILdStInstr
   (emit-load [_ xb]
-    (.loadInstruction xb (type-kind tp) (.parameterSlot xb param-no)))
+    (.loadInstruction xb (TypeKind/from tp) (.parameterSlot xb param-no)))
   (emit-store [_ xb binding?]
     (let [slot (.parameterSlot xb param-no)]
       (when-not binding?
-        (.storeInstruction xb (type-kind tp) slot))
+        (.storeInstruction xb (TypeKind/from tp) slot))
       (when (and cfg/enable-local-variables binding?)
         (.localVariable xb slot mnm (rt/cd-of tp)
                         (.startLabel xb) (.endLabel xb)))))
@@ -305,9 +300,9 @@
 (deftype LdStLocal [^TypeDescriptor$OfField tp ^String mnm ^int slot]
   ILdStInstr
   (emit-load [_ xb]
-    (.loadInstruction xb (type-kind tp) slot))
+    (.loadInstruction xb (TypeKind/from tp) slot))
   (emit-store [_ xb binding?]
-    (.storeInstruction xb (type-kind tp) slot)
+    (.storeInstruction xb (TypeKind/from tp) slot)
     (when (and cfg/enable-local-variables binding?)
       (let [label (.newLabel xb)]
         (-> (.labelBinding xb label)
