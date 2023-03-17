@@ -228,11 +228,15 @@
                    "classpath")))))
   cl)
 
+(defn internal-name ^String [^ClassDesc cd]
+  (assert (not (.isArray cd)))
+  (assert (not (.isPrimitive cd)))
+  (let [desc (.descriptorString cd)]
+    (.substring desc 1 (dec (.length desc))))) ;drop "L" and ";", but keep "/"
+
 (defn write-and-define-class ^Class [^Path dest-dir ^MethodHandles$Lookup l
                                      ^ClassDesc this-class ^bytes bs]
-  (let [desc (.descriptorString this-class)
-        ;; drop "L" and ";", but keep "/"
-        owner-nm (.substring desc 1 (dec (.length desc)))]
+  (let [owner-nm (internal-name this-class)]
     #_(prn :write-and-define-class owner-nm)
     (when (some? dest-dir)          ;expects output directory to exist
       (let [f (.resolve dest-dir (path-of (str owner-nm class-suffix)))]

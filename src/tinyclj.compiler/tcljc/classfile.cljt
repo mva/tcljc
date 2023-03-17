@@ -168,17 +168,12 @@
   (register! [_ ch-info]
     (.put class-map (.thisClass ch-info) ch-info)))
 
-(letfn [(internal-name ^String [^ClassDesc cd]
-          (assert (not (.isArray cd)))
-          (assert (not (.isPrimitive cd)))
-          (let [desc (.descriptorString cd)]
-            (.substring desc 1 (dec (.length desc)))))]
-  (defn mk-chr ^CHR [^ClassLoader dyn-ld]
-    (CHR. (ClassHierarchyResolver/ofCached
-           (^Function fn [class-desc]
-            (.getResourceAsStream dyn-ld (str (internal-name class-desc)
-                                              cfg/class-suffix))))
-          (ConcurrentHashMap.))))
+(defn mk-chr ^CHR [^ClassLoader dyn-ld]
+  (CHR. (ClassHierarchyResolver/ofCached
+         (^Function fn [class-desc]
+          (.getResourceAsStream dyn-ld (str (cfg/internal-name class-desc)
+                                            cfg/class-suffix))))
+        (ConcurrentHashMap.)))
 
 (defn build
   (^bytes [^ClassDesc this-class ^Consumer cbh] ;for ephemeral classes
