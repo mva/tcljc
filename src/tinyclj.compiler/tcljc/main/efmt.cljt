@@ -7,7 +7,6 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.main.efmt
   (:require
-   [tcljc.classfile :as cf]
    [tcljc.config :as cfg]
    [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
@@ -16,7 +15,7 @@
   (:import
    (tcljc.expr FnForm Arity)
    (clojure.lang ExceptionInfo)
-   (java.lang.constant ClassDesc)
+   (java.lang.constant ClassDesc ConstantDescs)
    (java.lang.reflect Method Constructor Executable Field Member Modifier)
    (java.util.regex Pattern)))
 
@@ -244,7 +243,7 @@
 
     (when-some [owner ^Class (:invoke/owner data)]
       (let [nm ^String (:invoke/name data)
-            ms (concat (when (= nm cf/object-initializer-name)
+            ms (concat (when (= nm ConstantDescs/INIT_NAME)
                          (.getConstructors owner))
                        (->> (concat (.getMethods owner) (.getFields owner))
                             (filter #(= nm (.getName ^Member %)))))]

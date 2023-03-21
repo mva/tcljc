@@ -36,7 +36,8 @@
    (clojure.lang Symbol Var ISeq IPersistentVector IPersistentMap IMeta
                  ExceptionInfo)
    (jdk.internal.classfile Classfile Opcode)
-   (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc)
+   (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
+                       ConstantDescs)
    (java.lang.invoke MethodHandle MethodHandles$Lookup)
    (java.lang.reflect Constructor Method Field Executable)
    (java.util.concurrent Future BlockingQueue CompletableFuture)
@@ -1146,7 +1147,7 @@
                                    (wrong/got-int (count args))))))
              :else
              (let [owner tp
-                   nm cf/object-initializer-name
+                   nm ConstantDescs/INIT_NAME
                    member-label "constructor"
                    atypes (argument-types args)
                    c (-> (resolve/constructors owner atypes)

@@ -7,14 +7,13 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.compiler.resolve
   (:require
-   [tcljc.classfile :as cf]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
    [tcljc.expr :as x])
   (:import
    (tcljc.expr Expr InvokeXref)
    (clojure.lang IPersistentVector)
-   (java.lang.constant MethodTypeDesc MethodHandleDesc)
+   (java.lang.constant MethodTypeDesc MethodHandleDesc ConstantDescs)
    (java.lang.reflect Executable Field Method Constructor Modifier)
    (java.util Arrays)))
 
@@ -212,9 +211,9 @@
           desc (.descriptorString  (MethodTypeDesc/of rt/void param-descs))]
       (if (invoke-via-method-handle? c argv)
         (x/mh-invoke-xref owner argv nil rt/mhk-constructor
-                          owner-cd cf/object-initializer-name desc)
+                          owner-cd ConstantDescs/INIT_NAME desc)
         (let [mhd (MethodHandleDesc/of rt/mhk-constructor owner-cd
-                                       cf/object-initializer-name desc)]
+                                       ConstantDescs/INIT_NAME desc)]
           (x/invoke-xref owner argv nil mhd false)))))
   (defn constructors [^Class owner ^"[Ljava.lang.Class;" atypes]
     (or (constructors-exact owner atypes)

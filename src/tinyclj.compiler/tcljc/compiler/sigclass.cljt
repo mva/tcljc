@@ -24,7 +24,7 @@
    (clojure.lang Symbol IPersistentMap IPersistentVector)
    (jdk.internal.classfile Classfile ClassBuilder CodeBuilder)
    (java.lang.constant ClassDesc MethodTypeDesc DirectMethodHandleDesc
-                       ConstantDesc)
+                       ConstantDesc ConstantDescs)
    (java.lang.reflect Method)
    (java.util.function Consumer)))
 
@@ -254,7 +254,7 @@
           (-> (.invokestatic xb rt/ClojureRT "seqOrElse" rt/mtd-object-object)
               (.iconst_0)
               (.iconst_0)
-              (.invokespecial this-class cf/object-initializer-name
+              (.invokespecial this-class ConstantDescs/INIT_NAME
                               (cf/parameter-mtd rt/void [] primary-param-lds))
               (.areturn)))]
   

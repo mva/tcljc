@@ -17,13 +17,11 @@
    (jdk.internal.classfile.attribute SourceFileAttribute)
    (jdk.internal.classfile.instruction SwitchCase)
    (java.lang.constant ConstantDesc ClassDesc MethodTypeDesc MethodHandleDesc
-                       DirectMethodHandleDesc DirectMethodHandleDesc$Kind)
+                       DirectMethodHandleDesc DirectMethodHandleDesc$Kind
+                       ConstantDescs)
    (java.lang.invoke MethodHandle TypeDescriptor$OfField MethodHandles$Lookup)
    (java.util.concurrent ConcurrentHashMap)
    (java.util.function Consumer Function)))
-
-(def object-initializer-name "<init>")
-(def class-initializer-name "<clinit>")
 
 (def ^:private dot \.)
 (defn valid-java-class-name? ^boolean [^String s]
@@ -384,7 +382,7 @@
                         (drop super-argn param-lds) field-sts)
                    (doall))
               (.return_ xb))]
-    (.withMethodBody cb object-initializer-name
+    (.withMethodBody cb ConstantDescs/INIT_NAME
                      (parameter-mtd rt/void [] param-lds) flags xbh)))
 
 (defn delegating-constructor ^void [^ClassBuilder cb ^int flags
@@ -398,10 +396,10 @@
                 (ld-insn xb param-ld))
               (doseq [const dflt-consts]
                 (.constantInstruction xb const))
-              (.invokespecial xb this-class object-initializer-name
+              (.invokespecial xb this-class ConstantDescs/INIT_NAME
                               (parameter-mtd rt/void [] primary-param-lds))
               (.return_ xb))]
-    (.withMethodBody cb object-initializer-name
+    (.withMethodBody cb ConstantDescs/INIT_NAME
                      (parameter-mtd rt/void [] param-lds)
                      flags xbh)))
 

@@ -37,7 +37,7 @@
    (jdk.incubator.concurrent StructuredTaskScope)
    (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.nio.file Path)
-   (java.lang.constant ClassDesc MethodTypeDesc)
+   (java.lang.constant ClassDesc MethodTypeDesc ConstantDescs)
    (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
    (java.time Instant)
    (java.util Map HashMap HashSet ArrayDeque)
@@ -199,7 +199,7 @@
            (.withFlags Classfile/ACC_PUBLIC)
            (cf/with-source-file (.source-file segm))
            (cond-> force-clinit? (with-force-clinit))
-           (.withMethodBody cf/class-initializer-name rt/mtd-void-void
+           (.withMethodBody ConstantDescs/CLASS_INIT_NAME rt/mtd-void-void
                             (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
                             (cf/with-xbh [xb]
                               (bytecode/emit-body xb (clinit))))))

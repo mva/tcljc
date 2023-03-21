@@ -22,7 +22,7 @@
    (clojure.lang IPersistentVector ISeq)
    (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.lang.constant ClassDesc MethodTypeDesc MethodHandleDesc
-                       ConstantDesc DynamicConstantDesc
+                       ConstantDesc ConstantDescs DynamicConstantDesc
                        DirectMethodHandleDesc DynamicCallSiteDesc)
    (java.lang.invoke TypeDescriptor$OfField)))
 
@@ -264,7 +264,7 @@
                   (.dup))
               (doseq [^tcljc.classfile.LdStParameter param-ld param-lds]
                 (cf/ld-insn xb param-ld))
-              (-> (.invokespecial xb this-class cf/object-initializer-name
+              (-> (.invokespecial xb this-class ConstantDescs/INIT_NAME
                                   constr-mtd)
                   (.areturn)))]
     (.withMethodBody cb rt/name-factory-method factory-mtd flags xbh)))
@@ -282,7 +282,7 @@
                   (.aconst_null))
               (doseq [^tcljc.classfile.LdStParameter param-ld param-lds]
                 (cf/ld-insn xb param-ld))
-              (-> (.invokespecial xb this-class cf/object-initializer-name
+              (-> (.invokespecial xb this-class ConstantDescs/INIT_NAME
                                   constr-mtd)
                   (.areturn)))]
     (.withMethodBody cb rt/name-factory-method factory-mtd flags xbh)))
@@ -315,7 +315,7 @@
                   (.aload 1))
               (doseq [^LdStMember member-ld member-lds]
                 (cf/ld-insn xb member-ld))
-              (-> (.invokespecial xb this-class cf/object-initializer-name
+              (-> (.invokespecial xb this-class ConstantDescs/INIT_NAME
                                   constr-mtd)
                   (.areturn)))]
     (.withMethodBody cb rt/name-with-meta-impl 
