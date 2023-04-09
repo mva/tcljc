@@ -41,6 +41,12 @@
   (-> (tinyclj.string/replace s "+" (URLEncoder/encode "+" "UTF-8"))
       (URLDecoder/decode "UTF-8")))
 
+(defn- to-url ^URL [^String s]
+  (.toURL (let [uri (URI/create s)]
+            (if (.isAbsolute uri)
+              uri
+              (.toURI (File. s))))))
+
 (extend-protocol Coercions
   nil
   (as-file [_] nil)
@@ -48,7 +54,7 @@
   
   String
   (as-file [s] (File. s))
-  (as-url [s] (.toURL (URI/create s)))
+  (as-url [s] (to-url s))
   
   File
   (as-file [f] f)
@@ -254,15 +260,9 @@
   IOFactory
   (assoc default-streams-impl
     :make-input-stream (fn [^String x opts]
-                         (try
-                          (make-input-stream (.toURL (URI/create x)) opts)
-                          (catch MalformedURLException e
-                            (make-input-stream (File. x) opts))))
+                         (make-input-stream (to-url x) opts))
     :make-output-stream (fn [^String x opts]
-                          (try
-                           (make-output-stream (.toURL (URI/create x)) opts)
-                           (catch MalformedURLException err
-                             (make-output-stream (File. x) opts))))))
+                          (make-output-stream (to-url x) opts))))
 
 (extend Socket
   IOFactory
