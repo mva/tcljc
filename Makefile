@@ -12,7 +12,7 @@ JAVA_OPTS=--enable-preview --add-modules jdk.incubator.concurrent \
   --add-exports java.base/jdk.internal.classfile.instruction=ALL-UNNAMED \
   --add-exports java.base/jdk.internal.classfile.attribute=ALL-UNNAMED
 #JAVA_OPTS += -XX:+UseZGC -Xlog:gc
-#JAVA_OPTS += -Djdk.tracePinnedThreads
+#JAVA_OPTS += -Djdk.tracePinnedThreads=full
 
 #DET=--deterministic
 BOOTSTRAP_TCLJ_MAIN=$(if $(findstring /bootstrap-tcljc,$(BOOTSTRAP_TCLJ_MDIR)),tcljc.main.___,tinyclj.build.main.___)
