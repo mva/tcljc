@@ -11,7 +11,9 @@ JAVA_OPTS=--enable-preview --add-modules jdk.incubator.concurrent \
   --add-exports java.base/jdk.internal.classfile.constantpool=ALL-UNNAMED \
   --add-exports java.base/jdk.internal.classfile.instruction=ALL-UNNAMED \
   --add-exports java.base/jdk.internal.classfile.attribute=ALL-UNNAMED
-#JAVA_OPTS += -XX:+UseZGC -Xlog:gc
+#JAVA_OPTS += -XX:+UseG1GC -Xlog:gc*
+#JAVA_OPTS += -XX:+UseZGC -XX:+ZGenerational -Xlog:gc*
+#JAVA_OPTS += -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xlog:gc*
 #JAVA_OPTS += -Djdk.tracePinnedThreads=full
 
 #DET=--deterministic
