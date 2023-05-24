@@ -292,7 +292,7 @@
                    [jb/jvm-int-zero jb/jvm-int-zero])
                   (let [factory-fieldv (subvec fieldv 0 (- (count fieldv) 4))]
                     (.withMethodBody cb "create"
-                                     (MethodTypeDesc/of this-class rt/map)
+                                     (rt/mtd-of* this-class rt/map)
                                      (bit-or Classfile/ACC_PUBLIC
                                              Classfile/ACC_STATIC)
                                      (cf/with-xbh [xb]

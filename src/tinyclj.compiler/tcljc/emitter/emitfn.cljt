@@ -91,9 +91,7 @@
   (map #(.ld-st-instr ^EnvEntry %) ees))
 
 (defn- ee-mtd ^MethodTypeDesc [^TypeDescriptor$OfField clx ^ISeq ees]
-  (->> (map ee-exact-type ees)
-       (rt/cd-array-of)
-       (MethodTypeDesc/of (rt/cd-of clx))))
+  (rt/mtd-of clx (map ee-exact-type ees)))
 
 ;;; ------------------------------------------------------------------------
 
@@ -319,7 +317,7 @@
                                   constr-mtd)
                   (.areturn)))]
     (.withMethodBody cb rt/name-with-meta-impl 
-                     (MethodTypeDesc/of this-class rt/map) flags xbh)))
+                     (rt/mtd-of* this-class rt/map) flags xbh)))
 
 ;;; ------------------------------------------------------------------------
 
@@ -423,8 +421,7 @@
       (let [ees (final-entries fspec)
             ac (aget (arity-code-array fspec) 0)
             m (-> ac .at .method)
-            m-mtd (MethodTypeDesc/of (rt/cd-of (.getReturnType m))
-                                     (rt/cd-array-of (.getParameterTypes m)))
+            m-mtd (rt/mtd-of (.getReturnType m) (.getParameterTypes m))
             d-mtd (-> ac .at (x/at-mtd))
             bs-args (doto (new "[Ljava.lang.constant.ConstantDesc;" 3)
                       (aset 0 m-mtd)

@@ -20,11 +20,9 @@
    (java.lang.constant MethodTypeDesc DirectMethodHandleDesc ClassDesc)))
 
 (defn member-mtd ^MethodTypeDesc [^ClassDesc rtype member-lds]
-  (->> (map #(-> ^tcljc.classfile.LdStMember %
-                 .ld-mhd .invocationType .returnType)
-            member-lds)
-       (rt/cd-array-of)
-       (MethodTypeDesc/of rtype)))
+  (rt/mtd-of rtype (map #(-> ^tcljc.classfile.LdStMember %
+                             .ld-mhd .invocationType .returnType)
+                        member-lds)))
 
 ;;; ------------------------------------------------------------------------
 

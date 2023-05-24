@@ -212,7 +212,7 @@
                 (when (some? (x/root-fn-form bref))
                   bref))))]
     (when-some [bref (main-function)]
-      (let [main-mtd (MethodTypeDesc/of rt/void (.arrayType rt/String))
+      (let [main-mtd (rt/mtd-of* rt/void (.arrayType rt/String))
             flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
                           Classfile/ACC_FINAL)
             xbh (cf/with-xbh [xb]

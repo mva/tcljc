@@ -30,7 +30,20 @@
             (instance? InvokePoly x) (poly ^InvokePoly x)
             :else (throw (IllegalArgumentException. (str (class x))))))]
   (defn inv [xs]
-    (mapv inv1 xs)))
+    (mapv inv1 xs))
+
+  (defn inv-constr [^Class owner & ^"[Ljava.lang.Class;" atypes]
+    (->> (constructors owner atypes)
+         (map #(invoke-constr owner % []))
+         (inv)))
+  (defn inv-static [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
+    (->> (static-methods owner nm atypes)
+         (map #(invoke-static owner % []))
+         (inv)))
+  (defn inv-virtual [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
+    (->> (virtual-methods owner nm atypes)
+         (map #(invoke-virtual owner % []))
+         (inv))))
 
 (defn acl [& ^"[Ljava.lang.Class;" atypes]
   atypes)
@@ -38,15 +51,10 @@
 
 
 (deftest constructor-invoke-test
-  (letfn [(inv-constr [^Class owner & ^"[Ljava.lang.Class;" atypes]
-            (->> (constructors owner atypes)
-                 (map #(invoke-constr owner % []))
-                 (inv)))]
-    
-    (is (= '[(INVOKE-XREF CONSTRUCTOR "HashMap" "<init>"
-                          "()V"
-                          :owner-is-class)]
-           (inv-constr java.util.HashMap)))))
+  (is (= '[(INVOKE-XREF CONSTRUCTOR "HashMap" "<init>"
+                        "()V"
+                        :owner-is-class)]
+         (inv-constr java.util.HashMap))))
 
 
 (deftest static-field-test
@@ -58,49 +66,45 @@
            (ld-static java.lang.Math "PI")))))
 
 (deftest static-invoke-test
-  (letfn [(inv-static [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
-            (->> (static-methods owner nm atypes)
-                 (map #(invoke-static owner % []))
-                 (inv)))]
-    (is (= '[(INVOKE-XREF STATIC "System" "getProperties"
-                          "()Ljava/util/Properties;"
-                          :owner-is-class)]
-           (inv-static java.lang.System "getProperties")))
-    (is (= '[(INVOKE-XREF STATIC "System" "getProperty"
-                          "(Ljava/lang/String;)Ljava/lang/String;"
-                          :owner-is-class)]
-           (inv-static java.lang.System "getProperty" String)))
+  (is (= '[(INVOKE-XREF STATIC "System" "getProperties"
+                        "()Ljava/util/Properties;"
+                        :owner-is-class)]
+         (inv-static java.lang.System "getProperties")))
+  (is (= '[(INVOKE-XREF STATIC "System" "getProperty"
+                        "(Ljava/lang/String;)Ljava/lang/String;"
+                        :owner-is-class)]
+         (inv-static java.lang.System "getProperty" String)))
 
-    (is (= '[(INVOKE-XREF STATIC "MethodHandles" "lookup"
-                          "()Ljava/lang/invoke/MethodHandles$Lookup;"
-                          :owner-is-class)]
-           (inv-static java.lang.invoke.MethodHandles "lookup")))
-    (is (= '[(INVOKE-XREF STATIC "RT" "setCoreLookup"
-                          "(Ljava/lang/invoke/MethodHandles$Lookup;)V"
-                          :owner-is-class)]
-           (inv-static tinyclj.lang.RT "setCoreLookup"
-                       java.lang.invoke.MethodHandles$Lookup)))
+  (is (= '[(INVOKE-XREF STATIC "MethodHandles" "lookup"
+                        "()Ljava/lang/invoke/MethodHandles$Lookup;"
+                        :owner-is-class)]
+         (inv-static java.lang.invoke.MethodHandles "lookup")))
+  (is (= '[(INVOKE-XREF STATIC "RT" "setCoreLookup"
+                        "(Ljava/lang/invoke/MethodHandles$Lookup;)V"
+                        :owner-is-class)]
+         (inv-static tinyclj.lang.RT "setCoreLookup"
+                     java.lang.invoke.MethodHandles$Lookup)))
 
-    ;; Math/log takes a double and requires implicit conversion from int
-    (is (= '[(INVOKE-XREF STATIC "Math" "log" "(D)D" :owner-is-class)]
-           (inv-static java.lang.Math "log" jb/int)))
-    (is (= '[] (static-methods java.lang.Math "log" (acl jb/boolean))))
-    (is (= '[] (static-methods java.lang.Math "log" (acl jb/char))))
-    (is (= '[] (static-methods java.lang.Math "log" (acl jb/void))))
+  ;; Math/log takes a double and requires implicit conversion from int
+  (is (= '[(INVOKE-XREF STATIC "Math" "log" "(D)D" :owner-is-class)]
+         (inv-static java.lang.Math "log" jb/int)))
+  (is (= '[] (static-methods java.lang.Math "log" (acl jb/boolean))))
+  (is (= '[] (static-methods java.lang.Math "log" (acl jb/char))))
+  (is (= '[] (static-methods java.lang.Math "log" (acl jb/void))))
 
-    ;; Math/max has four paired overloads
-    (is (= '[(INVOKE-XREF STATIC "Math" "max" "(II)I" :owner-is-class)]
-           (inv-static java.lang.Math "max" jb/int jb/int)))
-    (is (= '[(INVOKE-XREF STATIC "Math" "max" "(JJ)J" :owner-is-class)]
-           (inv-static java.lang.Math "max" jb/long jb/long)))
-    (is (= '[(INVOKE-XREF STATIC "Math" "max" "(FF)F" :owner-is-class)]
-           (inv-static java.lang.Math "max" jb/float jb/float)))
-    (is (= '[(INVOKE-XREF STATIC "Math" "max" "(DD)D" :owner-is-class)]
-           (inv-static java.lang.Math "max" jb/double jb/double)))
+  ;; Math/max has four paired overloads
+  (is (= '[(INVOKE-XREF STATIC "Math" "max" "(II)I" :owner-is-class)]
+         (inv-static java.lang.Math "max" jb/int jb/int)))
+  (is (= '[(INVOKE-XREF STATIC "Math" "max" "(JJ)J" :owner-is-class)]
+         (inv-static java.lang.Math "max" jb/long jb/long)))
+  (is (= '[(INVOKE-XREF STATIC "Math" "max" "(FF)F" :owner-is-class)]
+         (inv-static java.lang.Math "max" jb/float jb/float)))
+  (is (= '[(INVOKE-XREF STATIC "Math" "max" "(DD)D" :owner-is-class)]
+         (inv-static java.lang.Math "max" jb/double jb/double)))
 
-    ;; varargs call is currently an inexact invoke via MethodHandle
-    (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
-           (inv-static String "format" String jb/int)))))
+  ;; varargs call is currently an inexact invoke via MethodHandle
+  (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
+         (inv-static String "format" String jb/int))))
 
 
 (deftest virtual-field-test
@@ -117,29 +121,43 @@
 ;;; instructions, when e.g. a static final field of a base class is
 ;;; resolved using one of its extending classes.
 (deftest virtual-invoke-test
-  (letfn [(inv-virtual [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
-            (->> (virtual-methods owner nm atypes)
-                 (map #(invoke-virtual owner % []))
-                 (inv)))]
-    (is (= '[(INVOKE-XREF VIRTUAL "String" "toUpperCase"
-                          "()Ljava/lang/String;"
-                          :owner-is-class)]
-           (inv-virtual String "toUpperCase")))
-    (is (= '[(INVOKE-XREF VIRTUAL "Class" "getName"
-                          "()Ljava/lang/String;"
-                          :owner-is-class)]
-           (inv-virtual Class "getName")))
+  (is (= '[(INVOKE-XREF VIRTUAL "String" "toUpperCase"
+                        "()Ljava/lang/String;"
+                        :owner-is-class)]
+         (inv-virtual String "toUpperCase")))
+  (is (= '[(INVOKE-XREF VIRTUAL "Class" "getName"
+                        "()Ljava/lang/String;"
+                        :owner-is-class)]
+         (inv-virtual Class "getName")))
 
-    ;; varargs call is currently an inexact invoke via MethodHandle
-    (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
-           (inv-virtual Class "getMethod" String)))
-    (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
-           (inv-virtual Class "getConstructor" Class Class Class)))
+  ;; varargs call is currently an inexact invoke via MethodHandle
+  (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
+         (inv-virtual Class "getMethod" String)))
+  (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
+         (inv-virtual Class "getConstructor" Class Class Class)))
 
-    ;; this should not match the varargs array overload, i.e. there is
-    ;; no implicit Object to ClassDesc cast for vararg elements
-    (is (= '[(INVOKE-XREF INTERFACE_VIRTUAL "ClassBuilder" "withInterfaceSymbols"
-                          "(Ljava/util/List;)Ljdk/internal/classfile/ClassBuilder;"
-                          :owner-is-itf)]
-           (inv-virtual jdk.internal.classfile.ClassBuilder "withInterfaceSymbols"
-                        Object)))))
+  ;; this should not match the varargs array overload, i.e. there is
+  ;; no implicit Object to ClassDesc cast for vararg elements
+  (is (= '[(INVOKE-XREF INTERFACE_VIRTUAL "ClassBuilder" "withInterfaceSymbols"
+                        "(Ljava/util/List;)Ljdk/internal/classfile/ClassBuilder;"
+                        :owner-is-itf)]
+         (inv-virtual jdk.internal.classfile.ClassBuilder "withInterfaceSymbols"
+                      Object))))
+
+(deftest interface-varargs-clash-test
+  ;; this should resolve to the varargs method
+  ;; static MethodTypeDesc of(ClassDesc returnDesc, ClassDesc... paramDescs)
+  (is (= '[(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)]
+         (inv-static java.lang.constant.MethodTypeDesc "of"
+                     java.lang.constant.ClassDesc
+                     java.lang.constant.ClassDesc)))
+  
+  ;; this should resolve to the List method
+  ;; static MethodTypeDesc of(ClassDesc returnDesc, List<ClassDesc> paramDescs)
+  (is (= '[(INVOKE-XREF INTERFACE_STATIC
+                        "MethodTypeDesc" "of"
+                        "(Ljava/lang/constant/ClassDesc;Ljava/util/List;)Ljava/lang/constant/MethodTypeDesc;"
+                        :owner-is-itf)]
+         (inv-static java.lang.constant.MethodTypeDesc "of"
+                     java.lang.constant.ClassDesc
+                     java.util.List))))

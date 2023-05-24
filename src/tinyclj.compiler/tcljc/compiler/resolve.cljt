@@ -13,7 +13,7 @@
   (:import
    (tcljc.expr Expr InvokeXref)
    (clojure.lang IPersistentVector)
-   (java.lang.constant MethodTypeDesc MethodHandleDesc ConstantDescs)
+   (java.lang.constant MethodHandleDesc ConstantDescs)
    (java.lang.reflect Executable Field Method Constructor Modifier)
    (java.util Arrays)))
 
@@ -191,10 +191,8 @@
       (or (seq (filter-dominators* es)) es))))
 
 (letfn [(method-descriptor ^String [^Method m]
-          (let [tp (.getReturnType m)
-                param-descs (rt/cd-array-of (.getParameterTypes m))
-                mtd (MethodTypeDesc/of (rt/describe-class tp) param-descs)]
-            (.descriptorString mtd)))
+          (-> (rt/mtd-of (.getReturnType m) (.getParameterTypes m))
+              (.descriptorString)))
 
         (invoke-via-method-handle? ^boolean [^Executable e
                                              ^IPersistentVector argv]
@@ -207,8 +205,8 @@
 
   (defn invoke-constr ^Expr [^Class owner ^Constructor c ^IPersistentVector argv]
     (let [owner-cd (rt/describe-class owner)
-          param-descs (rt/cd-array-of (.getParameterTypes c))
-          desc (.descriptorString  (MethodTypeDesc/of rt/void param-descs))]
+          desc (-> (rt/mtd-of rt/void (.getParameterTypes c))
+                   (.descriptorString))]
       (if (invoke-via-method-handle? c argv)
         (x/mh-invoke-xref owner argv nil rt/mhk-constructor
                           owner-cd ConstantDescs/INIT_NAME desc)

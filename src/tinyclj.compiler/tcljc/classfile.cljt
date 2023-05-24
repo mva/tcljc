@@ -359,11 +359,9 @@
 ;;; ------------------------------------------------------------------------
 
 (defn parameter-mtd ^MethodTypeDesc [^ClassDesc rtype prefix-cds param-lds]
-  (->> (into prefix-cds
-             (map #(.tp ^tcljc.classfile.LdStParameter %))
-             param-lds)
-       (rt/cd-array-of)
-       (MethodTypeDesc/of rtype)))
+  (rt/mtd-of rtype (into prefix-cds
+                         (map #(.tp ^tcljc.classfile.LdStParameter %))
+                         param-lds)))
 
 (defn constructor ^void [^ClassBuilder cb ^int flags
                          ^DirectMethodHandleDesc super-mhd
