@@ -867,8 +867,8 @@
      
      ^String ns-str
      ;; Non-nil if this refers to a namespace def.  This is equivalent
-     ;; implies to level being zero.  This string is used to recover
-     ;; the namespace qualified name for error messages.
+     ;; to level being zero.  This string is used to recover the
+     ;; namespace qualified name for error messages.
      
      ^int flags
      ;; Encodes the category of the bound entity, additional flags,
