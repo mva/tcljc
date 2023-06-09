@@ -25,9 +25,8 @@
    [tinyclj.alpha.ptest__impl :as ptest__impl] ;for get-test-context
    [tcljc.classdata :as classdata])
   (:import
-   (tcljc.io BuildIO NmspIO)
+   (tcljc.io BuildIO NmspIO FnRequireNamespace)
    (tcljc.expr MacroRef FnMacroFn)
-   (tcljc.context FnRequireNamespace)
    (clojure.lang Symbol IPersistentMap ExceptionInfo)
    (java.lang.invoke MethodHandle MethodType)
    (java.lang.reflect Method)
@@ -290,8 +289,8 @@
     (reify BuildIO
       (initial-imports [this]
         (.initial-imports build-io))
-      (nmsp-io [this str-or-class !rpath-set]
-        (-> (.nmsp-io build-io str-or-class !rpath-set)
+      (nmsp-io [this str-or-class require-namespace]
+        (-> (.nmsp-io build-io str-or-class require-namespace)
             (.with-build-io this)))
       (resource-url [this rpath]
         (cfg/path-url rpath))

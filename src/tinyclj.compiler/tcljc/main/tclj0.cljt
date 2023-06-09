@@ -23,7 +23,7 @@
    [tcljc.main.invoke :as invoke]
    [tinyclj.string :as str])
   (:import
-   (tcljc.io BuildIO NmspIO CompileIO)
+   (tcljc.io BuildIO NmspIO CompileIO FnRequireNamespace)
    (tcljc.main.options Options)
    (clojure.lang IPersistentMap ExceptionInfo)
    (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
@@ -108,7 +108,9 @@
        (.resolveConstantDesc rt/mhd-applyMacroMapped rt-lookup)))
    (ConcurrentHashMap.) binding-frame))
 
-
+;; `!rpath-set` is created by the emitted thread, then handed over to
+;; the namespace thread to accumulate the names of visited files, and
+;; read only after the namespace's compilation has completed.
 (deftype NmspIOImpl [^BuildIO build-io
                      ^CompileIO compile-io
                         
@@ -117,6 +119,8 @@
                      ^HashSet !rpath-set ;owned by emitter thread
                      ^String source-file-attribute
 
+                     ^FnRequireNamespace require-namespace
+                     
                      ^Path dest-dir
                      ^AtomicBoolean pkg-dir-prepared
                      ^tcljc.classfile.CHR dyn-chr]
@@ -124,8 +128,10 @@
   (compile-io [_]
     compile-io)
   (with-build-io [_ build-io]
-    (NmspIOImpl. build-io compile-io rpath rurl !rpath-set
-                 source-file-attribute dest-dir pkg-dir-prepared dyn-chr))
+    (NmspIOImpl. build-io compile-io
+                 rpath rurl !rpath-set source-file-attribute
+                 require-namespace
+                 dest-dir pkg-dir-prepared dyn-chr))
   
   (enter-source-file [_ nmsp-or-path compile-resource?]
     (let [rpath (if (nil? rpath)
@@ -140,12 +146,19 @@
                           (let [s (.getPath ^URL rurl)]
                             (subs s (inc (.lastIndexOf s "/")))))]
       (.add !rpath-set rpath)
-      (NmspIOImpl. build-io compile-io rpath rurl !rpath-set src-file-attr
+      (NmspIOImpl. build-io compile-io
+                   rpath rurl !rpath-set src-file-attr
+                   require-namespace
                    dest-dir pkg-dir-prepared dyn-chr)))
   (assoc-source-file [_ ^ExceptionInfo e]
     (wrong/assoc-if-new e :file/resource-url rurl))
   (forms-reader [_]
     (.forms-reader build-io rurl))
+  (collect-rpaths [_]
+    (into #{} !rpath-set))
+
+  (schedule-namespace [_ ns-str provided-nmsp]
+    (.schedule require-namespace ns-str provided-nmsp))
   
   (register-ch-info! [_ ch-info]
     (.register! dyn-chr ch-info))
@@ -190,14 +203,15 @@
     tcljc.io.BuildIO
     (initial-imports [_]
       initial-imports)
-    (nmsp-io [build-io str-or-class !rpath-set]
+    (nmsp-io [build-io str-or-class require-namespace]
       (let [lookup-in-pkg (if (string? str-or-class)
                             (beachhead/mk-lookup-in-pkg rt-lookup dyn-ld str-or-class)
                             (.in (MethodHandles/publicLookup) ^Class str-or-class))
             compile-io (mk-compile-io binding-frame rt-lookup lookup-in-pkg)
+            !rpath-set (HashSet.)
             pdp (java.util.concurrent.atomic.AtomicBoolean. false)]
         (NmspIOImpl. build-io compile-io nil nil !rpath-set nil
-                     dest-dir pdp dyn-chr)))
+                     require-namespace dest-dir pdp dyn-chr)))
     (resource-url [_ rpath]
       (or (.getResource app-ld (str rpath))
           (wrong/file rpath)))

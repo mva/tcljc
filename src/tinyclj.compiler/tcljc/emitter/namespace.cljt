@@ -30,22 +30,30 @@
 
 (deftype Namespace [^IPersistentMap provided-nmsp ;string -> Namespace
                     ^Ctx ctx
+                    ^NmspIO top-level-nmsp-io ;nil if imported
                     
-                    ^HashSet !rpath-set ;mutated via NmspIO, nil if imported
                     ^IPersistentSet req-strs
                     ^Class capstone     ;for invoke after build
                     ^IPersistentMap exported-known-ns])
 
-(defn mk-nmsp ^Namespace [^IPersistentMap provided-nmsp ^HashSet !rpath-set
+(defn mk-nmsp ^Namespace [^IPersistentMap provided-nmsp ^NmspIO nmsp-io
                           ^Ctx ctx]
-  (assert (some? !rpath-set))
-  (Namespace. provided-nmsp ctx !rpath-set #{} nil nil))
+  (assert (some? nmsp-io))
+  (Namespace. provided-nmsp ctx nmsp-io #{} nil nil))
 
-(defn mk-imported ^Namespace [^IPersistentMap provided-nmsp ^Ctx ctx]
-  (Namespace. provided-nmsp ctx nil #{} nil nil))
+(defn mk-capstone ^Namespace [^Ctx ctx ^IPersistentMap provided-nmsp
+                              ^IPersistentSet req-strs ^Class capstone]
+  (let [publics (publics/extract ctx capstone)
+        ;; do not re-export namespaces from `provided-nmsp`, because
+        ;; this would cause obsoleted versions of the core namespace
+        ;; to reach downstream namespaces like tinyclj.java.io
+        kns (-> (reduce dissoc (.get-known-ns ctx) (keys provided-nmsp))
+                (assoc (.ns-str ctx) publics))]
+    (Namespace. nil nil ;clear `provided-nmsp` and `ctx`
+                nil req-strs capstone kns)))
 
 (defn imported? ^boolean [^Namespace nmsp]
-  (nil? (.!rpath-set nmsp)))
+  (nil? (.top-level-nmsp-io nmsp)))
 
 (defn mk-provided ^Namespace [^String ns-str ^IPersistentMap publics]
   (Namespace. nil nil nil #{} nil {ns-str publics}))
@@ -53,24 +61,13 @@
 (defn assoc-provided [provided-nmsp ^String ns-str ^IPersistentMap publics]
   (assoc provided-nmsp ns-str (mk-provided ns-str publics)))
 
-(def ^:private compile-namespace-in-progress (mk-imported nil nil))
+(def ^:private compile-namespace-in-progress
+  (Namespace. nil nil nil #{} nil nil))
 
 (defn- with-requires ^Namespace [^Namespace nmsp ns-strs]
   (Namespace. (.provided-nmsp nmsp) (.ctx nmsp)
-              (.!rpath-set nmsp) (into (.req-strs nmsp) ns-strs)
+              (.top-level-nmsp-io nmsp) (into (.req-strs nmsp) ns-strs)
               (.capstone nmsp) (.exported-known-ns nmsp)))
-
-(defn with-capstone ^Namespace [^Namespace nmsp ^Class capstone]
-  (let [ctx (.ctx nmsp)
-        publics (publics/extract ctx capstone)
-        ;; do not re-export namespaces from `provided-nmsp`, because
-        ;; this would cause obsoleted versions of the core namespace
-        ;; to reach downstream namespaces like tinyclj.java.io
-        kns (-> (reduce dissoc (.get-known-ns ctx) (keys (.provided-nmsp nmsp)))
-                (assoc (.ns-str ctx) publics))]
-    (Namespace. nil nil ;clear `provided-nmsp` and `ctx`
-                (.!rpath-set nmsp) (.req-strs nmsp)
-                capstone kns)))
 
 (defn core-lib? ^boolean [^Namespace nmsp]
   (cfg/core-lib? (-> nmsp .ctx .ns-str)))
@@ -182,8 +179,8 @@
             (dotimes [i n]
               (let [req-str (aget req-strs i)]
                 (aset a i (or (get (.provided-nmsp nmsp) req-str)
-                              (-> (.require-namespace (.ctx nmsp))
-                                  (.schedule req-str provide-nmsp))))))
+                              (-> (.top-level-nmsp-io nmsp)
+                                  (.schedule-namespace req-str provide-nmsp))))))
             ;; wait for and pick up namespace outcomes
             (dotimes [i n]              ;avoid stack frame spamming
               (let [ns-str (aget req-strs i)]
@@ -256,12 +253,12 @@
             (catch ExceptionInfo e
               (throw (.assoc-source-file file-nmsp-io e)))))]
   
-  (defn compile-thread [^Namespace nmsp ^NmspIO top-level-nmsp-io ^Ctx ctx]
+  (defn compile-thread [^Namespace nmsp ^Ctx ctx]
     (let [l (-> ctx .compile-io .lookup-in-pkg)]
       (-> (.resolveConstantDesc rt/mhd-pushFileContext l)
           ^void (.invokeExact (.ns-str ctx)))
       (try
-        (top-level-file nmsp top-level-nmsp-io)
+        (top-level-file nmsp (.top-level-nmsp-io nmsp))
         (finally
           (-> (.resolveConstantDesc rt/mhd-popFileContext l)
               ^void (.invokeExact)))))))

@@ -16,7 +16,7 @@
    [tinyclj.string :as str])
   (:import
    (tcljc.expr BindingRef FnForm)
-   (tcljc.io CompileIO)
+   (tcljc.io CompileIO FnRequireNamespace)
    (clojure.lang Symbol Keyword IPersistentVector IPersistentMap ExceptionInfo)
    (jdk.incubator.concurrent StructuredTaskScope)
    (java.lang.constant ClassDesc)
@@ -80,13 +80,6 @@
   ;; as between compilation and bytecode emit threads.
   (get-tlf-idx ^int [])
   (increment-tlf-idx ^void []))
-
-(definterface FnRequireNamespace
-  ;; Schedule the namespace `ns-str` for compilation, passing it
-  ;; `provided-nmsp` as its map of known namespaces (string ->
-  ;; Namespace).  Returns the Namespace instance for `ns-str`,
-  ;; possible via a future.
-  (schedule [^String ns-str ^IPersistentMap provided-nmsp]))
 
 ;;; ------------------------------------------------------------------------
 
@@ -176,8 +169,6 @@
               ^String ns-str
               ^CompileIO compile-io
               
-              ^FnRequireNamespace require-namespace
-
               ^BlockingQueue emit-q
      
               ^StructuredTaskScope arity-task-scope
@@ -233,14 +224,13 @@
                     
                     ^String ns-str ^CompileIO compile-io
                                   
-                    ^FnRequireNamespace require-namespace
                     ^StructuredTaskScope arity-task-scope]
   (let [known-ns {}
         ns-alias {}
         capacity-q 16 ;prevent compilation from reaching too far ahead
         emit-q (ArrayBlockingQueue. capacity-q)]
     (Ctx. known-ns ns-alias initial-globals initial-imports
-          ns-str compile-io require-namespace
+          ns-str compile-io
           emit-q arity-task-scope false 0 0)))
 
 (defn locked ^Ctx [^Ctx ctx]
@@ -249,7 +239,6 @@
     (Ctx. (.get-known-ns ctx) (.get-ns-alias-map ctx) (.get-globals ctx)
           (.get-imports ctx)
           (.ns-str ctx) (.compile-io ctx)
-          (.require-namespace ctx)
           (.emit-q ctx)
           (.arity-task-scope ctx) true 0
           (.get-tlf-idx ctx))))
@@ -260,7 +249,6 @@
     (Ctx. (.get-known-ns ctx) (.get-ns-alias-map ctx) (.get-globals ctx)
           imports (.ns-str ctx)
           (.compile-io-in (.compile-io ctx) ephemeral-class)
-          (.require-namespace ctx)
           (.emit-q ctx)
           (.arity-task-scope ctx) true 0
           (.get-tlf-idx ctx))))

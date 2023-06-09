@@ -26,12 +26,12 @@
   (:import
    (tcljc.classfile ClassDef)
    (tcljc.expr FnCode DeftypeDef MethodDef)
-   (tcljc.io BuildIO NmspIO CompileIO)
+   (tcljc.io BuildIO NmspIO CompileIO FnRequireNamespace)
    (tcljc.compiler DelayedMacroFn)
    (tcljc.emitter.namespace Namespace)
    (tcljc.emitter.emitfn FnSpec)
    (tcljc.emitter.prepare TopLevelForm)
-   (tcljc.context FnRequireNamespace Ctx Msg)
+   (tcljc.context Ctx Msg)
    (tcljc.expr Expr Binding BindingRef FnForm)
    (clojure.lang ISeq IPersistentMap IPersistentVector ExceptionInfo)
    (jdk.incubator.concurrent StructuredTaskScope)
@@ -251,9 +251,10 @@
               (.complete promise cl)
               segm))
           (write-capstone ^Namespace [^SegmState segm ^Namespace nmsp]
-            (nmsp/with-capstone nmsp
-              (.produce-class (.nmsp-io segm) (capstone-cld segm)
-                              (builder-capstone segm nmsp))))
+            (let [cl (.produce-class (.nmsp-io segm) (capstone-cld segm)
+                                     (builder-capstone segm nmsp))]
+              (nmsp/mk-capstone (.ctx nmsp) (.provided-nmsp nmsp)
+                                (.req-strs nmsp) cl)))
           
           (fn-specs-from-methods ^IPersistentVector [mdefs ^SegmState segm]
             (reduce
@@ -337,16 +338,15 @@
 ;; arbitrary number of futures of its own, and the emitter retrieves
 ;; their result/exception in emit order.
 (defn- emit-namespace ^Namespace [^SegmState segm ^IPersistentMap provided-nmsp
-                                  ^HashSet !rpath-set
                                   ^StructuredTaskScope nmsp-task-scope]
   (let [ctx (.ctx segm)]
     (init-known-ns ctx provided-nmsp)
     
     (let [c-fn (^Callable fn []
                 (try
-                  (let [nmsp (nmsp/mk-nmsp provided-nmsp !rpath-set ctx)
-                        nmsp-io (.enter-source-file (.nmsp-io segm) (.ns-str ctx) true)
-                        nsd (nmsp/compile-thread nmsp nmsp-io ctx)]
+                  (let [nmsp-io (.enter-source-file (.nmsp-io segm) (.ns-str ctx) true)
+                        nmsp (nmsp/mk-nmsp provided-nmsp nmsp-io ctx)
+                        nsd (nmsp/compile-thread nmsp ctx)]
                     ;; regular completion: pass back result in first
                     ;; `close-queue` message
                     (ctx/send-msg (.emit-q ctx) ctx/msg-close-queue nsd))
@@ -369,41 +369,44 @@
             (if (= s "")
               (new "[Ljava.lang.String;" 0)
               (into-array String (str/split s #",")))))]
-  (defn- import-from-capstone ^Namespace [^Namespace nmsp ^Class capstone]
-    (init-known-ns (.ctx nmsp) (.provided-nmsp nmsp))
-    
-    ;; keep in sync with namespace/add-require-deps
-    (let [ns-str (.getPackageName capstone)
-          req-strs (extract-req-strs capstone)
-          n (count req-strs)
-          a (new objects n)
-          apublics (new "[Lclojure.lang.IPersistentMap;" n)
-          provide-nmsp (.provided-nmsp nmsp)]
-      ;; schedule namespaces in parallel
-      (dotimes [i n]
-        (let [req-str (aget req-strs i)]
-          (aset a i (or (get (.provided-nmsp nmsp) req-str)
-                        (-> (.require-namespace (.ctx nmsp))
-                            (.schedule req-str provide-nmsp))))))
-      ;; wait for and pick up namespace outcomes
-      (dotimes [i n]                    ;avoid stack frame spamming
-        (let [ns-str (aget req-strs i)]
-          (aset apublics i (-> (nmsp/nmsp-of (aget a i) ns-str)
-                               (nmsp/publics-of ns-str)))))
-      ;; collect all "require"d globals and then add any new globals
-      ;; to this namespace
-      (loop [publics-map {}, i 0]
-        (if (= i n)
-          (.merge-into-known-ns (.ctx nmsp) publics-map)
-          (let [ns-str (aget req-strs i)
-                ekns (.exported-known-ns (nmsp/nmsp-of (aget a i) ns-str))]
-            (recur (merge publics-map ekns) (inc i)))))
-      (nmsp/with-capstone nmsp capstone))))
+  (defn- import-from-capstone ^Namespace [^BuildIO env
+                                          ^FnRequireNamespace require-namespace
+                                          ^IPersistentMap provided-nmsp
+                                          ^Class capstone]
+    (let [nmsp-io (.nmsp-io env capstone nil)
+          ctx (ctx/mk-ctx* {} {} (.getPackageName capstone)
+                           (.compile-io nmsp-io) nil)]
+      (init-known-ns ctx provided-nmsp)
+      
+      ;; keep in sync with namespace/add-require-deps
+      (let [ns-str (.getPackageName capstone)
+            req-strs (extract-req-strs capstone)
+            n (count req-strs)
+            a (new objects n)
+            apublics (new "[Lclojure.lang.IPersistentMap;" n)]
+        ;; schedule namespaces in parallel
+        (dotimes [i n]
+          (let [req-str (aget req-strs i)]
+            (aset a i (or (get provided-nmsp req-str)
+                          (.schedule require-namespace req-str provided-nmsp)))))
+        ;; wait for and pick up namespace outcomes
+        (dotimes [i n]                  ;avoid stack frame spamming
+          (let [ns-str (aget req-strs i)]
+            (aset apublics i (-> (nmsp/nmsp-of (aget a i) ns-str)
+                                 (nmsp/publics-of ns-str)))))
+        ;; collect all "require"d globals and then add any new globals
+        ;; to this namespace
+        (loop [publics-map {}, i 0]
+          (if (= i n)
+            (.merge-into-known-ns ctx publics-map)
+            (let [ns-str (aget req-strs i)
+                  ekns (.exported-known-ns (nmsp/nmsp-of (aget a i) ns-str))]
+              (recur (merge publics-map ekns) (inc i)))))
+        (nmsp/mk-capstone ctx provided-nmsp (into #{} req-strs) capstone)))))
 
 ;;; ------------------------------------------------------------------------
 
 (defn mk-ctx ^Ctx [^BuildIO env
-                   ^FnRequireNamespace require-namespace
                                  
                    ^IPersistentMap initial-globals
                    ^String ns-str
@@ -411,32 +414,24 @@
                                  
                    ^StructuredTaskScope arity-task-scope]
   (ctx/mk-ctx* initial-globals (.initial-imports env) ns-str compile-io
-               require-namespace arity-task-scope))
-
-(defn- mk-ctx-import ^Ctx [^BuildIO env
-                           ^FnRequireNamespace require-namespace
-                           ^Class capstone]
-  (let [nmsp-io (.nmsp-io env capstone nil)]
-    (ctx/mk-ctx* {} {} (.getPackageName capstone) (.compile-io nmsp-io)
-                 require-namespace nil)))
+               arity-task-scope))
 
 (defn compile-and-emit ^Namespace [^BuildIO env ^String ns-str
-                                   ^FnRequireNamespace require-fn
+                                   ^FnRequireNamespace require-namespace
                                    ^IPersistentMap provided-nmsp
                                    ^IPersistentMap globals-override]
-  (let [nmsp-task-scope (StructuredTaskScope.)
-        !rpath-set (HashSet.)]
+  (let [nmsp-task-scope (StructuredTaskScope.)]
     (try
       (let [arity-task-scope (when-not cfg/deterministic-namespace-compile?
                                nmsp-task-scope)
-            nmsp-io (.nmsp-io env ns-str !rpath-set)
+            nmsp-io (.nmsp-io env ns-str require-namespace)
             globals (or globals-override
                         (predefined/initial-globals-for (-> nmsp-io .compile-io .rt-lookup)
                                                         ns-str))
-            tl-ctx (mk-ctx env require-fn globals ns-str (.compile-io nmsp-io)
+            tl-ctx (mk-ctx env globals ns-str (.compile-io nmsp-io)
                            arity-task-scope)]
         (-> (mk-first-segm nmsp-io tl-ctx)
-            (emit-namespace provided-nmsp !rpath-set nmsp-task-scope)))
+            (emit-namespace provided-nmsp nmsp-task-scope)))
       (catch Throwable t
         (.shutdown nmsp-task-scope)     ;make join return immediately
         (throw t))
@@ -464,9 +459,7 @@
                     (or        ;import from dyn-ld or compile and emit
                      (when-some [cl (.try-load-capstone env ns-str)]
                        (try
-                         (-> (nmsp/mk-imported provided-nmsp
-                                               (mk-ctx-import env require-fn cl))
-                             (import-from-capstone cl))
+                         (import-from-capstone env require-fn provided-nmsp cl)
                          (finally ;signal completion to namespace loop
                            (.put namespaces-q [ns-str]))))
                   
@@ -530,9 +523,7 @@
 
                 (when-some [cl (.try-load-capstone env ns-str)]
                   (.put !futs ns-str nmsp/marker-depth-first-path)
-                  (let [x (-> (nmsp/mk-imported provided-nmsp
-                                                (mk-ctx-import env this cl))
-                              (import-from-capstone cl))]
+                  (let [x (import-from-capstone env this provided-nmsp cl)]
                     (.put !futs ns-str x)
                     x))
                  
@@ -567,7 +558,7 @@
               (let [nmsp ^Namespace x]
                 (if (nmsp/imported? nmsp)
                   {} ;rpaths and req-strs unchanged from prior compile
-                  {:rpaths (into #{} (.!rpath-set nmsp))
+                  {:rpaths (.collect-rpaths (.top-level-nmsp-io nmsp))
                    :req-strs (.req-strs nmsp)}))
 
               (instance? Future x)

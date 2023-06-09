@@ -17,7 +17,7 @@
    [tcljc.main.tclj0 :as tclj0]
    [tinyclj.alpha.ptest :refer [deftest]])
   (:import
-   (tcljc.context FnRequireNamespace)))
+   (tcljc.io FnRequireNamespace)))
 
 (def ^:private noop-require-namespace
   (^FnRequireNamespace fn [ns-str provided-nmsp]

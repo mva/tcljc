@@ -6,7 +6,7 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.io
-  (:import (clojure.lang ExceptionInfo IPersistentMap)
+  (:import (clojure.lang ExceptionInfo IPersistentMap IPersistentSet)
            (jdk.incubator.concurrent StructuredTaskScope)
            (jdk.internal.classfile ClassHierarchyResolver$ClassHierarchyInfo)
            (java.lang.constant ClassDesc)
@@ -26,6 +26,13 @@
 
 (definterface Reader
   (read-1 [#_Ctx form-ctx eof-value]))
+
+(definterface FnRequireNamespace
+  ;; Schedule the namespace `ns-str` for compilation, passing it
+  ;; `provided-nmsp` as its map of known namespaces (string ->
+  ;; Namespace).  Returns the Namespace instance for `ns-str`,
+  ;; possible via a future.
+  (schedule [^String ns-str ^IPersistentMap provided-nmsp]))
 
 (definterface CompileIO
   ;; The Lookup instance corresponding to this namespace's package
@@ -60,9 +67,12 @@
   ;; true, then the path's resource URL is obtained.  Note: The
   ;; returned object shares mutable state with its parent.
   (enter-source-file ^NmspIO [^String nmsp-or-path
-                                 ^boolean compile-resource?])
+                              ^boolean compile-resource?])
   (assoc-source-file ^ExceptionInfo [^ExceptionInfo e])
   (forms-reader ^Reader [])
+  (collect-rpaths ^IPersistentSet [])
+
+  (schedule-namespace [^String ns-str ^IPersistentMap provided-nmsp])
   
   (register-ch-info! ^void [^ClassHierarchyResolver$ClassHierarchyInfo ch-info])
   ;; Builds, writes, and defines class `this-class` from `cbh`.  Sets
@@ -77,12 +87,9 @@
   ;; Initial set of class imports when compiling a namespace.
   (initial-imports ^IPersistentMap [])
   
-  ;; Creates a new `NmspIO` instance for a fresh namespace.
-  ;; `!rpath-set` is created by the emitted thread, then handed over
-  ;; to the namespace thread to accumulate the names of visited files,
-  ;; and read only after the namespace's compilation has completed.
-  ;; Must be called at most once per namespace.
-  (nmsp-io ^NmspIO [str-or-class ^HashSet !rpath-set])
+  ;; Creates a new `NmspIO` instance for a fresh namespace.  Must be
+  ;; called at most once per namespace.
+  (nmsp-io ^NmspIO [str-or-class ^FnRequireNamespace require-namespace])
   
   ;; Returns the resource URL of `rpath`, or signals an error.
   (resource-url ^URL [^Path rpath])
