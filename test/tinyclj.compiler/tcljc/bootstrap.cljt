@@ -287,8 +287,6 @@
                                injected-file-forms ^List bytes-list]
   (let [build-io (tclj0/mk-build-io app-ld dest-dir dyn-ld false)]
     (reify BuildIO
-      (initial-imports [this]
-        (.initial-imports build-io))
       (nmsp-io [this str-or-class nmsp-builder]
         (-> (.nmsp-io build-io str-or-class nmsp-builder)
             (.with-build-io this)))

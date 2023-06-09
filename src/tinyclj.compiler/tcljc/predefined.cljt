@@ -141,9 +141,3 @@
           (conj-var! "PRINT_READABLY" jb/Object '*print-readably*)
           (conj-var! "ASSERT" jb/Object '*assert*)
           (persistent!)))))
-
-(defn initial-globals-for ^IPersistentMap [^MethodHandles$Lookup l
-                                           ^String ns-str]
-  (if (cfg/core-lib? ns-str)
-    (core-ns-globals l)
-    {}))

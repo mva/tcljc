@@ -102,11 +102,10 @@
                              (finally ;signal completion to namespace loop
                                (.put namespaces-q [ns-str]))))
                   
-                         (let [globals (.initial-globals-for env ns-str)]
+                         (do
                            #_(prn :namespace-start ns-str)
                            (try
-                             (em/compile-and-emit env ns-str this
-                                                  provided-nmsp globals)
+                             (em/compile-and-emit env ns-str this provided-nmsp nil)
                              (finally ;signal completion to namespace loop
                                (.put namespaces-q [ns-str]))))))
                        (.fork-task env build-task-scope)))
@@ -178,11 +177,10 @@
                 (.put !futs ns-str x)
                 x))
                  
-            (let [globals (.initial-globals-for env ns-str)]
+            (do
               (.put !futs ns-str nmsp/marker-depth-first-path)
               #_(prn :namespace-start ns-str)
-              (let [x (em/compile-and-emit env ns-str this
-                                           provided-nmsp globals)]
+              (let [x (em/compile-and-emit env ns-str this provided-nmsp nil)]
                 #_(prn :namespace-end ns-str)
                 (.put !futs ns-str x)
                 x))))

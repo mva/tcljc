@@ -16,8 +16,8 @@
    [tcljc.expr :as x]
    [tcljc.exprfold :as xf]
    [tcljc.compiler :as compiler]
-   [tcljc.publics :as publics]
    [tcljc.io :as io]
+   [tcljc.publics :as publics]
    [tinyclj.string :as str])
   (:import
    (tcljc.context Ctx)
@@ -42,17 +42,17 @@
   (assert (some? nmsp-io))
   (Namespace. provided-nmsp ctx nmsp-io #{} nil nil))
 
-(defn mk-capstone ^Namespace [^Ctx ctx ^IPersistentMap provided-nmsp
-                              ^IPersistentSet req-strs ^Class capstone
-                              ^MethodHandles$Lookup rt-lookup]
-  (let [publics (publics/extract ctx capstone rt-lookup)
+(defn mk-capstone ^Namespace [^NmspIO nmsp-io ^Ctx ctx
+                              ^IPersistentMap provided-nmsp
+                              ^IPersistentSet req-strs ^Class capstone]
+  (let [publics (publics/extract nmsp-io ctx capstone)
         ;; do not re-export namespaces from `provided-nmsp`, because
         ;; this would cause obsoleted versions of the core namespace
         ;; to reach downstream namespaces like tinyclj.java.io
         kns (-> (reduce dissoc (.get-known-ns ctx) (keys provided-nmsp))
                 (assoc (.ns-str ctx) publics))]
-    (Namespace. nil nil ;clear `provided-nmsp` and `ctx`
-                nil req-strs capstone kns)))
+    (Namespace. nil nil nil ;clear `provided-nmsp`, `ctx`, `top-level-nmsp-io`
+                req-strs capstone kns)))
 
 (defn imported? ^boolean [^Namespace nmsp]
   (nil? (.top-level-nmsp-io nmsp)))

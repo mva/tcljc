@@ -27,7 +27,7 @@
   (:import
    (tcljc.io BuildIO NmspIO CompileIO NmspBuilder)
    (tcljc.main.options Options)
-   (clojure.lang IPersistentMap ExceptionInfo)
+   (clojure.lang IPersistentMap IPersistentSet ExceptionInfo)
    (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
    (java.net URL)
    (java.nio.file Path Files)
@@ -117,7 +117,9 @@
 (deftype NmspIOImpl [^BuildIO build-io
                      ^CompileIO compile-io
                      ^MethodHandles$Lookup rt-lookup
-                        
+                     ^IPersistentMap initial-imports
+                     ^IPersistentMap initial-globals
+                     
                      ^Path rpath
                      ^URL rurl
                      ^HashSet !rpath-set ;owned by emitter thread
@@ -135,9 +137,15 @@
     rt-lookup)
   (with-build-io [_ build-io]
     (NmspIOImpl. build-io compile-io rt-lookup
+                 initial-imports initial-globals
                  rpath rurl !rpath-set source-file-attribute
                  nmsp-builder
                  dest-dir pkg-dir-prepared dyn-chr))
+  
+  (initial-imports [_]
+    initial-imports)
+  (initial-globals [_]
+    initial-globals)
   
   (enter-source-file [_ nmsp-or-path compile-resource?]
     (let [rpath (if (nil? rpath)
@@ -153,6 +161,7 @@
                             (subs s (inc (.lastIndexOf s "/")))))]
       (.add !rpath-set rpath)
       (NmspIOImpl. build-io compile-io rt-lookup
+                   initial-imports initial-globals
                    rpath rurl !rpath-set src-file-attr
                    nmsp-builder
                    dest-dir pkg-dir-prepared dyn-chr)))
@@ -208,20 +217,22 @@
      binding-frame              ;to carry *out* and *err* into threads
      ^boolean collect-macro-definitions?]
     tcljc.io.BuildIO
-    (initial-imports [_]
-      initial-imports)
-    (initial-globals-for [_ ns-str]
-      (predefined/initial-globals-for rt-lookup ns-str))
     (nmsp-io [build-io str-or-class nmsp-builder]
-      (let [lookup-in-pkg (if (string? str-or-class)
-                            (beachhead/mk-lookup-in-pkg rt-lookup dyn-ld str-or-class)
+      (let [ns-str (if (string? str-or-class)
+                     ^String str-or-class
+                     (.getPackageName ^Class str-or-class))
+            initial-globals (if (cfg/core-lib? ns-str)
+                              (predefined/core-ns-globals rt-lookup)
+                              {})
+            lookup-in-pkg (if (string? str-or-class)
+                            (beachhead/mk-lookup-in-pkg rt-lookup dyn-ld ns-str)
                             (.in (MethodHandles/publicLookup) ^Class str-or-class))
             compile-io (mk-compile-io binding-frame rt-lookup lookup-in-pkg
                                       collect-macro-definitions?)
             !rpath-set (HashSet.)
             pdp (java.util.concurrent.atomic.AtomicBoolean. false)]
-        (NmspIOImpl. build-io compile-io rt-lookup nil nil !rpath-set nil
-                     nmsp-builder dest-dir pdp dyn-chr)))
+        (NmspIOImpl. build-io compile-io rt-lookup initial-imports initial-globals
+                     nil nil !rpath-set nil nmsp-builder dest-dir pdp dyn-chr)))
     (resource-url [_ rpath]
       (or (.getResource app-ld (str rpath))
           (wrong/file rpath)))

@@ -13,7 +13,7 @@
    [tcljc.classfile :as cf]
    [tcljc.expr :as x]
    [tcljc.context :as ctx]
-   [tcljc.predefined :as predefined])
+   [tcljc.io :as io])
   (:import
    (tcljc.expr FnForm FnCode Arity ArityCode Binding BindingRef ValueRef
                IEmitPlan FnMacroFn)
@@ -212,14 +212,14 @@
         (doseq [x postponed] (assert (nil? (val x))))
         res))))
 
-(defn extract ^IPersistentMap [^Ctx ctx ^Class capstone
-                               ^MethodHandles$Lookup rt-lookup]
+(defn extract ^IPersistentMap [^tcljc.io.NmspIO nmsp-io ^Ctx ctx ^Class capstone]
   (letfn [(all-segments [acc ^Class cl]
             (if (identical? Object cl)
               acc
               (recur (cons cl acc) (.getSuperclass cl))))]
-    (let [arity-handles-mh (.resolveConstantDesc rt/mhd-arityHandlesIfFn rt-lookup)
+    (let [rt-lookup (.rt-lookup nmsp-io)
+          arity-handles-mh (.resolveConstantDesc rt/mhd-arityHandlesIfFn rt-lookup)
           pdf-mh (.resolveConstantDesc rt/mhd-publicDefInfo rt-lookup)]
       (reduce #(add-publics %1 %2 ctx arity-handles-mh pdf-mh)
-              (predefined/initial-globals-for rt-lookup (.ns-str ctx))
+              (.initial-globals nmsp-io)
               (all-segments () capstone)))))
