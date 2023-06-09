@@ -409,16 +409,15 @@
 
 (defn compile-and-emit ^Namespace [^BuildIO env ^String ns-str
                                    ^NmspBuilder nmsp-builder
-                                   ^IPersistentMap provided-nmsp
-                                   ^IPersistentMap globals-override]
+                                   ^IPersistentMap provided-nmsp]
   (let [nmsp-task-scope (StructuredTaskScope.)]
     (try
       (let [arity-task-scope (when-not (.deterministic-namespace-compile? nmsp-builder)
                                nmsp-task-scope)
             nmsp-io (.nmsp-io env ns-str nmsp-builder)
-            tl-ctx (ctx/mk-ctx* (or globals-override (.initial-globals nmsp-io))
-                                (.initial-imports nmsp-io) ns-str
-                                (.compile-io nmsp-io) arity-task-scope)]
+            tl-ctx (ctx/mk-ctx* (.initial-globals nmsp-io)
+                                (.initial-imports nmsp-io)
+                                ns-str (.compile-io nmsp-io) arity-task-scope)]
         (-> (mk-first-segm nmsp-io tl-ctx)
             (emit-namespace provided-nmsp nmsp-task-scope)))
       (catch Throwable t

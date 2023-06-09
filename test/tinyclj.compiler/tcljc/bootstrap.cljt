@@ -340,7 +340,7 @@
                                 (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
                               (build-all [_]
                                 (assert false)))
-               nmsp (em/compile-and-emit env ns-str nmsp-builder provided-nmsp {})]
+               nmsp (em/compile-and-emit env ns-str nmsp-builder provided-nmsp)]
            (doseq [^bytes bs bytes-list
                    :let [x (classdata/extract bs)]]
              (.put !render-to (classdata/class-name x) x))

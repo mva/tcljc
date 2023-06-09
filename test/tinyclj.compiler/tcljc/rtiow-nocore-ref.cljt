@@ -13,6 +13,8 @@
 ;;; Note: Cannot use syntax-quote because it expands to
 ;;; `tinyclj.core/seq` and such like.
 
+(def *ns* "tcljc.rtiow-nocore-ref")     ;real *ns* not available here
+
 (def list tinyclj.lang.primitive/list)
 
 (def cons (fn* cons ^clojure.lang.ISeq [x seq]
@@ -154,7 +156,7 @@
         class-name (symbol nil (str *ns* "." tagname))
         factory-name (symbol nil (str "->" tagname))]
     (list 'do
-          (list 'deftype* (symbol (name (ns-name *ns*)) (name tagname))
+          (list 'deftype* (symbol *ns* (name tagname))
                 class-name 
                 fields :implements interfaces)
           (list 'import* class-name)

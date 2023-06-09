@@ -102,12 +102,11 @@
                              (finally ;signal completion to namespace loop
                                (.put namespaces-q [ns-str]))))
                   
-                         (do
-                           #_(prn :namespace-start ns-str)
-                           (try
-                             (em/compile-and-emit env ns-str this provided-nmsp nil)
-                             (finally ;signal completion to namespace loop
-                               (.put namespaces-q [ns-str]))))))
+                         (do #_(prn :namespace-start ns-str)
+                             (try
+                               (em/compile-and-emit env ns-str this provided-nmsp)
+                               (finally ;signal completion to namespace loop
+                                 (.put namespaces-q [ns-str]))))))
                        (.fork-task env build-task-scope)))
             
                 (fork-all! ^int [ns-strs] ;returns number of new namespaces
@@ -177,13 +176,12 @@
                 (.put !futs ns-str x)
                 x))
                  
-            (do
-              (.put !futs ns-str nmsp/marker-depth-first-path)
-              #_(prn :namespace-start ns-str)
-              (let [x (em/compile-and-emit env ns-str this provided-nmsp nil)]
-                #_(prn :namespace-end ns-str)
-                (.put !futs ns-str x)
-                x))))
+            (do (.put !futs ns-str nmsp/marker-depth-first-path)
+                #_(prn :namespace-start ns-str)
+                (let [x (em/compile-and-emit env ns-str this provided-nmsp)]
+                  #_(prn :namespace-end ns-str)
+                  (.put !futs ns-str x)
+                  x))))
       
       (build-all [this]
         (try
