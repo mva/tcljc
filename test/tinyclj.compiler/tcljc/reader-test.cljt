@@ -36,7 +36,7 @@
 
 (def stub-compile-io
   (tcljc.main.tclj0.CompileIOImpl.
-   (java.lang.invoke.MethodHandles/lookup) nil nil nil
+   (java.lang.invoke.MethodHandles/lookup) nil nil
    (clojure.lang.Var/cloneThreadBindingFrame) false))
 
 (defn stub-ctx

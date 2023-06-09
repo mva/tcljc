@@ -250,10 +250,11 @@
               (.complete promise cl)
               segm))
           (write-capstone ^Namespace [^SegmState segm ^Namespace nmsp]
-            (let [cl (.produce-class (.nmsp-io segm) (capstone-cld segm)
+            (let [nmsp-io (.nmsp-io segm)
+                  cl (.produce-class nmsp-io (capstone-cld segm)
                                      (builder-capstone segm nmsp))]
               (nmsp/mk-capstone (.ctx nmsp) (.provided-nmsp nmsp)
-                                (.req-strs nmsp) cl)))
+                                (.req-strs nmsp) cl (.rt-lookup nmsp-io))))
           
           (fn-specs-from-methods ^IPersistentVector [mdefs ^SegmState segm]
             (reduce
@@ -401,7 +402,8 @@
             (let [ns-str (aget req-strs i)
                   ekns (.exported-known-ns (nmsp/nmsp-of (aget a i) ns-str))]
               (recur (merge publics-map ekns) (inc i)))))
-        (nmsp/mk-capstone ctx provided-nmsp (into #{} req-strs) capstone)))))
+        (nmsp/mk-capstone ctx provided-nmsp (into #{} req-strs) capstone
+                          (.rt-lookup nmsp-io))))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -418,15 +420,12 @@
 (defn compile-and-emit ^Namespace [^BuildIO env ^String ns-str
                                    ^NmspBuilder nmsp-builder
                                    ^IPersistentMap provided-nmsp
-                                   ^IPersistentMap globals-override]
+                                   ^IPersistentMap globals]
   (let [nmsp-task-scope (StructuredTaskScope.)]
     (try
       (let [arity-task-scope (when-not (.deterministic-namespace-compile? nmsp-builder)
                                nmsp-task-scope)
             nmsp-io (.nmsp-io env ns-str nmsp-builder)
-            globals (or globals-override
-                        (predefined/initial-globals-for (-> nmsp-io .compile-io .rt-lookup)
-                                                        ns-str))
             tl-ctx (mk-ctx env globals ns-str (.compile-io nmsp-io)
                            arity-task-scope)]
         (-> (mk-first-segm nmsp-io tl-ctx)

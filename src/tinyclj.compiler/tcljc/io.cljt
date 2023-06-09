@@ -48,7 +48,6 @@
   ;; name.
   (lookup-in-pkg ^MethodHandles$Lookup [])
   
-  (rt-lookup ^MethodHandles$Lookup [])
   (invoke-global-mh ^Object [^MethodHandle global-mh])
   
   ;; Generates unique names for fn* and reify* instances within a
@@ -75,6 +74,7 @@
 ;;; *not* be called from other threads.
 (definterface NmspIO
   (compile-io ^CompileIO [])
+  (rt-lookup ^MethodHandles$Lookup [])
   (with-build-io ^NmspIO [^BuildIO build-io]) ;for stubbing
   
   ;; `nmsp-or-path` is interpreted as a namespace name when this
@@ -102,6 +102,8 @@
 (definterface BuildIO
   ;; Initial set of class imports when compiling a namespace.
   (initial-imports ^IPersistentMap [])
+  ;; Initial set of globals definitions of namespace `ns-str`.
+  (initial-globals-for ^IPersistentMap [^String ns-str])
   
   ;; Creates a new `NmspIO` instance for a fresh namespace.  Must be
   ;; called at most once per namespace.

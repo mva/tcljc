@@ -25,6 +25,7 @@
    (tcljc.io NmspIO)
    (clojure.lang Symbol ISeq IPersistentMap IPersistentSet IPersistentVector
                  ExceptionInfo)
+   (java.lang.invoke MethodHandles$Lookup)
    (java.util HashSet)
    (java.util.concurrent Future TimeoutException)))
 
@@ -42,8 +43,9 @@
   (Namespace. provided-nmsp ctx nmsp-io #{} nil nil))
 
 (defn mk-capstone ^Namespace [^Ctx ctx ^IPersistentMap provided-nmsp
-                              ^IPersistentSet req-strs ^Class capstone]
-  (let [publics (publics/extract ctx capstone)
+                              ^IPersistentSet req-strs ^Class capstone
+                              ^MethodHandles$Lookup rt-lookup]
+  (let [publics (publics/extract ctx capstone rt-lookup)
         ;; do not re-export namespaces from `provided-nmsp`, because
         ;; this would cause obsoleted versions of the core namespace
         ;; to reach downstream namespaces like tinyclj.java.io
