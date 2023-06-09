@@ -13,6 +13,7 @@
    [tcljc.expr :as x]
    [tcljc.emitter :as em]
    [tcljc.predefined :as predefined]
+   [tcljc.main.builder :as builder]
    [tcljc.main.tclj0 :as tclj0]))
 
 (defn run []
@@ -34,8 +35,8 @@
                                               [dest-dir]
                                               []))
         provided-nmsp (em/mk-provided-nmsp)
-        env (tclj0/mk-build-io app-ld dest-dir dyn-ld)]
-    (time (em/emit-namespaces env provided-nmsp all-nmsps))))
+        env (tclj0/mk-build-io app-ld dest-dir dyn-ld true)]
+    (time (.build-all (builder/multi-threaded env provided-nmsp all-nmsps)))))
 
 (defn -main [& args]
   (try

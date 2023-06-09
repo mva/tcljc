@@ -27,6 +27,7 @@ module tinyclj.compiler {
   exports tcljc.io;
   exports tcljc.javabase;
   exports tcljc.macro;
+  exports tcljc.main.builder;
   exports tcljc.main.efmt;
   exports tcljc.main.options;
   exports tcljc.main.tclj0;

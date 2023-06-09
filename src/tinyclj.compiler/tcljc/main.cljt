@@ -31,8 +31,7 @@
           (if (contains? #{nil, "--help", "-h"} (first args))
             (usage)
             (if-some [opts (options/parse args)]
-              (do (cfg/set-flags! (.deterministic? opts))
-                  #_(println "jcmd" (.pid java.lang.ProcessHandle/current)
+              (do #_(println "jcmd" (.pid java.lang.ProcessHandle/current)
                              "Thread.dump_to_file" "-format=json"
                              "/tmp/threads.json")
                   (if (.watch-mode? opts)

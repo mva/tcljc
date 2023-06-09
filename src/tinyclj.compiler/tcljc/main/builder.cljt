@@ -1,0 +1,202 @@
+;; Copyright (c) Michael van Acken. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https://www.eclipse.org/legal/epl-v20.html)
+;; which can be found in the file epl-v20.html at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+(ns tcljc.main.builder
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.wrong :as wrong]   
+   [tcljc.context :as ctx]
+   [tcljc.emitter :as em]
+   [tcljc.emitter.namespace :as nmsp])
+  (:import
+   (tcljc.io BuildIO NmspBuilder)
+   (tcljc.emitter.namespace Namespace)
+   (clojure.lang IPersistentMap)
+   (jdk.incubator.concurrent StructuredTaskScope)
+   (java.time Instant)
+   (java.util Map)
+   (java.util.concurrent Future CompletableFuture ConcurrentHashMap)))
+
+;;; Returns a map of namespaces that have been reached by the build
+;;; attempt.  Key is the name of the namespace (a string).  Value is a
+;;; map {:rpaths :req-strs} for a compiled & completed namespace, nil
+;;; if the namespace was not compiled successfully, and the empty map
+;;; {} for a namespace imported from class files.
+(defn dependency-map ^IPersistentMap [^Map futs]
+  (letfn [(outcome-now [^Future x]
+            (assert (.isDone x))
+            (try (.get x) (catch Throwable t t)))
+          (dependency-info [x]
+            (cond
+              (instance? Namespace x)
+              (let [nmsp ^Namespace x]
+                (if (nmsp/imported? nmsp)
+                  {} ;rpaths and req-strs unchanged from prior compile
+                  {:rpaths (.collect-rpaths (.top-level-nmsp-io nmsp))
+                   :req-strs (.req-strs nmsp)}))
+
+              (instance? Future x)
+              (recur (outcome-now x))
+              
+              (or (instance? Throwable x)
+                  (identical? nmsp/marker-depth-first-path x))
+              nil     ;not completed successfully, assume to be broken
+              
+              :else (throw (IllegalArgumentException. (str (class x))))))
+          (fixup-core-deps ^IPersistentMap [^IPersistentMap dep-map]
+            (let [req-strs (get-in dep-map [cfg/core-lib :req-strs])]
+              (cond-> dep-map
+                (seq req-strs)    ;any recorded dependencies for core?
+                (assoc cfg/core-lib
+                       {:rpaths (into (get-in dep-map [cfg/core-lib :rpaths])
+                                      (mapcat #(get-in dep-map [% :rpaths]))
+                                      req-strs)
+                        :req-strs #{}}))))]
+    (-> (reduce-kv #(assoc %1 %2 (dependency-info %3)) {} futs)
+        (fixup-core-deps))))
+(defn completed-namespace? ^boolean [^IPersistentMap dependency-info]
+  (some? dependency-info))
+(defn imported-namespace? ^boolean [^IPersistentMap dependency-info]
+  (= dependency-info {}))               ;implies completed-namespace?
+
+
+;;; Builtin namespaces in `builtin-nmsp` can be required directly from
+;;; any namespace (maps string -> Namespace).
+;;; 
+;;; On success, returns map String -> Namespace of all namespaces.
+;;; Any compilation error causes an ExceptionInfo exception whose
+;;; entry :emitter/namespaces is a dependency map.
+
+(defn multi-threaded ^NmspBuilder [^BuildIO env ^IPersistentMap builtin-nmsp ns-strs]
+  (let [!futs (ConcurrentHashMap.)      ;updated by this thread only
+        build-task-scope (StructuredTaskScope.)
+        namespaces-q (java.util.concurrent.LinkedBlockingQueue.)]
+    
+    (reify NmspBuilder
+      (deterministic-namespace-compile? [_]
+        false)
+      
+      (schedule [this ns-str provided-nmsp]
+        (or
+         ;; First peek into the current namespace map, and return a
+         ;; known namespace immediately.
+         (.get !futs ns-str)
+         ;; For an unregistered namespace, delegate via message
+         ;; exchange/promise to the top-level thread's
+         ;; `namespace-loop`.
+         (let [cf (CompletableFuture.)]
+           (.put namespaces-q [ns-str provided-nmsp cf])
+           (ctx/wait-for-result 1 cf))))
+
+      (build-all [this]
+        (letfn [(fork-namespace ^Future [^String ns-str provided-nmsp]
+                  (->> (^Callable fn []
+                        (or    ;import from dyn-ld or compile and emit
+                         (when-some [cl (.try-load-capstone env ns-str)]
+                           (try
+                             (em/import-from-capstone env this provided-nmsp cl)
+                             (finally ;signal completion to namespace loop
+                               (.put namespaces-q [ns-str]))))
+                  
+                         (let [globals nil]
+                           #_(prn :namespace-start ns-str)
+                           (try
+                             (em/compile-and-emit env ns-str this
+                                                  provided-nmsp globals)
+                             (finally ;signal completion to namespace loop
+                               (.put namespaces-q [ns-str]))))))
+                       (.fork-task env build-task-scope)))
+            
+                (fork-all! ^int [ns-strs] ;returns number of new namespaces
+                  ;; this thread owns !futs and there are no concurrent
+                  ;; updates; using size() is ok, and test followed by
+                  ;; put as well
+                  (let [n (.size !futs)]
+                    (doseq [ns-str ns-strs
+                            :when (not (.containsKey !futs ns-str))
+                            :let [fut (fork-namespace ns-str builtin-nmsp)]]
+                      (.put !futs ns-str fut))
+                    (- (.size !futs) n)))]
+          
+          (try
+            ;; In the first phase, force discovery of core library.  Only
+            ;; after it has completed handle all namespaces from `ns-strs`
+            ;; -- until the new namespaces have completed as well.
+            (loop [n (fork-all! [cfg/core-lib])] ;`n` counts in-progress tasks
+              (if (zero? n)          ;all pending tasks have completed
+                (let [d (fork-all! ns-strs)] ;(re-)add all top-level namespace tasks
+                  (when (pos? d) ;exit loop if no new tasks were added
+                    (recur d)))
+                (let [[^String ns-str provided-nmsp ^CompletableFuture cf]
+                      (.take namespaces-q)]
+                  (if (some? cf)
+                    (if-some [fut (.get !futs ns-str)]
+                      (do (.complete cf fut)
+                          (recur n))
+                      (let [fut (fork-namespace ns-str provided-nmsp)]
+                        (.put !futs ns-str fut)
+                        (.complete cf fut)
+                        (recur (inc n))))
+                    (do #_(prn :namespace-end ns-str)
+                        (recur (dec n)))))))
+
+            ;; If any namespace failed, then throw the first exception in
+            ;; depth-first traversal order.  This should be deterministic,
+            ;; even if there are errors in multiple namespaces and the
+            ;; original exceptions are reported in arbitrary order.  It should
+            ;; also report the same error in multi-threaded mode as in
+            ;; single-threaded mode.
+            (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
+              ;; loop over array to avoid stack frame spamming
+              (dotimes [i (alength a)]
+                (ctx/get-result-now (.get !futs (aget a i))))) ;forces exception
+            (into {} !futs)
+            
+            (catch Throwable t
+              (.shutdown build-task-scope) ;make join return immediately
+              (throw (wrong/assoc-dep-map t (dependency-map !futs))))
+            (finally
+              (.joinUntil build-task-scope (-> (Instant/now) (.plusSeconds 5)))
+              (.close build-task-scope))))))))
+
+(defn single-threaded ^NmspBuilder [^BuildIO env ^IPersistentMap builtin-nmsp ns-strs]
+  (let [!futs (java.util.HashMap.)]     ;single-threaded!
+    (reify NmspBuilder
+      (deterministic-namespace-compile? [_]
+        true)
+
+      (schedule [this ns-str provided-nmsp]
+        (or (.get !futs ns-str)
+
+            (when-some [cl (.try-load-capstone env ns-str)]
+              (.put !futs ns-str nmsp/marker-depth-first-path)
+              (let [x (em/import-from-capstone env this provided-nmsp cl)]
+                (.put !futs ns-str x)
+                x))
+                 
+            (let [globals nil]
+              (.put !futs ns-str nmsp/marker-depth-first-path)
+              #_(prn :namespace-start ns-str)
+              (let [x (em/compile-and-emit env ns-str this
+                                           provided-nmsp globals)]
+                #_(prn :namespace-end ns-str)
+                (.put !futs ns-str x)
+                x))))
+      
+      (build-all [this]
+        (try
+          ;; first, force discovery of core library
+          (.schedule this cfg/core-lib builtin-nmsp)
+          ;; then handle all namespaces from `ns-strs`
+          (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
+            ;; loop over array to avoid stack frame spamming
+            (dotimes [i (alength a)]
+              (.schedule this (aget a i) builtin-nmsp)))
+          (into {} !futs)
+          
+          (catch Throwable t
+            (throw (wrong/assoc-dep-map t (dependency-map !futs)))))))))

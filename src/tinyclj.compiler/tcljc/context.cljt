@@ -16,7 +16,7 @@
    [tinyclj.string :as str])
   (:import
    (tcljc.expr BindingRef FnForm)
-   (tcljc.io CompileIO FnRequireNamespace)
+   (tcljc.io CompileIO)
    (clojure.lang Symbol Keyword IPersistentVector IPersistentMap ExceptionInfo)
    (jdk.incubator.concurrent StructuredTaskScope)
    (java.lang.constant ClassDesc)

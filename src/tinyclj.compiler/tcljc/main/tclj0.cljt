@@ -21,9 +21,10 @@
    [tcljc.main.options :as options]
    [tcljc.main.efmt :as efmt]
    [tcljc.main.invoke :as invoke]
+   [tcljc.main.builder :as builder]
    [tinyclj.string :as str])
   (:import
-   (tcljc.io BuildIO NmspIO CompileIO FnRequireNamespace)
+   (tcljc.io BuildIO NmspIO CompileIO NmspBuilder)
    (tcljc.main.options Options)
    (clojure.lang IPersistentMap ExceptionInfo)
    (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
@@ -40,7 +41,8 @@
                         ^MethodHandles$Lookup rt-lookup
                         ^MethodHandle apply-mh
                         ^ConcurrentHashMap private-name-map
-                        ^Object binding-frame]
+                        ^Object binding-frame
+                        ^boolean collect-macro-definitions?]
   CompileIO
   (lookup-in-pkg [_]
     lookup-in-pkg)
@@ -82,6 +84,8 @@
     (if (nil? apply-mh)
       (macro/apply-macro-direct f form env)
       (macro/apply-macro-mapped apply-mh f form env)))
+  (collect-macro-definitions? [_]
+    collect-macro-definitions?)
   (fork-function [_ sts f]
     (if (some? sts)
       ;; Carry *out* and *err* into threads.  Compiler code running
@@ -93,11 +97,12 @@
       (java.util.concurrent.CompletableFuture/completedFuture (.call f))))
   (compile-io-in [_ cl]
     (CompileIOImpl. (.in lookup-in-pkg cl) rt-lookup apply-mh
-                    private-name-map binding-frame)))
+                    private-name-map binding-frame collect-macro-definitions?)))
 
 (defn- mk-compile-io ^CompileIO [binding-frame
                                  ^MethodHandles$Lookup rt-lookup
-                                 ^MethodHandles$Lookup lookup-in-pkg]
+                                 ^MethodHandles$Lookup lookup-in-pkg
+                                 ^boolean collect-macro-definitions?]
   (CompileIOImpl.
    lookup-in-pkg rt-lookup
    (let [compiler-rt-witness tinyclj.lang.AFnMh
@@ -106,7 +111,7 @@
      (if shared-runtime?
        nil                           ;can use macro/apply-macro-direct
        (.resolveConstantDesc rt/mhd-applyMacroMapped rt-lookup)))
-   (ConcurrentHashMap.) binding-frame))
+   (ConcurrentHashMap.) binding-frame collect-macro-definitions?))
 
 ;; `!rpath-set` is created by the emitted thread, then handed over to
 ;; the namespace thread to accumulate the names of visited files, and
@@ -119,7 +124,7 @@
                      ^HashSet !rpath-set ;owned by emitter thread
                      ^String source-file-attribute
 
-                     ^FnRequireNamespace require-namespace
+                     ^NmspBuilder nmsp-builder
                      
                      ^Path dest-dir
                      ^AtomicBoolean pkg-dir-prepared
@@ -130,7 +135,7 @@
   (with-build-io [_ build-io]
     (NmspIOImpl. build-io compile-io
                  rpath rurl !rpath-set source-file-attribute
-                 require-namespace
+                 nmsp-builder
                  dest-dir pkg-dir-prepared dyn-chr))
   
   (enter-source-file [_ nmsp-or-path compile-resource?]
@@ -148,7 +153,7 @@
       (.add !rpath-set rpath)
       (NmspIOImpl. build-io compile-io
                    rpath rurl !rpath-set src-file-attr
-                   require-namespace
+                   nmsp-builder
                    dest-dir pkg-dir-prepared dyn-chr)))
   (assoc-source-file [_ ^ExceptionInfo e]
     (wrong/assoc-if-new e :file/resource-url rurl))
@@ -158,7 +163,7 @@
     (into #{} !rpath-set))
 
   (schedule-namespace [_ ns-str provided-nmsp]
-    (.schedule require-namespace ns-str provided-nmsp))
+    (.schedule nmsp-builder ns-str provided-nmsp))
   
   (register-ch-info! [_ ch-info]
     (.register! dyn-chr ch-info))
@@ -199,19 +204,21 @@
      ^IPersistentMap initial-imports
      ^ClassLoader dyn-ld
      ^tcljc.classfile.CHR dyn-chr
-     binding-frame]             ;to carry *out* and *err* into threads
+     binding-frame              ;to carry *out* and *err* into threads
+     ^boolean collect-macro-definitions?]
     tcljc.io.BuildIO
     (initial-imports [_]
       initial-imports)
-    (nmsp-io [build-io str-or-class require-namespace]
+    (nmsp-io [build-io str-or-class nmsp-builder]
       (let [lookup-in-pkg (if (string? str-or-class)
                             (beachhead/mk-lookup-in-pkg rt-lookup dyn-ld str-or-class)
                             (.in (MethodHandles/publicLookup) ^Class str-or-class))
-            compile-io (mk-compile-io binding-frame rt-lookup lookup-in-pkg)
+            compile-io (mk-compile-io binding-frame rt-lookup lookup-in-pkg
+                                      collect-macro-definitions?)
             !rpath-set (HashSet.)
             pdp (java.util.concurrent.atomic.AtomicBoolean. false)]
         (NmspIOImpl. build-io compile-io nil nil !rpath-set nil
-                     require-namespace dest-dir pdp dyn-chr)))
+                     nmsp-builder dest-dir pdp dyn-chr)))
     (resource-url [_ rpath]
       (or (.getResource app-ld (str rpath))
           (wrong/file rpath)))
@@ -238,7 +245,8 @@
                   (clojure.lang.Var/resetThreadBindingFrame binding-frame)
                   (.call f)))))
 
-(defn mk-build-io ^BuildIO [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld]
+(defn mk-build-io ^BuildIO [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld
+                            ^boolean collect-macro-definitions?]
   (let [rt-lookup (cfg/get-rt-lookup app-ld)
         initial-imports (reduce-kv (fn [acc nm-sym clnm]
                                      (let [cl (.findClass rt-lookup clnm)]
@@ -253,7 +261,8 @@
                                     'seq rt/clnm-seq})]
     (BuildIOImpl. app-ld rt-lookup dest-dir initial-imports
                   dyn-ld (cf/mk-chr dyn-ld)
-                  (clojure.lang.Var/cloneThreadBindingFrame))))
+                  (clojure.lang.Var/cloneThreadBindingFrame)
+                  collect-macro-definitions?)))
 
 ;;; ------------------------------------------------------------------------
 
@@ -276,9 +285,11 @@
                       [(.dest-dir opts)]
                       [])
         dyn-ld (cfg/dyn-class-loader app-ld dyn-sourcev)
-        provided-nmsp (em/mk-provided-nmsp)]
-    (-> (mk-build-io app-ld (.dest-dir opts) dyn-ld)
-        (em/emit-namespaces provided-nmsp all-nmsps))))
+        builtin-nmsp (em/mk-provided-nmsp)
+        env (mk-build-io app-ld (.dest-dir opts) dyn-ld (.deterministic? opts))]
+    (.build-all (if (.deterministic? opts)
+                  (builder/single-threaded env builtin-nmsp all-nmsps)
+                  (builder/multi-threaded env builtin-nmsp all-nmsps)))))
 
 (defn run ^boolean [^Options opts]
   (options/print-options opts)

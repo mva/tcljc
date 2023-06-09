@@ -25,7 +25,7 @@
    [tinyclj.alpha.ptest__impl :as ptest__impl] ;for get-test-context
    [tcljc.classdata :as classdata])
   (:import
-   (tcljc.io BuildIO NmspIO FnRequireNamespace)
+   (tcljc.io BuildIO NmspIO NmspBuilder)
    (tcljc.expr MacroRef FnMacroFn)
    (clojure.lang Symbol IPersistentMap ExceptionInfo)
    (java.lang.invoke MethodHandle MethodType)
@@ -285,12 +285,12 @@
 
 (defn- build-io-stub ^BuildIO [^Path dest-dir ^ClassLoader dyn-ld
                                injected-file-forms ^List bytes-list]
-  (let [build-io (tclj0/mk-build-io app-ld dest-dir dyn-ld)]
+  (let [build-io (tclj0/mk-build-io app-ld dest-dir dyn-ld false)]
     (reify BuildIO
       (initial-imports [this]
         (.initial-imports build-io))
-      (nmsp-io [this str-or-class require-namespace]
-        (-> (.nmsp-io build-io str-or-class require-namespace)
+      (nmsp-io [this str-or-class nmsp-builder]
+        (-> (.nmsp-io build-io str-or-class nmsp-builder)
             (.with-build-io this)))
       (resource-url [this rpath]
         (cfg/path-url rpath))
@@ -335,9 +335,14 @@
        (if (= i (alength ans-strs))
          known-ns
          (let [ns-str (aget ans-strs i)
-               req-fn (^FnRequireNamespace fn [ns-str provided-nmsp]
-                       (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
-               nmsp (em/compile-and-emit env ns-str req-fn provided-nmsp {})]
+               nmsp-builder (reify NmspBuilder
+                              (deterministic-namespace-compile? [_]
+                                true)
+                              (schedule [_ ns-str provided-nmsp]
+                                (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
+                              (build-all [_]
+                                (assert false)))
+               nmsp (em/compile-and-emit env ns-str nmsp-builder provided-nmsp {})]
            (doseq [^bytes bs bytes-list
                    :let [x (classdata/extract bs)]]
              (.put !render-to (classdata/class-name x) x))

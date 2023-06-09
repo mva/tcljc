@@ -214,7 +214,7 @@
     (when (= defining-tlf-idx (.get-tlf-idx ^Ctx ctx))
       (wrong/other (str "cannot define and expand macro " (wrong/q (first form))
                         " in same top-level form")))
-    (when (and (cfg/collect-macro-definitions?)
+    (when (and (.collect-macro-definitions? compile-io)
                (not (.isDone value-promise)))
       (ctx/send-msg emit-q ctx/msg-flush-macro-definitions nil))
     ;; pass nil as `env` for now
@@ -230,7 +230,9 @@
               ;; make sure that the old definition has been defined
               ;; into some prior namespace segment, and treat the
               ;; redefinition as a fresh macro
-              (do (when (cfg/collect-macro-definitions?)
+              (do (when (-> (ctx/tl-ctx* tl-ctx)
+                            .compile-io
+                            .collect-macro-definitions?)
                     (send-msg tl-ctx ctx/msg-flush-macro-definitions nil))
                   nil)
               prior))

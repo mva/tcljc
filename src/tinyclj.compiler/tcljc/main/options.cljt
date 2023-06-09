@@ -15,6 +15,11 @@
 
 (def sourcev-if-unset (mapv cfg/path-of ["src" "resources" "test"]))
 
+;;; If `deterministic?` is true, then namespaces are visited in depth
+;;; first order, and each namespace is compiled sequentially.  In
+;;; particular, macro and syntax quote expansions happen in
+;;; deterministic order, which in turn means that emitted class files
+;;; are identical across builds.
 (deftype Options [^Path dest-dir  ;nil means "don't store class files"
                   ^Keyword parent-classloader
                   ^IPersistentVector sourcev ;of Path
@@ -78,7 +83,7 @@
    (parse {:dest-dir nil ;unless set: create and use default directory
            :sourcev []   ;use sourcev-if-unset if this remains empty
            :parent-loader :system
-           :deterministic? cfg/deterministic-namespace-compile? ;keep if true
+           :deterministic? (not cfg/fork-work?) ;keep if true
            :wait-cyclic-ms (* 5 1000l)
            :watch-mode? false}
           (seq args)))

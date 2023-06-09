@@ -14,6 +14,7 @@
    [tcljc.main.options :as options]
    [tcljc.main.efmt :as efmt]
    [tcljc.main.invoke :as invoke]
+   [tcljc.main.builder :as builder]
    [tcljc.main.tclj0 :as tclj0])
   (:import
    (tcljc.main.options Options)
@@ -53,7 +54,7 @@
   (letfn [(report-success ^IPersistentMap [^IPersistentMap nmsp-map]
             ;; returns `dep-map` or throws an ExceptionInfo with
             ;; embedded `dep-map`
-            (let [dep-map (em/dependency-map ^java.util.Map nmsp-map)]
+            (let [dep-map (builder/dependency-map ^java.util.Map nmsp-map)]
               (try
                 (.accept on-completion (Optional/of nmsp-map)) ;not dep-map!
                 dep-map
@@ -78,12 +79,12 @@
           (keep-across-import [prior build]
             ;; preserve old rpaths and req-strs info if this namespace
             ;; was imported from class files instead of being compiled
-            (if (em/imported-namespace? build)
+            (if (builder/imported-namespace? build)
               (or prior {})  ;we may already know about this namespace
               build))]
     (let [dep-map (try-build-and-report)]
       (-> (merge-with keep-across-import prior-completed-map dep-map)
-          (drop-bad-namespaces! opts em/completed-namespace?)))))
+          (drop-bad-namespaces! opts builder/completed-namespace?)))))
 
 (defn run
   (^boolean [^Options opts]

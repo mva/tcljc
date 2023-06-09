@@ -22,26 +22,6 @@
 ;;; compile namespaces sequentially and emit class files in order.
 (def fork-work? #_false true)
 
-;;; If true, then namespaces are visited in depth first order, and
-;;; each namespace is compiled sequentially.  In particular, macro and
-;;; syntax quote expansions happen in deterministic order, which in
-;;; turn means that emitted class files are identical across builds.
-(def ^:redef deterministic-namespace-compile? #_true (not fork-work?))
-
-(defn set-flags! ^void [^boolean deterministic?]
-  ;; FIXME... bug in tclj-in-tclj?  Clojure allows this, tcljc as well
-  #_(def deterministic-namespace-compile? deterministic?)
-  (-> (Class/forName "tcljc.config.___")
-      (.getField "deterministic-namespace-compile?")
-      (.setBoolean nil deterministic?)))
-
-;;; When true, try to collect multiple macro definitions into a
-;;; namespace segment, instead of starting a new one after each macro.
-;;; Only works in deterministic mode, because the emit thread
-;;; deadlocks when a function thread thread sends it any tasks.
-(defn collect-macro-definitions? ^boolean []
-  deterministic-namespace-compile?)
-
 ;; Emit ClassFile attribute SourceFile & Code attribute LineNumberTable?
 (def enable-line-numbers true)
 
