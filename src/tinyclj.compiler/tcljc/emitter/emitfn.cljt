@@ -335,8 +335,7 @@
               (bytecode/emit-body xb ld-this at 0 (.body-expr ac)))]
     (.withMethodBody cb nm mtd flags xbh)))
 
-(defn mk-emit-virtuals ^IEmitPlan [^ClassDesc this-class 
-                                   ^String source-file ^String this-mnm
+(defn mk-emit-virtuals ^IEmitPlan [^ClassDesc this-class ^String this-mnm
                                    ^DirectMethodHandleDesc super-mhd
                                    ^FnSpec fspec]
   (reify IEmitPlan
@@ -374,12 +373,10 @@
             patched-ees (patched-entries fspec)
             all-ees (concat final-ees patched-ees)]
         (cf/with-cbh [cb]
-          (-> (cf/with-version cb)
-              (.withFlags (bit-or Classfile/ACC_PUBLIC
-                                  Classfile/ACC_FINAL
-                                  Classfile/ACC_SUPER))
-              (.withSuperclass (.owner super-mhd))
-              (cf/with-source-file source-file))
+          (-> (.withFlags cb (bit-or Classfile/ACC_PUBLIC
+                                     Classfile/ACC_FINAL
+                                     Classfile/ACC_SUPER))
+              (.withSuperclass (.owner super-mhd)))
 
           (doseq [^EnvEntry ee all-ees
                   :let [ld ^LdStMember (.ld-st-instr ee)]]
@@ -458,8 +455,7 @@
                   (.areturn)))]
     (.withMethodBody cb rt/name-meta-method mtd flags xbh)))
 
-(defn mk-emit-reify ^IEmitPlan [^ClassDesc this-class itfs
-                                ^String source-file ^String this-mnm
+(defn mk-emit-reify ^IEmitPlan [^ClassDesc this-class itfs ^String this-mnm
                                 ^DirectMethodHandleDesc super-mhd
                                 ^FnSpec fspec]
   (reify IEmitPlan
@@ -488,13 +484,11 @@
                       (cons (EnvEntry. bref bref nil field-ld false)
                             (final-entries fspec)))]
         (cf/with-cbh [cb]
-          (-> (cf/with-version cb)
-              (.withFlags (bit-or Classfile/ACC_PUBLIC
-                                  Classfile/ACC_FINAL
-                                  Classfile/ACC_SUPER))
+          (-> (.withFlags cb (bit-or Classfile/ACC_PUBLIC
+                                     Classfile/ACC_FINAL
+                                     Classfile/ACC_SUPER))
               (.withSuperclass (.owner super-mhd))
-              (.withInterfaceSymbols itfs)
-              (cf/with-source-file source-file))
+              (.withInterfaceSymbols itfs))
 
           (doseq [^EnvEntry ee all-ees
                   :let [ld ^LdStMember (.ld-st-instr ee)]]

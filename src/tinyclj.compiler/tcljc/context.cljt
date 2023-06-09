@@ -12,17 +12,17 @@
    [tcljc.wrong :as wrong]
    [tcljc.runtime :as rt]
    [tcljc.expr :as x]
+   [tcljc.io :as io]
    [tinyclj.string :as str])
   (:import
    (tcljc.expr BindingRef FnForm)
+   (tcljc.io CompileIO)
    (clojure.lang Symbol Keyword IPersistentVector IPersistentMap ExceptionInfo)
    (jdk.incubator.concurrent StructuredTaskScope)
-   (java.nio.file Path)
-   (java.lang.constant ClassDesc ConstantDesc)
-   (java.lang.invoke MethodHandles$Lookup MethodHandle)
-   (java.util Map ArrayList)
+   (java.lang.constant ClassDesc)
+   (java.lang.invoke MethodHandles$Lookup)
    (java.util.concurrent Future BlockingQueue ArrayBlockingQueue
-                         CompletableFuture TimeUnit ConcurrentHashMap)))
+                         CompletableFuture TimeUnit)))
 
 ;;; See ptest/get-future: Do *NOT* call wait-for-result as part of a
 ;;; map.
@@ -174,26 +174,11 @@
               ^:unsynchronized-mutable ^IPersistentMap _imports
      
               ^String ns-str
-              ^Path rpath
-              ^java.net.URL rurl    ;nil when importing capstone class
-              ^MethodHandles$Lookup lookup-in-pkg
+              ^CompileIO compile-io
+              
               ^FnRequireNamespace require-namespace
 
-              ^ConcurrentHashMap !private-names
-              ;; Helper structure to generate unique names for fn* and
-              ;; reify* instances within a given namespace.
-     
-              ^Object binding-frame
-              ;; To carry *out* and *err* into threads.
-     
               ^BlockingQueue emit-q
-     
-              ^MethodHandle next-id-mh
-              ^MethodHandle apply-mh
-              ;; Handle for `tinyclj.lang.RT/applyMacroMapped`, or nil
-              ;; if application and compiler share their runtime
-              ;; classes.  In the latter case, the macro function's
-              ;; `applyTo` can be invoked directly.
      
               ^StructuredTaskScope arity-task-scope
               ;; The executor for futures compiling an fn* arity (or
@@ -243,70 +228,41 @@
   (increment-tlf-idx [_]
     (set! _tlf-idx (inc _tlf-idx))))
 
-(defn resolve-mh ^MethodHandle [^MethodHandles$Lookup l ^ConstantDesc cd]
-  ^MethodHandle (.resolveConstantDesc cd l))
-
-(defn- get-apply-mh ^MethodHandle [^MethodHandles$Lookup l]
-  (let [compiler-rt-witness tinyclj.lang.AFnMh
-        app-rt-witness (.resolveConstantDesc rt/AFn l)
-        shared-runtime? (identical? compiler-rt-witness app-rt-witness)]
-    (if shared-runtime?
-      nil
-      (resolve-mh l rt/mhd-applyMacroMapped))))
-
 (defn mk-ctx* ^Ctx [^IPersistentMap initial-globals
+                    ^IPersistentMap initial-imports
+                    
+                    ^String ns-str ^CompileIO compile-io
                                   
-                    ^String ns-str ^Path rpath ^java.net.URL rurl
-                                  
-                    ^MethodHandles$Lookup lookup-in-pkg
                     ^FnRequireNamespace require-namespace
-                    ^MethodHandles$Lookup rt-lookup
-                    ^StructuredTaskScope arity-task-scope
-                    binding-frame]
+                    ^StructuredTaskScope arity-task-scope]
   (let [known-ns {}
         ns-alias {}
         capacity-q 16 ;prevent compilation from reaching too far ahead
-        emit-q (ArrayBlockingQueue. capacity-q)
-        next-id-mh (resolve-mh rt-lookup rt/mhd-nextID)
-        apply-mh (get-apply-mh rt-lookup)
-        private-names (ConcurrentHashMap.)
-        initial-imports (reduce-kv (fn [acc nm-sym clnm]
-                                     (let [cl (.findClass rt-lookup clnm) ]
-                                       (assoc acc nm-sym cl)))
-                                   jb/jvm-imports
-                                   {'symbol rt/clnm-symbol
-                                    'keyword rt/clnm-keyword
-                                    'vector rt/clnm-vector
-                                    'map rt/clnm-map
-                                    'set rt/clnm-set
-                                    'list rt/clnm-list
-                                    'seq rt/clnm-seq})]
+        emit-q (ArrayBlockingQueue. capacity-q)]
     (Ctx. known-ns ns-alias initial-globals initial-imports
-          ns-str rpath rurl lookup-in-pkg require-namespace
-          private-names binding-frame emit-q next-id-mh apply-mh
-          arity-task-scope false 0 0)))
+          ns-str compile-io require-namespace
+          emit-q arity-task-scope false 0 0)))
 
 (defn locked ^Ctx [^Ctx ctx]
   (if (.locked? ctx)
     ctx
     (Ctx. (.get-known-ns ctx) (.get-ns-alias-map ctx) (.get-globals ctx)
           (.get-imports ctx)
-          (.ns-str ctx) (.rpath ctx) (.rurl ctx)
-          (.lookup-in-pkg ctx) (.require-namespace ctx)
-          (.!private-names ctx) (.binding-frame ctx) (.emit-q ctx)
-          (.next-id-mh ctx) (.apply-mh ctx) (.arity-task-scope ctx) true 0
+          (.ns-str ctx) (.compile-io ctx)
+          (.require-namespace ctx)
+          (.emit-q ctx)
+          (.arity-task-scope ctx) true 0
           (.get-tlf-idx ctx))))
 
 (defn locked-in-class ^Ctx [^Ctx ctx ^Class ephemeral-class]
   (let [short-sym (jb/import-symbol-short ephemeral-class)
-        imports (assoc (.get-imports ctx) short-sym ephemeral-class)
-        l (.in (.lookup-in-pkg ctx) ephemeral-class)]
+        imports (assoc (.get-imports ctx) short-sym ephemeral-class)]
     (Ctx. (.get-known-ns ctx) (.get-ns-alias-map ctx) (.get-globals ctx)
-          imports
-          (.ns-str ctx) (.rpath ctx) (.rurl ctx)
-          l (.require-namespace ctx)
-          (.!private-names ctx) (.binding-frame ctx) (.emit-q ctx)
-          (.next-id-mh ctx) (.apply-mh ctx) (.arity-task-scope ctx) true 0
+          imports (.ns-str ctx)
+          (.compile-io-in (.compile-io ctx) ephemeral-class)
+          (.require-namespace ctx)
+          (.emit-q ctx)
+          (.arity-task-scope ctx) true 0
           (.get-tlf-idx ctx))))
 
 
@@ -319,11 +275,14 @@
 (defn this-ns ^String [tl-ctx]
   (.ns-str (tl-ctx* tl-ctx)))
 
-(defn lookup-in-pkg ^MethodHandles$Lookup [tl-ctx]
-  (.lookup-in-pkg (tl-ctx* tl-ctx)))
+(defn dyn-ld ^ClassLoader [tl-ctx]
+  (.getClassLoader
+   (-> (tl-ctx* tl-ctx) .compile-io .lookup-in-pkg .lookupClass)))
 
-(defn next-id ^int [^Ctx ctx]
-  ^int (.invokeExact (.next-id-mh ctx)))
+(defn compile-io ^CompileIO [tl-ctx]
+  (.compile-io (tl-ctx* tl-ctx)))
+
+
 
 ;; Given a simple symbol or a string in type tag syntax, return the
 ;; imported class or the type instance from the dynamic class loader
@@ -335,10 +294,11 @@
     (let [tl-ctx (tl-ctx* tl-ctx)]
       (or (.valAt (.get-imports tl-ctx) tp) ;symbols only
           (try
-            (.resolveConstantDesc (if (symbol? tp)
-                                    (ClassDesc/of (str tp))
-                                    (rt/str-to-cld tp))
-                                  (.lookup-in-pkg tl-ctx))
+            (.resolveConstantDesc
+             (if (symbol? tp)
+               (ClassDesc/of (str tp))
+               (rt/str-to-cld tp))
+             (-> tl-ctx .compile-io .lookup-in-pkg))
             (catch ClassNotFoundException _
               nil))))))
 
@@ -365,30 +325,3 @@
 
 (defn put-global ^BindingRef [^String nm ^BindingRef x tl-ctx]
   (.put-global (tl-ctx* tl-ctx) nm x))
-
-
-(defn this-rpath ^Path [tl-ctx]
-  (.rpath (tl-ctx* tl-ctx)))
-(defn this-rurl ^java.net.URL [tl-ctx]
-  (.rurl (tl-ctx* tl-ctx)))
-(defn private-name-map ^ConcurrentHashMap [tl-ctx]
-  (.!private-names (tl-ctx* tl-ctx)))
-(defn assoc-resource-url ^ExceptionInfo [^ExceptionInfo e tl-ctx]
-  (wrong/assoc-if-new e :file/resource-url (this-rurl tl-ctx)))
-
-(defn push-nmsp-context ^void [^MethodHandles$Lookup lookup-in-pkg
-                               ^String ns-str]
-  (let [mh (resolve-mh lookup-in-pkg rt/mhd-pushFileContext)]
-    ^void (.invokeExact mh ns-str)))
-(defn pop-nmsp-context ^void [^MethodHandles$Lookup lookup-in-pkg]
-  (let [mh (resolve-mh lookup-in-pkg rt/mhd-popFileContext)]
-    ^void (.invokeExact mh)))
-
-(defn clone-thread-binding-frame []
-  (clojure.lang.Var/cloneThreadBindingFrame))
-(defn reset-thread-binding-frame ^void [x]
-  ;; compiler code running in unit tests should use the *out*
-  ;; and *err* bound by ptest:
-  (clojure.lang.Var/resetThreadBindingFrame (if (instance? Ctx x)
-                                              (.binding-frame (tl-ctx* x))
-                                              x)))

@@ -12,7 +12,6 @@
    [tcljc.javabase :as jb]
    [tcljc.classfile :as cf]
    [tcljc.expr :as x]
-   [tcljc.macro :as macro]
    [tcljc.context :as ctx]
    [tcljc.predefined :as predefined])
   (:import
@@ -88,12 +87,12 @@
     (let [static? (jb/same-classname? rt/clnm-static-fn (.getClass value))]
       (call-only-fn-form declared-tp (not static?) mhs))))
 
-(deftype ImportedMacroFn [^MethodHandle apply-mh
+(deftype ImportedMacroFn [^tcljc.io.CompileIO compile-io
                           ^Object f]
   FnMacroFn
   (expand [_ ctx form]
     ;; pass nil as `env` for now
-    (macro/apply-macro apply-mh f form nil)))
+    (.apply-macro compile-io f form nil)))
 
 (defn- add-publics [acc ^Class cl ^Ctx ctx ^MethodHandle arity-handles-mh
                     ^MethodHandle pdf-mh]
@@ -107,12 +106,14 @@
                   (when-not (.contains nm "~")
                     (cfg/demunge-name nm)))))
             (constant-init-x [^Class tp ^int mods ^Object value]
-              (or (import-fn-form (.lookup-in-pkg ctx) arity-handles-mh tp value)
+              (or (import-fn-form (-> ctx .compile-io .lookup-in-pkg)
+                                  arity-handles-mh tp value)
                   (when-not (Modifier/isTransient mods)
                     (when-some [const (x/singleton-template tp value)]
                       (x/const tp const)))))
             (public-def-info ^objects [^Member member]
-              ^objects (.invokeExact pdf-mh (.lookup-in-pkg ctx) member))
+              ^objects (.invokeExact pdf-mh (-> ctx .compile-io .lookup-in-pkg)
+                                     member))
             (resolve-sym ^BindingRef [^Symbol sym acc-publics]
               (if (= (namespace sym) (ns-str))
                 (get acc-publics (name sym)) ;nil if not yet known
@@ -183,7 +184,7 @@
             (add-macro* [acc ^String nm ^objects pdf ^ValueRef mimpl
                          ^BindingRef mvalue]
               (let [f (aget pdf 1)
-                    mfn (ImportedMacroFn. (.apply-mh ctx) f)
+                    mfn (ImportedMacroFn. (.compile-io ctx) f)
                     mref (x/macro-ref (symbol nil nm) (ns-str) mfn mvalue mimpl)]
                 (put! acc nm mref)))
             (add-macro [acc ^String nm ^objects pdf ^ValueRef mimpl]
@@ -211,14 +212,15 @@
         (doseq [x postponed] (assert (nil? (val x))))
         res))))
 
-(defn extract ^IPersistentMap [^MethodHandles$Lookup rt-lookup ^Ctx ctx
-                               ^Class capstone]
+(defn extract ^IPersistentMap [^Ctx ctx ^Class capstone]
   (letfn [(all-segments [acc ^Class cl]
             (if (identical? Object cl)
               acc
               (recur (cons cl acc) (.getSuperclass cl))))]
-    (let [arity-handles-mh (ctx/resolve-mh rt-lookup rt/mhd-arityHandlesIfFn)
-          pdf-mh (ctx/resolve-mh rt-lookup rt/mhd-publicDefInfo)]
+    (let [rt-lookup (-> ctx .compile-io .rt-lookup)
+          arity-handles-mh (.resolveConstantDesc rt/mhd-arityHandlesIfFn rt-lookup)
+          pdf-mh (.resolveConstantDesc rt/mhd-publicDefInfo rt-lookup)]
       (reduce #(add-publics %1 %2 ctx arity-handles-mh pdf-mh)
-              (predefined/initial-globals-for (.lookup-in-pkg ctx) (.ns-str ctx))
+              (predefined/initial-globals-for (-> ctx .compile-io .lookup-in-pkg)
+                                              (.ns-str ctx))
               (all-segments () capstone)))))

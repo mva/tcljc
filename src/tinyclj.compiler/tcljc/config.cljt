@@ -234,21 +234,13 @@
   (let [desc (.descriptorString cd)]
     (.substring desc 1 (dec (.length desc))))) ;drop "L" and ";", but keep "/"
 
-(defn write-and-define-class ^Class [^Path dest-dir ^MethodHandles$Lookup l
-                                     ^ClassDesc this-class ^bytes bs]
-  (let [owner-nm (internal-name this-class)]
-    #_(prn :write-and-define-class owner-nm)
-    (when (some? dest-dir)          ;expects output directory to exist
-      (let [f (.resolve dest-dir (path-of (str owner-nm class-suffix)))]
-        (with-open [w (Files/newOutputStream f)]
-          (.write w bs))))
-    (-> (try
-          (.defineClass l bs)
-          (catch NoClassDefFoundError _
-            ;; happens for example with "pkg/ns0/n2$n2-n1$n2-n1-n0" from
-            ;; test case tcljc.closure-test/nested
-            (.findClass l (str/replace owner-nm "/" "."))))
-        (validate-defined-class))))
+(defn write-class-file ^Class [^Path dest-dir ^String owner-nm ^bytes bs]
+  #_(prn :write-class-file owner-nm)
+  (when (some? dest-dir)            ;expects output directory to exist
+    (with-open [w (-> dest-dir
+                      (.resolve (path-of (str owner-nm class-suffix)))
+                      (Files/newOutputStream))]
+      (.write w bs))))
 
 ;;; ------------------------------------------------------------------------
 

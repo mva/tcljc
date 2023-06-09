@@ -19,11 +19,13 @@
    [tcljc.compiler :as compiler]
    [tcljc.predefined :as predefined]
    [tcljc.emitter :as emitter]
+   [tcljc.main.tclj0 :as tclj0]
    [tcljc.reader-test :as reader-test]
    [tinyclj.alpha.ptest :as ptest]             ;for is
    [tinyclj.alpha.ptest__impl :as ptest__impl] ;for get-test-context
    [tcljc.classdata :as classdata])
   (:import
+   (tcljc.io BuildIO NmspIO)
    (tcljc.expr MacroRef FnMacroFn)
    (tcljc.context FnRequireNamespace)
    (clojure.lang Symbol IPersistentMap ExceptionInfo)
@@ -282,6 +284,30 @@
       
       :else (recur acc i (inc j)))))
 
+(defn- build-io-stub ^BuildIO [^Path dest-dir ^ClassLoader dyn-ld
+                               injected-file-forms ^List bytes-list]
+  (let [build-io (tclj0/mk-build-io app-ld dest-dir dyn-ld)]
+    (reify BuildIO
+      (initial-imports [this]
+        (.initial-imports build-io))
+      (nmsp-io [this str-or-class !rpath-set]
+        (-> (.nmsp-io build-io str-or-class !rpath-set)
+            (.with-build-io this)))
+      (resource-url [this rpath]
+        (cfg/path-url rpath))
+      (forms-reader [this rurl]
+        (-> (get injected-file-forms rurl)
+            (tcljc.reader-test/mk-seq-reader)))
+      (try-load-capstone [this ns-str]
+        (.try-load-capstone build-io ns-str))
+      (define-class [this l this-class bs]
+        (let [cl (.define-class build-io l this-class bs)]
+          ;; splice out bytes of generated class files
+          (.add bytes-list bs)
+          cl))
+      (fork-task [this sts f]
+        (.fork-task build-io sts f)))))
+
 (defn nmsp
   ([formv]
    (nmsp (cfg/dyn-class-loader app-ld []) formv))
@@ -295,8 +321,9 @@
                                            (seq forms)]))
                                    ns-forms-seq)
          !render-to (HashMap.)
-         env (em/mk-build-env app-ld (dest-dir-of-test) dyn-ld {}
-                              injected-file-forms nil)
+         bytes-list (java.util.ArrayList.)
+         env (build-io-stub (dest-dir-of-test) dyn-ld
+                            injected-file-forms bytes-list)
          ans-strs (->> ns-forms-seq
                        (map (comp nmsp-name-str first))
                        ^"[Ljava.lang.String;" (into-array String))
@@ -311,9 +338,8 @@
          (let [ns-str (aget ans-strs i)
                req-fn (^FnRequireNamespace fn [ns-str provided-nmsp]
                        (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
-               nmsp (em/compile-and-emit env ns-str req-fn true provided-nmsp
-                                         {})]
-           (doseq [^bytes bs (.bytesv nmsp)
+               nmsp (em/compile-and-emit env ns-str req-fn provided-nmsp {})]
+           (doseq [^bytes bs bytes-list
                    :let [x (classdata/extract bs)]]
              (.put !render-to (classdata/class-name x) x))
            (let [globals (get (.exported-known-ns nmsp) ns-str)]

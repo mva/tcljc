@@ -120,39 +120,44 @@
 (def array-to-cpl (ArrayToCpl. (.getClassLoader Object)))
 
 
-(defn apply-macro [^MethodHandle apply-mh f form env]
-  (letfn [(wrong-arity [^Throwable cause]
-            (throw (ex-info (str "wrong number of args (" (dec (count form))
-                                 ") passed to macro") {} cause)))
-          (wrong-expand [^Throwable cause]
-            (throw (ex-info (str "error while expanding macro "
-                                 (wrong/q (first form)))
-                            {} cause)))
+(letfn [(wrong-arity [^Throwable cause form]
+          (throw (ex-info (str "wrong number of args (" (dec (count form))
+                               ") passed to macro") {} cause)))
+        (wrong-expand [^Throwable cause form]
+          (throw (ex-info (str "error while expanding macro "
+                               (wrong/q (first form)))
+                          {} cause)))
 
-          ;; True if `x`'s class has the same name as `cl`.  Use this
-          ;; if `x` may come from a different classloader, where class
-          ;; identity checks or `instance?` may fail.  `x` may be nil.
-          (classname? ^boolean [^Class cl ^Object x]
-            (= (.getName cl) (some-> x (.getClass) (.getName))))]
-    (assert (nil? env))
-    (if (nil? apply-mh)
-      (try
-        (let [form ^clojure.lang.ISeq form]
-          ;; mirrors steps in tinyclj.lang.RT/applyMacroMapped:
-          (->> (.more form)
-               (clojure.lang.Cons. env)
-               (clojure.lang.Cons. form)
-               (.applyTo ^tinyclj.lang.AFnMh f)))
-        (catch clojure.lang.ArityException e
-          (wrong-arity e))
-        (catch Throwable t
-          (wrong-expand t)))
-      (try
-        ;; Mapped macro invocation: translate the data
-        ;; representation along the chain of Compiler -> JVM ->
-        ;; Application/macro-expand -> JVM -> Compiler.
-        (.invoke apply-mh cpl-to-itf array-to-cpl f form env)
-        (catch Throwable t
-          (if (classname? clojure.lang.ArityException t)
-            (wrong-arity t)
-            (wrong-expand t)))))))
+        ;; True if `x`'s class has the same name as `cl`.  Use this
+        ;; if `x` may come from a different classloader, where class
+        ;; identity checks or `instance?` may fail.  `x` may be nil.
+        (classname? ^boolean [^Class cl ^Object x]
+          (= (.getName cl) (some-> x (.getClass) (.getName))))]
+
+  ;; Application and compiler share their runtime classes.  In this
+  ;; case, the macro function's `applyTo` can be invoked directly.
+  (defn apply-macro-direct [f form env]
+    (try
+      (let [form ^clojure.lang.ISeq form]
+        ;; mirrors steps in tinyclj.lang.RT/applyMacroMapped:
+        (->> (.more form)
+             (clojure.lang.Cons. env)
+             (clojure.lang.Cons. form)
+             (.applyTo ^tinyclj.lang.AFnMh f)))
+      (catch clojure.lang.ArityException e
+        (wrong-arity e form))
+      (catch Throwable t
+        (wrong-expand t form))))
+
+  ;; Distinct runtime classes: go the long way via the handle for
+  ;; `rt/mhd-applyMacroMapped`.
+  (defn apply-macro-mapped [^MethodHandle apply-mh f form env]
+    (try
+      ;; Mapped macro invocation: translate the data
+      ;; representation along the chain of Compiler -> JVM ->
+      ;; Application/macro-expand -> JVM -> Compiler.
+      (.invoke apply-mh cpl-to-itf array-to-cpl f form env)
+      (catch Throwable t
+        (if (classname? clojure.lang.ArityException t)
+          (wrong-arity t form)
+          (wrong-expand t form))))))

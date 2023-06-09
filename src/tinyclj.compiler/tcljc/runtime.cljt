@@ -235,7 +235,6 @@
 (def mhd-applyMacroMapped
   (mhd-static [RT "applyMacroMapped"]
               object [Function Function AFn object object]))
-(def mhd-nextID (mhd-static [ClojureRT "nextID"] int []))
 (def mhd-pushFileContext (mhd-static [RT "pushFileContext"] void [String]))
 (def mhd-popFileContext (mhd-static [RT "popFileContext"] void []))
 (def mhd-markCoreInitialization (mhd-static [RT "markCoreInitialization"]

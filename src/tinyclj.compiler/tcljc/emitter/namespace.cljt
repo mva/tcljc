@@ -9,6 +9,7 @@
   (:require
    [tcljc.config :as cfg]
    [tcljc.wrong :as wrong]
+   [tcljc.runtime :as rt]
    [tcljc.grammar :as grammar]
    tcljc.reader
    [tcljc.context :as ctx]
@@ -16,82 +17,64 @@
    [tcljc.exprfold :as xf]
    [tcljc.compiler :as compiler]
    [tcljc.publics :as publics]
+   [tcljc.io :as io]
    [tinyclj.string :as str])
   (:import
-   (tcljc.reader IReader)
    (tcljc.context Ctx)
    (tcljc.expr BindingRef)
+   (tcljc.io NmspIO)
    (clojure.lang Symbol ISeq IPersistentMap IPersistentSet IPersistentVector
                  ExceptionInfo)
-   (java.lang.invoke MethodHandles$Lookup)
-   (java.net URL)
-   (java.nio.file Path)
+   (java.util HashSet)
    (java.util.concurrent Future TimeoutException)))
 
-(definterface IBuildEnv
-  (rt-lookup ^MethodHandles$Lookup [])
-  (resolve-rpath ^URL [^Path rpath]) ;returns nil on failure
-  (forms-reader ^IReader [^URL rurl]))
-
-(deftype Namespace [^IBuildEnv env
-                    ^IPersistentMap provided-nmsp ;string -> Namespace
+(deftype Namespace [^IPersistentMap provided-nmsp ;string -> Namespace
                     ^Ctx ctx
                     
-                    ^IPersistentSet rpaths ;nil if imported
+                    ^HashSet !rpath-set ;mutated via NmspIO, nil if imported
                     ^IPersistentSet req-strs
-                    ^Class capstone
-                    ^IPersistentMap exported-known-ns
-                    ^IPersistentVector bytesv]) ;emitted classes, or stays nil
+                    ^Class capstone     ;for invoke after build
+                    ^IPersistentMap exported-known-ns])
 
-(defn- mk-nmsp ^Namespace [^IBuildEnv env ^IPersistentMap provided-nmsp
-                           ^Ctx ctx]
-  (Namespace. env provided-nmsp ctx #{} #{} nil nil nil))
+(defn mk-nmsp ^Namespace [^IPersistentMap provided-nmsp ^HashSet !rpath-set
+                          ^Ctx ctx]
+  (assert (some? !rpath-set))
+  (Namespace. provided-nmsp ctx !rpath-set #{} nil nil))
 
-(defn mk-imported ^Namespace [^IBuildEnv env ^IPersistentMap provided-nmsp
-                              ^Ctx ctx]
-  (Namespace. env provided-nmsp ctx nil #{} nil nil nil))
+(defn mk-imported ^Namespace [^IPersistentMap provided-nmsp ^Ctx ctx]
+  (Namespace. provided-nmsp ctx nil #{} nil nil))
 
 (defn imported? ^boolean [^Namespace nmsp]
-  (nil? (.rpaths nmsp)))
+  (nil? (.!rpath-set nmsp)))
 
 (defn mk-provided ^Namespace [^String ns-str ^IPersistentMap publics]
-  (Namespace. nil nil nil #{} #{} nil {ns-str publics} nil))
+  (Namespace. nil nil nil #{} nil {ns-str publics}))
 
 (defn assoc-provided [provided-nmsp ^String ns-str ^IPersistentMap publics]
   (assoc provided-nmsp ns-str (mk-provided ns-str publics)))
 
-(def ^:private compile-namespace-in-progress (mk-nmsp nil nil nil))
-
-(defn- with-rpath ^Namespace [^Namespace nmsp ^Path rpath]
-  (Namespace. (.env nmsp) (.provided-nmsp nmsp) (.ctx nmsp)
-              (conj (.rpaths nmsp) rpath) (.req-strs nmsp)
-              (.capstone nmsp) (.exported-known-ns nmsp) (.bytesv nmsp)))
+(def ^:private compile-namespace-in-progress (mk-imported nil nil))
 
 (defn- with-requires ^Namespace [^Namespace nmsp ns-strs]
-  (Namespace. (.env nmsp) (.provided-nmsp nmsp) (.ctx nmsp)
-              (.rpaths nmsp) (into (.req-strs nmsp) ns-strs)
-              (.capstone nmsp) (.exported-known-ns nmsp) (.bytesv nmsp)))
+  (Namespace. (.provided-nmsp nmsp) (.ctx nmsp)
+              (.!rpath-set nmsp) (into (.req-strs nmsp) ns-strs)
+              (.capstone nmsp) (.exported-known-ns nmsp)))
 
-(defn with-capstone ^Namespace [^Namespace nmsp ^Class capstone
-                                ^IPersistentVector bytesv]
+(defn with-capstone ^Namespace [^Namespace nmsp ^Class capstone]
   (let [ctx (.ctx nmsp)
-        publics (publics/extract (-> nmsp .env .rt-lookup) ctx capstone)
+        publics (publics/extract ctx capstone)
         ;; do not re-export namespaces from `provided-nmsp`, because
         ;; this would cause obsoleted versions of the core namespace
         ;; to reach downstream namespaces like tinyclj.java.io
         kns (-> (reduce dissoc (.get-known-ns ctx) (keys (.provided-nmsp nmsp)))
                 (assoc (.ns-str ctx) publics))]
-    (Namespace. nil nil nil ;clear `env`, `provided-nmsp`, and `ctx`
-                (.rpaths nmsp) (.req-strs nmsp) capstone kns bytesv)))
+    (Namespace. nil nil ;clear `provided-nmsp` and `ctx`
+                (.!rpath-set nmsp) (.req-strs nmsp)
+                capstone kns)))
 
 (defn core-lib? ^boolean [^Namespace nmsp]
   (cfg/core-lib? (-> nmsp .ctx .ns-str)))
 
-(defn- file-rpath ^Path [^Path parent-rpath ^String path-str]
-  (let [s (str path-str cfg/source-suffix)]
-    (if (str/starts-with? path-str "/")
-      (cfg/path-of s)
-      (.resolve (.getParent parent-rpath) s))))
 
 (def marker-depth-first-path (Object.))
 
@@ -222,7 +205,8 @@
                           (-> (reduce conj-force-clinit [] apublics)
                               (xf/progn-expr x/expr-empty)))
             (with-requires nmsp req-strs)))
-        (top-level-list-form ^Namespace [^Namespace nmsp ^Path rpath ^ISeq form]
+        (top-level-list-form ^Namespace [^Namespace nmsp ^NmspIO file-nmsp-io
+                                         ^ISeq form]
           (let [op (first form)]
             (case op
               ns
@@ -242,10 +226,8 @@
                                   ctx/req-flush-namespace-segment nil))
                   (reduce
                    (fn ^Namespace [^Namespace nmsp ^String path-str]
-                     (let [rpath (file-rpath rpath path-str)]
-                       (if-some [rurl (.resolve-rpath (.env nmsp) rpath)]
-                         (top-level-file nmsp rpath rurl)
-                         (wrong/file rpath))))
+                     (top-level-file nmsp (.enter-source-file
+                                           file-nmsp-io path-str true)))
                    nmsp (next form)))
            
               in-ns
@@ -259,25 +241,27 @@
               #_else
               (do (compiler/top-level-form form (.ctx nmsp))
                   nmsp))))
-        (top-level-file ^Namespace [^Namespace nmsp ^Path rpath ^URL rurl]
+        (top-level-file ^Namespace [^Namespace nmsp ^NmspIO file-nmsp-io]
           (try
-            (let [rdr (.forms-reader (.env nmsp) rurl)]
-              (loop [nmsp (with-rpath nmsp rpath)]
+            (let [rdr (.forms-reader file-nmsp-io)]
+              (loop [nmsp nmsp]
                 (let [form (.read-1 rdr (.ctx nmsp) ::eof)]
                   (cond
                     (identical? ::eof form) nmsp
                     (seq? form) (recur
                                  (wrong/with-list-context form
-                                   (top-level-list-form nmsp rpath form)))
+                                   (top-level-list-form nmsp file-nmsp-io form)))
                     :else (do (compiler/top-level-form form (.ctx nmsp))
                               (recur nmsp))))))
             (catch ExceptionInfo e
-              (throw (wrong/assoc-if-new e :file/resource-url rurl)))))]
+              (throw (.assoc-source-file file-nmsp-io e)))))]
   
-  (defn compile-thread [^IBuildEnv env ^IPersistentMap provided-nmsp ^Ctx ctx]
-    (ctx/push-nmsp-context (.lookup-in-pkg ctx) (.ns-str ctx))
-    (try
-      (-> (mk-nmsp env provided-nmsp ctx)
-          (top-level-file (ctx/this-rpath ctx) (ctx/this-rurl ctx)))
-      (finally
-        (ctx/pop-nmsp-context (.lookup-in-pkg ctx))))))
+  (defn compile-thread [^Namespace nmsp ^NmspIO top-level-nmsp-io ^Ctx ctx]
+    (let [l (-> ctx .compile-io .lookup-in-pkg)]
+      (-> (.resolveConstantDesc rt/mhd-pushFileContext l)
+          ^void (.invokeExact (.ns-str ctx)))
+      (try
+        (top-level-file nmsp top-level-nmsp-io)
+        (finally
+          (-> (.resolveConstantDesc rt/mhd-popFileContext l)
+              ^void (.invokeExact)))))))

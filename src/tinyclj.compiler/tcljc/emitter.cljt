@@ -9,15 +9,14 @@
   (:require
    [tcljc.config :as cfg]
    [tcljc.classfile :as cf]
+   [tcljc.io :as io]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
    [tcljc.wrong :as wrong]   
-   [tcljc.reader :as rd]
    [tcljc.context :as ctx]
    [tcljc.expr :as x]
    [tcljc.predefined :as predefined]
    [tcljc.publics :as publics]
-   [tcljc.emitter.beachhead :as beachhead]
    [tcljc.emitter.namespace :as nmsp]
    [tcljc.emitter.prepare :as prepare]
    [tcljc.emitter.bytecode :as bytecode]
@@ -25,8 +24,9 @@
    [tcljc.emitter.classes :as classes]
    [tinyclj.string :as str])
   (:import
-   (tcljc.classfile CHR ClassDef)
+   (tcljc.classfile ClassDef)
    (tcljc.expr FnCode DeftypeDef MethodDef)
+   (tcljc.io BuildIO NmspIO CompileIO)
    (tcljc.compiler DelayedMacroFn)
    (tcljc.emitter.namespace Namespace)
    (tcljc.emitter.emitfn FnSpec)
@@ -36,86 +36,28 @@
    (clojure.lang ISeq IPersistentMap IPersistentVector ExceptionInfo)
    (jdk.incubator.concurrent StructuredTaskScope)
    (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
-   (java.nio.file Path)
    (java.lang.constant ClassDesc MethodTypeDesc ConstantDescs)
-   (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
    (java.time Instant)
    (java.util Map HashMap HashSet ArrayDeque)
    (java.util.concurrent Future CompletableFuture ConcurrentHashMap
                          BlockingQueue)
    (java.util.function Consumer)))
 
-(deftype BuildEnv
-    [^ClassLoader app-ld
-     ;; Source files are obtained from this loader via
-     ;; `.getResource`.  If the parent classloader is
-     ;; :system, then `app-ld` also provides ahead-of-time
-     ;; compiled class files.  It must never return classes
-     ;; from the destination directory, or compilation of
-     ;; modified classes will silently stop.
-
-     ^MethodHandles$Lookup rt-lookup
-     ;; Classes and methods from module tinyclj.rt are
-     ;; accessed via this lookup.
-
-     ^IPersistentMap builtin-nmsp
-     ;; Builtin namespaces that can be required directly from
-     ;; any namespace (maps string -> Namespace).
-
-     ^Path dest-dir
-     ;; When set, then class files are also written to this
-     ;; directory.
-              
-;;; Lifetime of single build run of "watch mode":
-     ^ClassLoader dyn-ld
-     ^CHR dyn-chr
-              
-;;; For unit tests:
-     binding-frame            ;to carry *out* and *err* into threads
-     injected-file-forms      ;forms used in lieu of reading from file
-     arender-to               ;maps class owner string to class data
-     ]
-  tcljc.emitter.namespace.IBuildEnv
-  (rt-lookup [_]
-    rt-lookup)
-  (resolve-rpath [_ rpath]
-    (if injected-file-forms
-      (cfg/path-url rpath)
-      (.getResource app-ld (str rpath))))
-  (forms-reader [_ rurl]
-    (if-some [xs (get injected-file-forms rurl)]
-      (rd/mk-seq-reader xs)
-      (rd/mk-reader (slurp rurl)))))
-
-(defn mk-build-env
-  (^BuildEnv [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld
-              ^IPersistentMap builtin-nmsp]
-   (mk-build-env app-ld dest-dir dyn-ld builtin-nmsp nil nil))
-  (^BuildEnv [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld
-              ^IPersistentMap builtin-nmsp injected-file-forms arender-to]
-   (BuildEnv. app-ld (cfg/get-rt-lookup app-ld) builtin-nmsp dest-dir
-              dyn-ld (cf/mk-chr dyn-ld)
-              (ctx/clone-thread-binding-frame) injected-file-forms arender-to)))
-
 (def first-segm-id 10)
 (def capstone-class-name "___")
 (def segment-class-prefix "_") ;followed by number: not parsed as symbol if empty
 
-(deftype SegmState [^BuildEnv env
-                    ^Ctx ctx
-                    ^String source-file
+
+(deftype SegmState [^Ctx ctx
+                    ^NmspIO nmsp-io
                     
                     ^int segm-id
                     ^ClassDesc segm-cld
                     ^IPersistentVector tlfv ;of TopLevelForm
                     ^ArrayDeque !delayed-macros ;shared across SegmState
-                    ^HashSet !private-names ;shared across SegmState
                     
-                    ^IPersistentVector bytesv ;nil if bytes are not tracked
-                    fn-class-futv])     ;vector of Future of bytes
+                    fn-class-futv])     ;vector of Future
 
-(defn- segment-lookup ^MethodHandles$Lookup [^SegmState segm]
-  (-> segm .ctx .lookup-in-pkg))
 (defn- segment-ns-str ^String [^SegmState segm]
   (-> segm .ctx .ns-str))
 (defn- segment-name ^String [^SegmState segm ^int id-delta]
@@ -124,36 +66,25 @@
   (if (zero? id-delta)
     (.segm-cld segm)
     (ClassDesc/of (segment-name segm id-delta))))
-(defn- segment-chr ^CHR [^SegmState segm]
-  (-> segm .env .dyn-chr))
 
 (defn with-tlf ^SegmState [^SegmState segm ^TopLevelForm tlf]
-  (SegmState. (.env segm) (.ctx segm) (.source-file segm)
+  (SegmState. (.ctx segm) (.nmsp-io segm)
               (.segm-id segm) (.segm-cld segm) (conj (.tlfv segm) tlf)
-              (.!delayed-macros segm) (.!private-names segm)
-              (.bytesv segm) (.fn-class-futv segm)))
-(defn with-bytes ^SegmState [^SegmState segm ^int id-delta
-                             ^boolean clear-tlfv? ^bytes bs ^Class segm-cl]
-  (let [bytesv' (when-some [bsv (.bytesv segm)]
-                  (conj bsv bs))]
-    (SegmState. (.env segm) (.ctx segm) (.source-file segm)
-                (+ (.segm-id segm) id-delta) (segment-cld segm id-delta)
-                (if clear-tlfv? [] (.tlfv segm))
-                (.!delayed-macros segm) (.!private-names segm) bytesv'
-                (.fn-class-futv segm))))
+              (.!delayed-macros segm) (.fn-class-futv segm)))
+(defn with-next-segm ^SegmState [^SegmState segm]
+  (SegmState. (.ctx segm) (.nmsp-io segm)
+              (inc (.segm-id segm)) (segment-cld segm +1)
+              []                        ;clear tlfv
+              (.!delayed-macros segm) (.fn-class-futv segm)))
 (defn- with-fn-class-fut ^SegmState [^SegmState segm ^Future fut]
-  (SegmState. (.env segm) (.ctx segm) (.source-file segm)
+  (SegmState. (.ctx segm) (.nmsp-io segm)
               (.segm-id segm) (.segm-cld segm) (.tlfv segm)
-              (.!delayed-macros segm) (.!private-names segm)
-              (.bytesv segm) (conj (.fn-class-futv segm) fut)))
+              (.!delayed-macros segm) (conj (.fn-class-futv segm) fut)))
 (defn- with-collect-fn-classes ^SegmState [^SegmState segm]
-  (let [bytesv' (if-some [bytesv (.bytesv segm)]
-                  (into (.bytesv segm) (map ctx/wait-for-result)
-                        (.fn-class-futv segm))
-                  (run! ctx/wait-for-result (.fn-class-futv segm)))]
-    (SegmState. (.env segm) (.ctx segm) (.source-file segm)
-                (.segm-id segm) (.segm-cld segm) (.tlfv segm)
-                (.!delayed-macros segm) (.!private-names segm) bytesv' [])))
+  (run! ctx/wait-for-result (.fn-class-futv segm))
+  (SegmState. (.ctx segm) (.nmsp-io segm)
+              (.segm-id segm) (.segm-cld segm) (.tlfv segm)
+              (.!delayed-macros segm) []))
 
 (defn- capstone-cld ^ClassDesc [^SegmState segm]
   (ClassDesc/of (-> segm .ctx .ns-str) capstone-class-name))
@@ -167,7 +98,8 @@
                            Classfile/ACC_FINAL)
                    (cf/with-xbh [xb] (.return_ xb))))
 
-(defn- build-segment ^bytes [^SegmState segm ^boolean force-clinit?]
+(defn- builder-segment ^Consumer [^SegmState segm ^ClassDesc segm-cld
+                                  ^boolean force-clinit?]
   (let [clinit (fn []
                  (let [ns-str (segment-ns-str segm)]
                    (-> []
@@ -181,29 +113,23 @@
                          (conj (x/invoke-xref
                                 jb/void [(x/const String (segment-name segm 0))]
                                 rt/mhd-markCoreInitialization)))
-                       (x/progn*))))
-        segm-cld (segment-cld segm 0)]
-    (cf/build
-     segm-cld
-     (cf/with-cbh [cb]
-       (when-not (= (.segm-id segm) first-segm-id)
-         (.withSuperclass cb (segment-cld segm -1)))
-       (doseq [^TopLevelForm tlf (.tlfv segm)]
-         ;; emit fields and methods of all global bindings, delivering
-         ;; their loads in order
-         (doseq [^Binding global-b (.global-bs tlf)]
-           (bytecode/emit-global-b cb segm-cld global-b))
-         (doseq [^FnSpec fspec (.fn-specs tlf)]
-           (.fn-methods (-> fspec .fn-form .!fnc .emit-plan) cb)))
-       (-> (cf/with-version cb)
-           (.withFlags Classfile/ACC_PUBLIC)
-           (cf/with-source-file (.source-file segm))
-           (cond-> force-clinit? (with-force-clinit))
-           (.withMethodBody ConstantDescs/CLASS_INIT_NAME rt/mtd-void-void
-                            (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
-                            (cf/with-xbh [xb]
-                              (bytecode/emit-body xb (clinit))))))
-     (segment-chr segm))))
+                       (x/progn*))))]
+    (cf/with-cbh [cb]
+      (when-not (= (.segm-id segm) first-segm-id)
+        (.withSuperclass cb (segment-cld segm -1)))
+      (doseq [^TopLevelForm tlf (.tlfv segm)]
+        ;; emit fields and methods of all global bindings, delivering
+        ;; their loads in order
+        (doseq [^Binding global-b (.global-bs tlf)]
+          (bytecode/emit-global-b cb segm-cld global-b))
+        (doseq [^FnSpec fspec (.fn-specs tlf)]
+          (.fn-methods (-> fspec .fn-form .!fnc .emit-plan) cb)))
+      (-> (.withFlags cb Classfile/ACC_PUBLIC)
+          (cond-> force-clinit? (with-force-clinit))
+          (.withMethodBody ConstantDescs/CLASS_INIT_NAME rt/mtd-void-void
+                           (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
+                           (cf/with-xbh [xb]
+                             (bytecode/emit-body xb (clinit))))))))
 
 (defn with-main ^ClassBuilder [^ClassBuilder cb ^SegmState segm]
   (letfn [(main-function ^BindingRef []
@@ -224,39 +150,21 @@
                         (.return_))))]
         (.withMethodBody cb "main" main-mtd flags xbh)))))
 
-(defn- build-capstone ^bytes [^SegmState segm ^Namespace nmsp]
+(defn- builder-capstone ^Consumer [^SegmState segm ^Namespace nmsp]
   (let [requires-xb (cf/with-xbh [xb]
                       (let [s (if (nmsp/core-lib? nmsp)
                                 "" ;suppress internal details of core lib
                                 (str/join "," (sort (.req-strs nmsp))))]
                         (-> xb (.constantInstruction s) (.areturn))))]
-    (cf/build
-     (capstone-cld segm)
-     (cf/with-cbh [cb]
-       (-> (cf/with-version cb)
-           (.withFlags Classfile/ACC_PUBLIC)
-           (.withSuperclass (segment-cld segm -1))
-           (cf/with-source-file (.source-file segm))
-           (with-force-clinit)
-           (.withMethodBody rt/name-requires rt/mtd-String-void
-                            (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
-                                    Classfile/ACC_FINAL)
-                            requires-xb)
-           (with-main segm)))
-     (segment-chr segm))))
-
-(defn- build-class ^bytes [^ClassDef cdef ^String source-file ^CHR dyn-chr]
-  (.register! dyn-chr (.ch-info cdef))
-  (cf/build
-   (-> cdef .ch-info .thisClass)
-   (cf/with-cbh [cb]
-     (-> (cf/with-version cb)
-         (.withFlags (.flags cdef))
-         (.withSuperclass (-> cdef .ch-info .superClass))
-         (.withInterfaceSymbols (.itfs cdef))
-         (cf/with-source-file source-file))
-     (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef)))
-   dyn-chr))
+    (cf/with-cbh [cb]
+      (-> (.withFlags cb Classfile/ACC_PUBLIC)
+          (.withSuperclass (segment-cld segm -1))
+          (with-force-clinit)
+          (.withMethodBody rt/name-requires rt/mtd-String-void
+                           (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
+                                   Classfile/ACC_FINAL)
+                           requires-xb)
+          (with-main segm)))))
 
 (defn- build-deftype ^ClassDef [^DeftypeDef dtdef]
   (letfn [(method-cbh [^MethodDef mdef]
@@ -275,115 +183,92 @@
     (let [cdef (.cdef dtdef)]
       (cf/with-methods cdef (map method-cbh (.method-defs dtdef))))))
 
-(defn- mk-first-segm ^SegmState [^BuildEnv env ^Ctx ctx ^boolean collect-bytesv?]
-  (let [rurl (ctx/this-rurl ctx)
-        source-file (when (and cfg/enable-line-numbers (some? rurl))
-                      (let [s (.getPath rurl)]
-                        (subs s (inc (.lastIndexOf s "/")))))
-        cld (ClassDesc/of (.ns-str ctx)
+(defn- mk-first-segm ^SegmState [^NmspIO nmsp-io ^Ctx ctx]
+  (let [cld (ClassDesc/of (.ns-str ctx)
                           (str segment-class-prefix first-segm-id))]
-    (SegmState. env ctx source-file first-segm-id cld
-                [] (ArrayDeque.) (HashSet.) (when collect-bytesv? []) [])))
+    (SegmState. ctx nmsp-io first-segm-id cld [] (ArrayDeque.) [])))
 
 (defn- emit-segments ^Namespace [^SegmState segm
                                  ^StructuredTaskScope nmsp-task-scope]
   (letfn [(take-msg ^Msg [^BlockingQueue q]
             (.take q))
-          (fn-class-future ^Future [^SegmState segm ^FnCode fnc ^Consumer cbh]
-            (let [f-fn (^Callable fn []
-                        (when cfg/fork-work?
-                          (ctx/reset-thread-binding-frame (.ctx segm)))
-                        (let [this-class ^ClassDesc (.ld-clx fnc)
-                              bs (cf/build this-class cbh (segment-chr segm))]
-                          (cfg/write-and-define-class (-> segm .env .dest-dir)
-                                                      (segment-lookup segm)
-                                                      this-class bs)
-                          ;; return bytes (not class!) once the class has been
-                          ;; defined into the classloader
-                          bs))]
-              (if cfg/fork-work?
-                (.fork nmsp-task-scope f-fn)
-                (CompletableFuture/completedFuture (.call f-fn)))))
           (schedule-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
             (if-some [cbh (.fn-cbh (.emit-plan fnc))]
-              (with-fn-class-fut segm (fn-class-future segm fnc cbh))
+              (with-fn-class-fut segm
+                (.fork-task (.nmsp-io segm) nmsp-task-scope
+                            (^Callable fn []
+                             (.produce-class (.nmsp-io segm)
+                                             ^ClassDesc (.ld-clx fnc) cbh))
+                            cfg/fork-work?))
               segm))
           (schedule-fn-classes ^SegmState [^SegmState segm ^TopLevelForm tlf]
             (let [segm (with-tlf segm tlf)
-                  dyn-chr (segment-chr segm)
                   fncs (map #(-> ^FnSpec % .fn-form .!fnc) (.fn-specs tlf))]
               (doseq [^FnCode fnc fncs :let [ep (.emit-plan fnc)]]
                 (when-some [ch-info (.fn-class-hierarchy-info ep)]
-                  (.register! dyn-chr ch-info)))
+                  (.register-ch-info! (.nmsp-io segm) ch-info)))
               (reduce schedule-fn-class segm fncs)))
           (delayed-but-ready ^DelayedMacroFn [^SegmState segm]
             (when-some [mfn ^DelayedMacroFn (.peekFirst (.!delayed-macros segm))]
               (when (.realized? (.bref mfn))
                 mfn)))
-          (load-bref ^Object [^Ctx ctx ^BindingRef bref]
-            (let [global-mh (.mh-if-global (x/deref-load bref)
-                                           (.lookup-in-pkg ctx))]
-              (if (nil? (.apply-mh ctx))
-                ;; compiler and application share runtime?
-                ;; careful, this is a very brittle method type!
-                ^tinyclj.lang.StaticFnMh (.invokeExact global-mh)
-                (.invoke global-mh))))
+          (load-bref ^Object [^CompileIO compile-io ^BindingRef bref]
+            (.invoke-global-mh compile-io
+                               (.mh-if-global (x/deref-load bref)
+                                              (.lookup-in-pkg compile-io))))
           (write-segment ^SegmState [^SegmState segm ^boolean force-clinit?]
             (if (and (not force-clinit?) (zero? (count (.tlfv segm))))
               segm                    ;nothing to do for empty segment
               ;; Note: There is no point to move the segment class into
               ;; a future, because it is immediately required -- either
               ;; for a macro value or for namespace completion.
-              (let [bs (build-segment segm force-clinit?)
+              (let [segm-cld (segment-cld segm 0)
+                    cbh (builder-segment segm segm-cld force-clinit?)
                     ;; macros from this segment class can be invoked
                     ;; once it is defined: make sure there are no
                     ;; pending dependencies
                     segm (with-collect-fn-classes segm)
-                    cl (cfg/write-and-define-class (-> segm .env .dest-dir)
-                                                   (segment-lookup segm)
-                                                   (segment-cld segm 0) bs)]
+                    cbd (.produce-class (.nmsp-io segm) segm-cld cbh)]
                 (loop []
                   (when-some [mfn (delayed-but-ready segm)]
                     (when-not (.complete (.value-promise mfn)
-                                         (load-bref (.ctx segm) (.bref mfn)))
+                                         (load-bref (-> segm .ctx .compile-io)
+                                                    (.bref mfn)))
                       (throw (IllegalStateException.)))
                     (.removeFirst (.!delayed-macros segm))
                     (recur)))
-                (with-bytes segm +1 true bs cl))))
+                (with-next-segm segm))))
           (write-and-define ^SegmState [^SegmState segm ^ClassDef cdef
                                         ^CompletableFuture promise]
-            (let [bs (build-class cdef (.source-file segm) (segment-chr segm))
+            (.register-ch-info! (.nmsp-io segm) (.ch-info cdef))
+            (let [cbh (cf/with-cbh [cb]
+                        (-> (.withFlags cb (.flags cdef))
+                            (.withSuperclass (-> cdef .ch-info .superClass))
+                            (.withInterfaceSymbols (.itfs cdef)))
+                        (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef)))
                   this-class (-> cdef .ch-info .thisClass)
-                  cl (cfg/write-and-define-class (-> segm .env .dest-dir)
-                                                 (segment-lookup segm)
-                                                 this-class bs)]
+                  cl (.produce-class (.nmsp-io segm) this-class cbh)]
               (.complete promise cl)
-              (with-bytes segm 0 false bs nil)))
+              segm))
           (write-capstone ^Namespace [^SegmState segm ^Namespace nmsp]
-            (let [bs (build-capstone segm nmsp)
-                  cl (cfg/write-and-define-class
-                      (-> segm .env .dest-dir)
-                      (segment-lookup segm)
-                      (capstone-cld segm) bs)
-                  segm (with-bytes segm 0 true bs cl)]
-              (nmsp/with-capstone nmsp cl (.bytesv segm))))
+            (nmsp/with-capstone nmsp
+              (.produce-class (.nmsp-io segm) (capstone-cld segm)
+                              (builder-capstone segm nmsp))))
           
           (fn-specs-from-methods ^IPersistentVector [mdefs ^SegmState segm]
             (reduce
              (fn collect-fn-specs [acc ^MethodDef mdef]
                (let [body (.body-expr mdef)
-                     tlf (prepare/collect-fn-info (.!private-names segm) body)]
+                     tlf (prepare/collect-fn-info body)]
                  (into acc (.fn-specs tlf))))
              [] mdefs))
           (complete-req! ^SegmState [^SegmState segm ^int task x
                                      ^CompletableFuture promise]
             (condp = task
               ctx/msg-emit-tlf
-              (let [tlf (prepare/collect-fn-info (.!private-names segm) x)]
-                (prepare/prepare-fns! (.segm-cld segm) (.source-file segm)
-                                      (.fn-specs tlf))
-                (prepare/prepare-globals! (.segm-cld segm)
-                                          (.global-bs tlf))
+              (let [tlf (prepare/collect-fn-info x)]
+                (prepare/prepare-fns! (.segm-cld segm) (.fn-specs tlf))
+                (prepare/prepare-globals! (.segm-cld segm) (.global-bs tlf))
                 (cond-> (schedule-fn-classes segm tlf)
                   (and (not (cfg/collect-macro-definitions?))
                        (some? (delayed-but-ready segm)))
@@ -404,8 +289,7 @@
                 (let [dtdef ^DeftypeDef x
                       fn-specs (fn-specs-from-methods (.method-defs dtdef) segm)
                       tlf (TopLevelForm. fn-specs nil x/expr-empty)]
-                  (prepare/prepare-fns! (.segm-cld segm) (.source-file segm)
-                                        fn-specs)
+                  (prepare/prepare-fns! (.segm-cld segm) fn-specs)
                   (-> (schedule-fn-classes segm tlf)
                       (write-and-define (build-deftype dtdef) promise))))
               
@@ -453,37 +337,31 @@
 ;; arbitrary number of futures of its own, and the emitter retrieves
 ;; their result/exception in emit order.
 (defn- emit-namespace ^Namespace [^SegmState segm ^IPersistentMap provided-nmsp
+                                  ^HashSet !rpath-set
                                   ^StructuredTaskScope nmsp-task-scope]
-  (init-known-ns (.ctx segm) provided-nmsp)
-  (cfg/prepare-package-directory (.dest-dir (.env segm))
-                                 (ctx/this-ns (.ctx segm)))
-  (let [env (.env segm)
-        ctx (.ctx segm)
-        c-fn (^Callable fn []
-              (ctx/reset-thread-binding-frame (.ctx segm))
-              (try
-                (let [nsd (nmsp/compile-thread env provided-nmsp ctx)]
-                  ;; regular completion: pass back result in first
-                  ;; `close-queue` message
-                  (ctx/send-msg (.emit-q ctx) ctx/msg-close-queue nsd))
-                (catch java.lang.InterruptedException _
-                  ;; emitter thread is shutting down and is not taking
-                  ;; any more messages: exit without sending anything
-                  nil)
-                (catch Throwable t
-                  (ctx/send-msg (.emit-q ctx) ctx/msg-fatal-error t))))]
-    (let [c-thread (.fork nmsp-task-scope c-fn)
+  (let [ctx (.ctx segm)]
+    (init-known-ns ctx provided-nmsp)
+    
+    (let [c-fn (^Callable fn []
+                (try
+                  (let [nmsp (nmsp/mk-nmsp provided-nmsp !rpath-set ctx)
+                        nmsp-io (.enter-source-file (.nmsp-io segm) (.ns-str ctx) true)
+                        nsd (nmsp/compile-thread nmsp nmsp-io ctx)]
+                    ;; regular completion: pass back result in first
+                    ;; `close-queue` message
+                    (ctx/send-msg (.emit-q ctx) ctx/msg-close-queue nsd))
+                  (catch java.lang.InterruptedException _
+                    ;; emitter thread is shutting down and is not taking
+                    ;; any more messages: exit without sending anything
+                    nil)
+                  (catch Throwable t
+                    (ctx/send-msg (.emit-q ctx) ctx/msg-fatal-error t))))
+          c-thread (.fork-task (.nmsp-io segm) nmsp-task-scope c-fn true)
           nmsp (emit-segments segm nmsp-task-scope)]
       (.get c-thread)                   ;pick up any exceptions
       nmsp)))
 
 ;;; ------------------------------------------------------------------------
-
-(defn- try-load-capstone ^Class [^BuildEnv env ^String ns-str]
-  (try
-    (Class/forName (str ns-str "." capstone-class-name) false (.dyn-ld env))
-    (catch ClassNotFoundException _
-      nil)))
 
 (letfn [(extract-req-strs ^"[Ljava.lang.String;" [^Class cl]
           (let [s (-> (.getDeclaredMethod cl rt/name-requires)
@@ -520,62 +398,54 @@
           (let [ns-str (aget req-strs i)
                 ekns (.exported-known-ns (nmsp/nmsp-of (aget a i) ns-str))]
             (recur (merge publics-map ekns) (inc i)))))
-      (nmsp/with-capstone nmsp capstone nil))))
+      (nmsp/with-capstone nmsp capstone))))
 
 ;;; ------------------------------------------------------------------------
 
-(defn mk-ctx ^Ctx [^BuildEnv env
+(defn mk-ctx ^Ctx [^BuildIO env
                    ^FnRequireNamespace require-namespace
                                  
                    ^IPersistentMap initial-globals
                    ^String ns-str
+                   ^CompileIO compile-io
                                  
                    ^StructuredTaskScope arity-task-scope]
-  (let [rpath (cfg/nmsp-rpath ns-str)
-        rurl (or (.resolve-rpath env rpath)
-                 (wrong/file rpath))
-        ;; the namespace context needs a lookup into the package of
-        ;; the namespace
-        lookup-in-pkg (beachhead/mk-lookup-in-pkg (.rt-lookup env) (.dyn-ld env) ns-str)]
-    (ctx/mk-ctx* initial-globals ns-str rpath rurl 
-                 lookup-in-pkg require-namespace (.rt-lookup env)
-                 arity-task-scope (.binding-frame env))))
+  (ctx/mk-ctx* initial-globals (.initial-imports env) ns-str compile-io
+               require-namespace arity-task-scope))
 
-(defn- mk-ctx-import ^Ctx [^BuildEnv env
+(defn- mk-ctx-import ^Ctx [^BuildIO env
                            ^FnRequireNamespace require-namespace
                            ^Class capstone]
-  (let [ns-str (.getPackageName capstone)
-        rpath (cfg/nmsp-rpath ns-str)
-        lookup-in-pkg (.in (MethodHandles/publicLookup) capstone)]
-    (ctx/mk-ctx* {} ns-str rpath nil
-                 lookup-in-pkg require-namespace (.rt-lookup env) nil
-                 (.binding-frame env))))
+  (let [nmsp-io (.nmsp-io env capstone nil)]
+    (ctx/mk-ctx* {} {} (.getPackageName capstone) (.compile-io nmsp-io)
+                 require-namespace nil)))
 
-(defn compile-and-emit
-  (^Namespace [^BuildEnv env ^String ns-str ^FnRequireNamespace require-fn
-               ^boolean collect-bytesv? ^IPersistentMap provided-nmsp
-               ^IPersistentMap globals]
-   (let [nmsp-task-scope (StructuredTaskScope.)]
-     (try
-       (let [arity-task-scope (when-not cfg/deterministic-namespace-compile?
-                                nmsp-task-scope)
-             tl-ctx (mk-ctx env require-fn globals ns-str arity-task-scope)]
-         (-> (mk-first-segm env tl-ctx collect-bytesv?)
-             (emit-namespace provided-nmsp nmsp-task-scope)))
-       (catch Throwable t
-         (.shutdown nmsp-task-scope)    ;make join return immediately
-         (throw t))
-       (finally
-         (.joinUntil nmsp-task-scope (-> (Instant/now) (.plusSeconds 5)))
-         (.close nmsp-task-scope)))))
-  (^Namespace [^BuildEnv env ^String ns-str ^FnRequireNamespace require-fn
-               ^boolean collect-bytesv? ^IPersistentMap provided-nmsp]
-   (let [globals (predefined/initial-globals-for (.rt-lookup env) ns-str)]
-     (compile-and-emit env ns-str require-fn collect-bytesv? provided-nmsp
-                       globals))))
+(defn compile-and-emit ^Namespace [^BuildIO env ^String ns-str
+                                   ^FnRequireNamespace require-fn
+                                   ^IPersistentMap provided-nmsp
+                                   ^IPersistentMap globals-override]
+  (let [nmsp-task-scope (StructuredTaskScope.)
+        !rpath-set (HashSet.)]
+    (try
+      (let [arity-task-scope (when-not cfg/deterministic-namespace-compile?
+                               nmsp-task-scope)
+            nmsp-io (.nmsp-io env ns-str !rpath-set)
+            globals (or globals-override
+                        (predefined/initial-globals-for (-> nmsp-io .compile-io .rt-lookup)
+                                                        ns-str))
+            tl-ctx (mk-ctx env require-fn globals ns-str (.compile-io nmsp-io)
+                           arity-task-scope)]
+        (-> (mk-first-segm nmsp-io tl-ctx)
+            (emit-namespace provided-nmsp !rpath-set nmsp-task-scope)))
+      (catch Throwable t
+        (.shutdown nmsp-task-scope)     ;make join return immediately
+        (throw t))
+      (finally
+        (.joinUntil nmsp-task-scope (-> (Instant/now) (.plusSeconds 5)))
+        (.close nmsp-task-scope)))))
 
-(defn- emit-namespaces-mt ^void [^BuildEnv env ns-strs
-                                 ^StructuredTaskScope build-task-scope
+(defn- emit-namespaces-mt ^void [^BuildIO env ^IPersistentMap builtin-nmsp
+                                 ns-strs ^StructuredTaskScope build-task-scope
                                  ^ConcurrentHashMap !futs]
   (let [namespaces-q (java.util.concurrent.LinkedBlockingQueue.)
         require-fn (^FnRequireNamespace fn [ns-str provided-nmsp]
@@ -590,25 +460,24 @@
                        (.put namespaces-q [ns-str provided-nmsp cf])
                        (ctx/wait-for-result 1 cf))))]
     (letfn [(fork-namespace ^Future [^String ns-str provided-nmsp]
-              (.fork
-               build-task-scope
-               (^Callable fn []
-                (ctx/reset-thread-binding-frame (.binding-frame env))
-                (or            ;import from dyn-ld or compile and emit
-                 (when-some [cl (try-load-capstone env ns-str)]
-                   (try
-                     (-> (nmsp/mk-imported env provided-nmsp
-                                           (mk-ctx-import env require-fn cl))
-                         (import-from-capstone cl))
-                     (finally     ;signal completion to namespace loop
-                       (.put namespaces-q [ns-str]))))
-                 
-                 (do #_(prn :namespace-start ns-str)
-                     (try
-                       (compile-and-emit env ns-str require-fn false
-                                         provided-nmsp)
-                       (finally   ;signal completion to namespace loop
-                         (.put namespaces-q [ns-str]))))))))
+              (->> (^Callable fn []
+                    (or        ;import from dyn-ld or compile and emit
+                     (when-some [cl (.try-load-capstone env ns-str)]
+                       (try
+                         (-> (nmsp/mk-imported provided-nmsp
+                                               (mk-ctx-import env require-fn cl))
+                             (import-from-capstone cl))
+                         (finally ;signal completion to namespace loop
+                           (.put namespaces-q [ns-str]))))
+                  
+                     (let [globals nil]
+                       #_(prn :namespace-start ns-str)
+                       (try
+                         (compile-and-emit env ns-str require-fn
+                                           provided-nmsp globals)
+                         (finally ;signal completion to namespace loop
+                           (.put namespaces-q [ns-str]))))))
+                   (.fork-task env build-task-scope)))
             
             (fork-all! ^int [ns-strs] ;returns number of new namespaces
               ;; this thread owns !futs and there are no concurrent
@@ -617,7 +486,7 @@
               (let [n (.size !futs)]
                 (doseq [ns-str ns-strs
                         :when (not (.containsKey !futs ns-str))
-                        :let [fut (fork-namespace ns-str (.builtin-nmsp env))]]
+                        :let [fut (fork-namespace ns-str builtin-nmsp)]]
                   (.put !futs ns-str fut))
                 (- (.size !futs) n)))]
       
@@ -652,34 +521,36 @@
       (dotimes [i (alength a)]
         (ctx/get-result-now (.get !futs (aget a i))))))) ;forces exception
 
-(defn- emit-namespaces-st ^void [^BuildEnv env ns-strs ^HashMap !futs]
+(defn- emit-namespaces-st ^void [^BuildIO env ^IPersistentMap builtin-nmsp
+                                 ns-strs ^HashMap !futs]
   (let [require-fn
         (reify FnRequireNamespace
           (schedule [this ns-str provided-nmsp]
             (or (.get !futs ns-str)
 
-                (when-some [cl (try-load-capstone env ns-str)]
+                (when-some [cl (.try-load-capstone env ns-str)]
                   (.put !futs ns-str nmsp/marker-depth-first-path)
-                  (let [x (-> (nmsp/mk-imported env provided-nmsp
+                  (let [x (-> (nmsp/mk-imported provided-nmsp
                                                 (mk-ctx-import env this cl))
                               (import-from-capstone cl))]
                     (.put !futs ns-str x)
                     x))
                  
-                (do (.put !futs ns-str nmsp/marker-depth-first-path)
-                    #_(prn :namespace-start ns-str)
-                    (let [x (compile-and-emit env ns-str this false
-                                              provided-nmsp)]
-                      #_(prn :namespace-end ns-str)
-                      (.put !futs ns-str x)
-                      x)))))]
+                (let [globals nil]
+                  (.put !futs ns-str nmsp/marker-depth-first-path)
+                  #_(prn :namespace-start ns-str)
+                  (let [x (compile-and-emit env ns-str this
+                                            provided-nmsp globals)]
+                    #_(prn :namespace-end ns-str)
+                    (.put !futs ns-str x)
+                    x)))))]
     ;; first, force discovery of core library
-    (.schedule require-fn cfg/core-lib (.builtin-nmsp env))
+    (.schedule require-fn cfg/core-lib builtin-nmsp)
     ;; then handle all namespaces from `ns-strs`
     (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
       ;; loop over array to avoid stack frame spamming
       (dotimes [i (alength a)]
-        (.schedule require-fn (aget a i) (.builtin-nmsp env))))))
+        (.schedule require-fn (aget a i) builtin-nmsp)))))
 
 ;;; Returns a map of namespaces that have been reached by the build
 ;;; attempt.  Key is the name of the namespace (a string).  Value is a
@@ -696,7 +567,8 @@
               (let [nmsp ^Namespace x]
                 (if (nmsp/imported? nmsp)
                   {} ;rpaths and req-strs unchanged from prior compile
-                  {:rpaths (.rpaths nmsp), :req-strs (.req-strs nmsp)}))
+                  {:rpaths (into #{} (.!rpath-set nmsp))
+                   :req-strs (.req-strs nmsp)}))
 
               (instance? Future x)
               (recur (outcome-now x))
@@ -723,23 +595,27 @@
   (= dependency-info {}))               ;implies completed-namespace?
 
 
+;;; Builtin namespaces in `builtin-nmsp` can be required directly from
+;;; any namespace (maps string -> Namespace).
+;;; 
 ;;; On success, returns map String -> Namespace of all namespaces.
 ;;; Any compilation error causes an ExceptionInfo exception whose
 ;;; entry :emitter/namespaces is a dependency map.
-(defn emit-namespaces ^IPersistentMap [^BuildEnv env ns-strs]
+(defn emit-namespaces ^IPersistentMap [^BuildIO env ^IPersistentMap builtin-nmsp
+                                       ns-strs]
   (letfn [(assoc-namespaces ^ExceptionInfo [^Throwable t ^Map futs]
             (wrong/assoc-dep-map t (dependency-map futs)))]
     (if cfg/deterministic-namespace-compile?
       (let [!futs (java.util.HashMap.)] ;single-threaded!
         (try
-          (emit-namespaces-st env ns-strs !futs)
+          (emit-namespaces-st env builtin-nmsp ns-strs !futs)
           (into {} !futs)
           (catch Throwable t
             (throw (assoc-namespaces t !futs)))))
       (let [!futs (ConcurrentHashMap.)  ;updated by this thread only
             build-task-scope (StructuredTaskScope.)]
         (try
-          (emit-namespaces-mt env ns-strs build-task-scope !futs)
+          (emit-namespaces-mt env builtin-nmsp ns-strs build-task-scope !futs)
           (into {} !futs)
           (catch Throwable t
             (.shutdown build-task-scope) ;make join return immediately

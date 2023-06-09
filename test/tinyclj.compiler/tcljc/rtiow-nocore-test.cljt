@@ -14,6 +14,7 @@
    [tcljc.context :as ctx]
    [tcljc.emitter :as em]
    [tcljc.predefined :as predefined]
+   [tcljc.main.tclj0 :as tclj0]
    [tinyclj.alpha.ptest :refer [deftest]])
   (:import
    (tcljc.context FnRequireNamespace)))
@@ -38,10 +39,10 @@
         
         dyn-ld (cfg/dyn-class-loader app-ld [])
         dest-dir (cfg/dest-dir "tcljc.rtiow-nocore")
-        env (em/mk-build-env app-ld dest-dir dyn-ld {})
+        env (tclj0/mk-build-io app-ld dest-dir dyn-ld)
         
         ns-str "tcljc.rtiow-nocore-ref"
         provided-nmsp (em/mk-provided-nmsp)
         globals (core-ns-globals rt-lookup)]
-    (em/compile-and-emit env ns-str noop-require-namespace false
+    (em/compile-and-emit env ns-str noop-require-namespace
                          provided-nmsp globals)))

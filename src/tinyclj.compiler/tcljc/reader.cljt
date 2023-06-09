@@ -10,6 +10,7 @@
    [tcljc.config :as cfg]
    [tcljc.wrong :as wrong]
    [tcljc.parser :as p]
+   tcljc.io
    tcljc.context
    [tcljc.synquote :as sq]
    [tinyclj.string :as str])
@@ -19,10 +20,6 @@
                  ExceptionInfo)
    (java.util ArrayList LinkedList)
    (java.util.regex Matcher)))
-
-(definterface IReader
-  (read-1 [^Ctx form-ctx eof-value]))
-
 
 (defn- wrong [& msg-parts]
   (throw (wrong/mk-e (str/join " " msg-parts) {})))
@@ -463,7 +460,7 @@
           nil))
     (set! start end-of-close))
   
-  IReader
+  tcljc.io.Reader
   (read-1 [this form-ctx eof-value]
     ;; (assert (.isEmpty elements))
     ;; (assert (nil? ctx))
@@ -481,20 +478,3 @@
 
 (defn mk-reader ^Reader [^String cs]
   (Reader. cs 0 (mk-acc 0) (LinkedList.) 0 nil nil nil nil 0))
-
-;;; ------------------------------------------------------------------------
-
-(deftype SeqReader [^:unsynchronized-mutable ^ISeq xs]
-  IReader
-  (read-1 [_ ctx eof-value]
-    (if (some? xs)
-      (let [[x & xr] xs]
-        (set! xs xr)
-        x)
-      eof-value)))
-
-;;; Wraps a seq into a reader interface.  Used for unit tests.  Hands
-;;; out data from `xs` without any modifications, i.e. the contextual
-;;; information provided later will be ignored.
-(defn mk-seq-reader ^SeqReader [xs]
-  (SeqReader. (seq xs)))

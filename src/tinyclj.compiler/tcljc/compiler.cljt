@@ -12,10 +12,10 @@
    [tcljc.config :as cfg]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
+   [tcljc.io :as io]
    [tcljc.wrong :as wrong]
    [tcljc.reader :as rd]
    [tcljc.grammar :as grammar]
-   [tcljc.macro :as macro]
    [tcljc.context :as ctx]
    [tcljc.expr :as x]
    [tcljc.exprfold :as xf]
@@ -204,7 +204,7 @@
 (defn- send-msg ^Object [tl-ctx ^int task ^Object x]
   (ctx/send-msg (.emit-q (ctx/tl-ctx* tl-ctx)) task x))
 
-(deftype DelayedMacroFn [^MethodHandle apply-mh
+(deftype DelayedMacroFn [^tcljc.io.CompileIO compile-io
                          ^int defining-tlf-idx
                          ^BindingRef bref
                          ^CompletableFuture value-promise
@@ -218,7 +218,7 @@
                (not (.isDone value-promise)))
       (ctx/send-msg emit-q ctx/msg-flush-macro-definitions nil))
     ;; pass nil as `env` for now
-    (macro/apply-macro apply-mh (.get value-promise) form nil)))
+    (.apply-macro compile-io (.get value-promise) form nil)))
 
 (defn def-form ^Expr [[_ nm :as form] ^Expr v ^BindingRef macro-v tl-ctx]
   (letfn [(prior-def ^BindingRef [^Symbol nm]
@@ -248,7 +248,7 @@
             (if (x/meta-flag? nm :macro)
               (let [bref (x/with-macro-value bref macro-v) ;then baked into mfn
                     ctx (ctx/tl-ctx* tl-ctx)
-                    mfn (DelayedMacroFn. (.apply-mh ctx) (.get-tlf-idx ctx)
+                    mfn (DelayedMacroFn. (.compile-io ctx) (.get-tlf-idx ctx)
                                          bref (CompletableFuture.) (.emit-q ctx))
                     mref (x/macro-ref nm ns-str mfn macro-v bref)]
                 (send-msg ctx ctx/msg-macro-of-next-tlf mfn)
@@ -488,29 +488,6 @@
       (and (some? line) (instance? clojure.lang.IObj ex))
       (with-meta (assoc (meta ex) :line line)))))
 
-(defn- pick-unique-mnm ^String [^Env env ^Symbol dflt-nm form tl-ctx]
-  ;; `dflt-nm` of nil means function or interface function
-  (let [pn-map (ctx/private-name-map tl-ctx)
-        candidate-nm (second form)
-        nm (if (symbol? candidate-nm)
-             candidate-nm
-             (or dflt-nm
-                 (when-some [itf (sig/tag-of (first form) true nil tl-ctx)]
-                   (symbol nil (.getSimpleName itf)))
-                 'fn))
-        mnm (str (.mnm-path env) (when (some? (.mnm-path env)) "$")
-                 (cfg/munge-name nm))
-        s (if (.containsKey pn-map mnm)
-            (loop [n (hash (cons mnm form))]
-              (let [tag (.toHexDigits (java.util.HexFormat/of) n 4)
-                    s* (str mnm "^" tag)]
-                (if (.containsKey pn-map s*)
-                  (recur (inc n))     ;linear probing
-                  s*)))
-            mnm)]
-    (.put pn-map s Boolean/TRUE)
-    s))
-
 ;;; Note: This function can produce a non-returning expression,
 ;;; including a reference to a macro or to a primitive function, but
 ;;; not an expression of type `jb/polymorphic?`.
@@ -561,35 +538,29 @@
          ;; smallest unit of work a single arity's body, there is
          ;; little use in moving each arity into a future of its own.
          (let [tl-ctx' (ctx/locked tl-ctx)
-               fork? (some? (.arity-task-scope tl-ctx'))
                at-fn (^Callable fn []
-                      (when fork?
-                        (ctx/reset-thread-binding-frame tl-ctx'))
-                      (try
-                        (let [n (count (.at-sigs fn-form))
-                              aca (new "[Ltcljc.expr.ArityCode;" n)]
-                          (dotimes [i n]
-                            (let [at ^Arity (nth (.at-sigs fn-form) i)
-                                  this-bref (x/local-ref
-                                             (.level fn-form) (.this-name at)
-                                             (x/type fn-form) x/b-this-object
-                                             fn-form)
-                                  unique-mnm (.unique-mnm fn-form)
-                                  body (wrong/with-list-context (.aform at)
-                                         (-> (enter-fn-arity env unique-mnm
-                                                             at this-bref)
-                                             (add-locals (.paramv at))
-                                             (compile-body at 1 tl-ctx')))
-                                  at' (cond-> at
-                                        (auto-rtype? at)
-                                        (x/with-rtype (x/type body)))]
-                              (aset aca i (x/mk-arity-code at' this-bref body))))
-                          aca)
-                        (catch ExceptionInfo e
-                          (throw (ctx/assoc-resource-url e tl-ctx')))))
-               body-fut (if-some [sts (.arity-task-scope tl-ctx')]
-                          (.fork sts at-fn)
-                          (CompletableFuture/completedFuture (.call at-fn)))
+                      (let [n (count (.at-sigs fn-form))
+                            aca (new "[Ltcljc.expr.ArityCode;" n)]
+                        (dotimes [i n]
+                          (let [at ^Arity (nth (.at-sigs fn-form) i)
+                                this-bref (x/local-ref
+                                           (.level fn-form) (.this-name at)
+                                           (x/type fn-form) x/b-this-object
+                                           fn-form)
+                                unique-mnm (.unique-mnm fn-form)
+                                body (wrong/with-list-context (.aform at)
+                                       (-> (enter-fn-arity env unique-mnm
+                                                           at this-bref)
+                                           (add-locals (.paramv at))
+                                           (compile-body at 1 tl-ctx')))
+                                at' (cond-> at
+                                      (auto-rtype? at)
+                                      (x/with-rtype (x/type body)))]
+                            (aset aca i (x/mk-arity-code at' this-bref body))))
+                        aca))
+               body-fut (.fork-function (.compile-io tl-ctx')
+                                        (.arity-task-scope tl-ctx')
+                                        at-fn)
                fn-form (if (some auto-rtype? (.at-sigs fn-form))
                          ;; Must force future early to pick up the
                          ;; replacement type from the arity body.
@@ -772,7 +743,9 @@
        (letfn*-form [[_ fnv & body :as form]]
          (let [fn-formv (mapv (fn ^FnForm [form]
                                 (let [level (level-fn-form env)
-                                      mnm (pick-unique-mnm env 'fn form tl-ctx)]
+                                      mnm (.pick-unique-mnm (ctx/compile-io tl-ctx)
+                                                            (.mnm-path env) 'fn
+                                                            form)]
                                   (wrong/with-list-context form
                                     (sig/destructure-fn*-form form level mnm tl-ctx))))
                               (macroexpand-fnvec fnv))
@@ -795,7 +768,8 @@
 
        (fn*-form ^FnForm [form]
          (let [level (level-fn-form env)
-               unique-mnm (pick-unique-mnm env nil form tl-ctx)
+               unique-mnm (.pick-unique-mnm (ctx/compile-io tl-ctx)
+                                            (.mnm-path env) nil form)
                fn-form (sig/destructure-fn*-form form level unique-mnm tl-ctx)]
            (parse-arity-bodies fn-form env)))
        
@@ -928,9 +902,7 @@
                          (.withSuperclass (-> cdef .ch-info .superClass))
                          (.withInterfaceSymbols (.itfs cdef)))
                      (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef))))
-               dyn-ld (-> (ctx/lookup-in-pkg tl-ctx)
-                          .lookupClass
-                          (.getClassLoader))
+               dyn-ld (ctx/dyn-ld tl-ctx)
                ;; use a one shot class loader derived from `dyn-ld`
                ld (cfg/class-loader-instance dyn-ld "tclj-eph" nil)
                m (.getDeclaredMethod (class ld) "ephemeralClass"
@@ -992,7 +964,8 @@
          ;; reify* stores its own meta, and its value is passed to its
          ;; static factory method (while functions always start with a
          ;; meta of `nil`).
-         (let [unique-mnm (pick-unique-mnm env 'reify form tl-ctx)
+         (let [unique-mnm (.pick-unique-mnm (ctx/compile-io tl-ctx)
+                                            (.mnm-path env) 'reify form)
                this-class (ClassDesc/of (ctx/this-ns tl-ctx) unique-mnm)
                eph-cdef (sigclass/eph-reify-class-def this-class itf-vector tl-ctx)
                
@@ -1012,10 +985,7 @@
                ;; trees.  It becomes visible for example when invoking
                ;; a method on the receiver.
                tl-ctx' (ctx/locked tl-ctx)
-               fork? (some? (.arity-task-scope tl-ctx'))
                m-fn (^Callable fn []
-                     (when fork?
-                       (ctx/reset-thread-binding-frame tl-ctx'))
                      (let [n (count atv)
                            aca (new "[Ltcljc.expr.ArityCode;" n)]
                        (dotimes [i n]
@@ -1024,9 +994,9 @@
                                                            at nil)
                                            (parse-method at etp tl-ctx')))))
                        aca))
-               body-fut (if-some [sts (.arity-task-scope tl-ctx')]
-                          (.fork sts m-fn)
-                          (CompletableFuture/completedFuture (.call m-fn)))]
+               body-fut (.fork-function (.compile-io tl-ctx')
+                                        (.arity-task-scope tl-ctx')
+                                        m-fn)]
            (-> (x/fn-form-reify form etp m (level-fn-form env) unique-mnm
                                 (.super-mhd eph-cdef) atv)
                (x/with-body-fut body-fut))))

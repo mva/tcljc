@@ -1,0 +1,102 @@
+;; Copyright (c) Michael van Acken. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https://www.eclipse.org/legal/epl-v20.html)
+;; which can be found in the file epl-v20.html at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+(ns tcljc.io
+  (:import (clojure.lang ExceptionInfo IPersistentMap)
+           (jdk.incubator.concurrent StructuredTaskScope)
+           (jdk.internal.classfile ClassHierarchyResolver$ClassHierarchyInfo)
+           (java.lang.constant ClassDesc)
+           (java.lang.invoke MethodHandles$Lookup MethodHandle)
+           (java.net URL)
+           (java.nio.file Path)
+           (java.util HashSet)
+           (java.util.function Consumer)))
+
+;;; General framework for interfacing to file system (source input &
+;;; class file output), running JVM (resolve & define class), console
+;;; output (error messages), and possibly other downstream sinks of
+;;; compiler generated data.
+;;;
+;;; Minimal usage scenarios are one-shot compilation, watch loop
+;;; compilation, and unit tests.
+
+(definterface Reader
+  (read-1 [#_Ctx form-ctx eof-value]))
+
+(definterface CompileIO
+  ;; The Lookup instance corresponding to this namespace's package
+  ;; name.
+  (lookup-in-pkg ^MethodHandles$Lookup [])
+  
+  (rt-lookup ^MethodHandles$Lookup [])
+  (invoke-global-mh ^Object [^MethodHandle global-mh])
+  
+  ;; Generates unique names for fn* and reify* instances within a
+  ;; given namespace.  `dflt-nm` of nil means function or interface
+  ;; function
+  (pick-unique-mnm ^String [^String mnm-path-env ^clojure.lang.Symbol dflt-nm
+                            form])
+  
+  (apply-macro [f form env])
+  
+  (fork-function ^java.util.concurrent.Future [^StructuredTaskScope sts
+                                               ^Callable f])
+  
+  (compile-io-in ^CompileIO [^Class cl]))
+
+;;; Holds mutable state for the namespace thread.  Most methods must
+;;; *not* be called from other threads.
+(definterface NmspIO
+  (compile-io ^CompileIO [])
+  (with-build-io ^NmspIO [^BuildIO build-io]) ;for stubbing
+  
+  ;; `nmsp-or-path` is interpreted as a namespace name when this
+  ;; instance is blank, and as a (absolute or relative) path when it
+  ;; is associated with a source file.  If `compile-resource?` is
+  ;; true, then the path's resource URL is obtained.  Note: The
+  ;; returned object shares mutable state with its parent.
+  (enter-source-file ^NmspIO [^String nmsp-or-path
+                                 ^boolean compile-resource?])
+  (assoc-source-file ^ExceptionInfo [^ExceptionInfo e])
+  (forms-reader ^Reader [])
+  
+  (register-ch-info! ^void [^ClassHierarchyResolver$ClassHierarchyInfo ch-info])
+  ;; Builds, writes, and defines class `this-class` from `cbh`.  Sets
+  ;; this instance's source file and the default classfile version.
+  (produce-class ^Class [^ClassDesc this-class ^Consumer cbh])
+  
+  ;; Called for the namespace's top-level compile thread, and to write
+  ;; out a namespace segment's class file.
+  (fork-task ^java.util.concurrent.Future [^StructuredTaskScope sts ^Callable f
+                                           ^boolean fork-work?]))
+(definterface BuildIO
+  ;; Initial set of class imports when compiling a namespace.
+  (initial-imports ^IPersistentMap [])
+  
+  ;; Creates a new `NmspIO` instance for a fresh namespace.
+  ;; `!rpath-set` is created by the emitted thread, then handed over
+  ;; to the namespace thread to accumulate the names of visited files,
+  ;; and read only after the namespace's compilation has completed.
+  ;; Must be called at most once per namespace.
+  (nmsp-io ^NmspIO [str-or-class ^HashSet !rpath-set])
+  
+  ;; Returns the resource URL of `rpath`, or signals an error.
+  (resource-url ^URL [^Path rpath])
+
+  ;; Source files are obtained from `app-ld` loader via
+  ;; `.getResource`.
+  (forms-reader ^Reader [^URL rurl])
+
+  ;; Returns the capstone class for `ns-str` if it is part of the the
+  ;; dynamic class loader, and nil otherwise.
+  (try-load-capstone ^Class [^String ns-str])
+
+  (define-class ^Class [^MethodHandles$Lookup l ^ClassDesc this-class ^bytes bs])
+  
+  ;; Called for every namespace in multi-threaded compilation mode.
+  ;; NmspIO also delegates to this method.
+  (fork-task ^java.util.concurrent.Future [^StructuredTaskScope sts ^Callable f]))

@@ -46,7 +46,7 @@
   (let [nmsp (namespace-of nmsp-map fn-spec)
         l (nmsp-lookup nmsp)
         value (var-value l nmsp fn-spec)]
-    (.bindTo (ctx/resolve-mh l rt/mhd-apply) value)))
+    (.bindTo (.resolveConstantDesc rt/mhd-apply l) value)))
 
 (defn- result-style [^Keyword res]
   (case res

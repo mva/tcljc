@@ -10,27 +10,48 @@
             [tcljc.javabase :as jb]
             [tcljc.context :as ctx]
             [tcljc.reader :as rd]
+            [tcljc.io :as io]
+            tcljc.main.tclj0
             [tinyclj.string :as str]
             [tinyclj.alpha.ptest :refer :all])
   (:import (tcljc.context Ctx)
-           (tcljc.reader IReader)
+           (tcljc.reader Reader)
            (clojure.lang IPersistentMap ExceptionInfo)))
+
+(deftype SeqReader [^:unsynchronized-mutable ^clojure.lang.ISeq xs]
+  tcljc.io.Reader
+  (read-1 [_ ctx eof-value]
+    (if (some? xs)
+      (let [[x & xr] xs]
+        (set! xs xr)
+        x)
+      eof-value)))
+
+;;; Wraps a seq into a reader interface.  Used for unit tests.  Hands
+;;; out data from `xs` without any modifications, i.e. the contextual
+;;; information provided later will be ignored.
+(defn mk-seq-reader ^SeqReader [xs]
+  (SeqReader. (seq xs)))
+
+
+(def stub-compile-io
+  (tcljc.main.tclj0.CompileIOImpl.
+   (java.lang.invoke.MethodHandles/lookup) nil nil nil
+   (clojure.lang.Var/cloneThreadBindingFrame)))
 
 (defn stub-ctx
   (^Ctx []
    (stub-ctx "NO_NS" {}))
   (^Ctx [^String ns-str ^IPersistentMap ns-alias]
-   (let [lookup-in-pkg (java.lang.invoke.MethodHandles/lookup)]
-     (tcljc.context.Ctx.
-      {} ns-alias {} jb/jvm-imports        ;_known-ns
-      ns-str nil nil lookup-in-pkg nil     ;ns-str
-      nil (ctx/clone-thread-binding-frame) ;!private-names
-      nil nil nil                          ;emit-q
-      nil false 0 0))))                    ;arity-task-scope
+   (tcljc.context.Ctx.
+    {} ns-alias {} jb/jvm-imports        ;_known-ns
+    ns-str stub-compile-io nil           ;ns-str
+    nil                                  ;emit-q
+    nil false 0 0)))                     ;arity-task-scope
     
 ;;; Materializes the reader as a seq.  All forms use the same
 ;;; `ns-alias` map to rewrite auto-resolved keywords.
-(defn read-all* [^IReader rdr ^Ctx ctx]
+(defn read-all* [^Reader rdr ^Ctx ctx]
   ((fn read-step []
      (lazy-seq
       (let [x (.read-1 rdr ctx ::eof)]

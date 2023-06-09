@@ -13,7 +13,6 @@ module tinyclj.compiler {
   exports tcljc.compiler.sigfn;
   exports tcljc.config;
   exports tcljc.context;
-  // exports tcljc.core;
   exports tcljc.emitter.beachhead;
   exports tcljc.emitter.bytecode;
   exports tcljc.emitter.classes;
@@ -25,6 +24,7 @@ module tinyclj.compiler {
   exports tcljc.expr;
   exports tcljc.exprfold;
   exports tcljc.grammar;
+  exports tcljc.io;
   exports tcljc.javabase;
   exports tcljc.macro;
   exports tcljc.main.efmt;

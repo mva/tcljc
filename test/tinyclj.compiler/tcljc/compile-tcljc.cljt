@@ -12,7 +12,8 @@
    [tcljc.runtime :as rt]
    [tcljc.expr :as x]
    [tcljc.emitter :as em]
-   [tcljc.predefined :as predefined]))
+   [tcljc.predefined :as predefined]
+   [tcljc.main.tclj0 :as tclj0]))
 
 (defn run []
   (let [tcljc-mdir (cfg/dest-dir "tcljc.mdir")
@@ -33,8 +34,8 @@
                                               [dest-dir]
                                               []))
         provided-nmsp (em/mk-provided-nmsp)
-        env (em/mk-build-env app-ld dest-dir dyn-ld provided-nmsp)]
-    (time (em/emit-namespaces env all-nmsps))))
+        env (tclj0/mk-build-io app-ld dest-dir dyn-ld)]
+    (time (em/emit-namespaces env provided-nmsp all-nmsps))))
 
 (defn -main [& args]
   (try

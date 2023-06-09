@@ -195,14 +195,13 @@
                           (fspec-forward? fspec ee))))))
         (FnSpec. (.fn-form fspec) b)))))
 
-(defn- prepare-virtuals ^void [^FnSpec fspec ^String source-file]
+(defn- prepare-virtuals ^void [^FnSpec fspec]
   (let [fn-form (.fn-form fspec)
         aca (ctx/fn-body-now fn-form)
         fnc (.!fnc fn-form)
         this-class ^ClassDesc (.ld-clx fnc)
         this-mnm (name (or (x/fn-this-name fn-form) "fn"))
-        emit-plan (emitfn/mk-emit-virtuals this-class source-file this-mnm
-                                           (.super-mhd fn-form)
+        emit-plan (emitfn/mk-emit-virtuals this-class this-mnm (.super-mhd fn-form)
                                            (with-field-ld-st fspec this-class))]
     (.set-emit-plan fnc emit-plan)
     (dotimes [i (.arity-count fnc)]
@@ -220,15 +219,14 @@
     (let [ac (arity-code-static statics-owner (aget aca 0) fspec)]
       (.set-arity-code fnc 0 ac))))
 
-(defn- prepare-reify ^void [^FnSpec fspec ^String source-file]
+(defn- prepare-reify ^void [^FnSpec fspec]
   (let [fn-form (.fn-form fspec)
         aca (ctx/fn-body-now fn-form)
         fnc (.!fnc fn-form)
         this-class ^ClassDesc (.ld-clx fnc)
         itfs (map rt/cd-of (.itf-tags fn-form))
         this-mnm "this"
-        emit-plan (emitfn/mk-emit-reify this-class itfs source-file this-mnm
-                                        (.super-mhd fn-form)
+        emit-plan (emitfn/mk-emit-reify this-class itfs this-mnm (.super-mhd fn-form)
                                         (with-field-ld-st fspec this-class))]
     (.set-emit-plan fnc emit-plan)
     (dotimes [i (.arity-count fnc)]
@@ -237,8 +235,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn prepare-fns! ^void [^ClassDesc statics-owner ^String source-file
-                          ^IPersistentVector fn-specs]
+(defn prepare-fns! ^void [^ClassDesc statics-owner ^IPersistentVector fn-specs]
   (letfn [(translate-to-virtuals? ^boolean [^FnForm fn-form]
             (let [fnc (.!fnc fn-form)]
               (and (.used-as-value? fnc) (.variable-environment? fnc))))
@@ -263,17 +260,17 @@
     (doseq [^FnSpec fspec fn-specs :let [fn-form (.fn-form fspec)]]
       (if (x/fn-itfs? fn-form)
         (if (x/fn-reify? fn-form)
-          (prepare-reify fspec source-file)
+          (prepare-reify fspec)
           (prepare-lambda statics-owner fspec))
         (if (translate-to-virtuals? fn-form)
-          (prepare-virtuals fspec source-file)
+          (prepare-virtuals fspec)
           (prepare-statics statics-owner fspec))))))
 
 ;;; ------------------------------------------------------------------------
 
 (deftype TopLevelForm [^IPersistentVector fn-specs
-                     ^IPersistentVector global-bs
-                     ^Expr top-level-form])
+                       ^IPersistentVector global-bs
+                       ^Expr top-level-form])
 
 (def ^:private aid-key 0)
 (def ^:private aid-consumer-is-invoke 1)
@@ -401,8 +398,7 @@
     (run! print-fn-form (.fn-specs tlf))
     tlf))
 
-(deftype TraversalContext [^HashSet !private-names
-                           ^HashMap env-providers
+(deftype TraversalContext [^HashMap env-providers
                            ^ArrayList fn-specs
                            ^ArrayList global-bs
                            ^ArityId this-arity])
@@ -411,7 +407,7 @@
                                            ^FnForm fn-form ^int at-idx]
   (let [aid (mk-aid-key fn-form at-idx)
         at ^Arity (nth (.at-sigs fn-form) at-idx)]
-    (TraversalContext. (.!private-names tctx) (.env-providers tctx)
+    (TraversalContext. (.env-providers tctx)
                        (.fn-specs tctx) (.global-bs tctx) aid)))
 
 ;;; Traverses all expressions in tree, including the arities of nested
@@ -512,7 +508,7 @@
          (map env-entry)
          ^"[Ltcljc.emitter.emitfn.EnvEntry;" (into-array EnvEntry))))
 
-(defn collect-fn-info ^TopLevelForm [^HashSet !private-names ^Expr x]
+(defn collect-fn-info ^TopLevelForm [^Expr x]
   (let [fn-specs (ArrayList.)
         global-bs (ArrayList.)
         env-providers (HashMap.)]
@@ -520,7 +516,7 @@
     ;; invoke this arity or construct this fn, and may provide the
     ;; environment that the arity closes over.
 
-    (-> (TraversalContext. !private-names env-providers fn-specs global-bs
+    (-> (TraversalContext. env-providers fn-specs global-bs
                            (mk-aid-key nil -1))
         (traverse-expr x))
     ;; At this point every function's `used-as-value` member is stable.

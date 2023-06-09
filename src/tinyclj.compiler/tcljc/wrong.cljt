@@ -57,7 +57,7 @@
 ;;; Only assoc `k` to the exception's data if this key is not defined
 ;;; yet.  With exceptions decorated from the most to the least
 ;;; specific context, this is used to preserve the most specific
-;;; information availlable.
+;;; information available.
 (defn assoc-if-new ^ExceptionInfo [^ExceptionInfo e k v]
   (cond-> e
     (not (contains? (ex-data e) k))

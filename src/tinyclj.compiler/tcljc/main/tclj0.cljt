@@ -8,15 +8,240 @@
 (ns tcljc.main.tclj0
   (:require
    [tcljc.config :as cfg]
+   [tcljc.classfile :as cf]
+   [tcljc.wrong :as wrong]
+   [tcljc.macro :as macro]
+   [tcljc.reader :as rd]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
    [tcljc.emitter :as em]
+   [tcljc.io :as io]
+   [tcljc.emitter :as emitter]
+   [tcljc.emitter.beachhead :as beachhead]
    [tcljc.main.options :as options]
    [tcljc.main.efmt :as efmt]
    [tcljc.main.invoke :as invoke]
    [tinyclj.string :as str])
   (:import
+   (tcljc.io BuildIO NmspIO CompileIO)
    (tcljc.main.options Options)
    (clojure.lang IPersistentMap ExceptionInfo)
-   (java.nio.file Path Files)))
+   (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
+   (java.net URL)
+   (java.nio.file Path Files)
+   (java.util HashSet)
+   (java.util.concurrent ConcurrentHashMap)
+   (java.util.concurrent.atomic AtomicBoolean)))
+
+;;; Implementation of in/out infrastructure when running the compiler
+;;; from the command line, either in one-shot or watch loop mode.
+
+(deftype CompileIOImpl [^MethodHandles$Lookup lookup-in-pkg 
+                        ^MethodHandles$Lookup rt-lookup
+                        ^MethodHandle apply-mh
+                        ^ConcurrentHashMap private-name-map
+                        ^Object binding-frame]
+  CompileIO
+  (lookup-in-pkg [_]
+    lookup-in-pkg)
+  (rt-lookup [_]
+    rt-lookup)
+  (invoke-global-mh [_ global-mh]
+    (if (nil? apply-mh)
+      ;; compiler and application share runtime?  careful, this is a
+      ;; very brittle method type!
+      ^tinyclj.lang.StaticFnMh (.invokeExact global-mh)
+      (.invoke global-mh)))
+    
+  (pick-unique-mnm [_ mnm-path-env dflt-nm form]
+    (let [candidate-nm (second form)
+          nm (if (symbol? candidate-nm)
+               candidate-nm
+               (or dflt-nm
+                   (when-some [tag (-> form (first) (meta) :tag)]
+                     (when (symbol? tag)
+                       (let [s (name tag), i (.lastIndexOf s (int \.))]
+                         ;; interface function: pick up tag of `fn*`,
+                         ;; but drop any package name
+                         (symbol nil (.substring s (inc i))))))
+                   'fn))
+          mnm (str mnm-path-env (when (some? mnm-path-env) "$")
+                   (cfg/munge-name nm))
+          s (if (.containsKey private-name-map mnm)
+              (loop [n (hash (cons mnm form))]
+                (let [tag (.toHexDigits (java.util.HexFormat/of) n 4)
+                      s* (str mnm "^" tag)]
+                  (if (.containsKey private-name-map s*)
+                    (recur (inc n))     ;linear probing
+                    s*)))
+              mnm)]
+      (.put private-name-map s Boolean/TRUE)
+      s))
+  (apply-macro [_ f form env]
+    (assert (nil? env))
+    (if (nil? apply-mh)
+      (macro/apply-macro-direct f form env)
+      (macro/apply-macro-mapped apply-mh f form env)))
+  (fork-function [_ sts f]
+    (if (some? sts)
+      ;; Carry *out* and *err* into threads.  Compiler code running
+      ;; in unit tests should use the *out* and *err* bound by
+      ;; ptest.
+      (.fork sts (^Callable fn []
+                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                  (.call f)))
+      (java.util.concurrent.CompletableFuture/completedFuture (.call f))))
+  (compile-io-in [_ cl]
+    (CompileIOImpl. (.in lookup-in-pkg cl) rt-lookup apply-mh
+                    private-name-map binding-frame)))
+
+(defn- mk-compile-io ^CompileIO [binding-frame
+                                 ^MethodHandles$Lookup rt-lookup
+                                 ^MethodHandles$Lookup lookup-in-pkg]
+  (CompileIOImpl.
+   lookup-in-pkg rt-lookup
+   (let [compiler-rt-witness tinyclj.lang.AFnMh
+         app-rt-witness (.resolveConstantDesc rt/AFn rt-lookup)
+         shared-runtime? (identical? compiler-rt-witness app-rt-witness)]
+     (if shared-runtime?
+       nil                           ;can use macro/apply-macro-direct
+       (.resolveConstantDesc rt/mhd-applyMacroMapped rt-lookup)))
+   (ConcurrentHashMap.) binding-frame))
+
+
+(deftype NmspIOImpl [^BuildIO build-io
+                     ^CompileIO compile-io
+                        
+                     ^Path rpath
+                     ^URL rurl
+                     ^HashSet !rpath-set ;owned by emitter thread
+                     ^String source-file-attribute
+
+                     ^Path dest-dir
+                     ^AtomicBoolean pkg-dir-prepared
+                     ^tcljc.classfile.CHR dyn-chr]
+  NmspIO
+  (compile-io [_]
+    compile-io)
+  (with-build-io [_ build-io]
+    (NmspIOImpl. build-io compile-io rpath rurl !rpath-set
+                 source-file-attribute dest-dir pkg-dir-prepared dyn-chr))
+  
+  (enter-source-file [_ nmsp-or-path compile-resource?]
+    (let [rpath (if (nil? rpath)
+                  (cfg/nmsp-rpath nmsp-or-path)
+                  (let [s (str nmsp-or-path cfg/source-suffix)]
+                    (if (str/starts-with? s "/")
+                      (cfg/path-of s)
+                      (.resolve (.getParent rpath) s))))
+          rurl (when compile-resource?
+                 (.resource-url build-io rpath))
+          src-file-attr (when (and cfg/enable-line-numbers (some? rurl))
+                          (let [s (.getPath ^URL rurl)]
+                            (subs s (inc (.lastIndexOf s "/")))))]
+      (.add !rpath-set rpath)
+      (NmspIOImpl. build-io compile-io rpath rurl !rpath-set src-file-attr
+                   dest-dir pkg-dir-prepared dyn-chr)))
+  (assoc-source-file [_ ^ExceptionInfo e]
+    (wrong/assoc-if-new e :file/resource-url rurl))
+  (forms-reader [_]
+    (.forms-reader build-io rurl))
+  
+  (register-ch-info! [_ ch-info]
+    (.register! dyn-chr ch-info))
+  (produce-class [_ this-class cbh]
+    (let [bs (cf/build this-class
+                       (cf/with-cbh [cb]
+                         (cf/with-version cb)
+                         (.accept cbh cb)
+                         (cf/with-source-file cb source-file-attribute))
+                       dyn-chr)]
+      (when-not (.getPlain pkg-dir-prepared)
+        ;; the package directory must haven been created before the
+        ;; first class is written for this package
+        (cfg/prepare-package-directory dest-dir (.packageName this-class))
+        (.setPlain pkg-dir-prepared true))
+      (cfg/write-class-file dest-dir (cfg/internal-name this-class) bs)
+
+      ;; pass classfile bytes to BuildIO instance, so that unit
+      ;; tests can take the byte array from memory
+      (.define-class build-io (.lookup-in-pkg compile-io) this-class bs)))
+  
+  (fork-task [_ sts f fork-work?]
+    (if fork-work?
+      (.fork-task build-io sts f)
+      (java.util.concurrent.CompletableFuture/completedFuture (.call f)))))
+
+
+;; Source files are obtained from `app-ld` via `.getResource`.  If the
+;; parent classloader is :system, then `app-ld` also provides
+;; ahead-of-time compiled class files.  It must never return classes
+;; from the destination directory, or compilation of modified classes
+;; will silently stop.
+(deftype BuildIOImpl
+    [^ClassLoader app-ld
+     ^MethodHandles$Lookup rt-lookup    ;to access module tinyclj.rt
+     ^Path dest-dir                     ;may be nil
+
+     ^IPersistentMap initial-imports
+     ^ClassLoader dyn-ld
+     ^tcljc.classfile.CHR dyn-chr
+     binding-frame]             ;to carry *out* and *err* into threads
+    tcljc.io.BuildIO
+    (initial-imports [_]
+      initial-imports)
+    (nmsp-io [build-io str-or-class !rpath-set]
+      (let [lookup-in-pkg (if (string? str-or-class)
+                            (beachhead/mk-lookup-in-pkg rt-lookup dyn-ld str-or-class)
+                            (.in (MethodHandles/publicLookup) ^Class str-or-class))
+            compile-io (mk-compile-io binding-frame rt-lookup lookup-in-pkg)
+            pdp (java.util.concurrent.atomic.AtomicBoolean. false)]
+        (NmspIOImpl. build-io compile-io nil nil !rpath-set nil
+                     dest-dir pdp dyn-chr)))
+    (resource-url [_ rpath]
+      (or (.getResource app-ld (str rpath))
+          (wrong/file rpath)))
+    (forms-reader [_ rurl]
+      (rd/mk-reader (slurp rurl)))
+  
+    (try-load-capstone [_ ns-str]
+      (try
+        (Class/forName (str ns-str "." emitter/capstone-class-name) false dyn-ld)
+        (catch ClassNotFoundException _
+          nil)))
+
+    (define-class [_ l this-class bs]
+      (-> (try
+            (.defineClass l bs)
+            (catch NoClassDefFoundError _
+              ;; happens for example with "pkg/ns0/n2$n2-n1$n2-n1-n0" from
+              ;; test case tcljc.closure-test/nested
+              (.findClass l (str/replace (cfg/internal-name this-class) "/" "."))))
+          (cfg/validate-defined-class)))
+  
+    (fork-task [_ sts f]
+      (.fork sts (^Callable fn []
+                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                  (.call f)))))
+
+(defn mk-build-io ^BuildIO [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld]
+  (let [rt-lookup (cfg/get-rt-lookup app-ld)
+        initial-imports (reduce-kv (fn [acc nm-sym clnm]
+                                     (let [cl (.findClass rt-lookup clnm)]
+                                       (assoc acc nm-sym cl)))
+                                   jb/jvm-imports
+                                   {'symbol rt/clnm-symbol
+                                    'keyword rt/clnm-keyword
+                                    'vector rt/clnm-vector
+                                    'map rt/clnm-map
+                                    'set rt/clnm-set
+                                    'list rt/clnm-list
+                                    'seq rt/clnm-seq})]
+    (BuildIOImpl. app-ld rt-lookup dest-dir initial-imports
+                  dyn-ld (cf/mk-chr dyn-ld)
+                  (clojure.lang.Var/cloneThreadBindingFrame))))
+
+;;; ------------------------------------------------------------------------
 
 (defn- class-file? ^boolean [^Path x]
   (str/ends-with? (.toString x) cfg/class-suffix))
@@ -38,8 +263,8 @@
                       [])
         dyn-ld (cfg/dyn-class-loader app-ld dyn-sourcev)
         provided-nmsp (em/mk-provided-nmsp)]
-    (-> (em/mk-build-env app-ld (.dest-dir opts) dyn-ld provided-nmsp)
-        (em/emit-namespaces all-nmsps))))
+    (-> (mk-build-io app-ld (.dest-dir opts) dyn-ld)
+        (em/emit-namespaces provided-nmsp all-nmsps))))
 
 (defn run ^boolean [^Options opts]
   (options/print-options opts)
