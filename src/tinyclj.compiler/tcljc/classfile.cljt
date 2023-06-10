@@ -153,7 +153,8 @@
 
 
 (definterface IClassHierarchyRegistry
-  (register! ^void [^ClassHierarchyResolver$ClassHierarchyInfo ch-info]))
+  (register! ^void [^ClassDesc this-class
+                    ^ClassHierarchyResolver$ClassHierarchyInfo ch-info]))
 
 (deftype CHR [^ClassHierarchyResolver from-file
               ^ConcurrentHashMap class-map]
@@ -163,14 +164,11 @@
         (.getClassInfo from-file class-desc)))
 
   IClassHierarchyRegistry
-  (register! [_ ch-info]
-    (.put class-map (.thisClass ch-info) ch-info)))
+  (register! [_ this-class ch-info]
+    (.put class-map this-class ch-info)))
 
 (defn mk-chr ^CHR [^ClassLoader dyn-ld]
-  (CHR. (ClassHierarchyResolver/ofCached
-         (^Function fn [class-desc]
-          (.getResourceAsStream dyn-ld (str (cfg/internal-name class-desc)
-                                            cfg/class-suffix))))
+  (CHR. (ClassHierarchyResolver/ofResourceParsing dyn-ld)
         (ConcurrentHashMap.)))
 
 (defn build
@@ -413,7 +411,9 @@
 
 ;;; Holds just enough information to pass a definterface* class or a
 ;;; skeletal deftype* class to the emitter.
-(deftype ClassDef [^ClassHierarchyResolver$ClassHierarchyInfo ch-info
+(deftype ClassDef [^ClassDesc this-class
+                   ^ClassDesc super-class
+                   ^ClassHierarchyResolver$ClassHierarchyInfo ch-info
                    ^int flags
                    itfs                 ;seq of ClassDesc
                    ^DirectMethodHandleDesc super-mhd
@@ -428,13 +428,15 @@
                            ^DirectMethodHandleDesc super-mhd ;nil for interface
                            ^IPersistentVector fieldv
                            ^IPersistentVector cb-handlerv]
-  (let [interface? (not (zero? (bit-and flags Classfile/ACC_INTERFACE)))]
-    (ClassDef. (ClassHierarchyResolver$ClassHierarchyInfo.
-                this-class interface? super-class)
-               flags itfs super-mhd fieldv cb-handlerv)))
+  (ClassDef. this-class super-class
+             (if (not (zero? (bit-and flags Classfile/ACC_INTERFACE)))
+               (ClassHierarchyResolver$ClassHierarchyInfo/ofInterface)
+               (ClassHierarchyResolver$ClassHierarchyInfo/ofClass super-class))
+             flags itfs super-mhd fieldv cb-handlerv))
 
 (defn with-methods ^ClassDef [^ClassDef cdef cbhs]
-  (ClassDef. (.ch-info cdef) (.flags cdef) (.itfs cdef)
+  (ClassDef. (.this-class cdef) (.super-class cdef) (.ch-info cdef)
+             (.flags cdef) (.itfs cdef)
              (.super-mhd cdef) (.fieldv cdef) (into (.cb-handlerv cdef) cbhs)))
 
 ;;; ------------------------------------------------------------------------

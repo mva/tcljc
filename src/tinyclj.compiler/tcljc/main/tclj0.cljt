@@ -174,8 +174,8 @@
   (schedule-namespace [_ ns-str provided-nmsp]
     (.schedule nmsp-builder ns-str provided-nmsp))
   
-  (register-ch-info! [_ ch-info]
-    (.register! dyn-chr ch-info))
+  (register-ch-info! [_ this-class ch-info]
+    (.register! dyn-chr this-class ch-info))
   (produce-class [_ this-class cbh]
     (let [bs (cf/build this-class
                        (cf/with-cbh [cb]

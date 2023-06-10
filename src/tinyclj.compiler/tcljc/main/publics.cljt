@@ -31,7 +31,7 @@
     (fn-patch-instr [_ xb bref-mapper bref]
       (throw (IllegalStateException.)))
 
-    (fn-class-hierarchy-info [_]
+    (register-ch-info! [_ nmsp-io]
       (throw (IllegalStateException.)))
     (fn-cbh [_]
       (throw (IllegalStateException.)))

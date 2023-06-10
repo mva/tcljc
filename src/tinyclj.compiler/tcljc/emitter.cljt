@@ -168,7 +168,7 @@
   (letfn [(method-cbh [^MethodDef mdef]
             (cf/with-cbh [cb]
               (let [at (.at mdef)
-                    this-class (-> dtdef .cdef .ch-info .thisClass)
+                    this-class (-> dtdef .cdef .this-class)
                     ld-this (cf/ld-st-receiver this-class
                                                (name (.this-name at)))
                     xbh (cf/with-xbh [xb]
@@ -214,9 +214,8 @@
           (schedule-fn-classes ^SegmState [^SegmState segm ^TopLevelForm tlf]
             (let [segm (with-tlf segm tlf)
                   fncs (map #(-> ^FnSpec % .fn-form .!fnc) (.fn-specs tlf))]
-              (doseq [^FnCode fnc fncs :let [ep (.emit-plan fnc)]]
-                (when-some [ch-info (.fn-class-hierarchy-info ep)]
-                  (.register-ch-info! (.nmsp-io segm) ch-info)))
+              (doseq [^FnCode fnc fncs]
+                (.register-ch-info! (.emit-plan fnc) (.nmsp-io segm)))
               (reduce schedule-fn-class segm fncs)))
           (delayed-but-ready ^DelayedMacroFn [^SegmState segm]
             (when-some [mfn ^DelayedMacroFn (.peekFirst (.!delayed-macros segm))]
@@ -250,13 +249,14 @@
                 (with-next-segm segm))))
           (write-and-define ^SegmState [^SegmState segm ^ClassDef cdef
                                         ^CompletableFuture promise]
-            (.register-ch-info! (.nmsp-io segm) (.ch-info cdef))
+            (.register-ch-info! (.nmsp-io segm) (.this-class cdef)
+                                (.ch-info cdef))
             (let [cbh (cf/with-cbh [cb]
                         (-> (.withFlags cb (.flags cdef))
-                            (.withSuperclass (-> cdef .ch-info .superClass))
+                            (.withSuperclass (.super-class cdef))
                             (.withInterfaceSymbols (.itfs cdef)))
                         (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef)))
-                  this-class (-> cdef .ch-info .thisClass)
+                  this-class (.this-class cdef)
                   cl (.produce-class (.nmsp-io segm) this-class cbh)]
               (.complete promise cl)
               segm))

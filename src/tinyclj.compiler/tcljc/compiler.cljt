@@ -897,11 +897,11 @@
                        (.this-bref ac) (.body-expr ac))))
        (create-ephemeral-class ^Class [^ClassDef cdef]
          (let [bs (cf/build
-                   (-> cdef .ch-info .thisClass)
+                   (.this-class cdef)
                    (cf/with-cbh [cb]
                      (-> (cf/with-version cb)
                          (.withFlags (.flags cdef))
-                         (.withSuperclass (-> cdef .ch-info .superClass))
+                         (.withSuperclass (.super-class cdef))
                          (.withInterfaceSymbols (.itfs cdef)))
                      (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef))))
                dyn-ld (ctx/dyn-ld tl-ctx)

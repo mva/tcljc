@@ -151,7 +151,7 @@
     (fn-patch-instr [_ xb bref-mapper bref]
       xb)
 
-    (fn-class-hierarchy-info [_]
+    (register-ch-info! [_ nmsp-io]
       nil)
     (fn-cbh [_]
       nil)
@@ -363,9 +363,11 @@
                         (ee-mtd rt/void patched-ees)))
       xb)
 
-    (fn-class-hierarchy-info [_]
-      (jdk.internal.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
-       this-class false (.owner super-mhd)))
+    (register-ch-info! [_ nmsp-io]
+      (.register-ch-info!
+       nmsp-io this-class
+       (jdk.internal.classfile.ClassHierarchyResolver$ClassHierarchyInfo/ofClass
+        (.owner super-mhd))))
     (fn-cbh [_]
       (let [aca (arity-code-array fspec)
             ld-this (cf/ld-st-receiver this-class this-mnm)
@@ -432,7 +434,7 @@
     (fn-patch-instr [_ xb bref-mapper bref]
       xb)
 
-    (fn-class-hierarchy-info [_]
+    (register-ch-info! [_ nmsp-io]
       nil)
     (fn-cbh [_]
       nil)
@@ -471,9 +473,11 @@
     (fn-patch-instr [_ xb bref-mapper bref]
       xb)
 
-    (fn-class-hierarchy-info [_]
-      (jdk.internal.classfile.ClassHierarchyResolver$ClassHierarchyInfo.
-       this-class false (.owner super-mhd)))
+    (register-ch-info! [_ nmsp-io]
+      (.register-ch-info!
+       nmsp-io this-class
+       (jdk.internal.classfile.ClassHierarchyResolver$ClassHierarchyInfo/ofClass
+        (.owner super-mhd))))
     (fn-cbh [_]
       (let [aca (arity-code-array fspec)
             

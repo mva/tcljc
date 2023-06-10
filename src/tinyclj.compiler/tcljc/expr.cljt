@@ -12,7 +12,8 @@
    [tcljc.config :as cfg]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
-   [tcljc.wrong :as wrong])
+   [tcljc.wrong :as wrong]
+   tcljc.io)
   (:import
    (tcljc.classfile CHR ILdStInstr ClassDef)
    (clojure.lang Symbol Keyword ISeq IPersistentVector)
@@ -1219,8 +1220,8 @@
   (fn-patch-instr ^CodeBuilder [^CodeBuilder xb ^IProvidedValue bref-mapper
                                 ^BindingRef bref])
   
+  (register-ch-info! ^void [^tcljc.io.NmspIO nmsp-io])
   (fn-methods ^ClassBuilder [^ClassBuilder cb])
-  (fn-class-hierarchy-info ^ClassHierarchyResolver$ClassHierarchyInfo [])
   (fn-cbh ^java.util.function.Consumer []) ;input for Classfile/build
   
   (invoke-arity-with-self? ^boolean [])

@@ -106,7 +106,8 @@
   (forms-reader ^Reader [])
   (collect-rpaths ^IPersistentSet [])
 
-  (register-ch-info! ^void [^ClassHierarchyResolver$ClassHierarchyInfo ch-info])
+  (register-ch-info! ^void [^ClassDesc this-class
+                            ^ClassHierarchyResolver$ClassHierarchyInfo ch-info])
   ;; Builds, writes, and defines class `this-class` from `cbh`.  Sets
   ;; this instance's source file and the default classfile version.
   (produce-class ^Class [^ClassDesc this-class ^Consumer cbh])
