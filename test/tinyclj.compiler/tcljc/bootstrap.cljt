@@ -31,7 +31,7 @@
    (java.lang.invoke MethodHandle MethodType)
    (java.lang.reflect Method)
    (java.nio.file Path)
-   (java.util HashMap List)
+   (java.util HashMap Map List)
    (java.util.function Function)))
 
 (def ^:private app-ld
@@ -284,29 +284,22 @@
       :else (recur acc i (inc j)))))
 
 (defn- build-io-stub ^BuildIO [^Path dest-dir ^ClassLoader dyn-ld
-                               injected-file-forms ^List bytes-list]
-  (let [build-io (tclj0/mk-build-io app-ld dest-dir dyn-ld false)
-        build-files (.build-files ^tcljc.main.tclj0.BuildIOImpl build-io)
-        build-files' (reify BuildFiles
-                       (resource-url [_ rpath]
-                         (cfg/path-url rpath))
-                       (forms-reader [_ rurl]
-                         (-> (get injected-file-forms rurl)
-                             (tcljc.reader-test/mk-seq-reader)))
-                       (prepare-package-directory [_ ns-str]
-                         (.prepare-package-directory build-files ns-str))
-                       (write-class-file [_ owner-nm bs]
-                         ;; splice out bytes of generated class files
-                         (.add bytes-list bs)
-                         (.write-class-file build-files owner-nm bs)))]
-    (reify BuildIO
-      (nmsp-io [this str-or-class nmsp-builder]
-        (-> (.nmsp-io build-io str-or-class nmsp-builder)
-            (.with-build-files build-files')))
-      (try-load-capstone [this ns-str]
-        (.try-load-capstone build-io ns-str))
-      (fork-task [this sts f]
-        (.fork-task build-io sts f)))))
+                               injected-file-forms ^Map !render-to]
+  (let [build-files (tclj0/mk-build-files app-ld dest-dir)]
+    (-> (reify BuildFiles
+          (resource-url [_ rpath]
+            (cfg/path-url rpath))
+          (forms-reader [_ rurl]
+            (-> (get injected-file-forms rurl)
+                (tcljc.reader-test/mk-seq-reader)))
+          (prepare-package-directory [_ ns-str]
+            (.prepare-package-directory build-files ns-str))
+          (write-class-file [_ owner-nm bs]
+            ;; splice out bytes of generated class files
+            (let [x (classdata/extract bs)]
+              (.put !render-to (classdata/class-name x) x))
+            (.write-class-file build-files owner-nm bs)))
+        (tclj0/mk-build-io* app-ld dyn-ld false))))
 
 (defn nmsp
   ([formv]
@@ -320,10 +313,9 @@
                                                (cfg/path-url))
                                            (seq forms)]))
                                    ns-forms-seq)
-         !render-to (HashMap.)
-         bytes-list (java.util.ArrayList.)
+         !render-to (java.util.concurrent.ConcurrentHashMap.)
          env (build-io-stub (dest-dir-of-test) dyn-ld
-                            injected-file-forms bytes-list)
+                            injected-file-forms !render-to)
          ans-strs (->> ns-forms-seq
                        (map (comp nmsp-name-str first))
                        ^"[Ljava.lang.String;" (into-array String))
@@ -343,12 +335,9 @@
                                 (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
                               (build-all [_]
                                 (assert false)))
-               nmsp (em/compile-and-emit env ns-str nmsp-builder provided-nmsp)]
-           (doseq [^bytes bs bytes-list
-                   :let [x (classdata/extract bs)]]
-             (.put !render-to (classdata/class-name x) x))
-           (let [globals (get (.exported-known-ns nmsp) ns-str)]
-             (recur (assoc known-ns ns-str globals) (inc i))))))
+               nmsp (em/compile-and-emit env ns-str nmsp-builder provided-nmsp)
+               globals (get (.exported-known-ns nmsp) ns-str)]
+           (recur (assoc known-ns ns-str globals) (inc i)))))
      
      (->> (sort-by key (seq !render-to))
           (mapv (comp vec val))))))
@@ -415,7 +404,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn fn-call-method [params form ^java.util.List args]
+(defn fn-call-method [params form ^List args]
   (letfn [(get-method ^Method [^Class cl ^String nm]
             (let [ms (filter #(= (.getName ^Method %) nm) (.getMethods cl))]
               (assert (= (count ms) 1)
@@ -455,7 +444,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn- mt-of ^MethodType [^Class return-type ^java.util.List parameter-types]
+(defn- mt-of ^MethodType [^Class return-type ^List parameter-types]
   (MethodType/methodType return-type parameter-types))
 
 (def array-to-cpl (tcljc.macro.ArrayToCpl. (.getClassLoader Object)))

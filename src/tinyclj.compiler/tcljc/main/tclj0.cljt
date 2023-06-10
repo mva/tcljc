@@ -18,7 +18,7 @@
    [tcljc.io :as io]
    [tcljc.predefined :as predefined]
    [tcljc.emitter :as emitter]
-   [tcljc.emitter.beachhead :as beachhead]
+   [tcljc.main.beachhead :as beachhead]
    [tcljc.main.options :as options]
    [tcljc.main.efmt :as efmt]
    [tcljc.main.invoke :as invoke]
@@ -142,12 +142,6 @@
   NmspIO
   (compile-io [_]
     compile-io)
-  (with-build-files [_ build-files]
-    (NmspIOImpl. build-files compile-io rt-lookup
-                 initial-imports initial-globals
-                 rpath rurl !rpath-set source-file-attribute
-                 nmsp-builder pkg-dir-prepared dyn-chr
-                 compile-to-emit-q binding-frame))
   
   (initial-imports [_]
     initial-imports)
@@ -225,24 +219,24 @@
 ;; ahead-of-time compiled class files.  It must never return classes
 ;; from the destination directory, or compilation of modified classes
 ;; will silently stop.
-(deftype BuildFilesImpl [^ClassLoader app-ld
-                         ^Path dest-dir] ;`dest-dir` may be nil
-  BuildFiles
-  (resource-url [_ rpath]
-    (or (.getResource app-ld (str rpath))
-        (wrong/file rpath)))
-  (forms-reader [_ rurl]
-    (rd/mk-reader (slurp rurl)))
+(defn mk-build-files ^BuildFiles [^ClassLoader app-ld
+                                  ^Path dest-dir] ;`dest-dir` may be nil
+  (reify BuildFiles
+    (resource-url [_ rpath]
+      (or (.getResource app-ld (str rpath))
+          (wrong/file rpath)))
+    (forms-reader [_ rurl]
+      (rd/mk-reader (slurp rurl)))
 
-  (prepare-package-directory [_ ns-str]
-    (when (some? dest-dir)
-      (cfg/create-directories (cfg/package-directory dest-dir ns-str))))
-  (write-class-file [_ owner-nm bs]
-    (when (some? dest-dir)          ;expects output directory to exist
-      (with-open [w (-> dest-dir
-                        (.resolve (Path/of (str owner-nm cfg/class-suffix)))
-                        (Files/newOutputStream))]
-        (.write w bs)))))
+    (prepare-package-directory [_ ns-str]
+      (when (some? dest-dir)
+        (cfg/create-directories (cfg/package-directory dest-dir ns-str))))
+    (write-class-file [_ owner-nm bs]
+      (when (some? dest-dir) ;expects output directory to exist
+        (with-open [w (-> dest-dir
+                          (.resolve (Path/of (str owner-nm cfg/class-suffix)))
+                          (Files/newOutputStream))]
+          (.write w bs))))))
 
 (deftype BuildIOImpl
     [^BuildFiles build-files
@@ -254,7 +248,7 @@
      binding-frame              ;to carry *out* and *err* into threads
      ^boolean collect-macro-definitions?]
     tcljc.io.BuildIO
-    (nmsp-io [build-io str-or-class nmsp-builder]
+    (mk-nmsp-io-for [build-io str-or-class nmsp-builder]
       (let [ns-str (if (string? str-or-class)
                      ^String str-or-class
                      (.getPackageName ^Class str-or-class))
@@ -287,8 +281,9 @@
                     (clojure.lang.Var/resetThreadBindingFrame binding-frame)
                     (.call f)))))
 
-(defn mk-build-io ^BuildIO [^ClassLoader app-ld ^Path dest-dir ^ClassLoader dyn-ld
-                            ^boolean collect-macro-definitions?]
+(defn mk-build-io* ^BuildIO [^BuildFiles build-files
+                             ^ClassLoader app-ld ^ClassLoader dyn-ld
+                             ^boolean collect-macro-definitions?]
   (let [rt-lookup (cfg/get-rt-lookup app-ld)
         initial-imports (reduce-kv (fn [acc nm-sym clnm]
                                      (let [cl (.findClass rt-lookup clnm)]
@@ -301,10 +296,16 @@
                                     'set rt/clnm-set
                                     'list rt/clnm-list
                                     'seq rt/clnm-seq})]
-    (BuildIOImpl. (BuildFilesImpl. app-ld dest-dir)
+    (BuildIOImpl. build-files
                   rt-lookup initial-imports dyn-ld (cf/mk-chr dyn-ld)
                   (clojure.lang.Var/cloneThreadBindingFrame)
                   collect-macro-definitions?)))
+
+(defn mk-build-io ^BuildIO [^Path dest-dir
+                            ^ClassLoader app-ld ^ClassLoader dyn-ld
+                            ^boolean collect-macro-definitions?]
+  (-> (mk-build-files app-ld dest-dir)
+      (mk-build-io* app-ld dyn-ld collect-macro-definitions?)))
 
 ;;; ------------------------------------------------------------------------
 
@@ -328,7 +329,7 @@
                       [])
         dyn-ld (cfg/dyn-class-loader app-ld dyn-sourcev)
         builtin-nmsp (em/mk-provided-nmsp)
-        env (mk-build-io app-ld (.dest-dir opts) dyn-ld (.deterministic? opts))]
+        env (mk-build-io (.dest-dir opts) app-ld dyn-ld (.deterministic? opts))]
     (.build-all (if (.deterministic? opts)
                   (builder/single-threaded env builtin-nmsp all-nmsps)
                   (builder/multi-threaded env builtin-nmsp all-nmsps)))))

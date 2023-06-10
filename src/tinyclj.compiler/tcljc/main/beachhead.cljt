@@ -5,7 +5,7 @@
 ;; By using this software in any fashion, you are agreeing to be bound by
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
-(ns tcljc.emitter.beachhead
+(ns tcljc.main.beachhead
   (:require [tcljc.classfile :as cf])
   (:import (jdk.internal.classfile Classfile)
            (java.lang.constant ClassDesc MethodTypeDesc)

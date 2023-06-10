@@ -41,7 +41,7 @@
         
         dyn-ld (cfg/dyn-class-loader app-ld [])
         dest-dir (cfg/dest-dir "tcljc.rtiow-nocore")
-        env (tclj0/mk-build-io app-ld dest-dir dyn-ld
+        env (tclj0/mk-build-io dest-dir app-ld dyn-ld
                                (.deterministic-namespace-compile? noop-nmsp-builder))
         
         ns-str "tcljc.rtiow-nocore-ref"

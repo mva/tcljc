@@ -13,7 +13,6 @@
   exports tcljc.config;
   exports tcljc.context;
   exports tcljc.emitter;
-  exports tcljc.emitter.beachhead;
   exports tcljc.emitter.bytecode;
   exports tcljc.emitter.classes;
   exports tcljc.emitter.emitfn;
@@ -26,6 +25,7 @@
   exports tcljc.io;
   exports tcljc.javabase;
   exports tcljc.macro;
+  exports tcljc.main.beachhead;
   exports tcljc.main.builder;
   exports tcljc.main.efmt;
   exports tcljc.main.invoke;

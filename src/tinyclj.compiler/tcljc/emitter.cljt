@@ -383,7 +383,7 @@
                                          ^NmspBuilder nmsp-builder
                                          ^IPersistentMap provided-nmsp
                                          ^Class capstone]
-    (let [nmsp-io (.nmsp-io env capstone nil)
+    (let [nmsp-io (.mk-nmsp-io-for env capstone nil)
           ctx (ctx/mk-ctx* {} {} (.getPackageName capstone)
                            (.compile-io nmsp-io) nil)]
       (init-known-ns ctx provided-nmsp)
@@ -423,7 +423,7 @@
     (try
       (let [arity-task-scope (when-not (.deterministic-namespace-compile? nmsp-builder)
                                nmsp-task-scope)
-            nmsp-io (.nmsp-io env ns-str nmsp-builder)
+            nmsp-io (.mk-nmsp-io-for env ns-str nmsp-builder)
             tl-ctx (ctx/mk-ctx* (.initial-globals nmsp-io)
                                 (.initial-imports nmsp-io)
                                 ns-str (.compile-io nmsp-io) arity-task-scope)

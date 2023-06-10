@@ -173,7 +173,6 @@
 ;;; corresponding methods must *not* be called from other threads.
 (definterface NmspIO
   (compile-io ^CompileIO [])
-  (with-build-files ^NmspIO [^BuildFiles build-files]) ;for stubbing
 
   ;; Initial set of class imports when compiling this namespace.
   (initial-imports ^IPersistentMap [])
@@ -213,7 +212,7 @@
 (definterface BuildIO
   ;; Creates a new `NmspIO` instance for a fresh namespace.  Must be
   ;; called at most once per namespace.
-  (nmsp-io ^NmspIO [str-or-class ^NmspBuilder nmsp-builder])
+  (mk-nmsp-io-for ^NmspIO [str-or-class ^NmspBuilder nmsp-builder])
   
   ;; Returns the capstone class for `ns-str` if it is part of the
   ;; dynamic class loader, and nil otherwise.
