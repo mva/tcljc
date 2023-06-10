@@ -208,8 +208,7 @@
     (when (= defining-tlf-idx (.get-tlf-idx ^Ctx ctx))
       (wrong/other (str "cannot define and expand macro " (wrong/q (first form))
                         " in same top-level form")))
-    (when (and (.collect-macro-definitions? compile-io)
-               (not (.isDone value-promise)))
+    (when-not (.isDone value-promise)
       (.send-to-emit compile-io io/msg-flush-macro-definitions nil))
     ;; pass nil as `env` for now
     (.apply-macro compile-io (.get value-promise) form nil)))
@@ -224,10 +223,8 @@
               ;; make sure that the old definition has been defined
               ;; into some prior namespace segment, and treat the
               ;; redefinition as a fresh macro
-              (let [compile-io (ctx/compile-io tl-ctx)]
-                (when (.collect-macro-definitions? compile-io)
-                  (.send-to-emit compile-io io/msg-flush-macro-definitions nil))
-                nil)
+              (.send-to-emit (ctx/compile-io tl-ctx)
+                             io/msg-flush-macro-definitions nil)
               prior))
           
           (put-value-or-macro ^Binding [^String ns-str ^Symbol nm

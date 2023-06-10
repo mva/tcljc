@@ -25,7 +25,7 @@
   (:import
    (tcljc.classfile ClassDef)
    (tcljc.expr FnCode DeftypeDef MethodDef)
-   (tcljc.io BuildIO NmspIO CompileIO NmspBuilder)
+   (tcljc.io BuildIO NmspIO CompileIO NmspBuilder Msg)
    (tcljc.compiler DelayedMacroFn)
    (tcljc.emitter.namespace Namespace)
    (tcljc.emitter.emitfn FnSpec)
@@ -272,53 +272,52 @@
                      tlf (prepare/collect-fn-info body)]
                  (into acc (.fn-specs tlf))))
              [] mdefs))
-          (complete-req! ^SegmState [^SegmState segm ^int task x
-                                     ^CompletableFuture promise]
-            (condp = task
+          (complete-req! ^SegmState [^SegmState segm ^Msg msg]
+            (condp = (.task msg)
               io/msg-emit-tlf
-              (let [tlf (prepare/collect-fn-info x)]
+              (let [tlf (prepare/collect-fn-info (.x msg))]
                 (prepare/prepare-fns! (.segm-cld segm) (.fn-specs tlf))
                 (prepare/prepare-globals! (.segm-cld segm) (.global-bs tlf))
                 (cond-> (schedule-fn-classes segm tlf)
-                  (and (not (-> segm .nmsp-io .compile-io .collect-macro-definitions?))
+                  (and (not (.collect-macro-definitions? msg))
                        (some? (delayed-but-ready segm)))
                   (write-segment false)))
 
               io/msg-macro-of-next-tlf
-              (do (.addLast (.!delayed-macros segm) x)
+              (do (.addLast (.!delayed-macros segm) (.x msg))
                   segm)
 
               io/msg-flush-macro-definitions
-              (do (assert (-> segm .nmsp-io .compile-io .collect-macro-definitions?))
-                  (cond-> segm
-                    (delayed-but-ready segm) (write-segment false)))
+              (cond-> segm
+                (and (.collect-macro-definitions? msg)
+                     (some? (delayed-but-ready segm)))
+                (write-segment false))
               
               io/req-define-class
-              (if (instance? ClassDef x)
-                (write-and-define segm ^ClassDef x promise)
-                (let [dtdef ^DeftypeDef x
+              (if (instance? ClassDef (.x msg))
+                (write-and-define segm ^ClassDef (.x msg) (.promise msg))
+                (let [dtdef ^DeftypeDef (.x msg)
                       fn-specs (fn-specs-from-methods (.method-defs dtdef) segm)
                       tlf (TopLevelForm. fn-specs nil x/expr-empty)]
                   (prepare/prepare-fns! (.segm-cld segm) fn-specs)
                   (-> (schedule-fn-classes segm tlf)
-                      (write-and-define (build-deftype dtdef) promise))))
+                      (write-and-define (build-deftype dtdef) (.promise msg)))))
               
               io/req-flush-namespace-segment
               (let [cl (write-segment segm true)]
                 ;; segment class `cl` exists and can now be looked up
-                (.complete promise (x/invoke-force-clinit (.segm-cld segm)))
+                (.complete (.promise msg) (x/invoke-force-clinit (.segm-cld segm)))
                 cl)
               
               io/msg-fatal-error
-              (throw ^Throwable x)
+              (throw ^Throwable (.x msg))
               
-              #_else (throw (IllegalStateException. (str task)))))]
+              #_else (throw (IllegalStateException. (str (.task msg))))))]
 
     (let [msg (.recv-from-compile (.nmsp-io segm))]
       (if (= (.task msg) io/msg-close-queue)
         (-> segm (write-segment false) (write-capstone (.x msg)))
-        (recur (complete-req! segm (.task msg) (.x msg) (.promise msg))
-               nmsp-task-scope)))))
+        (recur (complete-req! segm msg) nmsp-task-scope)))))
 
 (defn mk-provided-nmsp
   ([]

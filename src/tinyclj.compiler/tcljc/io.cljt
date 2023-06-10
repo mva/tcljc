@@ -71,7 +71,13 @@
 ;;; point will be delivered eventually.
 
 
-(deftype Msg [^int task ^Object x ^CompletableFuture promise])
+;; When `collect-macro-definitions?` is true, then try to collect
+;; multiple macro definitions into a namespace segment, instead of
+;; starting a new one after each macro.  Only works in deterministic
+;; mode, because the emit thread deadlocks when a function thread
+;; thread sends it any tasks.
+(deftype Msg [^int task ^Object x ^CompletableFuture promise
+              ^boolean collect-macro-definitions?])
 
 (defn close-queue? ^boolean [^Msg msg]
   (= (.task msg) msg-close-queue))
@@ -146,14 +152,8 @@
 
   ;; Important: A function thread calling this method in
   ;; non-deterministic mode leads to deadlock in the emit thread.
-  (send-to-emit [^int task ^Object x])
+  (send-to-emit ^Object [^int task ^Object x])
   
-  ;; When true, try to collect multiple macro definitions into a
-  ;; namespace segment, instead of starting a new one after each
-  ;; macro.  Only works in deterministic mode, because the emit thread
-  ;; deadlocks when a function thread thread sends it any tasks.
-  (collect-macro-definitions? ^boolean [])
-
   (fork-function ^Future [^ExecutorService sts ^Callable f])
   
   (compile-io-in ^CompileIO [^Class cl]))

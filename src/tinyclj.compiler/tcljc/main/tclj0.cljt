@@ -88,14 +88,15 @@
   (send-to-emit [_ task x]
     (if (io/needs-response? task)
       (let [fut (CompletableFuture.)]
-        (.put compile-to-emit-q (Msg. task x fut))
+        (.put compile-to-emit-q
+              (Msg. task x fut collect-macro-definitions?))
         (let [resp (io/wait-for-result fut)]
           (if (instance? Throwable resp)
             (throw ^Throwable resp)    ;receiving thread is in trouble
             resp)))
-      (.put compile-to-emit-q (Msg. task x nil))))
-  (collect-macro-definitions? [_]
-    collect-macro-definitions?)
+      (do (.put compile-to-emit-q
+                (Msg. task x nil collect-macro-definitions?))
+          nil)))
   (fork-function [_ sts f]
     (if (some? sts)
       ;; Carry *out* and *err* into threads.  Compiler code running
