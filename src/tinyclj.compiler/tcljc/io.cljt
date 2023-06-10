@@ -70,11 +70,22 @@
   
   (compile-io-in ^CompileIO [^Class cl]))
 
+(definterface BuildFiles
+  ;; Returns the resource URL of `rpath`, or signals an error.
+  (resource-url ^URL [^Path rpath])
+
+  ;; Source files are obtained from `app-ld` loader via
+  ;; `.getResource`.
+  (forms-reader ^Reader [^URL rurl])
+
+  (prepare-package-directory ^void [^String ns-str])
+  (write-class-file ^void [^String owner-nm ^bytes bs]))
+
 ;;; Holds mutable state for the namespace thread, which means that the
 ;;; corresponding methods must *not* be called from other threads.
 (definterface NmspIO
   (compile-io ^CompileIO [])
-  (with-build-io ^NmspIO [^BuildIO build-io]) ;for stubbing
+  (with-build-files ^NmspIO [^BuildFiles build-files]) ;for stubbing
 
   ;; Initial set of class imports when compiling this namespace.
   (initial-imports ^IPersistentMap [])
@@ -114,19 +125,10 @@
   ;; called at most once per namespace.
   (nmsp-io ^NmspIO [str-or-class ^NmspBuilder nmsp-builder])
   
-  ;; Returns the resource URL of `rpath`, or signals an error.
-  (resource-url ^URL [^Path rpath])
-
-  ;; Source files are obtained from `app-ld` loader via
-  ;; `.getResource`.
-  (forms-reader ^Reader [^URL rurl])
-
   ;; Returns the capstone class for `ns-str` if it is part of the
   ;; dynamic class loader, and nil otherwise.
   (try-load-capstone ^Class [^String ns-str])
 
-  (define-class ^Class [^MethodHandles$Lookup l ^ClassDesc this-class ^bytes bs])
-  
   ;; Called for every namespace in multi-threaded compilation mode.
   ;; NmspIO also delegates to this method.
   (fork-task ^java.util.concurrent.Future [^StructuredTaskScope sts ^Callable f]))

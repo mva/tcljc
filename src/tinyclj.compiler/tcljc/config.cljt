@@ -141,7 +141,7 @@
                  (PosixFilePermissions/asFileAttribute))]
     (Files/createDirectories p perm)))
 
-(defn- package-directory ^Path [^Path dest-dir ^String ns-str]
+(defn package-directory ^Path [^Path dest-dir ^String ns-str]
   (.resolve dest-dir (path-of (str/replace ns-str "." "/"))))
 
 (defn delete-package-classes
@@ -151,11 +151,6 @@
      (Files/delete x)))
   (^void [^Path dest-dir ^String ns-str]
    (delete-package-classes (package-directory dest-dir ns-str))))
-
-(defn prepare-package-directory ^void [^Path dest-dir ^String ns-str]
-  (when (some? dest-dir)
-    (-> (package-directory dest-dir ns-str)
-        (create-directories))))
 
 #_
 (defn spit-class ^void [^Path dest-prefix ^String owner-name ^bytes b]
@@ -213,14 +208,6 @@
   (assert (not (.isPrimitive cd)))
   (let [desc (.descriptorString cd)]
     (.substring desc 1 (dec (.length desc))))) ;drop "L" and ";", but keep "/"
-
-(defn write-class-file ^Class [^Path dest-dir ^String owner-nm ^bytes bs]
-  #_(prn :write-class-file owner-nm)
-  (when (some? dest-dir)            ;expects output directory to exist
-    (with-open [w (-> dest-dir
-                      (.resolve (path-of (str owner-nm class-suffix)))
-                      (Files/newOutputStream))]
-      (.write w bs))))
 
 ;;; ------------------------------------------------------------------------
 

@@ -25,7 +25,7 @@
    [tinyclj.alpha.ptest__impl :as ptest__impl] ;for get-test-context
    [tcljc.classdata :as classdata])
   (:import
-   (tcljc.io BuildIO NmspIO NmspBuilder)
+   (tcljc.io BuildFiles BuildIO NmspIO NmspBuilder)
    (tcljc.expr MacroRef FnMacroFn)
    (clojure.lang Symbol IPersistentMap ExceptionInfo)
    (java.lang.invoke MethodHandle MethodType)
@@ -285,23 +285,26 @@
 
 (defn- build-io-stub ^BuildIO [^Path dest-dir ^ClassLoader dyn-ld
                                injected-file-forms ^List bytes-list]
-  (let [build-io (tclj0/mk-build-io app-ld dest-dir dyn-ld false)]
+  (let [build-io (tclj0/mk-build-io app-ld dest-dir dyn-ld false)
+        build-files (.build-files ^tcljc.main.tclj0.BuildIOImpl build-io)
+        build-files' (reify BuildFiles
+                       (resource-url [_ rpath]
+                         (cfg/path-url rpath))
+                       (forms-reader [_ rurl]
+                         (-> (get injected-file-forms rurl)
+                             (tcljc.reader-test/mk-seq-reader)))
+                       (prepare-package-directory [_ ns-str]
+                         (.prepare-package-directory build-files ns-str))
+                       (write-class-file [_ owner-nm bs]
+                         ;; splice out bytes of generated class files
+                         (.add bytes-list bs)
+                         (.write-class-file build-files owner-nm bs)))]
     (reify BuildIO
       (nmsp-io [this str-or-class nmsp-builder]
         (-> (.nmsp-io build-io str-or-class nmsp-builder)
-            (.with-build-io this)))
-      (resource-url [this rpath]
-        (cfg/path-url rpath))
-      (forms-reader [this rurl]
-        (-> (get injected-file-forms rurl)
-            (tcljc.reader-test/mk-seq-reader)))
+            (.with-build-files build-files')))
       (try-load-capstone [this ns-str]
         (.try-load-capstone build-io ns-str))
-      (define-class [this l this-class bs]
-        (let [cl (.define-class build-io l this-class bs)]
-          ;; splice out bytes of generated class files
-          (.add bytes-list bs)
-          cl))
       (fork-task [this sts f]
         (.fork-task build-io sts f)))))
 

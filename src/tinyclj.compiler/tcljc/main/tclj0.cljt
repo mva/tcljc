@@ -26,7 +26,7 @@
    [tcljc.main.builder :as builder]
    [tinyclj.string :as str])
   (:import
-   (tcljc.io BuildIO NmspIO CompileIO NmspBuilder)
+   (tcljc.io BuildFiles BuildIO NmspIO CompileIO NmspBuilder)
    (tcljc.main.options Options)
    (clojure.lang IPersistentMap IPersistentSet ExceptionInfo)
    (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
@@ -115,7 +115,7 @@
 ;; `!rpath-set` is created by the emitted thread, then handed over to
 ;; the namespace thread to accumulate the names of visited files, and
 ;; read only after the namespace's compilation has completed.
-(deftype NmspIOImpl [^BuildIO build-io
+(deftype NmspIOImpl [^BuildFiles build-files
                      ^CompileIO compile-io
                      ^MethodHandles$Lookup rt-lookup
                      ^IPersistentMap initial-imports
@@ -128,18 +128,18 @@
 
                      ^NmspBuilder nmsp-builder
                      
-                     ^Path dest-dir
                      ^AtomicBoolean pkg-dir-prepared
-                     ^tcljc.classfile.CHR dyn-chr]
+                     ^tcljc.classfile.CHR dyn-chr
+                     ^Object binding-frame]
   NmspIO
   (compile-io [_]
     compile-io)
-  (with-build-io [_ build-io]
-    (NmspIOImpl. build-io compile-io rt-lookup
+  (with-build-files [_ build-files]
+    (NmspIOImpl. build-files compile-io rt-lookup
                  initial-imports initial-globals
                  rpath rurl !rpath-set source-file-attribute
-                 nmsp-builder
-                 dest-dir pkg-dir-prepared dyn-chr))
+                 nmsp-builder pkg-dir-prepared dyn-chr
+                 binding-frame))
   
   (initial-imports [_]
     initial-imports)
@@ -154,20 +154,20 @@
                       (cfg/path-of s)
                       (.resolve (.getParent rpath) s))))
           rurl (when compile-resource?
-                 (.resource-url build-io rpath))
+                 (.resource-url build-files rpath))
           src-file-attr (when (and cfg/enable-line-numbers (some? rurl))
                           (let [s (.getPath ^URL rurl)]
                             (subs s (inc (.lastIndexOf s "/")))))]
       (.add !rpath-set rpath)
-      (NmspIOImpl. build-io compile-io rt-lookup
+      (NmspIOImpl. build-files compile-io rt-lookup
                    initial-imports initial-globals
                    rpath rurl !rpath-set src-file-attr
-                   nmsp-builder
-                   dest-dir pkg-dir-prepared dyn-chr)))
+                   nmsp-builder pkg-dir-prepared dyn-chr
+                   binding-frame)))
   (assoc-source-file [_ ^ExceptionInfo e]
     (wrong/assoc-if-new e :file/resource-url rurl))
   (forms-reader [_]
-    (.forms-reader build-io rurl))
+    (.forms-reader build-files rurl))
   (collect-rpaths [_]
     (into #{} !rpath-set))
 
@@ -186,32 +186,56 @@
       (when-not (.getPlain pkg-dir-prepared)
         ;; the package directory must haven been created before the
         ;; first class is written for this package
-        (cfg/prepare-package-directory dest-dir (.packageName this-class))
+        (.prepare-package-directory build-files (.packageName this-class))
         (.setPlain pkg-dir-prepared true))
-      (cfg/write-class-file dest-dir (cfg/internal-name this-class) bs)
+      (.write-class-file build-files (cfg/internal-name this-class) bs)
 
-      ;; pass classfile bytes to BuildIO instance, so that unit
-      ;; tests can take the byte array from memory
-      (.define-class build-io (.lookup-in-pkg compile-io) this-class bs)))
+      (let [l (.lookup-in-pkg compile-io)]
+        (-> (try
+              (.defineClass l bs)
+              (catch NoClassDefFoundError _
+                ;; happens for example with "pkg/ns0/n2$n2-n1$n2-n1-n0" from
+                ;; test case tcljc.closure-test/nested
+                (.findClass l (str/replace (cfg/internal-name this-class) "/" "."))))
+            (cfg/validate-defined-class)))))
 
   (extract-publics [this known-ns capstone]
     (publics/extract rt-lookup this known-ns capstone))
   
   (fork-task [_ sts f fork-work?]
     (if fork-work?
-      (.fork-task build-io sts f)
+      (.fork sts (^Callable fn []
+                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                  (.call f)))
       (java.util.concurrent.CompletableFuture/completedFuture (.call f)))))
-
 
 ;; Source files are obtained from `app-ld` via `.getResource`.  If the
 ;; parent classloader is :system, then `app-ld` also provides
 ;; ahead-of-time compiled class files.  It must never return classes
 ;; from the destination directory, or compilation of modified classes
 ;; will silently stop.
+(deftype BuildFilesImpl [^ClassLoader app-ld
+                         ^Path dest-dir] ;`dest-dir` may be nil
+  BuildFiles
+  (resource-url [_ rpath]
+    (or (.getResource app-ld (str rpath))
+        (wrong/file rpath)))
+  (forms-reader [_ rurl]
+    (rd/mk-reader (slurp rurl)))
+
+  (prepare-package-directory [_ ns-str]
+    (when (some? dest-dir)
+      (cfg/create-directories (cfg/package-directory dest-dir ns-str))))
+  (write-class-file [_ owner-nm bs]
+    (when (some? dest-dir)          ;expects output directory to exist
+      (with-open [w (-> dest-dir
+                        (.resolve (Path/of (str owner-nm cfg/class-suffix)))
+                        (Files/newOutputStream))]
+        (.write w bs)))))
+
 (deftype BuildIOImpl
-    [^ClassLoader app-ld
+    [^BuildFiles build-files
      ^MethodHandles$Lookup rt-lookup    ;to access module tinyclj.rt
-     ^Path dest-dir                     ;may be nil
 
      ^IPersistentMap initial-imports
      ^ClassLoader dyn-ld
@@ -233,13 +257,9 @@
                                       collect-macro-definitions?)
             !rpath-set (HashSet.)
             pdp (java.util.concurrent.atomic.AtomicBoolean. false)]
-        (NmspIOImpl. build-io compile-io rt-lookup initial-imports initial-globals
-                     nil nil !rpath-set nil nmsp-builder dest-dir pdp dyn-chr)))
-    (resource-url [_ rpath]
-      (or (.getResource app-ld (str rpath))
-          (wrong/file rpath)))
-    (forms-reader [_ rurl]
-      (rd/mk-reader (slurp rurl)))
+        (NmspIOImpl. build-files compile-io rt-lookup initial-imports initial-globals
+                     nil nil !rpath-set nil nmsp-builder pdp dyn-chr
+                     binding-frame)))
   
     (try-load-capstone [_ ns-str]
       (try
@@ -247,21 +267,12 @@
         (catch ClassNotFoundException _
           nil)))
 
-    (define-class [_ l this-class bs]
-      (-> (try
-            (.defineClass l bs)
-            (catch NoClassDefFoundError _
-              ;; happens for example with "pkg/ns0/n2$n2-n1$n2-n1-n0" from
-              ;; test case tcljc.closure-test/nested
-              (.findClass l (str/replace (cfg/internal-name this-class) "/" "."))))
-          (cfg/validate-defined-class)))
-  
     (fork-task [_ sts f]
       (.fork sts (^Callable fn []
                   (clojure.lang.Var/resetThreadBindingFrame binding-frame)
                   (.call f)))))
 
-(defn mk-build-io ^BuildIO [^ClassLoader app-ld  ^Path dest-dir ^ClassLoader dyn-ld
+(defn mk-build-io ^BuildIO [^ClassLoader app-ld ^Path dest-dir ^ClassLoader dyn-ld
                             ^boolean collect-macro-definitions?]
   (let [rt-lookup (cfg/get-rt-lookup app-ld)
         initial-imports (reduce-kv (fn [acc nm-sym clnm]
@@ -275,8 +286,8 @@
                                     'set rt/clnm-set
                                     'list rt/clnm-list
                                     'seq rt/clnm-seq})]
-    (BuildIOImpl. app-ld rt-lookup dest-dir initial-imports
-                  dyn-ld (cf/mk-chr dyn-ld)
+    (BuildIOImpl. (BuildFilesImpl. app-ld dest-dir)
+                  rt-lookup initial-imports dyn-ld (cf/mk-chr dyn-ld)
                   (clojure.lang.Var/cloneThreadBindingFrame)
                   collect-macro-definitions?)))
 
