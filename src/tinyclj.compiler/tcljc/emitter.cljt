@@ -190,7 +190,7 @@
         ;; to reach downstream namespaces like tinyclj.java.io
         kns (-> (reduce dissoc (.get-known-ns ctx) (keys provided-nmsp))
                 (assoc (.ns-str ctx) publics))]
-    (Namespace. nil nil nil ;clear `provided-nmsp`, `ctx`, `top-level-nmsp-io`
+    (Namespace. nil nil nil ;clear `provided-nmsp`, `ctx`, `primary-nmsp-io`
                 req-strs capstone kns)))
 
 (defn- mk-first-segm ^SegmState [^NmspIO nmsp-io ^Ctx ctx]

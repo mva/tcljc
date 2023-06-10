@@ -35,7 +35,7 @@
               (let [nmsp ^Namespace x]
                 (if (nmsp/imported? nmsp)
                   {} ;rpaths and req-strs unchanged from prior compile
-                  {:rpaths (.collect-rpaths (.top-level-nmsp-io nmsp))
+                  {:rpaths (.collect-rpaths (.primary-nmsp-io nmsp))
                    :req-strs (.req-strs nmsp)}))
 
               (instance? Future x)

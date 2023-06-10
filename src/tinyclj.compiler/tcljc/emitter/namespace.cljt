@@ -29,7 +29,7 @@
 
 (deftype Namespace [^IPersistentMap provided-nmsp ;string -> Namespace
                     ^Ctx ctx
-                    ^NmspIO top-level-nmsp-io ;nil if imported
+                    ^NmspIO primary-nmsp-io ;nil if imported
                     
                     ^IPersistentSet req-strs
                     ^Class capstone     ;for invoke after build
@@ -41,7 +41,7 @@
   (Namespace. provided-nmsp ctx nmsp-io #{} nil nil))
 
 (defn imported? ^boolean [^Namespace nmsp]
-  (nil? (.top-level-nmsp-io nmsp)))
+  (nil? (.primary-nmsp-io nmsp)))
 
 (defn mk-provided ^Namespace [^String ns-str ^IPersistentMap publics]
   (Namespace. nil nil nil #{} nil {ns-str publics}))
@@ -54,7 +54,7 @@
 
 (defn- with-requires ^Namespace [^Namespace nmsp ns-strs]
   (Namespace. (.provided-nmsp nmsp) (.ctx nmsp)
-              (.top-level-nmsp-io nmsp) (into (.req-strs nmsp) ns-strs)
+              (.primary-nmsp-io nmsp) (into (.req-strs nmsp) ns-strs)
               (.capstone nmsp) (.exported-known-ns nmsp)))
 
 (defn core-lib? ^boolean [^Namespace nmsp]
@@ -167,7 +167,7 @@
             (dotimes [i n]
               (let [req-str (aget req-strs i)]
                 (aset a i (or (get (.provided-nmsp nmsp) req-str)
-                              (-> (.top-level-nmsp-io nmsp)
+                              (-> (.primary-nmsp-io nmsp)
                                   (.schedule-namespace req-str provide-nmsp))))))
             ;; wait for and pick up namespace outcomes
             (dotimes [i n]              ;avoid stack frame spamming
@@ -246,7 +246,7 @@
       (-> (.resolveConstantDesc rt/mhd-pushFileContext l)
           ^void (.invokeExact (.ns-str ctx)))
       (try
-        (top-level-file nmsp (.top-level-nmsp-io nmsp))
+        (top-level-file nmsp (.primary-nmsp-io nmsp))
         (finally
           (-> (.resolveConstantDesc rt/mhd-popFileContext l)
               ^void (.invokeExact)))))))
