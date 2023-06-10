@@ -74,7 +74,6 @@
 ;;; corresponding methods must *not* be called from other threads.
 (definterface NmspIO
   (compile-io ^CompileIO [])
-  (rt-lookup ^MethodHandles$Lookup [])
   (with-build-io ^NmspIO [^BuildIO build-io]) ;for stubbing
 
   ;; Initial set of class imports when compiling this namespace.
@@ -102,6 +101,9 @@
   ;; this instance's source file and the default classfile version.
   (produce-class ^Class [^ClassDesc this-class ^Consumer cbh])
 
+  ;; Given the class file `capstone`, extract its map of public globals.
+  (extract-publics ^IPersistentMap [^IPersistentMap known-ns ^Class capstone])
+  
   ;; Called for the namespace's top-level compile thread, and to write
   ;; out a namespace segment's class file.
   (fork-task ^java.util.concurrent.Future [^StructuredTaskScope sts ^Callable f
@@ -119,7 +121,7 @@
   ;; `.getResource`.
   (forms-reader ^Reader [^URL rurl])
 
-  ;; Returns the capstone class for `ns-str` if it is part of the the
+  ;; Returns the capstone class for `ns-str` if it is part of the
   ;; dynamic class loader, and nil otherwise.
   (try-load-capstone ^Class [^String ns-str])
 

@@ -17,14 +17,12 @@
    [tcljc.exprfold :as xf]
    [tcljc.compiler :as compiler]
    [tcljc.io :as io]
-   [tcljc.publics :as publics]
    [tinyclj.string :as str])
   (:import
    (tcljc.context Ctx)
    (tcljc.expr BindingRef)
    (tcljc.io NmspIO)
-   (clojure.lang Symbol ISeq IPersistentMap IPersistentSet IPersistentVector
-                 ExceptionInfo)
+   (clojure.lang Symbol ISeq IPersistentMap IPersistentSet ExceptionInfo)
    (java.lang.invoke MethodHandles$Lookup)
    (java.util HashSet)
    (java.util.concurrent Future TimeoutException)))
@@ -41,18 +39,6 @@
                           ^Ctx ctx]
   (assert (some? nmsp-io))
   (Namespace. provided-nmsp ctx nmsp-io #{} nil nil))
-
-(defn mk-capstone ^Namespace [^NmspIO nmsp-io ^Ctx ctx
-                              ^IPersistentMap provided-nmsp
-                              ^IPersistentSet req-strs ^Class capstone]
-  (let [publics (publics/extract nmsp-io ctx capstone)
-        ;; do not re-export namespaces from `provided-nmsp`, because
-        ;; this would cause obsoleted versions of the core namespace
-        ;; to reach downstream namespaces like tinyclj.java.io
-        kns (-> (reduce dissoc (.get-known-ns ctx) (keys provided-nmsp))
-                (assoc (.ns-str ctx) publics))]
-    (Namespace. nil nil nil ;clear `provided-nmsp`, `ctx`, `top-level-nmsp-io`
-                req-strs capstone kns)))
 
 (defn imported? ^boolean [^Namespace nmsp]
   (nil? (.top-level-nmsp-io nmsp)))

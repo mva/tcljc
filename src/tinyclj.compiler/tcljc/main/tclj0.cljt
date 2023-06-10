@@ -22,6 +22,7 @@
    [tcljc.main.options :as options]
    [tcljc.main.efmt :as efmt]
    [tcljc.main.invoke :as invoke]
+   [tcljc.main.publics :as publics]
    [tcljc.main.builder :as builder]
    [tinyclj.string :as str])
   (:import
@@ -133,8 +134,6 @@
   NmspIO
   (compile-io [_]
     compile-io)
-  (rt-lookup [_]
-    rt-lookup)
   (with-build-io [_ build-io]
     (NmspIOImpl. build-io compile-io rt-lookup
                  initial-imports initial-globals
@@ -194,6 +193,9 @@
       ;; pass classfile bytes to BuildIO instance, so that unit
       ;; tests can take the byte array from memory
       (.define-class build-io (.lookup-in-pkg compile-io) this-class bs)))
+
+  (extract-publics [this known-ns capstone]
+    (publics/extract rt-lookup this known-ns capstone))
   
   (fork-task [_ sts f fork-work?]
     (if fork-work?

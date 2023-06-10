@@ -5,19 +5,18 @@
 ;; By using this software in any fashion, you are agreeing to be bound by
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
-(ns tcljc.publics
+(ns tcljc.main.publics
   (:require
    [tcljc.config :as cfg]
    [tcljc.runtime :as rt]
    [tcljc.javabase :as jb]
    [tcljc.classfile :as cf]
    [tcljc.expr :as x]
-   [tcljc.context :as ctx]
    [tcljc.io :as io])
   (:import
    (tcljc.expr FnForm FnCode Arity ArityCode Binding BindingRef ValueRef
                IEmitPlan FnMacroFn)
-   (tcljc.context Ctx)
+   (tcljc.io NmspIO CompileIO)
    (clojure.lang Symbol IPersistentMap)
    (java.lang.invoke MethodHandle MethodHandles$Lookup)
    (java.lang.reflect Field Method Member Modifier)))
@@ -79,11 +78,12 @@
           (aset aca i (import-arity-code i (aget mhs i) (aget ac i))))
         fn-form))))
 
-(defn- import-fn-form ^FnForm [^MethodHandles$Lookup lookup-in-pkg
+(defn- import-fn-form ^FnForm [^CompileIO compile-io
                                ^MethodHandle arity-handles-mh
                                ^Class declared-tp ^Object value]
   (when-some [mhs ^"[Ljava.lang.invoke.MethodHandle;"
-              (.invokeExact arity-handles-mh lookup-in-pkg declared-tp value)]
+              (.invokeExact arity-handles-mh (.lookup-in-pkg compile-io)
+                            declared-tp value)]
     (let [static? (jb/same-classname? rt/clnm-static-fn (.getClass value))]
       (call-only-fn-form declared-tp (not static?) mhs))))
 
@@ -94,8 +94,8 @@
     ;; pass nil as `env` for now
     (.apply-macro compile-io f form nil)))
 
-(defn- add-publics [acc ^Class cl ^Ctx ctx ^MethodHandle arity-handles-mh
-                    ^MethodHandle pdf-mh]
+(defn- add-publics [acc ^Class cl ^CompileIO compile-io ^IPersistentMap known-ns
+                    ^MethodHandle arity-handles-mh ^MethodHandle pdf-mh]
   (let [cld (rt/cd-of cl)
         postponed (java.util.HashMap.)]
     (letfn [(ns-str ^String []
@@ -106,18 +106,17 @@
                   (when-not (.contains nm "~")
                     (cfg/demunge-name nm)))))
             (constant-init-x [^Class tp ^int mods ^Object value]
-              (or (import-fn-form (-> ctx .compile-io .lookup-in-pkg)
-                                  arity-handles-mh tp value)
+              (or (import-fn-form compile-io arity-handles-mh tp value)
                   (when-not (Modifier/isTransient mods)
                     (when-some [const (x/singleton-template tp value)]
                       (x/const tp const)))))
             (public-def-info ^objects [^Member member]
-              ^objects (.invokeExact pdf-mh (-> ctx .compile-io .lookup-in-pkg)
+              ^objects (.invokeExact pdf-mh (.lookup-in-pkg compile-io)
                                      member))
             (resolve-sym ^BindingRef [^Symbol sym acc-publics]
               (if (= (namespace sym) (ns-str))
                 (get acc-publics (name sym)) ;nil if not yet known
-                (-> (.valAt (.get-known-ns ctx) (namespace sym))
+                (-> (.valAt known-ns (namespace sym))
                     (get (name sym))
                     (java.util.Objects/requireNonNull))))
 
@@ -184,7 +183,7 @@
             (add-macro* [acc ^String nm ^objects pdf ^ValueRef mimpl
                          ^BindingRef mvalue]
               (let [f (aget pdf 1)
-                    mfn (ImportedMacroFn. (.compile-io ctx) f)
+                    mfn (ImportedMacroFn. compile-io f)
                     mref (x/macro-ref (symbol nil nm) (ns-str) mfn mvalue mimpl)]
                 (put! acc nm mref)))
             (add-macro [acc ^String nm ^objects pdf ^ValueRef mimpl]
@@ -212,14 +211,15 @@
         (doseq [x postponed] (assert (nil? (val x))))
         res))))
 
-(defn extract ^IPersistentMap [^tcljc.io.NmspIO nmsp-io ^Ctx ctx ^Class capstone]
+(defn extract ^IPersistentMap [^MethodHandles$Lookup rt-lookup ^NmspIO nmsp-io
+                               ^IPersistentMap known-ns ^Class capstone]
   (letfn [(all-segments [acc ^Class cl]
             (if (identical? Object cl)
               acc
               (recur (cons cl acc) (.getSuperclass cl))))]
-    (let [rt-lookup (.rt-lookup nmsp-io)
-          arity-handles-mh (.resolveConstantDesc rt/mhd-arityHandlesIfFn rt-lookup)
+    (let [arity-handles-mh (.resolveConstantDesc rt/mhd-arityHandlesIfFn rt-lookup)
           pdf-mh (.resolveConstantDesc rt/mhd-publicDefInfo rt-lookup)]
-      (reduce #(add-publics %1 %2 ctx arity-handles-mh pdf-mh)
+      (reduce #(add-publics %1 %2 (.compile-io nmsp-io) known-ns
+                            arity-handles-mh pdf-mh)
               (.initial-globals nmsp-io)
               (all-segments () capstone)))))
