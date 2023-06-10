@@ -1,6 +1,5 @@
-module tinyclj.compiler {
+ module tinyclj.compiler {
   requires transitive tinyclj.core;
-  requires jdk.incubator.concurrent;
   
   exports tcljc.main;
   

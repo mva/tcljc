@@ -6,7 +6,7 @@ JAVA=$(JAVA_BIN)java
 JAVAC=$(JAVA_BIN)javac
 JAVAP=$(JAVA_BIN)javap
 
-JAVA_OPTS=--enable-preview --add-modules jdk.incubator.concurrent \
+JAVA_OPTS=--enable-preview \
   --add-exports java.base/jdk.internal.classfile=ALL-UNNAMED \
   --add-exports java.base/jdk.internal.classfile.constantpool=ALL-UNNAMED \
   --add-exports java.base/jdk.internal.classfile.instruction=ALL-UNNAMED \

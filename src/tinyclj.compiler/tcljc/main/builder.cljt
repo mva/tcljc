@@ -16,10 +16,9 @@
    (tcljc.io BuildIO NmspBuilder)
    (tcljc.emitter.namespace Namespace)
    (clojure.lang IPersistentMap)
-   (jdk.incubator.concurrent StructuredTaskScope)
-   (java.time Instant)
    (java.util Map)
-   (java.util.concurrent Future CompletableFuture ConcurrentHashMap)))
+   (java.util.concurrent Future CompletableFuture ConcurrentHashMap
+                         ExecutorService Executors TimeUnit TimeoutException)))
 
 ;;; Returns a map of namespaces that have been reached by the build
 ;;; attempt.  Key is the name of the namespace (a string).  Value is a
@@ -73,7 +72,7 @@
 
 (defn multi-threaded ^NmspBuilder [^BuildIO env ^IPersistentMap builtin-nmsp ns-strs]
   (let [!futs (ConcurrentHashMap.)      ;updated by this thread only
-        build-task-scope (StructuredTaskScope.)
+        build-task-scope (Executors/newVirtualThreadPerTaskExecutor)
         namespaces-q (java.util.concurrent.LinkedBlockingQueue.)]
     
     (reify NmspBuilder
@@ -152,14 +151,16 @@
               ;; loop over array to avoid stack frame spamming
               (dotimes [i (alength a)]
                 (ctx/get-result-now (.get !futs (aget a i))))) ;forces exception
+            
+            (.shutdown build-task-scope)
+            (when-not (.awaitTermination build-task-scope 5 TimeUnit/SECONDS)
+              (throw (TimeoutException.)))
+            (.close build-task-scope)
             (into {} !futs)
             
             (catch Throwable t
-              (.shutdown build-task-scope) ;make join return immediately
-              (throw (wrong/assoc-dep-map t (dependency-map !futs))))
-            (finally
-              (.joinUntil build-task-scope (-> (Instant/now) (.plusSeconds 5)))
-              (.close build-task-scope))))))))
+              (.shutdown build-task-scope)
+              (throw (wrong/assoc-dep-map t (dependency-map !futs))))))))))
 
 (defn single-threaded ^NmspBuilder [^BuildIO env ^IPersistentMap builtin-nmsp ns-strs]
   (let [!futs (java.util.HashMap.)]     ;single-threaded!

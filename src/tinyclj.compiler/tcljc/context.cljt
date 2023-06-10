@@ -18,11 +18,10 @@
    (tcljc.expr BindingRef FnForm)
    (tcljc.io CompileIO)
    (clojure.lang Symbol Keyword IPersistentVector IPersistentMap ExceptionInfo)
-   (jdk.incubator.concurrent StructuredTaskScope)
    (java.lang.constant ClassDesc)
    (java.lang.invoke MethodHandles$Lookup)
    (java.util.concurrent Future BlockingQueue ArrayBlockingQueue
-                         CompletableFuture TimeUnit)))
+                         CompletableFuture TimeUnit ExecutorService)))
 
 ;;; See ptest/get-future: Do *NOT* call wait-for-result as part of a
 ;;; map.
@@ -171,7 +170,7 @@
               
               ^BlockingQueue emit-q
      
-              ^StructuredTaskScope arity-task-scope
+              ^ExecutorService arity-task-scope
               ;; The executor for futures compiling an fn* arity (or
               ;; reify* method, or deftype method).
 
@@ -224,7 +223,7 @@
                     
                     ^String ns-str ^CompileIO compile-io
                                   
-                    ^StructuredTaskScope arity-task-scope]
+                    ^ExecutorService arity-task-scope]
   (let [known-ns {}
         ns-alias {}
         capacity-q 16 ;prevent compilation from reaching too far ahead

@@ -90,9 +90,9 @@
       ;; Carry *out* and *err* into threads.  Compiler code running
       ;; in unit tests should use the *out* and *err* bound by
       ;; ptest.
-      (.fork sts (^Callable fn []
-                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                  (.call f)))
+      (.submit sts (^Callable fn []
+                    (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                    (.call f)))
       (java.util.concurrent.CompletableFuture/completedFuture (.call f))))
   (compile-io-in [_ cl]
     (CompileIOImpl. (.in lookup-in-pkg cl) apply-mh
@@ -204,9 +204,9 @@
   
   (fork-task [_ sts f fork-work?]
     (if fork-work?
-      (.fork sts (^Callable fn []
-                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                  (.call f)))
+      (.submit sts (^Callable fn []
+                    (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                    (.call f)))
       (java.util.concurrent.CompletableFuture/completedFuture (.call f)))))
 
 ;; Source files are obtained from `app-ld` via `.getResource`.  If the
@@ -268,9 +268,9 @@
           nil)))
 
     (fork-task [_ sts f]
-      (.fork sts (^Callable fn []
-                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                  (.call f)))))
+      (.submit sts (^Callable fn []
+                    (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                    (.call f)))))
 
 (defn mk-build-io ^BuildIO [^ClassLoader app-ld ^Path dest-dir ^ClassLoader dyn-ld
                             ^boolean collect-macro-definitions?]

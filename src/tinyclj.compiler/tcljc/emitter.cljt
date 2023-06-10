@@ -34,12 +34,11 @@
    (tcljc.expr Expr Binding BindingRef FnForm)
    (clojure.lang ISeq IPersistentMap IPersistentVector IPersistentSet
                  ExceptionInfo)
-   (jdk.incubator.concurrent StructuredTaskScope)
    (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.lang.constant ClassDesc MethodTypeDesc ConstantDescs)
-   (java.time Instant)
    (java.util HashMap HashSet ArrayDeque)
-   (java.util.concurrent Future CompletableFuture BlockingQueue)
+   (java.util.concurrent Future CompletableFuture BlockingQueue
+                         ExecutorService Executors TimeUnit TimeoutException)
    (java.util.function Consumer)))
 
 (def first-segm-id 10)
@@ -200,7 +199,7 @@
     (SegmState. ctx nmsp-io first-segm-id cld [] (ArrayDeque.) [])))
 
 (defn- emit-segments ^Namespace [^SegmState segm
-                                 ^StructuredTaskScope nmsp-task-scope]
+                                 ^ExecutorService nmsp-task-scope]
   (letfn [(take-msg ^Msg [^BlockingQueue q]
             (.take q))
           (schedule-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
@@ -350,7 +349,7 @@
 ;; arbitrary number of futures of its own, and the emitter retrieves
 ;; their result/exception in emit order.
 (defn- emit-namespace ^Namespace [^SegmState segm ^IPersistentMap provided-nmsp
-                                  ^StructuredTaskScope nmsp-task-scope]
+                                  ^ExecutorService nmsp-task-scope]
   (let [ctx (.ctx segm)]
     (init-known-ns ctx provided-nmsp)
     
@@ -421,19 +420,22 @@
 (defn compile-and-emit ^Namespace [^BuildIO env ^String ns-str
                                    ^NmspBuilder nmsp-builder
                                    ^IPersistentMap provided-nmsp]
-  (let [nmsp-task-scope (StructuredTaskScope.)]
+  (let [nmsp-task-scope (Executors/newVirtualThreadPerTaskExecutor)]
     (try
       (let [arity-task-scope (when-not (.deterministic-namespace-compile? nmsp-builder)
                                nmsp-task-scope)
             nmsp-io (.nmsp-io env ns-str nmsp-builder)
             tl-ctx (ctx/mk-ctx* (.initial-globals nmsp-io)
                                 (.initial-imports nmsp-io)
-                                ns-str (.compile-io nmsp-io) arity-task-scope)]
-        (-> (mk-first-segm nmsp-io tl-ctx)
-            (emit-namespace provided-nmsp nmsp-task-scope)))
+                                ns-str (.compile-io nmsp-io) arity-task-scope)
+            nmsp (-> (mk-first-segm nmsp-io tl-ctx)
+                     (emit-namespace provided-nmsp nmsp-task-scope))]
+        (.shutdown nmsp-task-scope)
+        (when-not (.awaitTermination nmsp-task-scope 5 TimeUnit/SECONDS)
+          (throw (TimeoutException.)))
+        (.close nmsp-task-scope)
+        nmsp)
+      
       (catch Throwable t
-        (.shutdown nmsp-task-scope)     ;make join return immediately
-        (throw t))
-      (finally
-        (.joinUntil nmsp-task-scope (-> (Instant/now) (.plusSeconds 5)))
-        (.close nmsp-task-scope)))))
+        (.shutdown nmsp-task-scope)
+        (throw t)))))
