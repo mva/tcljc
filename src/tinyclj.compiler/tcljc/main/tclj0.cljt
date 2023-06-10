@@ -26,14 +26,15 @@
    [tcljc.main.builder :as builder]
    [tinyclj.string :as str])
   (:import
-   (tcljc.io BuildFiles BuildIO NmspIO CompileIO NmspBuilder)
+   (tcljc.io BuildFiles BuildIO NmspIO CompileIO NmspBuilder Msg)
    (tcljc.main.options Options)
    (clojure.lang IPersistentMap IPersistentSet ExceptionInfo)
    (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
    (java.net URL)
    (java.nio.file Path Files)
    (java.util HashSet)
-   (java.util.concurrent ConcurrentHashMap)
+   (java.util.concurrent ConcurrentHashMap ArrayBlockingQueue
+                         CompletableFuture)
    (java.util.concurrent.atomic AtomicBoolean)))
 
 ;;; Implementation of in/out infrastructure when running the compiler
@@ -42,6 +43,7 @@
 (deftype CompileIOImpl [^MethodHandles$Lookup lookup-in-pkg 
                         ^MethodHandle apply-mh
                         ^ConcurrentHashMap private-name-map
+                        ^ArrayBlockingQueue compile-to-emit-q
                         ^Object binding-frame
                         ^boolean collect-macro-definitions?]
   CompileIO
@@ -83,6 +85,15 @@
     (if (nil? apply-mh)
       (macro/apply-macro-direct f form env)
       (macro/apply-macro-mapped apply-mh f form env)))
+  (send-to-emit [_ task x]
+    (if (io/needs-response? task)
+      (let [fut (CompletableFuture.)]
+        (.put compile-to-emit-q (Msg. task x fut))
+        (let [resp (io/wait-for-result fut)]
+          (if (instance? Throwable resp)
+            (throw ^Throwable resp)    ;receiving thread is in trouble
+            resp)))
+      (.put compile-to-emit-q (Msg. task x nil))))
   (collect-macro-definitions? [_]
     collect-macro-definitions?)
   (fork-function [_ sts f]
@@ -96,21 +107,16 @@
       (java.util.concurrent.CompletableFuture/completedFuture (.call f))))
   (compile-io-in [_ cl]
     (CompileIOImpl. (.in lookup-in-pkg cl) apply-mh
-                    private-name-map binding-frame collect-macro-definitions?)))
+                    private-name-map compile-to-emit-q
+                    binding-frame collect-macro-definitions?)))
 
-(defn- mk-compile-io ^CompileIO [binding-frame
-                                 ^MethodHandles$Lookup rt-lookup
-                                 ^MethodHandles$Lookup lookup-in-pkg
-                                 ^boolean collect-macro-definitions?]
-  (CompileIOImpl.
-   lookup-in-pkg
-   (let [compiler-rt-witness tinyclj.lang.AFnMh
-         app-rt-witness (.resolveConstantDesc rt/AFn rt-lookup)
-         shared-runtime? (identical? compiler-rt-witness app-rt-witness)]
-     (if shared-runtime?
-       nil                           ;can use macro/apply-macro-direct
-       (.resolveConstantDesc rt/mhd-applyMacroMapped rt-lookup)))
-   (ConcurrentHashMap.) binding-frame collect-macro-definitions?))
+(defn- get-apply-mh ^MethodHandle [^MethodHandles$Lookup rt-lookup]
+  (let [compiler-rt-witness tinyclj.lang.AFnMh
+        app-rt-witness (.resolveConstantDesc rt/AFn rt-lookup)
+        shared-runtime? (identical? compiler-rt-witness app-rt-witness)]
+    (if shared-runtime?
+      nil                            ;can use macro/apply-macro-direct
+      (.resolveConstantDesc rt/mhd-applyMacroMapped rt-lookup))))
 
 ;; `!rpath-set` is created by the emitted thread, then handed over to
 ;; the namespace thread to accumulate the names of visited files, and
@@ -130,6 +136,7 @@
                      
                      ^AtomicBoolean pkg-dir-prepared
                      ^tcljc.classfile.CHR dyn-chr
+                     ^ArrayBlockingQueue compile-to-emit-q
                      ^Object binding-frame]
   NmspIO
   (compile-io [_]
@@ -139,7 +146,7 @@
                  initial-imports initial-globals
                  rpath rurl !rpath-set source-file-attribute
                  nmsp-builder pkg-dir-prepared dyn-chr
-                 binding-frame))
+                 compile-to-emit-q binding-frame))
   
   (initial-imports [_]
     initial-imports)
@@ -163,7 +170,7 @@
                    initial-imports initial-globals
                    rpath rurl !rpath-set src-file-attr
                    nmsp-builder pkg-dir-prepared dyn-chr
-                   binding-frame)))
+                   compile-to-emit-q binding-frame)))
   (assoc-source-file [_ ^ExceptionInfo e]
     (wrong/assoc-if-new e :file/resource-url rurl))
   (forms-reader [_]
@@ -201,6 +208,9 @@
 
   (extract-publics [this known-ns capstone]
     (publics/extract rt-lookup this known-ns capstone))
+
+  (recv-from-compile [this]
+    (.take compile-to-emit-q))
   
   (fork-task [_ sts f fork-work?]
     (if fork-work?
@@ -253,13 +263,17 @@
             lookup-in-pkg (if (string? str-or-class)
                             (beachhead/mk-lookup-in-pkg rt-lookup dyn-ld ns-str)
                             (.in (MethodHandles/publicLookup) ^Class str-or-class))
-            compile-io (mk-compile-io binding-frame rt-lookup lookup-in-pkg
-                                      collect-macro-definitions?)
+
+            capacity-q 16 ;prevent compilation from reaching too far ahead
+            compile-to-emit-q (ArrayBlockingQueue. capacity-q)
+            compile-io (CompileIOImpl. lookup-in-pkg (get-apply-mh rt-lookup)
+                                       (ConcurrentHashMap.) compile-to-emit-q
+                                       binding-frame collect-macro-definitions?)
             !rpath-set (HashSet.)
             pdp (java.util.concurrent.atomic.AtomicBoolean. false)]
         (NmspIOImpl. build-files compile-io rt-lookup initial-imports initial-globals
                      nil nil !rpath-set nil nmsp-builder pdp dyn-chr
-                     binding-frame)))
+                     compile-to-emit-q binding-frame)))
   
     (try-load-capstone [_ ns-str]
       (try

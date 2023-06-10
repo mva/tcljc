@@ -13,6 +13,7 @@
    [tcljc.context :as ctx]
    [tcljc.expr :as x]
    tcljc.emitter.namespace
+   [tcljc.io :as io]
    [tcljc.main.options :as options]
    [tinyclj.alpha.ptest__term :as term])
   (:import
@@ -24,7 +25,7 @@
 
 (defn namespace-of ^Namespace [^IPersistentMap nmsp-map ^Symbol var-name]
   (or (-> (get nmsp-map (namespace var-name))
-          ^Namespace (ctx/get-result-now))
+          ^Namespace (io/get-result-now))
       (wrong/other (str "[namespace] no such namespace: "
                         (wrong/q (namespace var-name))))))
 

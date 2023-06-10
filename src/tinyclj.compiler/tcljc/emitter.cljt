@@ -30,14 +30,14 @@
    (tcljc.emitter.namespace Namespace)
    (tcljc.emitter.emitfn FnSpec)
    (tcljc.emitter.prepare TopLevelForm)
-   (tcljc.context Ctx Msg)
+   (tcljc.context Ctx)
    (tcljc.expr Expr Binding BindingRef FnForm)
    (clojure.lang ISeq IPersistentMap IPersistentVector IPersistentSet
                  ExceptionInfo)
    (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.lang.constant ClassDesc MethodTypeDesc ConstantDescs)
    (java.util HashMap HashSet ArrayDeque)
-   (java.util.concurrent Future CompletableFuture BlockingQueue
+   (java.util.concurrent Future CompletableFuture
                          ExecutorService Executors TimeUnit TimeoutException)
    (java.util.function Consumer)))
 
@@ -79,7 +79,7 @@
               (.segm-id segm) (.segm-cld segm) (.tlfv segm)
               (.!delayed-macros segm) (conj (.fn-class-futv segm) fut)))
 (defn- with-collect-fn-classes ^SegmState [^SegmState segm]
-  (run! ctx/wait-for-result (.fn-class-futv segm))
+  (run! io/wait-for-result (.fn-class-futv segm))
   (SegmState. (.ctx segm) (.nmsp-io segm)
               (.segm-id segm) (.segm-cld segm) (.tlfv segm)
               (.!delayed-macros segm) []))
@@ -200,9 +200,7 @@
 
 (defn- emit-segments ^Namespace [^SegmState segm
                                  ^ExecutorService nmsp-task-scope]
-  (letfn [(take-msg ^Msg [^BlockingQueue q]
-            (.take q))
-          (schedule-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
+  (letfn [(schedule-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
             (if-some [cbh (.fn-cbh (.emit-plan fnc))]
               (with-fn-class-fut segm
                 (.fork-task (.nmsp-io segm) nmsp-task-scope
@@ -277,7 +275,7 @@
           (complete-req! ^SegmState [^SegmState segm ^int task x
                                      ^CompletableFuture promise]
             (condp = task
-              ctx/msg-emit-tlf
+              io/msg-emit-tlf
               (let [tlf (prepare/collect-fn-info x)]
                 (prepare/prepare-fns! (.segm-cld segm) (.fn-specs tlf))
                 (prepare/prepare-globals! (.segm-cld segm) (.global-bs tlf))
@@ -286,16 +284,16 @@
                        (some? (delayed-but-ready segm)))
                   (write-segment false)))
 
-              ctx/msg-macro-of-next-tlf
+              io/msg-macro-of-next-tlf
               (do (.addLast (.!delayed-macros segm) x)
                   segm)
 
-              ctx/msg-flush-macro-definitions
+              io/msg-flush-macro-definitions
               (do (assert (-> segm .nmsp-io .compile-io .collect-macro-definitions?))
                   (cond-> segm
                     (delayed-but-ready segm) (write-segment false)))
               
-              ctx/req-define-class
+              io/req-define-class
               (if (instance? ClassDef x)
                 (write-and-define segm ^ClassDef x promise)
                 (let [dtdef ^DeftypeDef x
@@ -305,19 +303,19 @@
                   (-> (schedule-fn-classes segm tlf)
                       (write-and-define (build-deftype dtdef) promise))))
               
-              ctx/req-flush-namespace-segment
+              io/req-flush-namespace-segment
               (let [cl (write-segment segm true)]
                 ;; segment class `cl` exists and can now be looked up
                 (.complete promise (x/invoke-force-clinit (.segm-cld segm)))
                 cl)
               
-              ctx/msg-fatal-error
+              io/msg-fatal-error
               (throw ^Throwable x)
               
               #_else (throw (IllegalStateException. (str task)))))]
 
-    (let [msg (take-msg (-> segm .ctx .emit-q))]
-      (if (= (.task msg) ctx/msg-close-queue)
+    (let [msg (.recv-from-compile (.nmsp-io segm))]
+      (if (= (.task msg) io/msg-close-queue)
         (-> segm (write-segment false) (write-capstone (.x msg)))
         (recur (complete-req! segm (.task msg) (.x msg) (.promise msg))
                nmsp-task-scope)))))
@@ -360,13 +358,15 @@
                         nsd (nmsp/compile-thread nmsp ctx)]
                     ;; regular completion: pass back result in first
                     ;; `close-queue` message
-                    (ctx/send-msg (.emit-q ctx) ctx/msg-close-queue nsd))
+                    (.send-to-emit (-> segm .nmsp-io .compile-io)
+                                   io/msg-close-queue nsd))
                   (catch java.lang.InterruptedException _
                     ;; emitter thread is shutting down and is not taking
                     ;; any more messages: exit without sending anything
                     nil)
                   (catch Throwable t
-                    (ctx/send-msg (.emit-q ctx) ctx/msg-fatal-error t))))
+                    (.send-to-emit (-> segm .nmsp-io .compile-io)
+                                   io/msg-fatal-error t))))
           c-thread (.fork-task (.nmsp-io segm) nmsp-task-scope c-fn true)
           nmsp (emit-segments segm nmsp-task-scope)]
       (.get c-thread)                   ;pick up any exceptions

@@ -37,7 +37,7 @@
 (def stub-compile-io
   (tcljc.main.tclj0.CompileIOImpl.
    (java.lang.invoke.MethodHandles/lookup) nil nil
-   (clojure.lang.Var/cloneThreadBindingFrame) false))
+   nil (clojure.lang.Var/cloneThreadBindingFrame) false))
 
 (defn stub-ctx
   (^Ctx []
@@ -46,7 +46,6 @@
    (tcljc.context.Ctx.
     {} ns-alias {} jb/jvm-imports        ;_known-ns
     ns-str stub-compile-io               ;ns-str
-    nil                                  ;emit-q
     nil false 0 0)))                     ;arity-task-scope
     
 ;;; Materializes the reader as a seq.  All forms use the same

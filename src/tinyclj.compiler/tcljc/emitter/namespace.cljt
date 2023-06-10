@@ -147,8 +147,8 @@
           (-> nmsp .ctx .ns-str))
         (core-provided-nmsp ^IPersistentMap [^Namespace nmsp ^boolean require?]
           (if (and require? (core-lib? nmsp))
-            (let [force-x (ctx/send-msg (-> nmsp .ctx .emit-q)
-                                        ctx/req-flush-namespace-segment nil)
+            (let [force-x (ctx/.send-to-emit (-> nmsp .primary-nmsp-io .compile-io)
+                                             io/req-flush-namespace-segment nil)
                   globals (-> (-> nmsp .ctx .get-globals)
                               (assoc cfg/key-force-clinit force-x))]
               (assoc-provided (.provided-nmsp nmsp) cfg/core-lib globals))
@@ -186,9 +186,10 @@
                   (recur (merge publics-map ekns) (inc i)))))
             ;; ensure that all required namespace classes are
             ;; initialized at this point
-            (ctx/send-msg (-> nmsp .ctx .emit-q) ctx/msg-emit-tlf
-                          (-> (reduce conj-force-clinit [] apublics)
-                              (xf/progn-expr x/expr-empty)))
+            (.send-to-emit (-> nmsp .primary-nmsp-io .compile-io)
+                           io/msg-emit-tlf
+                           (-> (reduce conj-force-clinit [] apublics)
+                               (xf/progn-expr x/expr-empty)))
             (with-requires nmsp req-strs)))
         (top-level-list-form ^Namespace [^Namespace nmsp ^NmspIO file-nmsp-io
                                          ^ISeq form]
@@ -207,8 +208,8 @@
               (do (when (and (core-lib? nmsp) (= (fnext form) "core_print"))
                     ;; hack for dependency chain core_print.cljt
                     ;; -> MultiFn.java -> tinyclj.core fns
-                    (ctx/send-msg (-> nmsp .ctx .emit-q)
-                                  ctx/req-flush-namespace-segment nil))
+                    (.send-to-emit (-> nmsp .primary-nmsp-io .compile-io)
+                                   io/req-flush-namespace-segment nil))
                   (reduce
                    (fn ^Namespace [^Namespace nmsp ^String path-str]
                      (top-level-file nmsp (.enter-source-file

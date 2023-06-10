@@ -10,6 +10,7 @@
    [tcljc.config :as cfg]
    [tcljc.wrong :as wrong]   
    [tcljc.context :as ctx]
+   [tcljc.io :as io]
    [tcljc.emitter :as em]
    [tcljc.emitter.namespace :as nmsp])
   (:import
@@ -89,7 +90,7 @@
          ;; `namespace-loop`.
          (let [cf (CompletableFuture.)]
            (.put namespaces-q [ns-str provided-nmsp cf])
-           (ctx/wait-for-result 1 cf))))
+           (io/wait-for-result 1 cf))))
 
       (build-all [this]
         (letfn [(fork-namespace ^Future [^String ns-str provided-nmsp]
@@ -150,7 +151,7 @@
             (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
               ;; loop over array to avoid stack frame spamming
               (dotimes [i (alength a)]
-                (ctx/get-result-now (.get !futs (aget a i))))) ;forces exception
+                (io/get-result-now (.get !futs (aget a i))))) ;forces exception
             
             (.shutdown build-task-scope)
             (when-not (.awaitTermination build-task-scope 5 TimeUnit/SECONDS)

@@ -6,23 +6,109 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.io
-  (:import (clojure.lang ExceptionInfo IPersistentMap IPersistentSet)
-           (jdk.internal.classfile ClassHierarchyResolver$ClassHierarchyInfo)
-           (java.lang.constant ClassDesc)
-           (java.lang.invoke MethodHandles$Lookup MethodHandle)
-           (java.net URL)
-           (java.nio.file Path)
-           (java.util HashSet)
-           (java.util.concurrent Future ExecutorService)
-           (java.util.function Consumer)))
+  (:import
+   (clojure.lang ExceptionInfo IPersistentMap IPersistentSet)
+   (jdk.internal.classfile ClassHierarchyResolver$ClassHierarchyInfo)
+   (java.lang.constant ClassDesc)
+   (java.lang.invoke MethodHandles$Lookup MethodHandle)
+   (java.net URL)
+   (java.nio.file Path)
+   (java.util HashSet)
+   (java.util.concurrent Future ExecutorService CompletableFuture
+                         BlockingQueue TimeUnit)
+   (java.util.function Consumer)))
 
 ;;; General framework for interfacing to file system (source input &
 ;;; class file output), running JVM (resolve & define class), console
 ;;; output (error messages), and possibly other downstream sinks of
-;;; compiler generated data.
+;;; compiler generated data.  Also defines minimal infrastructure to
+;;; pass messages from compile to emit thread.
 ;;;
 ;;; Minimal usage scenarios are one-shot compilation, watch loop
 ;;; compilation, and unit tests.
+
+;;; ------------------------------------------------------------------------
+
+(def msg-fatal-error -5)
+;;; Contains the exception that killed the sending thread.  The
+;;; receiving end should re-raise it.  This message is always followed
+;;; by a `msg-close-queue`.
+
+(def msg-close-queue -4)
+;;; Send when the compile thread is exiting.  Usually this means
+;;; compilation is done, but this message is also send after
+;;; exceptional completion.
+
+(def msg-flush-macro-definitions -3)
+;;; Flushes macro definitions from completed top-level forms to class
+;;; files.  No effect if there are no delayed but ready macros in the
+;;; current segment.  Only works in deterministic mode.
+
+(def msg-emit-tlf -2)
+;;; Emit top-level form.  The `s` queue waits for the function bodies'
+;;; futures before passing this message on to the `q` queue.  That is,
+;;; once in `q` all compilation tasks of this top-level form have
+;;; completed.
+
+(def msg-macro-of-next-tlf -1)
+;;; Registers a DelayedMacroFn that is part of the next `msg-emit-tlf`
+;;; top-level form.  This tasks the emitter thread to deliver the
+;;; macro's value eventually.  Messages of this type are sequenced
+;;; with respect to `msg-emit-tlf`: the macro is defined after the
+;;; previous message's top-level form, and is contained in the next
+;;; message's top-level form.
+
+(def req-define-class 1)
+;;; Issued after compiling a `definterface*` or a `deftype*`.  Returns
+;;; the class instance, although other classes it depends on may not
+;;; be defined at this point.  Type descriptors like array types may
+;;; reference the newly created class immediately.
+
+(def req-flush-namespace-segment 3)
+;;; Unconditionally flushes the current namespace segment's top-level
+;;; forms and returns an expression that forces the namespace's
+;;; initialization up to this point.  All macro values up to this
+;;; point will be delivered eventually.
+
+
+(deftype Msg [^int task ^Object x ^CompletableFuture promise])
+
+(defn close-queue? ^boolean [^Msg msg]
+  (= (.task msg) msg-close-queue))
+(defn needs-response? ^boolean [^int task]
+  (>= task 0))
+(defn task-id* ^String [^int task]
+  (case task
+    #_msg-fatal-error -5 "msg-fatal-error"
+    #_msg-close-queue -4 "msg-close-queue"
+    #_msg-flush-macro-definitions -3 "msg-flush-macro-definitions"
+    #_msg-emit-tlf -2 "msg-emit-tlf"
+    #_msg-macro-of-next-tlf -1 "msg-macro-of-next-tlf"
+    #_req-define-class 1 "req-define-class"
+    #_req-flush-namespace-segment 3 "req-flush-namespace-segment"))
+(defn task-id ^String [^Msg msg]
+  (task-id* (.task msg)))
+
+;;; See ptest/get-future: Do *NOT* call wait-for-result as part of a
+;;; map.
+(defn wait-for-result
+  ([x]
+   ;; Assumption: Nothing takes longer than this many seconds.  Right
+   ;; now, a timeout probably means a program error instead of a large
+   ;; program.
+   (wait-for-result 5 x)) 
+  ([^int seconds x]
+   (if (instance? Future x)
+     (try
+       (.get ^Future x seconds TimeUnit/SECONDS)
+       (catch java.util.concurrent.ExecutionException e ;unwrap
+         (throw (or (.getCause e) ^Throwable e))))
+     x)))
+
+(defn get-result-now [x]        ;pre: computation of `x` has completed
+  (wait-for-result 1 x))
+
+;;; ------------------------------------------------------------------------
 
 (definterface Reader
   (read-1 [#_Ctx form-ctx eof-value]))
@@ -58,13 +144,16 @@
   
   (apply-macro [f form env])
 
+  ;; Important: A function thread calling this method in
+  ;; non-deterministic mode leads to deadlock in the emit thread.
+  (send-to-emit [^int task ^Object x])
   
   ;; When true, try to collect multiple macro definitions into a
   ;; namespace segment, instead of starting a new one after each
   ;; macro.  Only works in deterministic mode, because the emit thread
   ;; deadlocks when a function thread thread sends it any tasks.
   (collect-macro-definitions? ^boolean [])
-  
+
   (fork-function ^Future [^ExecutorService sts ^Callable f])
   
   (compile-io-in ^CompileIO [^Class cl]))
@@ -115,6 +204,8 @@
   ;; Given the class file `capstone`, extract its map of public globals.
   (extract-publics ^IPersistentMap [^IPersistentMap known-ns ^Class capstone])
   
+  (recv-from-compile ^Msg [])
+
   ;; Called for the namespace's top-level compile thread, and to write
   ;; out a namespace segment's class file.
   (fork-task ^Future [^ExecutorService sts ^Callable f ^boolean fork-work?]))

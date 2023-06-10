@@ -20,31 +20,10 @@
    (clojure.lang Symbol Keyword IPersistentVector IPersistentMap ExceptionInfo)
    (java.lang.constant ClassDesc)
    (java.lang.invoke MethodHandles$Lookup)
-   (java.util.concurrent Future BlockingQueue ArrayBlockingQueue
-                         CompletableFuture TimeUnit ExecutorService)))
-
-;;; See ptest/get-future: Do *NOT* call wait-for-result as part of a
-;;; map.
-(defn wait-for-result
-  ([x]
-   ;; Assumption: Nothing takes longer than this many seconds.  Right
-   ;; now, a timeout probably means a program error instead of a large
-   ;; program.
-   (wait-for-result 5 x)) 
-  ([^int seconds x]
-   (if (instance? Future x)
-     (try
-       (.get ^Future x seconds TimeUnit/SECONDS)
-       (catch java.util.concurrent.ExecutionException e ;unwrap
-         (throw (or (.getCause e) ^Throwable e))))
-     x)))
-
-(defn get-result-now [x]        ;pre: computation of `x` has completed
-  (wait-for-result 1 x))
-
+   (java.util.concurrent Future ArrayBlockingQueue ExecutorService)))
 
 (defn wait-for-fn-body ^"[Ltcljc.expr.ArityCode;" [^FnForm fn-form]
-  (wait-for-result (.body-fut fn-form)))
+  (io/wait-for-result (.body-fut fn-form)))
 (defn fn-body-now ^"[Ltcljc.expr.ArityCode;" [^FnForm fn-form]
   (.resultNow (.body-fut fn-form)))
 
@@ -82,78 +61,6 @@
 
 ;;; ------------------------------------------------------------------------
 
-(def msg-fatal-error -5)
-;;; Contains the exception that killed the sending thread.  The
-;;; receiving end should re-raise it.  This message is always followed
-;;; by a `msg-close-queue`.
-
-(def msg-close-queue -4)
-;;; Send when the compile thread is exiting.  Usually this means
-;;; compilation is done, but this message is also send after
-;;; exceptional completion.
-
-(def msg-flush-macro-definitions -3)
-;;; Flushes macro definitions from completed top-level forms to class
-;;; files.  No effect if there are no delayed but ready macros in the
-;;; current segment.  Only works in deterministic mode.
-
-(def msg-emit-tlf -2)
-;;; Emit top-level form.  The `s` queue waits for the function bodies'
-;;; futures before passing this message on to the `q` queue.  That is,
-;;; once in `q` all compilation tasks of this top-level form have
-;;; completed.
-
-(def msg-macro-of-next-tlf -1)
-;;; Registers a DelayedMacroFn that is part of the next `msg-emit-tlf`
-;;; top-level form.  This tasks the emitter thread to deliver the
-;;; macro's value eventually.  Messages of this type are sequenced
-;;; with respect to `msg-emit-tlf`: the macro is defined after the
-;;; previous message's top-level form, and is contained in the next
-;;; message's top-level form.
-
-(def req-define-class 1)
-;;; Issued after compiling a `definterface*` or a `deftype*`.  Returns
-;;; the class instance, although other classes it depends on may not
-;;; be defined at this point.  Type descriptors like array types may
-;;; reference the newly created class immediately.
-
-(def req-flush-namespace-segment 3)
-;;; Unconditionally flushes the current namespace segment's top-level
-;;; forms and returns an expression that forces the namespace's
-;;; initialization up to this point.  All macro values up to this
-;;; point will be delivered eventually.
-
-
-(deftype Msg [^int task ^Object x ^CompletableFuture promise])
-
-(defn close-queue? ^boolean [^Msg msg]
-  (= (.task msg) msg-close-queue))
-(defn needs-response? ^boolean [^int task]
-  (>= task 0))
-(defn task-id* ^String [^int task]
-  (case task
-    #_msg-fatal-error -5 "msg-fatal-error"
-    #_msg-close-queue -4 "msg-close-queue"
-    #_msg-flush-macro-definitions -3 "msg-flush-macro-definitions"
-    #_msg-emit-tlf -2 "msg-emit-tlf"
-    #_msg-macro-of-next-tlf -1 "msg-macro-of-next-tlf"
-    #_req-define-class 1 "req-define-class"
-    #_req-flush-namespace-segment 3 "req-flush-namespace-segment"))
-(defn task-id ^String [^Msg msg]
-  (task-id* (.task msg)))
-
-(defn send-msg ^Object [^BlockingQueue q ^int task ^Object x]
-  (if (needs-response? task)
-    (let [fut (CompletableFuture.)]
-      (.put q (Msg. task x fut))
-      (let [resp (wait-for-result fut)]
-        (if (instance? Throwable resp)
-          (throw ^Throwable resp)       ;receiving thread is in trouble
-          resp)))
-    (.put q (Msg. task x nil))))
-
-;;; ------------------------------------------------------------------------
-
 ;;; The mutable (unlocked) namespace context is private to the
 ;;; namespace thread.  All updates and reads are confined to this
 ;;; single thread.  The immutable (locked) namespace context is shared
@@ -168,8 +75,6 @@
               ^String ns-str
               ^CompileIO compile-io
               
-              ^BlockingQueue emit-q
-     
               ^ExecutorService arity-task-scope
               ;; The executor for futures compiling an fn* arity (or
               ;; reify* method, or deftype method).
@@ -224,13 +129,10 @@
                     ^String ns-str ^CompileIO compile-io
                                   
                     ^ExecutorService arity-task-scope]
-  (let [known-ns {}
-        ns-alias {}
-        capacity-q 16 ;prevent compilation from reaching too far ahead
-        emit-q (ArrayBlockingQueue. capacity-q)]
+  (let [known-ns {}, ns-alias {}]
     (Ctx. known-ns ns-alias initial-globals initial-imports
           ns-str compile-io
-          emit-q arity-task-scope false 0 0)))
+          arity-task-scope false 0 0)))
 
 (defn locked ^Ctx [^Ctx ctx]
   (if (.locked? ctx)
@@ -238,7 +140,6 @@
     (Ctx. (.get-known-ns ctx) (.get-ns-alias-map ctx) (.get-globals ctx)
           (.get-imports ctx)
           (.ns-str ctx) (.compile-io ctx)
-          (.emit-q ctx)
           (.arity-task-scope ctx) true 0
           (.get-tlf-idx ctx))))
 
@@ -248,7 +149,6 @@
     (Ctx. (.get-known-ns ctx) (.get-ns-alias-map ctx) (.get-globals ctx)
           imports (.ns-str ctx)
           (.compile-io-in (.compile-io ctx) ephemeral-class)
-          (.emit-q ctx)
           (.arity-task-scope ctx) true 0
           (.get-tlf-idx ctx))))
 
