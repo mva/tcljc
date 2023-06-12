@@ -490,8 +490,9 @@
              (x/ensure-runtime-value)
              (conv/consume-poly)))
        (expr-forms ^IPersistentVector [forms] ;returns vector of Expr
-         ;; not a mapv to keep stacktrace shallow & avoid closures;
-         ;; most calls of e.g. core lib pass in a seq of length 1
+         ;; Not a mapv to keep stacktrace shallow & avoid closures.
+         ;; Calls tend to short seqs.  Example element counts from
+         ;; tcljc itself: 0 at ~14%, 1 at ~42%, 2 at ~28%, 3 at ~9%.
          (if-some [s (seq forms)]
            (loop [acc (vector (expr-form (first s))), s (next s)]
              (if (nil? s)
@@ -504,7 +505,10 @@
              (x/ensure-runtime-outcome)))
        (tail-forms ^Expr [^Env env ^int form-ctx forms tl-ctx]
          ;; Not a mapv to keep stacktrace shallow & avoid closures.
-         ;; An empty `forms` is compiled to x/expr-empty.
+         ;; An empty `forms` is compiled to x/expr-empty.  For tcljc
+         ;; itself, `forms` has exactly one element approximately 87%
+         ;; of the time.  That is, the backedge of the loop is rarely
+         ;; taken and plain `tail` returned instead.
          (if-some [forms (seq forms)]
            (loop [acc [], forms forms]
              (if-some [nxt (next forms)]
