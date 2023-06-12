@@ -74,8 +74,8 @@
 ;; When `collect-macro-definitions?` is true, then try to collect
 ;; multiple macro definitions into a namespace segment, instead of
 ;; starting a new one after each macro.  Only works in deterministic
-;; mode, because the emit thread deadlocks when a function thread
-;; thread sends it any tasks.
+;; aka single-threaded mode, because the emit thread deadlocks when a
+;; function thread thread sends it any tasks.
 (deftype Msg [^int task ^Object x ^CompletableFuture promise
               ^boolean collect-macro-definitions?])
 

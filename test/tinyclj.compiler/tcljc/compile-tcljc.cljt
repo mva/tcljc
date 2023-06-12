@@ -35,8 +35,13 @@
                                               [dest-dir]
                                               []))
         provided-nmsp (em/mk-provided-nmsp)
-        env (tclj0/mk-build-io dest-dir app-ld dyn-ld true)]
-    (time (.build-all (builder/multi-threaded env provided-nmsp all-nmsps)))))
+        single-threaded? true
+        env (tclj0/mk-build-io dest-dir app-ld dyn-ld
+                               single-threaded?)]
+    (time (-> (if single-threaded?
+                (builder/single-threaded env provided-nmsp all-nmsps)
+                (builder/multi-threaded env provided-nmsp all-nmsps))
+              (.build-all)))))
 
 (defn -main [& args]
   (try
