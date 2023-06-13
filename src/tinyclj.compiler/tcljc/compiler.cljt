@@ -372,23 +372,6 @@
 
 ;;; ------------------------------------------------------------------------
 
-(def ^:private flag-recur 0x1)    ;can recur from this position
-(def ^:private flag-tcf 0x2)      ;can emit try block at this positoin
-
-(def ^:private ctx-tlf flag-tcf)
-(def ^:private ctx-method-body (bit-or flag-recur flag-tcf))
-(def ^:private ctx-expr 0)            ;no recur, no inlined t/c/f
-(def ^:private ctx-finally 0)         ;no recur, no inlined t/c/f
-
-(defn- with-recur ^int [^int form-ctx]
-  (bit-or form-ctx flag-recur))
-(defn- without-recur ^int [^int form-ctx]
-  (bit-and form-ctx (bit-not flag-recur)))
-(defn- recur-pos? ^boolean [^int form-ctx]
-  (= (bit-and flag-recur form-ctx) flag-recur))
-(defn- tcf-pos? ^boolean [^int form-ctx]
-  (= (bit-and flag-tcf form-ctx) flag-tcf))
-
 (deftype Env
     [^int level
      ;; Level assigned to bindings created in this environment.
@@ -408,20 +391,20 @@
      
      recur-fn
      ;; Nil if no recur possible.
+     ^boolean inline-tcf?
+     ;; If true, then a try/catch/finally expression can be used
+     ;; directly without wrapping it in a zero arg closure.
      ])
-
-(defn- with-locals ^Env [^Env env locals]
-  (Env. (.level env) (.mnm-path env) locals (.!closes-over env)
-        (.recur-fn env)))
-(defn- with-recur-fn ^Env [^Env env recur-fn]
-  (Env. (.level env) (.mnm-path env) (.locals env) (.!closes-over env)
-        recur-fn))
 
 (letfn [(assoc-bref ^IPersistentMap [^IPersistentMap acc ^BindingRef bref]
           #_(prn :assoc-bref (x/sname (bref)))
           (assoc acc (name (x/sname bref)) bref))
         (assoc-b ^IPersistentMap [^IPersistentMap acc ^Binding b]
-          (assoc-bref acc (.bref b)))]
+          (assoc-bref acc (.bref b)))
+        (with-locals ^Env [^Env env locals]
+          (Env. (.level env) (.mnm-path env) locals (.!closes-over env)
+                (.recur-fn env) (.inline-tcf? env)))]
+  
   (defn add-local ^Env [^Env env ^Binding b]
     (with-locals env (assoc-b (.locals env) b)))
   (defn add-locals ^Env [^Env env bs]
@@ -436,7 +419,7 @@
           (cond-> (.locals env)
             (and (some? (.this-name at)) (some? this-bref))
             (assoc-bref this-bref))
-          (.!closes-over at) nil)))
+          (.!closes-over at) nil true)))
 
 (defn mk-recur-fn [bv]
   (fn recur-fn ^Expr [^Env env form args]
@@ -483,10 +466,21 @@
 ;;; Note: This function can produce a non-returning expression,
 ;;; including a reference to a macro or to a primitive function, but
 ;;; not an expression of type `jb/polymorphic?`.
-(defn- compile-form ^Expr [^Env env ^int form-ctx form tl-ctx]
+(defn- compile-form ^Expr [^Env env form tl-ctx]
   (letfn
-      [(expr-form ^Expr [form]    ;pre: `form` is not in tail position
-         (-> (compile-form env ctx-expr form tl-ctx)
+      [(with-form-ctx ^Env [^Env env recur-fn ^boolean inline-tcf?]
+         (if (and (identical? (.recur-fn env) recur-fn)
+                  (= (.inline-tcf? env) inline-tcf?))
+           env
+           (Env. (.level env) (.mnm-path env) (.locals env) (.!closes-over env)
+                 recur-fn inline-tcf?)))
+       (with-expr ^Env [^Env env]
+         (with-form-ctx env nil false))
+       (clear-recur-fn ^Env [^Env env]
+         (with-form-ctx env nil (.inline-tcf? env)))
+       
+       (expr-form ^Expr [form]    ;pre: `form` is not in tail position
+         (-> (compile-form (with-expr env) form tl-ctx)
              (x/ensure-runtime-value)
              (conv/consume-poly)))
        (expr-forms ^IPersistentVector [forms] ;returns vector of Expr
@@ -501,9 +495,9 @@
            []))
 
        (tail-form ^Expr [form]
-         (-> (compile-form env form-ctx form tl-ctx)
+         (-> (compile-form env form tl-ctx)
              (x/ensure-runtime-outcome)))
-       (tail-forms ^Expr [^Env env ^int form-ctx forms tl-ctx]
+       (tail-forms ^Expr [^Env env forms tl-ctx]
          ;; Not a mapv to keep stacktrace shallow & avoid closures.
          ;; An empty `forms` is compiled to x/expr-empty.  For tcljc
          ;; itself, `forms` has exactly one element approximately 87%
@@ -512,18 +506,18 @@
          (if-some [forms (seq forms)]
            (loop [acc [], forms forms]
              (if-some [nxt (next forms)]
-               (let [x (-> (compile-form env (without-recur form-ctx)
-                                         (first forms) tl-ctx)
+               (let [x (-> (compile-form (clear-recur-fn env) (first forms)
+                                         tl-ctx)
                            (x/ensure-runtime-outcome))]
                  (recur (conj acc x) nxt))
-               (let [tail (-> (compile-form env form-ctx (first forms) tl-ctx)
+               (let [tail (-> (compile-form env (first forms) tl-ctx)
                               (x/ensure-runtime-outcome))]
                  (xf/progn-expr acc tail))))
            x/expr-empty))
        
        (compile-body ^Expr [^Env env ^Arity at ^int body-idx tl-ctx]
-         (-> (with-recur-fn env (mk-recur-fn (.paramv at)))
-             (tail-forms ctx-method-body (nthrest (.aform at) body-idx) tl-ctx)
+         (-> (tail-forms (with-form-ctx env (mk-recur-fn (.paramv at)) true)
+                         (nthrest (.aform at) body-idx) tl-ctx)
              (conv/consume-body (.rtype at))
              (x/with-innermost-form (.aform at))
              (x/loop-body)))
@@ -587,8 +581,7 @@
                 bs (seq bindings-vec)]
            (if-some [^Symbol nm (take-binding-sym bs)]
              (let [dest-tag (sig/tag-of nm false jb/cl-polymorphic-type tl-ctx)
-                   v (compile-form env (without-recur form-ctx)
-                                   (second bs) tl-ctx)
+                   v (compile-form (clear-recur-fn env) (second bs) tl-ctx)
                    b (if (and (not= kind x/b-loop)
                               (x/pure-let-initialization? v)
                               (jb/polymorphic? dest-tag))
@@ -603,14 +596,15 @@
                (recur (add-local env b) (conj bexprs b) (nnext bs)))
              [env bexprs])))
        (loop*-form ^Expr [[_ bindings-vec & body :as form]]
-         (let [[env bexprs] (bindings env bindings-vec x/b-loop)
-               body (-> (with-recur-fn env (mk-recur-fn bexprs))
-                        (tail-forms (with-recur form-ctx) body tl-ctx))]
+         (let [[^Env env bexprs] (bindings env bindings-vec x/b-loop)
+               body (tail-forms (with-form-ctx env
+                                  (mk-recur-fn bexprs) (.inline-tcf? env))
+                                body tl-ctx)]
            (x/block bexprs (x/loop-body body))))
        
        (recur-form ^Expr [form]
-         (if (recur-pos? form-ctx)
-           ((.recur-fn env) env form (expr-forms (rest form)))
+         (if-some [f (.recur-fn env)]
+           (f env form (expr-forms (rest form)))
            (wrong/syntax "cannot recur from this position")))
        
        (if-form [[_ test if-true if-false :as form]]
@@ -698,7 +692,7 @@
        
        (let*-form ^Expr [[_ bindings-vec & body :as form]]
          (let [[env bexprs] (bindings env bindings-vec x/b-let)]
-           (x/block bexprs (tail-forms env form-ctx body tl-ctx))))
+           (x/block bexprs (tail-forms env body tl-ctx))))
        
        (ensure-distinct-fn-names [fnv]
          (doseq [x fnv]
@@ -756,11 +750,11 @@
                                 (x/local-binding (.bref b) fn-form')))
                             bexprv)
                body (xf/progn-expr (mapv invoke-patch-fn bexprv)
-                                   (tail-forms env form-ctx body tl-ctx))]
+                                   (tail-forms env body tl-ctx))]
            (x/block bexprv body)))
        
        (do-form ^Expr [[_ & exprs :as form]]
-         (tail-forms env form-ctx (rest form) tl-ctx))
+         (tail-forms env (rest form) tl-ctx))
 
        (fn*-form ^FnForm [form]
          (let [level (level-fn-form env)
@@ -1035,17 +1029,17 @@
                ;; "out of thin air" character
                bref (x/local-ref (.level env) nm tp x/b-let)
                b (x/local-binding bref (x/expr-provided tp))]
-           [tp (-> (x/block [b] (-> (add-local env b)
-                                    (tail-forms (without-recur form-ctx)
-                                                body tl-ctx)))
+           [tp (-> (x/block [b] (tail-forms (-> (add-local env b)
+                                                (clear-recur-fn))
+                                            body tl-ctx))
                    (x/with-innermost-form form))]))
        (try-form* ^Expr [[_ & forms :as form]]
          (let [[body cs f] (split-body-catches-finally forms)
-               body-expr (-> (tail-forms env (without-recur form-ctx)
+               body-expr (-> (tail-forms (clear-recur-fn env)
                                          body tl-ctx)
                              (x/with-innermost-form form))
                ecs (mapv #(catch-form env %) cs) ;eager
-               finally-statm (-> (tail-forms env ctx-finally (rest f) tl-ctx)
+               finally-statm (-> (tail-forms (with-expr env) (rest f) tl-ctx)
                                  (xf/coerce-to-statm)
                                  (x/with-innermost-form f))]
            (let [all-paths (cons body-expr (map second ecs))
@@ -1057,7 +1051,7 @@
                                   finally-statm
                                   (conv/adpt-for-path to-tp)))))
        (try-form ^Expr [form]
-         (if (tcf-pos? form-ctx)
+         (if (.inline-tcf? env)
            (try-form* form)
            (-> (list (list 'fn* 'try (with-meta [] {:tag 'auto-return-type})
                            form))
@@ -1255,7 +1249,7 @@
        (init-value-of-def ^Expr [form]  ;nil if init is not specified
          (when-some [xs (nthnext form 2)]
            ;; accepts anything, including macros or primitive functions
-           (compile-form env (without-recur form-ctx) (first xs) tl-ctx)))
+           (compile-form (clear-recur-fn env) (first xs) tl-ctx)))
        (compile-list-special ^Expr [^Symbol op-form form] ;nil if regular
          (when (nil? (namespace op-form))
            (case op-form
@@ -1345,14 +1339,13 @@
                      (and (x/bref? x) (x/b-macro? x))
                      (let [m ^MacroRef (x/root-bref x)]
                        ;; note: recursive `compile-form` picks up error context
-                       (compile-form env form-ctx (expand-macro m form tl-ctx)
-                                     tl-ctx))
+                       (compile-form env (expand-macro m form tl-ctx) tl-ctx))
                      
                      :else
                      (call-fn-expr x form))))
 
              (if (seq form)             ;guard against empty list
-               (-> (compile-form env (without-recur form-ctx) op-form tl-ctx)
+               (-> (compile-form (clear-recur-fn env) op-form tl-ctx)
                    (call-fn-expr form))
                (compile-atom form))))) ;empty list (), possibly with meta
        
@@ -1389,9 +1382,9 @@
             (compile-atom form))
           (x/with-innermost-form form))))
 
-(def ^:private empty-global-env (Env. x/lvl-environment nil {} nil nil))
+(def ^:private empty-global-env (Env. x/lvl-environment nil {} nil nil true))
 (defn top-level-form ^void [form ^Ctx ctx]
-  (let [x (-> (compile-form empty-global-env ctx-tlf form ctx)
+  (let [x (-> (compile-form empty-global-env form ctx)
               (x/ensure-runtime-outcome)
               (conv/consume jb/void))]
     (.send-to-emit (.compile-io ctx) io/msg-emit-tlf x)
