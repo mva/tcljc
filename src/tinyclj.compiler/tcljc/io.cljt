@@ -24,8 +24,8 @@
 ;;; compiler generated data.  Also defines minimal infrastructure to
 ;;; pass messages from compile to emit thread.
 ;;;
-;;; Minimal usage scenarios are one-shot compilation, watch loop
-;;; compilation, and unit tests.
+;;; Required usage scenarios are at least one-shot compilation, watch
+;;; loop compilation, and unit tests.
 
 ;;; ------------------------------------------------------------------------
 

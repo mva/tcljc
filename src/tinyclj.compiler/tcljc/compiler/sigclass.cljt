@@ -21,6 +21,7 @@
   (:import
    (tcljc.classfile ClassDef FieldDef ILdStInstr)
    (tcljc.expr Arity Binding)
+   (tcljc.context Ctx)
    (clojure.lang Symbol IPersistentMap IPersistentVector)
    (jdk.internal.classfile Classfile ClassBuilder CodeBuilder)
    (java.lang.constant ClassDesc MethodTypeDesc DirectMethodHandleDesc
@@ -82,16 +83,16 @@
                                  :invoke/arg-types atypes}))))
 
 (defn method-arity-type ^Arity [^Class etp [nm sig & body :as form]
-                                ^int level ^int at-idx tl-ctx]
+                                ^int level ^int at-idx ^Ctx ctx]
   ;; The returned Arity omits the first parameter.  Its name is
   ;; stored in `this-name` and it is translated into the
   ;; receiver of the virtual method.
   (wrong/ensure-sym nm)  ;silently ignore namespace part for defrecord
   (ensure-parameters sig true)
-  (let [rtype (sig/tag-of sig true jb/cl-polymorphic-type tl-ctx)
+  (let [rtype (sig/tag-of sig true jb/cl-polymorphic-type ctx)
         tmpl (Arity. nil nil -1 false false nil (name nm) (nth sig 0)
                      level form (util/mk-shm) at-idx)
-        at (sig/arity-sig tmpl jb/cl-polymorphic-type rtype (rest sig) tl-ctx)]
+        at (sig/arity-sig tmpl jb/cl-polymorphic-type rtype (rest sig) ctx)]
     (-> (if (hinted? sig)
           (check-method-match at etp)
           (fixup-method-sig at etp)))))
@@ -178,7 +179,7 @@
 (defn- pass-to-super? ^boolean [^Symbol nm]
   (boolean (-> nm (meta) :pass-to-super-constructor)))
 
-(defn- take-super-mhd [tps field-sig tl-ctx]
+(defn- take-super-mhd [tps field-sig ^Ctx ctx]
   (let [cl ^Class (first tps)]
     (if (or (nil? cl) (jb/array? cl) (jb/primitive? cl) (jb/interface? cl))
       [(rt/no-args-constructor rt/object) tps]
@@ -188,16 +189,16 @@
       ;; PrintWriter-on in core_print.cljt uses the protected
       ;; constructor of Writer.
       [(->> (filter pass-to-super? field-sig)
-            (map #(sig/tag-of % false jb/Object tl-ctx))
+            (map #(sig/tag-of % false jb/Object ctx))
             (rt/fixed-args-constructor cl))
        (rest tps)])))
 
-(defn- super-classes [itfs field-sig tl-ctx]
+(defn- super-classes [itfs field-sig ^Ctx ctx]
   (letfn [(take-class-symbol ^Class [form]
-            (or (when (symbol? form) (ctx/lookup-type form tl-ctx))
+            (or (when (symbol? form) (ctx/lookup-type form ctx))
                 (sig/wrong-class form)))]
     (let [tps (mapv take-class-symbol itfs) ;eager
-          [super-mhd tps :as supers] (take-super-mhd tps field-sig tl-ctx)]
+          [super-mhd tps :as supers] (take-super-mhd tps field-sig ctx)]
       (doseq [tp tps]
         (sig/ensure-interface tp))
       supers)))
@@ -260,7 +261,7 @@
   
   (defn eph-dtp-class-def ^ClassDef [^String pkg-name ^IPersistentMap imports
                                      ^ClassDesc this-class field-sig opts
-                                     tl-ctx]
+                                     ^Ctx ctx]
     (letfn [(eph-field ^FieldDef [nm]
               ;; mirrors `field-bref` below
               (let [tpd (tag-desc-of pkg-name imports nm false rt/object)
@@ -308,7 +309,7 @@
                           (concat s (remove pass-to-super? field-sig))
                           field-sig)
                         (mapv eph-field))
-            [super-mhd itfs] (super-classes (:implements opts) field-sig tl-ctx)
+            [super-mhd itfs] (super-classes (:implements opts) field-sig ctx)
             flags (bit-or Classfile/ACC_PUBLIC (if (:abstract opts)
                                                  Classfile/ACC_ABSTRACT
                                                  Classfile/ACC_FINAL))
@@ -322,11 +323,11 @@
                         true (into (map field-cbh)
                                    (subvec fieldv (constr-argn super-mhd))))))))
 
-  (defn dtp-field-brefs [^ClassDesc this-class field-sig tl-ctx]
+  (defn dtp-field-brefs [^ClassDesc this-class field-sig ^Ctx ctx]
     (letfn [(field-bref [nm]
               ;; mirrors `eph-field` above
               (when-not (pass-to-super? nm)
-                (let [tp (sig/tag-of nm false jb/Object tl-ctx)
+                (let [tp (sig/tag-of nm false jb/Object ctx)
                       mnm (cfg/munge-name nm)
                       flags (field-flags nm)
                       mutable? (zero? (bit-and flags Classfile/ACC_FINAL))
@@ -338,10 +339,10 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn eph-reify-class-def ^ClassDef [^ClassDesc this-class itfs tl-ctx]
+(defn eph-reify-class-def ^ClassDef [^ClassDesc this-class itfs ^Ctx ctx]
     (let [field-sig []
-          [super-mhd itfs] (super-classes itfs field-sig tl-ctx)
-          itfs (cons (ctx/get-type rt/clnm-iobj tl-ctx) itfs)
+          [super-mhd itfs] (super-classes itfs field-sig ctx)
+          itfs (cons (ctx/get-type rt/clnm-iobj ctx) itfs)
           flags Classfile/ACC_PUBLIC]
       (cf/class-def this-class (.owner ^DirectMethodHandleDesc super-mhd)
                     flags (map rt/cd-of itfs) super-mhd [] [])))

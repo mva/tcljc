@@ -153,21 +153,14 @@
           (.get-tlf-idx ctx))))
 
 
-#_(def ^:private ^ThreadLocal ctx (ThreadLocal.)) ;FIXME... want ExtentLocal
-(defn tl-ctx* ^Ctx [tl-ctx] tl-ctx)
+(defn global? ^boolean [^Ctx ctx]
+  (not (.locked? ctx)))
 
-(defn global? ^boolean [tl-ctx]
-  (not (.locked? (tl-ctx* tl-ctx))))
+(defn this-ns ^String [^Ctx ctx]
+  (.ns-str ctx))
 
-(defn this-ns ^String [tl-ctx]
-  (.ns-str (tl-ctx* tl-ctx)))
-
-(defn dyn-ld ^ClassLoader [tl-ctx]
-  (.getClassLoader
-   (-> (tl-ctx* tl-ctx) .compile-io .lookup-in-pkg .lookupClass)))
-
-(defn compile-io ^CompileIO [tl-ctx]
-  (.compile-io (tl-ctx* tl-ctx)))
+(defn dyn-ld ^ClassLoader [^Ctx ctx]
+  (.getClassLoader (-> ctx .compile-io .lookup-in-pkg .lookupClass)))
 
 
 
@@ -175,22 +168,21 @@
 ;; imported class or the type instance from the dynamic class loader
 ;; of the application under construction.  Return nil if the type does
 ;; not exist.
-(defn lookup-type ^Class [tp tl-ctx]
+(defn lookup-type ^Class [tp ^Ctx ctx]
   (if (class? tp)
     tp
-    (let [tl-ctx (tl-ctx* tl-ctx)]
-      (or (.valAt (.get-imports tl-ctx) tp) ;symbols only
-          (try
-            (.resolveConstantDesc
-             (if (symbol? tp)
-               (ClassDesc/of (str tp))
-               (rt/str-to-cld tp))
-             (-> tl-ctx .compile-io .lookup-in-pkg))
-            (catch ClassNotFoundException _
-              nil))))))
+    (or (.valAt (.get-imports ctx) tp) ;symbols only
+        (try
+          (.resolveConstantDesc
+           (if (symbol? tp)
+             (ClassDesc/of (str tp))
+             (rt/str-to-cld tp))
+           (-> ctx .compile-io .lookup-in-pkg))
+          (catch ClassNotFoundException _
+            nil)))))
 
-(defn get-type ^Class [tp tl-ctx]
-  (or (lookup-type tp tl-ctx)
+(defn get-type ^Class [tp ^Ctx ctx]
+  (or (lookup-type tp ctx)
       (wrong/class-not-found tp)))
 
 ;; Look up namespace qualified name resolved via `known-ns`.  If the
@@ -205,10 +197,10 @@
               (when-some [publics (.valAt (.get-known-ns ctx) resolved-ns-nm nil)]
                 (or (.valAt ^IPersistentMap publics nm nil)
                     (wrong/unresolved resolved-ns-nm (symbol ns nm)))))))]
-  (defn lookup-sname-global ^BindingRef [^Symbol nm tl-ctx]
-    (.valAt (.get-globals (tl-ctx* tl-ctx)) (name nm) nil))
-  (defn lookup-qname-global ^BindingRef [^Symbol nm tl-ctx]
-    (lookup-global* (tl-ctx* tl-ctx) (namespace nm) (name nm))))
+  (defn lookup-sname-global ^BindingRef [^Symbol nm ^Ctx ctx]
+    (.valAt (.get-globals ctx) (name nm) nil))
+  (defn lookup-qname-global ^BindingRef [^Symbol nm ^Ctx ctx]
+    (lookup-global* ctx (namespace nm) (name nm))))
 
-(defn put-global ^BindingRef [^String nm ^BindingRef x tl-ctx]
-  (.put-global (tl-ctx* tl-ctx) nm x))
+(defn put-global ^BindingRef [^String nm ^BindingRef x ^Ctx ctx]
+  (.put-global ctx nm x))

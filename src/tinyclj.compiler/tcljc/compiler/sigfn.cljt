@@ -17,6 +17,7 @@
    [tcljc.compiler.resolve :as resolve])
   (:import
    (tcljc.expr FnForm Arity Binding)
+   (tcljc.context Ctx)
    (clojure.lang Symbol)
    (java.lang.reflect Method)))
 
@@ -35,17 +36,17 @@
 (defn get-tag [form]
   (-> form (meta) :tag))
 
-(defn- tag-of* ^Class [tag ^boolean void? ^Class no-hint tl-ctx]
+(defn- tag-of* ^Class [tag ^boolean void? ^Class no-hint ^Ctx ctx]
   (if (some? tag)
-    (if-some [tp (ctx/get-type tag tl-ctx)]
+    (if-some [tp (ctx/get-type tag ctx)]
       (if (and (jb/statement? tp) (not void?))
         (wrong/syntax "`void` tag not applicable in this context")
         tp)
       (wrong-class tag))
     no-hint))
 
-(defn tag-of ^Class [form ^boolean void? ^Class no-hint tl-ctx]
-  (tag-of* (get-tag form) void? no-hint tl-ctx))
+(defn tag-of ^Class [form ^boolean void? ^Class no-hint ^Ctx ctx]
+  (tag-of* (get-tag form) void? no-hint ctx))
 
 ;;; ------------------------------------------------------------------------
 
@@ -75,7 +76,7 @@
   (-> (x/local-ref level nm tp x/b-this-object)
       (x/local-binding nil)))
 
-(defn arity-sig ^Arity [^Arity tmpl ^Class unset-tp ^Class rtype params tl-ctx]
+(defn arity-sig ^Arity [^Arity tmpl ^Class unset-tp ^Class rtype params ^Ctx ctx]
   (loop [acc []
          [p :as params] (seq params)]
     (cond
@@ -84,9 +85,9 @@
       
       (= p '&)
       (let [p (ensure-parameter (second params))
-            tp (tag-of p false nil tl-ctx)
+            tp (tag-of p false nil ctx)
             vap-tp (cond
-                     (nil? tp) (or unset-tp (ctx/get-type rt/clnm-seq tl-ctx))
+                     (nil? tp) (or unset-tp (ctx/get-type rt/clnm-seq ctx))
                      (jb/array? tp) tp
                      :else (wrong/type-expr "type of rest parameter must be array" tp))]
         (when (nnext params)
@@ -96,7 +97,7 @@
             (conj acc param) rtype (some? tp) (nil? tp) (.at-idx tmpl))))
 
       :else
-      (let [tp (tag-of p false (or unset-tp jb/Object) tl-ctx)
+      (let [tp (tag-of p false (or unset-tp jb/Object) ctx)
             param (mk-param (.level tmpl) (ensure-parameter p) tp)]
         (recur (conj acc param) (next params))))))
 
@@ -104,17 +105,17 @@
 ;;; without an explicit type tag: return type, parameter type, or
 ;;; varargs type.
 (defn- parse-arity-sigs [^int level ^Class unset-tp ^Symbol this-name aforms
-                         tl-ctx]
+                         ^Ctx ctx]
   (letfn [(arity ^Arity [aform ^int at-idx]
             (if (and (seq? aform) (vector? (first aform)))
               (let [v (first aform)
                     rtag (get-tag v)
                     rtype (if (= rtag 'auto-return-type)
                             jb/cl-polymorphic-type
-                            (or (tag-of* rtag true unset-tp tl-ctx) jb/Object))
+                            (or (tag-of* rtag true unset-tp ctx) jb/Object))
                     tmpl (Arity. nil nil -1 false false nil nil this-name
                                  level aform (util/mk-shm) at-idx)]
-                (arity-sig tmpl unset-tp rtype (seq v) tl-ctx))
+                (arity-sig tmpl unset-tp rtype (seq v) ctx))
               (wrong/syntax "expect function arity ([...] ...)")))
           (arity-seq [acc seen-ns [aform :as aforms]]
             (if (some? aforms)
@@ -184,7 +185,7 @@
 
 ;;; `level` is the level that is assigned to names defined in this
 ;;; function.
-(defn destructure-fn*-form ^FnForm [form ^int level ^String unique-mnm tl-ctx]
+(defn destructure-fn*-form ^FnForm [form ^int level ^String unique-mnm ^Ctx ctx]
   (letfn [(arity-forms [xs]
             (if (vector? (first xs))
               (list (with-meta xs (meta form)))
@@ -192,12 +193,12 @@
           ;; Set fn-form-*'s form early, so that its available in the
           ;; forked of thread that compiles the function body.
           (mk-fn-form-fct [^Symbol this-name aforms]
-            (let [at-sigs (parse-arity-sigs level nil this-name aforms tl-ctx)
-                  tp (ctx/get-type rt/clnm-abstract-fn tl-ctx)]
+            (let [at-sigs (parse-arity-sigs level nil this-name aforms ctx)
+                  tp (ctx/get-type rt/clnm-abstract-fn ctx)]
               (x/fn-form-fct form tp level unique-mnm at-sigs)))
           (mk-fn-form-itf [^Class itf-tag aforms]
             (let [at-sigs (-> (parse-arity-sigs level jb/cl-polymorphic-type
-                                                nil aforms tl-ctx)
+                                                nil aforms ctx)
                               (fixup-arity-sigs-from-itf itf-tag))]
               (x/fn-form-itf form itf-tag level unique-mnm at-sigs)))]
     (let [nm (second form)]
@@ -209,6 +210,6 @@
             (wrong/other "interface function cannot have a name"))
           (mk-fn-form-fct nm aforms))
         (let [aforms (arity-forms (next form))]
-          (if-some [itf-tag (tag-of (first form) false nil tl-ctx)]
+          (if-some [itf-tag (tag-of (first form) false nil ctx)]
             (mk-fn-form-itf (ensure-interface itf-tag) aforms)
             (mk-fn-form-fct nil aforms)))))))
