@@ -102,9 +102,13 @@
       ;; Carry *out* and *err* into threads.  Compiler code running
       ;; in unit tests should use the *out* and *err* bound by
       ;; ptest.
-      (.submit sts (^Callable fn []
-                    (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                    (.call f)))
+      (try
+        (.submit sts (^Callable fn []
+                      (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                      (.call f)))
+        (catch Throwable t
+          (.printStackTrace t)
+          (throw t)))
       (java.util.concurrent.CompletableFuture/completedFuture (.call f))))
   (compile-io-in [_ cl]
     (CompileIOImpl. (.in lookup-in-pkg cl) apply-mh
@@ -209,9 +213,13 @@
   
   (fork-task [_ sts f fork-work?]
     (if fork-work?
-      (.submit sts (^Callable fn []
-                    (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                    (.call f)))
+      (try
+        (.submit sts (^Callable fn []
+                      (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                      (.call f)))
+        (catch Throwable t
+          (.printStackTrace t)
+          (throw t)))
       (java.util.concurrent.CompletableFuture/completedFuture (.call f)))))
 
 ;; Source files are obtained from `app-ld` via `.getResource`.  If the
@@ -277,9 +285,13 @@
           nil)))
 
     (fork-task [_ sts f]
-      (.submit sts (^Callable fn []
-                    (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                    (.call f)))))
+      (try
+        (.submit sts (^Callable fn []
+                      (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                      (.call f)))
+        (catch Throwable t
+          (.printStackTrace t)
+          (throw t)))))
 
 (defn mk-build-io* ^BuildIO [^BuildFiles build-files
                              ^ClassLoader app-ld ^ClassLoader dyn-ld
