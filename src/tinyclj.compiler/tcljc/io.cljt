@@ -154,7 +154,7 @@
   ;; non-deterministic mode leads to deadlock in the emit thread.
   (send-to-emit ^Object [^int task ^Object x])
   
-  (fork-function ^Future [^ExecutorService sts ^Callable f])
+  (fork-function ^Future [^Callable f])
   
   (compile-io-in ^CompileIO [^Class cl]))
 
@@ -207,12 +207,16 @@
 
   ;; Called for the namespace's top-level compile thread, and to write
   ;; out a namespace segment's class file.
-  (fork-task ^Future [^ExecutorService sts ^Callable f ^boolean fork-work?]))
+  (fork-worker ^Future [^Callable f ^boolean fork-work?])
+
+  ;; No need to call `stop-nmsp` if the initial instanace was created
+  ;; with a `nmsp-builder` of nil.
+  (stop ^void [^boolean abort?]))
 
 (definterface BuildIO
   ;; Creates a new `NmspIO` instance for a fresh namespace.  Must be
   ;; called at most once per namespace.
-  (mk-nmsp-io-for ^NmspIO [str-or-class ^NmspBuilder nmsp-builder])
+  (start-nmsp-io-for ^NmspIO [str-or-class ^NmspBuilder nmsp-builder])
   
   ;; Returns the capstone class for `ns-str` if it is part of the
   ;; dynamic class loader, and nil otherwise.

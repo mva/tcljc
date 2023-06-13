@@ -553,9 +553,7 @@
                                       (x/with-rtype (x/type body)))]
                             (aset aca i (x/mk-arity-code at' this-bref body))))
                         aca))
-               body-fut (.fork-function (compile-io env)
-                                        (.arity-task-scope (.ctx env))
-                                        at-fn)
+               body-fut (.fork-function (compile-io env) at-fn)
                fn-form (if (some auto-rtype? (.at-sigs fn-form))
                          ;; Must force future early to pick up the
                          ;; replacement type from the arity body.
@@ -991,9 +989,7 @@
                                                            at nil)
                                            (parse-method at etp)))))
                        aca))
-               body-fut (.fork-function (compile-io env)
-                                        (.arity-task-scope (.ctx env))
-                                        m-fn)]
+               body-fut (.fork-function (compile-io env) m-fn)]
            (-> (x/fn-form-reify form etp m (level-fn-form env) unique-mnm
                                 (.super-mhd eph-cdef) atv)
                (x/with-body-fut body-fut))))

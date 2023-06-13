@@ -37,8 +37,7 @@
    (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
    (java.lang.constant ClassDesc MethodTypeDesc ConstantDescs)
    (java.util HashMap HashSet ArrayDeque)
-   (java.util.concurrent Future CompletableFuture
-                         ExecutorService Executors TimeUnit TimeoutException)
+   (java.util.concurrent Future CompletableFuture)
    (java.util.function Consumer)))
 
 (def first-segm-id 10)
@@ -198,16 +197,15 @@
                           (str segment-class-prefix first-segm-id))]
     (SegmState. ctx nmsp-io first-segm-id cld [] (ArrayDeque.) [])))
 
-(defn- emit-segments ^Namespace [^SegmState segm
-                                 ^ExecutorService nmsp-task-scope]
+(defn- emit-segments ^Namespace [^SegmState segm]
   (letfn [(schedule-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
             (if-some [cbh (.fn-cbh (.emit-plan fnc))]
               (with-fn-class-fut segm
-                (.fork-task (.nmsp-io segm) nmsp-task-scope
-                            (^Callable fn []
-                             (.produce-class (.nmsp-io segm)
-                                             ^ClassDesc (.ld-clx fnc) cbh))
-                            cfg/fork-work?))
+                (.fork-worker (.nmsp-io segm)
+                              (^Callable fn []
+                               (.produce-class (.nmsp-io segm)
+                                               ^ClassDesc (.ld-clx fnc) cbh))
+                              cfg/fork-work?))
               segm))
           (schedule-fn-classes ^SegmState [^SegmState segm ^TopLevelForm tlf]
             (let [segm (with-tlf segm tlf)
@@ -317,7 +315,7 @@
     (let [msg (.recv-from-compile (.nmsp-io segm))]
       (if (= (.task msg) io/msg-close-queue)
         (-> segm (write-segment false) (write-capstone (.x msg)))
-        (recur (complete-req! segm msg) nmsp-task-scope)))))
+        (recur (complete-req! segm msg))))))
 
 (defn mk-provided-nmsp
   ([]
@@ -345,8 +343,7 @@
 ;; the emitter thread.  The "compile namespace" thread can fork of an
 ;; arbitrary number of futures of its own, and the emitter retrieves
 ;; their result/exception in emit order.
-(defn- emit-namespace ^Namespace [^SegmState segm ^IPersistentMap provided-nmsp
-                                  ^ExecutorService nmsp-task-scope]
+(defn- emit-namespace ^Namespace [^SegmState segm ^IPersistentMap provided-nmsp]
   (let [ctx (.ctx segm)]
     (init-known-ns ctx provided-nmsp)
     
@@ -366,8 +363,8 @@
                   (catch Throwable t
                     (.send-to-emit (-> segm .nmsp-io .compile-io)
                                    io/msg-fatal-error t))))
-          c-thread (.fork-task (.nmsp-io segm) nmsp-task-scope c-fn true)
-          nmsp (emit-segments segm nmsp-task-scope)]
+          c-thread (.fork-worker (.nmsp-io segm) c-fn true)
+          nmsp (emit-segments segm)]
       (.get c-thread)                   ;pick up any exceptions
       nmsp)))
 
@@ -383,9 +380,9 @@
                                          ^NmspBuilder nmsp-builder
                                          ^IPersistentMap provided-nmsp
                                          ^Class capstone]
-    (let [nmsp-io (.mk-nmsp-io-for env capstone nil)
+    (let [nmsp-io (.start-nmsp-io-for env capstone nil)
           ctx (ctx/mk-ctx* {} {} (.getPackageName capstone)
-                           (.compile-io nmsp-io) nil)]
+                           (.compile-io nmsp-io))]
       (init-known-ns ctx provided-nmsp)
       
       ;; keep in sync with namespace/add-require-deps
@@ -416,25 +413,15 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn compile-and-emit ^Namespace [^BuildIO env ^String ns-str
-                                   ^NmspBuilder nmsp-builder
+(defn compile-and-emit ^Namespace [^NmspIO nmsp-io ^String ns-str
                                    ^IPersistentMap provided-nmsp]
-  (let [nmsp-task-scope (Executors/newVirtualThreadPerTaskExecutor)]
-    (try
-      (let [arity-task-scope (when-not (.deterministic-namespace-compile? nmsp-builder)
-                               nmsp-task-scope)
-            nmsp-io (.mk-nmsp-io-for env ns-str nmsp-builder)
-            ctx (ctx/mk-ctx* (.initial-globals nmsp-io)
-                             (.initial-imports nmsp-io)
-                             ns-str (.compile-io nmsp-io) arity-task-scope)
-            nmsp (-> (mk-first-segm nmsp-io ctx)
-                     (emit-namespace provided-nmsp nmsp-task-scope))]
-        (.shutdown nmsp-task-scope)
-        (when-not (.awaitTermination nmsp-task-scope 5 TimeUnit/SECONDS)
-          (throw (TimeoutException.)))
-        (.close nmsp-task-scope)
-        nmsp)
-      
-      (catch Throwable t
-        (.shutdown nmsp-task-scope)
-        (throw t)))))
+  (try
+    (let [ctx (ctx/mk-ctx* (.initial-globals nmsp-io) (.initial-imports nmsp-io)
+                           ns-str (.compile-io nmsp-io))
+          nmsp (-> (mk-first-segm nmsp-io ctx)
+                   (emit-namespace provided-nmsp))]
+      (.stop nmsp-io false)
+      nmsp)
+    (catch Throwable t
+      (.stop nmsp-io true)
+      (throw t))))

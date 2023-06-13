@@ -45,5 +45,6 @@
                                (.deterministic-namespace-compile? noop-nmsp-builder))
         
         ns-str "tcljc.rtiow-nocore-ref"
-        provided-nmsp (em/mk-provided-nmsp)]
-    (em/compile-and-emit env ns-str noop-nmsp-builder provided-nmsp)))
+        provided-nmsp (em/mk-provided-nmsp)
+        nmsp-io (.start-nmsp-io-for env ns-str noop-nmsp-builder)]
+    (em/compile-and-emit nmsp-io ns-str provided-nmsp)))

@@ -335,7 +335,8 @@
                                 (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
                               (build-all [_]
                                 (assert false)))
-               nmsp (em/compile-and-emit env ns-str nmsp-builder provided-nmsp)
+               nmsp-io (.start-nmsp-io-for env ns-str nmsp-builder)
+               nmsp (em/compile-and-emit nmsp-io ns-str provided-nmsp)
                globals (get (.exported-known-ns nmsp) ns-str)]
            (recur (assoc known-ns ns-str globals) (inc i)))))
      

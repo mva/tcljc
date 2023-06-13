@@ -75,10 +75,6 @@
               ^String ns-str
               ^CompileIO compile-io
               
-              ^ExecutorService arity-task-scope
-              ;; The executor for futures compiling an fn* arity (or
-              ;; reify* method, or deftype method).
-
               ^boolean locked?
               ^:unsynchronized-mutable ^int _macro-count
               ^:unsynchronized-mutable ^int _tlf-idx]
@@ -125,23 +121,17 @@
 
 (defn mk-ctx* ^Ctx [^IPersistentMap initial-globals
                     ^IPersistentMap initial-imports
-                    
-                    ^String ns-str ^CompileIO compile-io
-                                  
-                    ^ExecutorService arity-task-scope]
+                    ^String ns-str ^CompileIO compile-io]
   (let [known-ns {}, ns-alias {}]
     (Ctx. known-ns ns-alias initial-globals initial-imports
-          ns-str compile-io
-          arity-task-scope false 0 0)))
+          ns-str compile-io false 0 0)))
 
 (defn locked ^Ctx [^Ctx ctx]
   (if (.locked? ctx)
     ctx
     (Ctx. (.get-known-ns ctx) (.get-ns-alias-map ctx) (.get-globals ctx)
-          (.get-imports ctx)
-          (.ns-str ctx) (.compile-io ctx)
-          (.arity-task-scope ctx) true 0
-          (.get-tlf-idx ctx))))
+          (.get-imports ctx) (.ns-str ctx) (.compile-io ctx)
+          true 0 (.get-tlf-idx ctx))))
 
 (defn locked-in-class ^Ctx [^Ctx ctx ^Class ephemeral-class]
   (let [short-sym (jb/import-symbol-short ephemeral-class)
@@ -149,8 +139,7 @@
     (Ctx. (.get-known-ns ctx) (.get-ns-alias-map ctx) (.get-globals ctx)
           imports (.ns-str ctx)
           (.compile-io-in (.compile-io ctx) ephemeral-class)
-          (.arity-task-scope ctx) true 0
-          (.get-tlf-idx ctx))))
+          true 0 (.get-tlf-idx ctx))))
 
 
 (defn global? ^boolean [^Ctx ctx]

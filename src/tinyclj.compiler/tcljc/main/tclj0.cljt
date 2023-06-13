@@ -34,7 +34,8 @@
    (java.nio.file Path Files)
    (java.util HashSet)
    (java.util.concurrent ConcurrentHashMap ArrayBlockingQueue
-                         CompletableFuture)
+                         CompletableFuture ExecutorService Executors
+                         TimeUnit TimeoutException)
    (java.util.concurrent.atomic AtomicBoolean)))
 
 ;;; Implementation of in/out infrastructure when running the compiler
@@ -43,6 +44,7 @@
 (deftype CompileIOImpl [^MethodHandles$Lookup lookup-in-pkg 
                         ^MethodHandle apply-mh
                         ^ConcurrentHashMap private-name-map
+                        ^ExecutorService fct-task-scope
                         ^ArrayBlockingQueue compile-to-emit-q
                         ^Object binding-frame
                         ^boolean collect-macro-definitions?]
@@ -97,22 +99,23 @@
       (do (.put compile-to-emit-q
                 (Msg. task x nil collect-macro-definitions?))
           nil)))
-  (fork-function [_ sts f]
-    (if (some? sts)
+  (fork-function [_ f]
+    (if (some? fct-task-scope)
       ;; Carry *out* and *err* into threads.  Compiler code running
       ;; in unit tests should use the *out* and *err* bound by
       ;; ptest.
       (try
-        (.submit sts (^Callable fn []
-                      (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                      (.call f)))
+        (.submit fct-task-scope
+                 (^Callable fn []
+                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                  (.call f)))
         (catch Throwable t
           (.printStackTrace t)
           (throw t)))
       (java.util.concurrent.CompletableFuture/completedFuture (.call f))))
   (compile-io-in [_ cl]
-    (CompileIOImpl. (.in lookup-in-pkg cl) apply-mh
-                    private-name-map compile-to-emit-q
+    (CompileIOImpl. (.in lookup-in-pkg cl) apply-mh private-name-map
+                    fct-task-scope compile-to-emit-q
                     binding-frame collect-macro-definitions?)))
 
 (defn- get-apply-mh ^MethodHandle [^MethodHandles$Lookup rt-lookup]
@@ -138,6 +141,7 @@
                      ^String source-file-attribute
 
                      ^NmspBuilder nmsp-builder
+                     ^ExecutorService nmsp-task-scope
                      
                      ^AtomicBoolean pkg-dir-prepared
                      ^tcljc.classfile.CHR dyn-chr
@@ -168,7 +172,8 @@
       (NmspIOImpl. build-files compile-io rt-lookup
                    initial-imports initial-globals
                    rpath rurl !rpath-set src-file-attr
-                   nmsp-builder pkg-dir-prepared dyn-chr
+                   nmsp-builder nmsp-task-scope
+                   pkg-dir-prepared dyn-chr
                    compile-to-emit-q binding-frame)))
   (assoc-source-file [_ ^ExceptionInfo e]
     (wrong/assoc-if-new e :file/resource-url rurl))
@@ -211,16 +216,24 @@
   (recv-from-compile [this]
     (.take compile-to-emit-q))
   
-  (fork-task [_ sts f fork-work?]
+  (fork-worker [_ f fork-work?]
     (if fork-work?
       (try
-        (.submit sts (^Callable fn []
-                      (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                      (.call f)))
+        (.submit nmsp-task-scope
+                 (^Callable fn []
+                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                  (.call f)))
         (catch Throwable t
           (.printStackTrace t)
           (throw t)))
-      (java.util.concurrent.CompletableFuture/completedFuture (.call f)))))
+      (java.util.concurrent.CompletableFuture/completedFuture (.call f))))
+  (stop [_ abort?]
+    (when-some [sts nmsp-task-scope]
+      (.shutdown sts)
+      (when-not abort?
+        (when-not (.awaitTermination sts 5 TimeUnit/SECONDS)
+          (throw (TimeoutException.)))
+        (.close sts)))))
 
 ;; Source files are obtained from `app-ld` via `.getResource`.  If the
 ;; parent classloader is :system, then `app-ld` also provides
@@ -256,7 +269,7 @@
      binding-frame              ;to carry *out* and *err* into threads
      ^boolean collect-macro-definitions?]
     tcljc.io.BuildIO
-    (mk-nmsp-io-for [build-io str-or-class nmsp-builder]
+    (start-nmsp-io-for [build-io str-or-class nmsp-builder]
       (let [ns-str (if (string? str-or-class)
                      ^String str-or-class
                      (.getPackageName ^Class str-or-class))
@@ -269,15 +282,22 @@
 
             capacity-q 16 ;prevent compilation from reaching too far ahead
             compile-to-emit-q (ArrayBlockingQueue. capacity-q)
-            compile-io (CompileIOImpl. lookup-in-pkg (get-apply-mh rt-lookup)
-                                       (ConcurrentHashMap.) compile-to-emit-q
-                                       binding-frame collect-macro-definitions?)
+            
             !rpath-set (HashSet.)
-            pdp (java.util.concurrent.atomic.AtomicBoolean. false)]
+            pdp (java.util.concurrent.atomic.AtomicBoolean. false)
+
+            nmsp-task-scope (when (some? nmsp-builder)
+                              (Executors/newVirtualThreadPerTaskExecutor))
+            fct-task-scope (when (and (some? nmsp-builder)
+                                      (not (.deterministic-namespace-compile? nmsp-builder)))
+                             nmsp-task-scope)
+            compile-io (CompileIOImpl. lookup-in-pkg (get-apply-mh rt-lookup)
+                                       (ConcurrentHashMap.) fct-task-scope compile-to-emit-q
+                                       binding-frame collect-macro-definitions?)]
         (NmspIOImpl. build-files compile-io rt-lookup initial-imports initial-globals
-                     nil nil !rpath-set nil nmsp-builder pdp dyn-chr
+                     nil nil !rpath-set nil nmsp-builder nmsp-task-scope pdp dyn-chr
                      compile-to-emit-q binding-frame)))
-  
+        
     (try-load-capstone [_ ns-str]
       (try
         (Class/forName (str ns-str "." emitter/capstone-class-name) false dyn-ld)
