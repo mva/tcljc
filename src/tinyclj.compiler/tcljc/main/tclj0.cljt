@@ -262,7 +262,7 @@
 (deftype BuildIOImpl
     [^BuildFiles build-files
      ^MethodHandles$Lookup rt-lookup    ;to access module tinyclj.rt
-     ^ExecutorService build-task-scope
+     ^ExecutorService build-task-scope  ;nil if deterministic?
      ^IPersistentMap initial-imports
      ^ClassLoader dyn-ld
      ^tcljc.classfile.CHR dyn-chr
@@ -291,13 +291,12 @@
             ;; is present, then assume its a namespace import
             nmsp-task-scope (when (some? nmsp-builder)
                               (Executors/newVirtualThreadPerTaskExecutor))
-            fct-task-scope (when (and (some? nmsp-builder)
-                                      (not (.deterministic-namespace-compile? nmsp-builder)))
+            deterministic? (nil? build-task-scope)
+            fct-task-scope (when (and (some? nmsp-builder) (not deterministic?))
                              nmsp-task-scope)
-            collect-macro-definitions? (nil? build-task-scope)
             compile-io (CompileIOImpl. lookup-in-pkg (get-apply-mh rt-lookup)
                                        (ConcurrentHashMap.) fct-task-scope compile-to-emit-q
-                                       binding-frame collect-macro-definitions?)]
+                                       binding-frame deterministic?)]
         (NmspIOImpl. build-files compile-io rt-lookup initial-imports initial-globals
                      nil nil !rpath-set nil nmsp-builder nmsp-task-scope pdp dyn-chr
                      compile-to-emit-q binding-frame)))
@@ -316,11 +315,16 @@
                   (.call f)))
         (catch Throwable t
           (.printStackTrace t)
-          (throw t)))))
+          (throw t))))
 
-(defn mk-build-io* ^BuildIO [^BuildFiles build-files
-                             ^ClassLoader app-ld ^ClassLoader dyn-ld
-                             ^boolean single-threaded?]
+    (build-all [this builtin-nmsp ns-strs]
+      (let [b (if (nil? build-task-scope) ;deterministic?
+                (builder/single-threaded this builtin-nmsp ns-strs)
+                (builder/multi-threaded this builtin-nmsp ns-strs))]
+        (.build-all b))))
+
+(defn mk-build-io* ^BuildIO [^BuildFiles build-files ^boolean deterministic?
+                             ^ClassLoader app-ld ^ClassLoader dyn-ld]
   (let [rt-lookup (cfg/get-rt-lookup app-ld)
         initial-imports (reduce-kv (fn [acc nm-sym clnm]
                                      (let [cl (.findClass rt-lookup clnm)]
@@ -334,16 +338,20 @@
                                     'list rt/clnm-list
                                     'seq rt/clnm-seq})]
     (BuildIOImpl. build-files rt-lookup
-                  (when-not single-threaded?
+                  (when-not deterministic?
                     (Executors/newVirtualThreadPerTaskExecutor))
                   initial-imports dyn-ld (cf/mk-chr dyn-ld)
                   (clojure.lang.Var/cloneThreadBindingFrame))))
 
-(defn mk-build-io ^BuildIO [^Path dest-dir
-                            ^ClassLoader app-ld ^ClassLoader dyn-ld
-                            ^boolean single-threaded?]
+;; If `deterministic?` is true, then namespaces are visited in depth
+;; first order, and each namespace is compiled sequentially.  In
+;; particular, macro and syntax quote expansions happen in
+;; deterministic order, which in turn means that emitted class files
+;; are identical across builds.
+(defn mk-build-io ^BuildIO [^Path dest-dir ^boolean deterministic?
+                            ^ClassLoader app-ld ^ClassLoader dyn-ld]
   (-> (mk-build-files app-ld dest-dir)
-      (mk-build-io* app-ld dyn-ld single-threaded?)))
+      (mk-build-io* deterministic? app-ld dyn-ld)))
 
 ;;; ------------------------------------------------------------------------
 
@@ -365,12 +373,9 @@
         dyn-sourcev (if (and load-from-dest-dir? (some? (.dest-dir opts)))
                       [(.dest-dir opts)]
                       [])
-        dyn-ld (cfg/dyn-class-loader app-ld dyn-sourcev)
-        builtin-nmsp (em/mk-provided-nmsp)
-        env (mk-build-io (.dest-dir opts) app-ld dyn-ld (.deterministic? opts))]
-    (.build-all (if (.deterministic? opts)
-                  (builder/single-threaded env builtin-nmsp all-nmsps)
-                  (builder/multi-threaded env builtin-nmsp all-nmsps)))))
+        dyn-ld (cfg/dyn-class-loader app-ld dyn-sourcev)]
+    (-> (mk-build-io (.dest-dir opts) (.deterministic? opts) app-ld dyn-ld)
+        (.build-all (em/mk-provided-nmsp) all-nmsps))))
 
 (defn run ^boolean [^Options opts]
   (options/print-options opts)

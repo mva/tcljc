@@ -21,7 +21,6 @@
 
 (def ^:private noop-nmsp-builder
   (reify NmspBuilder
-    (deterministic-namespace-compile? [_] true)
     (schedule [_ ns-str provided-nmsp] nil)
     (build-all [_] (assert false))))
 
@@ -41,8 +40,8 @@
         
         dyn-ld (cfg/dyn-class-loader app-ld [])
         dest-dir (cfg/dest-dir "tcljc.rtiow-nocore")
-        single-threaded? (.deterministic-namespace-compile? noop-nmsp-builder)
-        env (tclj0/mk-build-io dest-dir app-ld dyn-ld single-threaded?)
+        deterministic? true
+        env (tclj0/mk-build-io dest-dir deterministic? app-ld dyn-ld)
         
         ns-str "tcljc.rtiow-nocore-ref"
         provided-nmsp (em/mk-provided-nmsp)

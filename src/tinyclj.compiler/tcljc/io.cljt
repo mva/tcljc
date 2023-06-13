@@ -119,13 +119,6 @@
   (read-1 [#_Ctx form-ctx eof-value]))
 
 (definterface NmspBuilder
-  ;; If true, then namespaces are visited in depth first order, and
-  ;; each namespace is compiled sequentially.  In particular, macro
-  ;; and syntax quote expansions happen in deterministic order, which
-  ;; in turn means that emitted class files are identical across
-  ;; builds.
-  (deterministic-namespace-compile? ^boolean [])
-  
   ;; Schedule the namespace `ns-str` for compilation, passing it
   ;; `provided-nmsp` as its map of known namespaces (string ->
   ;; Namespace).  Returns the Namespace instance for `ns-str`,
@@ -222,4 +215,6 @@
   (try-load-capstone ^Class [^String ns-str])
 
   ;; Called for every namespace in multi-threaded compilation mode.
-  (fork-namespace ^Future [^Callable f]))
+  (fork-namespace ^Future [^Callable f])
+
+  (build-all [^IPersistentMap builtin-nmsp ns-strs]))

@@ -77,9 +77,6 @@
         namespaces-q (java.util.concurrent.LinkedBlockingQueue.)]
     
     (reify NmspBuilder
-      (deterministic-namespace-compile? [_]
-        false)
-      
       (schedule [this ns-str provided-nmsp]
         (or
          ;; First peek into the current namespace map, and return a
@@ -167,9 +164,6 @@
 (defn single-threaded ^NmspBuilder [^BuildIO env ^IPersistentMap builtin-nmsp ns-strs]
   (let [!futs (java.util.HashMap.)]     ;single-threaded!
     (reify NmspBuilder
-      (deterministic-namespace-compile? [_]
-        true)
-
       (schedule [this ns-str provided-nmsp]
         (or (.get !futs ns-str)
 

@@ -299,7 +299,7 @@
             (let [x (classdata/extract bs)]
               (.put !render-to (classdata/class-name x) x))
             (.write-class-file build-files owner-nm bs)))
-        (tclj0/mk-build-io* app-ld dyn-ld false))))
+        (tclj0/mk-build-io* false app-ld dyn-ld))))
 
 (defn nmsp
   ([formv]
@@ -329,8 +329,6 @@
          known-ns
          (let [ns-str (aget ans-strs i)
                nmsp-builder (reify NmspBuilder
-                              (deterministic-namespace-compile? [_]
-                                true)
                               (schedule [_ ns-str provided-nmsp]
                                 (tcljc.emitter.namespace/mk-provided ns-str (get known-ns ns-str)))
                               (build-all [_]

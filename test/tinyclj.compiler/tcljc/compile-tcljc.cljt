@@ -33,15 +33,10 @@
         rt-lookup (cfg/get-rt-lookup app-ld)
         dyn-ld (cfg/dyn-class-loader app-ld (if load-from-dest-dir?
                                               [dest-dir]
-                                              []))
-        provided-nmsp (em/mk-provided-nmsp)
-        single-threaded? true
-        env (tclj0/mk-build-io dest-dir app-ld dyn-ld
-                               single-threaded?)]
-    (time (-> (if single-threaded?
-                (builder/single-threaded env provided-nmsp all-nmsps)
-                (builder/multi-threaded env provided-nmsp all-nmsps))
-              (.build-all)))))
+                                              []))]
+    (time
+     (-> (tclj0/mk-build-io dest-dir true app-ld dyn-ld)
+         (.build-all (em/mk-provided-nmsp) all-nmsps)))))
 
 (defn -main [& args]
   (try
