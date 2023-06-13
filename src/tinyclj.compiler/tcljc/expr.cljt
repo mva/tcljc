@@ -1007,7 +1007,9 @@
 ;; guarded by `as-expression`.
 
 (definterface FnPrimitiveFn
-  (assemble ^Expr [form args tl-ctx]))
+  ;; Pass `compile-io` into primitive function implementation so that
+  ;; `list-primitive` can look up c.l.IPersistentList.
+  (assemble ^Expr [form args ^tcljc.io.CompileIO compile-io]))
 
 (deftype PrimitiveFnRef [^:pass-to-super-constructor ^Object _form
                          ^:pass-to-super-constructor ^Class type

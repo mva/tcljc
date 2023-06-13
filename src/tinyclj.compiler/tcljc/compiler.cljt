@@ -152,19 +152,17 @@
                     (x/recover-primitive-const m)))
       (x/invoke-xref tp [x m] nil rt/mhd-with-meta false))))
 
-(defn- coll-literal ^Expr [^String tp-clnm elems ^DirectMethodHandleDesc mhd
-                           ^Ctx ctx]
-  (let [tp (ctx/get-type tp-clnm ctx)]
-    (if (every? x/const-value? elems)
-      (let [cs (map x/recover-primitive-const elems)]
-        (x/const tp (condp identical? mhd
-                      rt/mhd-vector (vec cs)
-                      rt/mhd-map (into {} (map vec) (partition 2 cs))
-                      rt/mhd-set (set cs)
-                      rt/mhd-list (or (list* cs) ())
-                      (throw (IllegalArgumentException.)))))
-      (x/mh-invoke-inexact tp (->> (map #(xf/coerce-vararg % jb/Object) elems)
-                                   (cons (x/const jb/MethodHandle mhd))) nil))))
+(defn- coll-literal ^Expr [^Class tp elems ^DirectMethodHandleDesc mhd]
+  (if (every? x/const-value? elems)
+    (let [cs (map x/recover-primitive-const elems)]
+      (x/const tp (condp identical? mhd
+                    rt/mhd-vector (vec cs)
+                    rt/mhd-map (into {} (map vec) (partition 2 cs))
+                    rt/mhd-set (set cs)
+                    rt/mhd-list (or (list* cs) ())
+                    (throw (IllegalArgumentException.)))))
+    (x/mh-invoke-inexact tp (->> (map #(xf/coerce-vararg % jb/Object) elems)
+                                 (cons (x/const jb/MethodHandle mhd))) nil)))
 
 (defn- compile-quote ^Expr [form ^Ctx ctx]
   (if (instance? IMeta form)
@@ -1196,9 +1194,9 @@
            (compile-atom (if-some [[k v] (find m :tag)]
                            (assoc m k (list cfg/sym-quote v))
                            m))))
-       (collection-form ^Expr [^String tp-nm elems ^DirectMethodHandleDesc mhd]
-         (coll-literal tp-nm (map conv/consume-poly (expr-forms elems))
-                       mhd (.ctx env)))
+       (collection-form ^Expr [^String tp-clnm elems ^DirectMethodHandleDesc mhd]
+         (coll-literal (ctx/get-type tp-clnm (.ctx env))
+                       (map conv/consume-poly (expr-forms elems)) mhd))
        (resolve-static-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
          (let [ns-part (namespace sym)]
            (if-some [tp (ctx/get-type (symbol nil ns-part) (.ctx env))]
@@ -1339,7 +1337,7 @@
                      (and (x/bref? x) (x/b-primitive? x))
                      (let [p ^PrimitiveFnRef (x/root-bref x)]
                        (.assemble (.primitive-fn p) form
-                                  (expr-forms (rest form)) (.ctx env)))
+                                  (expr-forms (rest form)) (compile-io env)))
                      
                      (and (x/bref? x) (x/b-macro? x))
                      (let [m ^MacroRef (x/root-bref x)]
@@ -1399,7 +1397,7 @@
 
 (defn primitive-conv-to ^FnPrimitiveFn [^Class to-tp]
   (let [conv-to-fn (conv/lookup-conv-to-fn* to-tp)]
-    (^FnPrimitiveFn fn [form argv tl-ctx]
+    (^FnPrimitiveFn fn [form argv compile-io]
      (wrong/check-argc 1 form)
      (let [arg ^Expr (nth argv 0)]
        (if (x/reference? arg)
@@ -1407,17 +1405,17 @@
          (conv/conv-to to-tp conv-to-fn arg))))))
 
 (def identity-primitive
-  (^FnPrimitiveFn fn [form argv tl-ctx]
+  (^FnPrimitiveFn fn [form argv compile-io]
    (wrong/check-argc 1 form)
    (x/identity (nth argv 0))))
 
 (def boolean-primitive
-  (^FnPrimitiveFn fn [form argv tl-ctx]
+  (^FnPrimitiveFn fn [form argv compile-io]
    (wrong/check-argc 1 form)
    (branch/conv-to-boolean (nth argv 0))))
 
 (def object-primitive
-  (^FnPrimitiveFn fn [form argv tl-ctx]
+  (^FnPrimitiveFn fn [form argv compile-io]
    (wrong/check-argc 1 form)
    (let [arg ^Expr (nth argv 0)]
      (cond
@@ -1426,20 +1424,21 @@
        :else (conv/box-expr arg)))))
 
 (def list-primitive
-  (^FnPrimitiveFn fn [form argv tl-ctx]
+  (^FnPrimitiveFn fn [form argv compile-io]
    ;; mirrors `collection-form`, with `args` being Exprs already
-   (coll-literal rt/clnm-list argv rt/mhd-list tl-ctx)))
+   (let [tp (.resolveConstantDesc rt/list (.lookup-in-pkg compile-io))]
+     (coll-literal tp argv rt/mhd-list))))
 
 (def not-primitive
-  (^FnPrimitiveFn fn [form argv tl-ctx]
-   (-> (.assemble boolean-primitive form argv tl-ctx) ;also checks argc
+  (^FnPrimitiveFn fn [form argv compile-io]
+   (-> (.assemble boolean-primitive form argv compile-io) ;also checks argc
        (xf/icmp x/expr-false cf/eq))))
 
 (def ^:private dyn-mark "\u0001")
 (def ^:private const-mark "\u0002")
 (def ^:private re-marks #"[\u0001\u0002]") ;note: hash of Pattern is not stable
 (def concat-primitive
-  (^FnPrimitiveFn fn [form argv tl-ctx] ;aka `str`
+  (^FnPrimitiveFn fn [form argv compile-io] ;aka `str`
    (loop [rparts nil, dyn-args nil, const-args nil, i 0]
      (if (= i (count argv))
        (let [rstr (str/join "" (reverse rparts))
@@ -1488,7 +1487,7 @@
    (cf/bc2opc base-opcode (typed-opcode tp))))
 
 (defn arith-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args compile-io]
    (when (some? form)
      (wrong/check-argc 2 form))         ;unless called by nary-numeric
    (let [arg0 (conv/ensure-numeric (nth args 0))
@@ -1498,8 +1497,8 @@
                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (def arith-2-xdiv-int
-  (^FnPrimitiveFn fn [form args tl-ctx]
-   (let [x (.assemble (arith-2 Opcode/IDIV) form args tl-ctx)]
+  (^FnPrimitiveFn fn [form args compile-io]
+   (let [x (.assemble (arith-2 Opcode/IDIV) form args compile-io)]
      ;; FIXME... this does not work if the result is out of range of
      ;; long; maybe better: truncate with something along the line of
      ;; `(if (neg? x) (Math/ceil x) (Math/floor x))` (or put this into
@@ -1519,7 +1518,7 @@
     (x/wrong-type "expect float or double expression" from)))
 
 (defn arith-2-float ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args compile-io]
    (when (some? form)
      (wrong/check-argc 2 form))         ;unless called by nary-numeric
    (let [arg0 (ensure-float (nth args 0))
@@ -1534,7 +1533,7 @@
     (x/wrong-type "expect integral expression" from)))
 
 (defn bits-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args compile-io]
    (when (some? form)
      (wrong/check-argc 2 form))         ;unless called by nary-numeric
    (let [arg0 (ensure-integral (nth args 0))
@@ -1544,7 +1543,7 @@
                 (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (defn shift-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args compile-io]
    (wrong/check-argc 2 form)
    (let [arg0 (ensure-integral (nth args 0))
          arg1 (ensure-int (nth args 1))
@@ -1553,25 +1552,25 @@
 
 
 (defn nary-numeric ^FnPrimitiveFn [^int min-argc ^Expr id ^FnPrimitiveFn pfn]
-  (^FnPrimitiveFn fn [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args compile-io]
    (wrong/check-argc-min min-argc form)
    (case (bounded-count 3 args)
      0 id
-     1 (.assemble pfn nil (list id (first args)) tl-ctx)
-     2 (.assemble pfn form args tl-ctx)
-     (reduce #(.assemble pfn nil (list %1 %2) tl-ctx) (first args) (rest args)))))
+     1 (.assemble pfn nil (list id (first args)) compile-io)
+     2 (.assemble pfn form args compile-io)
+     (reduce #(.assemble pfn nil (list %1 %2) compile-io) (first args) (rest args)))))
 
 ;;; ------------------------------------------------------------------------
 
 (def xdefault
-  (^FnPrimitiveFn fn [form [arg0] tl-ctx] ;discards argument!
+  (^FnPrimitiveFn fn [form [arg0] compile-io] ;discards argument!
    (wrong/check-argc 1 form)
    (conv/expr-default (x/type arg0))))
 
 ;;; ------------------------------------------------------------------------
 
 (defn binary-cmp ^FnPrimitiveFn [^int cmp-opcd]
-  (^FnPrimitiveFn fn [form [arg0 arg1] tl-ctx]
+  (^FnPrimitiveFn fn [form [arg0 arg1] compile-io]
    (when form
      (wrong/check-argc 2 form))         ;unless called by nary-cmp
    (branch/xcmp cmp-opcd arg0 arg1)))
@@ -1582,7 +1581,7 @@
     (x/wrong-type "expect reference expression" from)))
 
 (defn binary-cmp-ref ^FnPrimitiveFn [^int cmp-opcd]
-  (^FnPrimitiveFn fn [form [arg0 arg1] tl-ctx]
+  (^FnPrimitiveFn fn [form [arg0 arg1] compile-io]
    (wrong/check-argc 2 form)
    (xf/acmp (ensure-reference arg0) (ensure-reference arg1) cmp-opcd)))
 
@@ -1601,17 +1600,17 @@
           (recur (conj bexprs b) (conj brefs bref) argr))))))
 
 (defn nary-cmp ^FnPrimitiveFn [^FnPrimitiveFn binary-pfn]
-  (^FnPrimitiveFn fn [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args compile-io]
    (wrong/check-argc-min 1 form)
    (case (bounded-count 3 args)
      1 (xf/prog2-expr (nth args 0) x/expr-true)
-     2 (.assemble binary-pfn form args tl-ctx)
+     2 (.assemble binary-pfn form args compile-io)
      ;; Compute all arguments beforehand, otherwise the short circuit
      ;; logic of `if` may skip their exceptions.  Expand as primitive
      ;; instead of macro, because a macro would depend on gensym.
      (let [[bexprs brefs] (as-anonymous-bindings args)
            res (reduce (fn [cont [ref1 ref2]]
-                         (let [test (.assemble binary-pfn nil [ref1 ref2] tl-ctx)]
+                         (let [test (.assemble binary-pfn nil [ref1 ref2] compile-io)]
                            (branch/if-expr test cont x/expr-false)))
                        x/expr-true
                        (reverse (partition 2 1 brefs)))]
@@ -1623,7 +1622,7 @@
 ;;; (hash 0.0) map to zero.  This means that `=` can be lowered to
 ;;; `==` for floating point types as well.
 (def equiv
-  (^FnPrimitiveFn fn [form [arg0 arg1] tl-ctx]
+  (^FnPrimitiveFn fn [form [arg0 arg1] compile-io]
    (letfn [(equiv-if-identical? ^boolean [^Expr x]
              (let [tp (x/type x)]
                (or (jb/same-class? Class tp)
@@ -1652,12 +1651,12 @@
     (x/wrong-type "expect array expression" x)))
 
 (def alength-form
-  (^FnPrimitiveFn fn [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args compile-io]
    (wrong/check-argc 1 form)
    (x/array-length (ensure-array (nth args 0)))))
 
 (def array-copy-of-form
-  (^FnPrimitiveFn fn [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args compile-io]
    (wrong/check-argc 1 form)
    (let [a (ensure-array (nth args 0))
          atp (x/type a)
@@ -1671,7 +1670,7 @@
      (xf/coerce x atp))))
 
 (def xaload-form
-  (^FnPrimitiveFn fn [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args compile-io]
    (wrong/check-argc 2 form)
    (let [a (ensure-array (nth args 0))
          i (ensure-int (nth args 1))
@@ -1681,7 +1680,7 @@
               (jdk.internal.classfile.instruction.ArrayLoadInstruction/of opc)))))
 
 (def xastore-form
-  (^FnPrimitiveFn fn [form args tl-ctx]
+  (^FnPrimitiveFn fn [form args compile-io]
    ;; Unlike the xASTORE bytecode, this primitive returns the stored
    ;; value.  If passed to `as-statement`, the final "DUP*" argument
    ;; can be dropped in favour of doing the matching "POP*".

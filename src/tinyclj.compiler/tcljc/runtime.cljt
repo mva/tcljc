@@ -118,7 +118,7 @@
 (def ^:private vector (ClassDesc/of clnm-vector))
 (def map (ClassDesc/of clnm-map))
 (def ^:private set (ClassDesc/of clnm-set))
-(def ^:private list (ClassDesc/of clnm-list))
+(def list (ClassDesc/of clnm-list))
 (def ^:private seq (ClassDesc/of clnm-seq))
 (def pattern (ClassDesc/of "java.util.regex.Pattern"))
 (def iobj (ClassDesc/of clnm-iobj))
