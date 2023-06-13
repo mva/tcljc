@@ -23,19 +23,19 @@
    [tcljc.main.efmt :as efmt]
    [tcljc.main.invoke :as invoke]
    [tcljc.main.publics :as publics]
+   [tcljc.main.task :as task]
    [tcljc.main.builder :as builder]
    [tinyclj.string :as str])
   (:import
    (tcljc.io BuildFiles BuildIO NmspIO CompileIO NmspBuilder Msg)
    (tcljc.main.options Options)
+   (tcljc.main.task TaskScope)
    (clojure.lang IPersistentMap IPersistentSet ExceptionInfo)
    (java.lang.invoke MethodHandles MethodHandles$Lookup MethodHandle)
    (java.net URL)
    (java.nio.file Path Files)
    (java.util HashSet)
-   (java.util.concurrent ConcurrentHashMap ArrayBlockingQueue
-                         CompletableFuture ExecutorService Executors
-                         TimeUnit TimeoutException)
+   (java.util.concurrent ConcurrentHashMap ArrayBlockingQueue)
    (java.util.concurrent.atomic AtomicBoolean)))
 
 ;;; Implementation of in/out infrastructure when running the compiler
@@ -44,9 +44,8 @@
 (deftype CompileIOImpl [^MethodHandles$Lookup lookup-in-pkg 
                         ^MethodHandle apply-mh
                         ^ConcurrentHashMap private-name-map
-                        ^ExecutorService fct-task-scope
+                        ^TaskScope fct-task-scope
                         ^ArrayBlockingQueue compile-to-emit-q
-                        ^Object binding-frame
                         ^boolean collect-macro-definitions?]
   CompileIO
   (lookup-in-pkg [_]
@@ -89,7 +88,7 @@
       (macro/apply-macro-mapped apply-mh f form env)))
   (send-to-emit [_ task x]
     (if (io/needs-response? task)
-      (let [fut (CompletableFuture.)]
+      (let [fut (java.util.concurrent.CompletableFuture.)]
         (.put compile-to-emit-q
               (Msg. task x fut collect-macro-definitions?))
         (let [resp (io/wait-for-result fut)]
@@ -100,23 +99,11 @@
                 (Msg. task x nil collect-macro-definitions?))
           nil)))
   (fork-function [_ f]
-    (if (some? fct-task-scope)
-      ;; Carry *out* and *err* into threads.  Compiler code running
-      ;; in unit tests should use the *out* and *err* bound by
-      ;; ptest.
-      (try
-        (.submit fct-task-scope
-                 (^Callable fn []
-                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                  (.call f)))
-        (catch Throwable t
-          (.printStackTrace t)
-          (throw t)))
-      (java.util.concurrent.CompletableFuture/completedFuture (.call f))))
+    (.fork-task fct-task-scope true f))
   (compile-io-in [_ cl]
     (CompileIOImpl. (.in lookup-in-pkg cl) apply-mh private-name-map
                     fct-task-scope compile-to-emit-q
-                    binding-frame collect-macro-definitions?)))
+                    collect-macro-definitions?)))
 
 (defn- get-apply-mh ^MethodHandle [^MethodHandles$Lookup rt-lookup]
   (let [compiler-rt-witness tinyclj.lang.AFnMh
@@ -141,12 +128,11 @@
                      ^String source-file-attribute
 
                      ^NmspBuilder nmsp-builder
-                     ^ExecutorService nmsp-task-scope
+                     ^TaskScope nmsp-task-scope
                      
                      ^AtomicBoolean pkg-dir-prepared
                      ^tcljc.classfile.CHR dyn-chr
-                     ^ArrayBlockingQueue compile-to-emit-q
-                     ^Object binding-frame]
+                     ^ArrayBlockingQueue compile-to-emit-q]
   NmspIO
   (compile-io [_]
     compile-io)
@@ -174,7 +160,7 @@
                    rpath rurl !rpath-set src-file-attr
                    nmsp-builder nmsp-task-scope
                    pkg-dir-prepared dyn-chr
-                   compile-to-emit-q binding-frame)))
+                   compile-to-emit-q)))
   (assoc-source-file [_ ^ExceptionInfo e]
     (wrong/assoc-if-new e :file/resource-url rurl))
   (forms-reader [_]
@@ -216,24 +202,12 @@
   (recv-from-compile [this]
     (.take compile-to-emit-q))
   
-  (fork-worker [_ f fork-work?]
-    (if fork-work?
-      (try
-        (.submit nmsp-task-scope
-                 (^Callable fn []
-                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                  (.call f)))
-        (catch Throwable t
-          (.printStackTrace t)
-          (throw t)))
-      (java.util.concurrent.CompletableFuture/completedFuture (.call f))))
+  (fork-worker [_ fork-work? f]
+    (.fork-task nmsp-task-scope fork-work? f))
   (stop [_ abort?]
-    (when-some [sts nmsp-task-scope]
-      (.shutdown sts)
-      (when-not abort?
-        (when-not (.awaitTermination sts 5 TimeUnit/SECONDS)
-          (throw (TimeoutException.)))
-        (.close sts)))))
+    (if abort?
+      (.shutdown-without-close nmsp-task-scope)
+      (.wait-then-close nmsp-task-scope))))
 
 ;; Source files are obtained from `app-ld` via `.getResource`.  If the
 ;; parent classloader is :system, then `app-ld` also provides
@@ -262,7 +236,7 @@
 (deftype BuildIOImpl
     [^BuildFiles build-files
      ^MethodHandles$Lookup rt-lookup    ;to access module tinyclj.rt
-     ^ExecutorService build-task-scope  ;nil if deterministic?
+     ^boolean deterministic?
      ^IPersistentMap initial-imports
      ^ClassLoader dyn-ld
      ^tcljc.classfile.CHR dyn-chr
@@ -290,16 +264,16 @@
             ;; compilation and an emit thread; when no `nmsp-builder`
             ;; is present, then assume its a namespace import
             nmsp-task-scope (when (some? nmsp-builder)
-                              (Executors/newVirtualThreadPerTaskExecutor))
-            deterministic? (nil? build-task-scope)
-            fct-task-scope (when (and (some? nmsp-builder) (not deterministic?))
-                             nmsp-task-scope)
+                              (task/virtual-thread-per-task-scope binding-frame))
+            fct-task-scope (if (and (some? nmsp-builder) (not deterministic?))
+                             nmsp-task-scope
+                             (task/calling-task-scope))
             compile-io (CompileIOImpl. lookup-in-pkg (get-apply-mh rt-lookup)
-                                       (ConcurrentHashMap.) fct-task-scope compile-to-emit-q
-                                       binding-frame deterministic?)]
+                                       (ConcurrentHashMap.) fct-task-scope
+                                       compile-to-emit-q deterministic?)]
         (NmspIOImpl. build-files compile-io rt-lookup initial-imports initial-globals
                      nil nil !rpath-set nil nmsp-builder nmsp-task-scope pdp dyn-chr
-                     compile-to-emit-q binding-frame)))
+                     compile-to-emit-q)))
         
     (try-load-capstone [_ ns-str]
       (try
@@ -307,20 +281,10 @@
         (catch ClassNotFoundException _
           nil)))
 
-    (fork-namespace [_ f]
-      (try
-        (.submit build-task-scope
-                 (^Callable fn []
-                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                  (.call f)))
-        (catch Throwable t
-          (.printStackTrace t)
-          (throw t))))
-
     (build-all [this builtin-nmsp ns-strs]
-      (let [b (if (nil? build-task-scope) ;deterministic?
+      (let [b (if deterministic?
                 (builder/single-threaded this builtin-nmsp ns-strs)
-                (builder/multi-threaded this builtin-nmsp ns-strs))]
+                (builder/multi-threaded this builtin-nmsp ns-strs binding-frame))]
         (.build-all b))))
 
 (defn mk-build-io* ^BuildIO [^BuildFiles build-files ^boolean deterministic?
@@ -337,9 +301,7 @@
                                     'set rt/clnm-set
                                     'list rt/clnm-list
                                     'seq rt/clnm-seq})]
-    (BuildIOImpl. build-files rt-lookup
-                  (when-not deterministic?
-                    (Executors/newVirtualThreadPerTaskExecutor))
+    (BuildIOImpl. build-files rt-lookup deterministic?
                   initial-imports dyn-ld (cf/mk-chr dyn-ld)
                   (clojure.lang.Var/cloneThreadBindingFrame))))
 

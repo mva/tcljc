@@ -199,7 +199,7 @@
 
   ;; Called for the namespace's top-level compile thread, and to write
   ;; out a namespace segment's class file.
-  (fork-worker ^Future [^Callable f ^boolean fork-work?])
+  (fork-worker ^Future [^boolean fork-work? ^Callable f])
 
   ;; No need to call `stop-nmsp` if the initial instanace was created
   ;; with a `nmsp-builder` of nil.
@@ -213,8 +213,5 @@
   ;; Returns the capstone class for `ns-str` if it is part of the
   ;; dynamic class loader, and nil otherwise.
   (try-load-capstone ^Class [^String ns-str])
-
-  ;; Called for every namespace in multi-threaded compilation mode.
-  (fork-namespace ^Future [^Callable f])
 
   (build-all [^IPersistentMap builtin-nmsp ns-strs]))

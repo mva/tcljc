@@ -201,11 +201,10 @@
   (letfn [(schedule-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
             (if-some [cbh (.fn-cbh (.emit-plan fnc))]
               (with-fn-class-fut segm
-                (.fork-worker (.nmsp-io segm)
+                (.fork-worker (.nmsp-io segm) cfg/fork-work?
                               (^Callable fn []
                                (.produce-class (.nmsp-io segm)
-                                               ^ClassDesc (.ld-clx fnc) cbh))
-                              cfg/fork-work?))
+                                               ^ClassDesc (.ld-clx fnc) cbh))))
               segm))
           (schedule-fn-classes ^SegmState [^SegmState segm ^TopLevelForm tlf]
             (let [segm (with-tlf segm tlf)
@@ -363,7 +362,7 @@
                   (catch Throwable t
                     (.send-to-emit (-> segm .nmsp-io .compile-io)
                                    io/msg-fatal-error t))))
-          c-thread (.fork-worker (.nmsp-io segm) c-fn true)
+          c-thread (.fork-worker (.nmsp-io segm) true c-fn)
           nmsp (emit-segments segm)]
       (.get c-thread)                   ;pick up any exceptions
       nmsp)))

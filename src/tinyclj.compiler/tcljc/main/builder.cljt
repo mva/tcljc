@@ -12,14 +12,15 @@
    [tcljc.context :as ctx]
    [tcljc.io :as io]
    [tcljc.emitter :as em]
-   [tcljc.emitter.namespace :as nmsp])
+   [tcljc.emitter.namespace :as nmsp]
+   [tcljc.main.task :as task])
   (:import
    (tcljc.io BuildIO NmspBuilder)
    (tcljc.emitter.namespace Namespace)
+   (tcljc.main.task TaskScope)
    (clojure.lang IPersistentMap)
    (java.util Map)
-   (java.util.concurrent Future CompletableFuture ConcurrentHashMap
-                         ExecutorService Executors TimeUnit TimeoutException)))
+   (java.util.concurrent Future CompletableFuture ConcurrentHashMap)))
 
 ;;; Returns a map of namespaces that have been reached by the build
 ;;; attempt.  Key is the name of the namespace (a string).  Value is a
@@ -71,9 +72,10 @@
 ;;; Any compilation error causes an ExceptionInfo exception whose
 ;;; entry :emitter/namespaces is a dependency map.
 
-(defn multi-threaded ^NmspBuilder [^BuildIO env ^IPersistentMap builtin-nmsp ns-strs]
+(defn multi-threaded ^NmspBuilder [^BuildIO env ^IPersistentMap builtin-nmsp
+                                   ns-strs binding-frame]
   (let [!futs (ConcurrentHashMap.)      ;updated by this thread only
-        build-task-scope (Executors/newVirtualThreadPerTaskExecutor)
+        build-task-scope (task/virtual-thread-per-task-scope binding-frame)
         namespaces-q (java.util.concurrent.LinkedBlockingQueue.)]
     
     (reify NmspBuilder
@@ -105,7 +107,7 @@
                              (em/compile-and-emit nmsp-io ns-str provided-nmsp)
                              (finally ;signal completion to namespace loop
                                (.put namespaces-q [ns-str]))))))
-                       (.fork-namespace env)))
+                       (.fork-task build-task-scope true)))
             
                 (fork-all! ^int [ns-strs] ;returns number of new namespaces
                   ;; this thread owns !futs and there are no concurrent
@@ -151,14 +153,11 @@
               (dotimes [i (alength a)]
                 (io/get-result-now (.get !futs (aget a i))))) ;forces exception
             
-            (.shutdown build-task-scope)
-            (when-not (.awaitTermination build-task-scope 5 TimeUnit/SECONDS)
-              (throw (TimeoutException.)))
-            (.close build-task-scope)
+            (.wait-then-close build-task-scope)
             (into {} !futs)
             
             (catch Throwable t
-              (.shutdown build-task-scope)
+              (.shutdown-without-close build-task-scope)
               (throw (wrong/assoc-dep-map t (dependency-map !futs))))))))))
 
 (defn single-threaded ^NmspBuilder [^BuildIO env ^IPersistentMap builtin-nmsp ns-strs]

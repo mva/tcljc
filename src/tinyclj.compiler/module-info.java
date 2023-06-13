@@ -31,6 +31,7 @@
   exports tcljc.main.invoke;
   exports tcljc.main.options;
   exports tcljc.main.publics;
+  exports tcljc.main.task;
   exports tcljc.main.tclj0;
   exports tcljc.main.tclj1;
   exports tcljc.main.watcher;

@@ -1,0 +1,67 @@
+;; Copyright (c) Michael van Acken. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https://www.eclipse.org/legal/epl-v20.html)
+;; which can be found in the file epl-v20.html at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+(ns tcljc.main.task
+  (:import
+   (java.util.concurrent Future CompletableFuture ExecutorService Executors
+                         TimeUnit Semaphore)))
+
+;;; TaskScope is a wrapper around ExecutorService with support for
+;;; recursive subdivision of tasks.  It also sets a provided binding
+;;; frame within submitted tasks.
+(definterface TaskScope
+  (fork-task ^Future [^boolean fork-work? ^Callable f])
+  (shutdown-without-close ^void [])
+  (wait-then-close ^void []))
+
+
+;;; Semaphore `sem` is used to wait until all tasks have completed
+;;; before calling `close`.  `binding-frame` carries *out* and *err*
+;;; into threads.
+(deftype VirtualThreadPerTaskScope [^ExecutorService exec-service
+                                    ^Semaphore sem ;MAX_VALUE when quiescent
+                                    binding-frame]
+  TaskScope
+  (fork-task [_ fork-work? f]
+    (.acquire sem)
+    (try
+      (if fork-work?
+        (try
+          (.submit exec-service
+                   (^Callable fn []
+                    (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                    (.call f)))
+          (catch Throwable t
+            (.printStackTrace t)
+            (throw t)))
+        (CompletableFuture/completedFuture (.call f)))
+      (finally
+        (.release sem))))
+  (shutdown-without-close [_]
+    (.shutdown exec-service))
+  (wait-then-close [_]
+    ;; only continue after all permits have been released again
+    (.tryAcquire sem Integer/MAX_VALUE 60 TimeUnit/SECONDS)
+    (.close exec-service)))
+
+(defn virtual-thread-per-task-scope ^TaskScope [binding-frame]
+  (VirtualThreadPerTaskScope.
+   (Executors/newVirtualThreadPerTaskExecutor)
+   (Semaphore. Integer/MAX_VALUE) binding-frame))
+
+
+;;; "No operation" task scope that simply calls the provided closure.
+(deftype CallingTaskScope []
+  TaskScope
+  (fork-task [_ fork-work? f]
+    (CompletableFuture/completedFuture (.call f)))
+  (shutdown-without-close [_]
+    nil)
+  (wait-then-close [_]
+    nil))
+
+(def calling-task-scope ->CallingTaskScope)
