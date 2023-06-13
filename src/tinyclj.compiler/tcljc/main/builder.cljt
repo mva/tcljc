@@ -108,7 +108,7 @@
                              (em/compile-and-emit nmsp-io ns-str provided-nmsp)
                              (finally ;signal completion to namespace loop
                                (.put namespaces-q [ns-str]))))))
-                       (.fork-task env build-task-scope)))
+                       (.fork-namespace env)))
             
                 (fork-all! ^int [ns-strs] ;returns number of new namespaces
                   ;; this thread owns !futs and there are no concurrent

@@ -262,12 +262,12 @@
 (deftype BuildIOImpl
     [^BuildFiles build-files
      ^MethodHandles$Lookup rt-lookup    ;to access module tinyclj.rt
-
+     ^ExecutorService build-task-scope
      ^IPersistentMap initial-imports
      ^ClassLoader dyn-ld
      ^tcljc.classfile.CHR dyn-chr
-     binding-frame              ;to carry *out* and *err* into threads
-     ^boolean collect-macro-definitions?]
+     binding-frame]             ;to carry *out* and *err* into threads
+     
     tcljc.io.BuildIO
     (start-nmsp-io-for [build-io str-or-class nmsp-builder]
       (let [ns-str (if (string? str-or-class)
@@ -286,11 +286,15 @@
             !rpath-set (HashSet.)
             pdp (java.util.concurrent.atomic.AtomicBoolean. false)
 
+            ;; namespace compilation is always distributed across a
+            ;; compilation and an emit thread; when no `nmsp-builder`
+            ;; is present, then assume its a namespace import
             nmsp-task-scope (when (some? nmsp-builder)
                               (Executors/newVirtualThreadPerTaskExecutor))
             fct-task-scope (when (and (some? nmsp-builder)
                                       (not (.deterministic-namespace-compile? nmsp-builder)))
                              nmsp-task-scope)
+            collect-macro-definitions? (nil? build-task-scope)
             compile-io (CompileIOImpl. lookup-in-pkg (get-apply-mh rt-lookup)
                                        (ConcurrentHashMap.) fct-task-scope compile-to-emit-q
                                        binding-frame collect-macro-definitions?)]
@@ -304,18 +308,19 @@
         (catch ClassNotFoundException _
           nil)))
 
-    (fork-task [_ sts f]
+    (fork-namespace [_ f]
       (try
-        (.submit sts (^Callable fn []
-                      (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                      (.call f)))
+        (.submit build-task-scope
+                 (^Callable fn []
+                  (clojure.lang.Var/resetThreadBindingFrame binding-frame)
+                  (.call f)))
         (catch Throwable t
           (.printStackTrace t)
           (throw t)))))
 
 (defn mk-build-io* ^BuildIO [^BuildFiles build-files
                              ^ClassLoader app-ld ^ClassLoader dyn-ld
-                             ^boolean collect-macro-definitions?]
+                             ^boolean single-threaded?]
   (let [rt-lookup (cfg/get-rt-lookup app-ld)
         initial-imports (reduce-kv (fn [acc nm-sym clnm]
                                      (let [cl (.findClass rt-lookup clnm)]
@@ -328,16 +333,17 @@
                                     'set rt/clnm-set
                                     'list rt/clnm-list
                                     'seq rt/clnm-seq})]
-    (BuildIOImpl. build-files
-                  rt-lookup initial-imports dyn-ld (cf/mk-chr dyn-ld)
-                  (clojure.lang.Var/cloneThreadBindingFrame)
-                  collect-macro-definitions?)))
+    (BuildIOImpl. build-files rt-lookup
+                  (when-not single-threaded?
+                    (Executors/newVirtualThreadPerTaskExecutor))
+                  initial-imports dyn-ld (cf/mk-chr dyn-ld)
+                  (clojure.lang.Var/cloneThreadBindingFrame))))
 
 (defn mk-build-io ^BuildIO [^Path dest-dir
                             ^ClassLoader app-ld ^ClassLoader dyn-ld
-                            ^boolean collect-macro-definitions?]
+                            ^boolean single-threaded?]
   (-> (mk-build-files app-ld dest-dir)
-      (mk-build-io* app-ld dyn-ld collect-macro-definitions?)))
+      (mk-build-io* app-ld dyn-ld single-threaded?)))
 
 ;;; ------------------------------------------------------------------------
 

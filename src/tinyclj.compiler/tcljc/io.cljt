@@ -14,8 +14,7 @@
    (java.net URL)
    (java.nio.file Path)
    (java.util HashSet)
-   (java.util.concurrent Future ExecutorService CompletableFuture
-                         BlockingQueue TimeUnit)
+   (java.util.concurrent Future CompletableFuture TimeUnit)
    (java.util.function Consumer)))
 
 ;;; General framework for interfacing to file system (source input &
@@ -223,5 +222,4 @@
   (try-load-capstone ^Class [^String ns-str])
 
   ;; Called for every namespace in multi-threaded compilation mode.
-  ;; NmspIO also delegates to this method.
-  (fork-task ^Future [^ExecutorService sts ^Callable f]))
+  (fork-namespace ^Future [^Callable f]))
