@@ -85,7 +85,7 @@
                   (.append sb p)
                   (recur pr colp))
               (do (.append sb (System/lineSeparator))
-                  (.append sb (.repeat " " indent))
+                  (.repeat sb " " indent)
                   (recur parts indent)))))))))
 
 (defn- fit-indent ^String [^String prefix parts]

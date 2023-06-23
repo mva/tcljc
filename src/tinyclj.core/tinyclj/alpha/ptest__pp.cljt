@@ -325,6 +325,9 @@
 (defn- more? ^boolean [^Line l]
   (not (identical? last-ctx (.eol l))))
 
+(defn- padding ^void [^StringBuilder sb ^int n]
+  (.repeat sb " " n))
+
 (defn pretty1* 
   (^IPersistentVector [^int page-width ^Doc doc]
    (let [acc (ArrayList.)            ;accumulates lines
@@ -416,7 +419,7 @@
                ;; if necessary, add blanks to match pad's last line
                (if (or (neg? n) (<= m 0))
                  wl ;`pad` has less lines than `doc` or nothing to add
-                 (do (.append sb (.repeat " " m))
+                 (do (padding sb m)
                      wl-p))))
            
            ;; Returns remaining width after `doc` has been emitted.
@@ -441,15 +444,12 @@
      
      (format width-left reserve ctx doc))))
 
-(defn- padding ^String [^int n]         ;FIXME... do some memoizing here?
-  (.repeat " " n))
-
 (defn lines-str ^String [^IPersistentVector lv]
   (let [sb (StringBuilder.)]
     (when (pos? (count lv))
       (loop [ctx initial-ctx, i 0]
         (let [l ^Line (nth lv i)]
-          (.append sb (padding (.indent ctx)))
+          (padding sb (.indent ctx))
           (.append sb (.text l))
           (when (more? l)
             (.append sb \newline)
@@ -470,7 +470,7 @@
                 (set-style (.parent ctx))
                 (.append sb (.set-style ctx))))
             (append-side ^void [^int n ^Ctx ctx ^String text ^Ctx eol]
-              (.append sb (padding (+ n (.indent ctx))))
+              (padding sb (+ n (.indent ctx)))
               (set-style ctx)
               (.append sb text)
               (set-default eol))]

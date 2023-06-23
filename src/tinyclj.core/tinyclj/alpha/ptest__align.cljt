@@ -277,9 +277,9 @@
 (defn valign-pairings [ps]
   (let [a (StringBuilder.), b (StringBuilder.)]
     (letfn [(append-to ^void [^StringBuilder sb ^int mask ^Pairing p]
-              (.append sb (if (zero? (bit-and mask (.mask p)))
-                            (.repeat " " (.length (.s p)))
-                            (.s p))))
+              (if (zero? (bit-and mask (.mask p)))
+                (.repeat sb " " (.length (.s p)))
+                (.append sb (.s p))))
             (append-p ^void [^Pairing p]
               (append-to a part-of-a p)
               (append-to b part-of-b p))
