@@ -20,7 +20,8 @@
                    (-> (.invokestatic xb cd-MethodHandles "lookup"
                                       (MethodTypeDesc/of cd-Lookup))
                        (.areturn)))]
-      (Classfile/build
+      (.build
+       (Classfile/of)
        (ClassDesc/of pkg-name nm-beachhead)
        (cf/with-cbh [cb]
          (-> (cf/with-version cb)

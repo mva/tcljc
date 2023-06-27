@@ -416,7 +416,7 @@
         (field-data [^FieldModel fm]
           (into [(field-header fm)] (keep field-element) (.elements fm)))]
   (defn extract [^bytes bs]
-    (let [cm (Classfile/parse bs)]
+    (let [cm (-> (Classfile/of) (.parse bs))]
       (-> [(class-header cm)]
           (into (map field-data) (.fields cm))
           (into (map method-data) (.methods cm))))))

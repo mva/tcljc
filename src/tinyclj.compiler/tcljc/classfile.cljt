@@ -11,7 +11,7 @@
    [tcljc.runtime :as rt])
   (:import
    (clojure.lang IPersistentVector)
-   (jdk.internal.classfile Classfile Classfile$Option ClassHierarchyResolver
+   (jdk.internal.classfile Classfile ClassHierarchyResolver
                   ClassHierarchyResolver$ClassHierarchyInfo
                   Opcode TypeKind ClassBuilder MethodBuilder CodeBuilder Label)
    (jdk.internal.classfile.attribute SourceFileAttribute)
@@ -173,12 +173,13 @@
 
 (defn build
   (^bytes [^ClassDesc this-class ^Consumer cbh] ;for ephemeral classes
-   (Classfile/build this-class cbh))
+   (-> (Classfile/of) (.build this-class cbh)))
   (^bytes [^ClassDesc this-class ^Consumer cbh
            ^ClassHierarchyResolver dyn-chr]
-   (let [options [(Classfile$Option/patchDeadCode false)
-                  (Classfile$Option/classHierarchyResolver dyn-chr)]]
-     (Classfile/build this-class ^java.util.Collection options cbh))))
+   (-> (Classfile/of
+        jdk.internal.classfile.Classfile$DeadCodeOption/KEEP_DEAD_CODE
+        (jdk.internal.classfile.Classfile$ClassHierarchyResolverOption/of dyn-chr))
+       (.build this-class cbh))))
 
 (defn with-version ^ClassBuilder [^ClassBuilder cb]
   (let [major Classfile/JAVA_17_VERSION
