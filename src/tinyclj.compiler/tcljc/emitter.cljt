@@ -182,15 +182,16 @@
 
 (defn- mk-capstone ^Namespace [^NmspIO nmsp-io ^Ctx ctx
                                ^IPersistentMap provided-nmsp
-                               ^IPersistentSet req-strs ^Class capstone]
+                               ^IPersistentSet req-strs ^Class capstone
+                               ^boolean imported?]
   (let [publics (.extract-publics nmsp-io (.get-known-ns ctx) capstone)
         ;; do not re-export namespaces from `provided-nmsp`, because
         ;; this would cause obsoleted versions of the core namespace
         ;; to reach downstream namespaces like tinyclj.java.io
         kns (-> (reduce dissoc (.get-known-ns ctx) (keys provided-nmsp))
                 (assoc (.ns-str ctx) publics))]
-    (Namespace. nil nil nil ;clear `provided-nmsp`, `ctx`, `primary-nmsp-io`
-                req-strs capstone kns)))
+    (Namespace. nil nil nmsp-io         ;clear `provided-nmsp` & `ctx`
+                req-strs capstone kns imported?)))
 
 (defn- mk-first-segm ^SegmState [^NmspIO nmsp-io ^Ctx ctx]
   (let [cld (ClassDesc/of (.ns-str ctx)
@@ -260,7 +261,7 @@
                   cl (.produce-class nmsp-io (capstone-cld segm)
                                      (builder-capstone segm nmsp))]
               (mk-capstone nmsp-io (.ctx nmsp) (.provided-nmsp nmsp)
-                           (.req-strs nmsp) cl)))
+                           (.req-strs nmsp) cl false)))
           
           (fn-specs-from-methods ^IPersistentVector [mdefs ^SegmState segm]
             (reduce
@@ -408,7 +409,8 @@
             (let [ns-str (aget req-strs i)
                   ekns (.exported-known-ns (nmsp/nmsp-of (aget a i) ns-str))]
               (recur (merge publics-map ekns) (inc i)))))
-        (mk-capstone nmsp-io ctx provided-nmsp (into #{} req-strs) capstone)))))
+        (mk-capstone nmsp-io ctx provided-nmsp (into #{} req-strs) capstone
+                     true)))))
 
 ;;; ------------------------------------------------------------------------
 

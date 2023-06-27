@@ -29,33 +29,34 @@
 
 (deftype Namespace [^IPersistentMap provided-nmsp ;string -> Namespace
                     ^Ctx ctx
-                    ^NmspIO primary-nmsp-io ;nil if imported
+                    ^NmspIO primary-nmsp-io
                     
                     ^IPersistentSet req-strs
                     ^Class capstone     ;for invoke after build
-                    ^IPersistentMap exported-known-ns])
+                    ^IPersistentMap exported-known-ns
+                    ^boolean imported?])
 
 (defn mk-nmsp ^Namespace [^IPersistentMap provided-nmsp ^NmspIO nmsp-io
                           ^Ctx ctx]
   (assert (some? nmsp-io))
-  (Namespace. provided-nmsp ctx nmsp-io #{} nil nil))
+  (Namespace. provided-nmsp ctx nmsp-io #{} nil nil false))
 
 (defn imported? ^boolean [^Namespace nmsp]
-  (nil? (.primary-nmsp-io nmsp)))
+  (.imported? nmsp))
 
 (defn mk-provided ^Namespace [^String ns-str ^IPersistentMap publics]
-  (Namespace. nil nil nil #{} nil {ns-str publics}))
+  (Namespace. nil nil nil #{} nil {ns-str publics} true))
 
 (defn assoc-provided [provided-nmsp ^String ns-str ^IPersistentMap publics]
   (assoc provided-nmsp ns-str (mk-provided ns-str publics)))
 
 (def ^:private compile-namespace-in-progress
-  (Namespace. nil nil nil #{} nil nil))
+  (Namespace. nil nil nil #{} nil nil false))
 
 (defn- with-requires ^Namespace [^Namespace nmsp ns-strs]
   (Namespace. (.provided-nmsp nmsp) (.ctx nmsp)
               (.primary-nmsp-io nmsp) (into (.req-strs nmsp) ns-strs)
-              (.capstone nmsp) (.exported-known-ns nmsp)))
+              (.capstone nmsp) (.exported-known-ns nmsp) (.imported? nmsp)))
 
 (defn core-lib? ^boolean [^Namespace nmsp]
   (cfg/core-lib? (-> nmsp .ctx .ns-str)))
