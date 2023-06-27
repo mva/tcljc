@@ -45,7 +45,9 @@
                         ^MethodHandle apply-mh
                         ^ConcurrentHashMap private-name-map
                         ^TaskScope fct-task-scope
-                        ^ArrayBlockingQueue compile-to-emit-q
+                        
+                        ^ArrayBlockingQueue compile-to-emit-q 
+                        ^String source-file-attribute
                         ^boolean collect-macro-definitions?]
   CompileIO
   (lookup-in-pkg [_]
@@ -90,19 +92,26 @@
     (if (io/needs-response? task)
       (let [fut (java.util.concurrent.CompletableFuture.)]
         (.put compile-to-emit-q
-              (Msg. task x fut collect-macro-definitions?))
+              (Msg. task x fut source-file-attribute
+                    collect-macro-definitions?))
         (let [resp (io/wait-for-result fut)]
           (if (instance? Throwable resp)
             (throw ^Throwable resp)    ;receiving thread is in trouble
             resp)))
       (do (.put compile-to-emit-q
-                (Msg. task x nil collect-macro-definitions?))
+                (Msg. task x nil source-file-attribute
+                      collect-macro-definitions?))
           nil)))
   (fork-function [_ f]
     (.fork-task fct-task-scope true f))
+
+  (with-source-file [_ src-file-attr]
+    (CompileIOImpl. lookup-in-pkg apply-mh private-name-map
+                    fct-task-scope compile-to-emit-q src-file-attr
+                    collect-macro-definitions?))
   (compile-io-in [_ cl]
     (CompileIOImpl. (.in lookup-in-pkg cl) apply-mh private-name-map
-                    fct-task-scope compile-to-emit-q
+                    fct-task-scope compile-to-emit-q source-file-attribute
                     collect-macro-definitions?)))
 
 (defn- get-apply-mh ^MethodHandle [^MethodHandles$Lookup rt-lookup]
@@ -125,7 +134,6 @@
                      ^Path rpath
                      ^URL rurl
                      ^HashSet !rpath-set ;owned by emitter thread
-                     ^String source-file-attribute
 
                      ^NmspBuilder nmsp-builder
                      ^TaskScope nmsp-task-scope
@@ -155,12 +163,10 @@
                           (let [s (.getPath ^URL rurl)]
                             (subs s (inc (.lastIndexOf s "/")))))]
       (.add !rpath-set rpath)
-      (NmspIOImpl. build-files compile-io rt-lookup
-                   initial-imports initial-globals
-                   rpath rurl !rpath-set src-file-attr
-                   nmsp-builder nmsp-task-scope
-                   pkg-dir-prepared dyn-chr
-                   compile-to-emit-q)))
+      (NmspIOImpl. build-files (.with-source-file compile-io src-file-attr)
+                   rt-lookup initial-imports initial-globals
+                   rpath rurl !rpath-set nmsp-builder nmsp-task-scope
+                   pkg-dir-prepared dyn-chr compile-to-emit-q)))
   (assoc-source-file [_ ^ExceptionInfo e]
     (wrong/assoc-if-new e :file/resource-url rurl))
   (forms-reader [_]
@@ -173,7 +179,7 @@
   
   (register-ch-info! [_ this-class ch-info]
     (.register! dyn-chr this-class ch-info))
-  (produce-class [_ this-class cbh]
+  (produce-class [_ this-class source-file-attribute cbh]
     (let [bs (cf/build this-class
                        (cf/with-cbh [cb]
                          (cf/with-version cb)
@@ -270,9 +276,9 @@
                              (task/calling-task-scope))
             compile-io (CompileIOImpl. lookup-in-pkg (get-apply-mh rt-lookup)
                                        (ConcurrentHashMap.) fct-task-scope
-                                       compile-to-emit-q deterministic?)]
+                                       compile-to-emit-q nil deterministic?)]
         (NmspIOImpl. build-files compile-io rt-lookup initial-imports initial-globals
-                     nil nil !rpath-set nil nmsp-builder nmsp-task-scope pdp dyn-chr
+                     nil nil !rpath-set nmsp-builder nmsp-task-scope pdp dyn-chr
                      compile-to-emit-q)))
         
     (try-load-capstone [_ ns-str]

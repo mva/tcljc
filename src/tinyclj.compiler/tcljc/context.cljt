@@ -52,6 +52,9 @@
   
   (get-imports ^IPersistentMap [])
   (put-import ^void [^Symbol nm ^Class cl])
+
+  (compile-io ^CompileIO [])
+  (set-compile-io ^CompileIO [^CompileIO compile-io])
   
   ;; Top-level forms are assigned consecutive index values.  This
   ;; enables synchronization of macro operations across forms, as well
@@ -73,7 +76,7 @@
               ^:unsynchronized-mutable ^IPersistentMap _imports
      
               ^String ns-str
-              ^CompileIO compile-io
+              ^:unsynchronized-mutable ^CompileIO _compile-io
               
               ^boolean locked?
               ^:unsynchronized-mutable ^int _macro-count
@@ -113,6 +116,13 @@
     (if locked?
       (throw (IllegalStateException.))
       (set! _imports (assoc _imports nm x))))
+
+  (compile-io [_]
+    _compile-io)
+  (set-compile-io [_ compile-io]
+    (let [prev _compile-io]
+      (set! _compile-io compile-io)
+      prev))
   
   (get-tlf-idx [_]
     _tlf-idx)

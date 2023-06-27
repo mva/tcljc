@@ -76,6 +76,7 @@
 ;; aka single-threaded mode, because the emit thread deadlocks when a
 ;; function thread thread sends it any tasks.
 (deftype Msg [^int task ^Object x ^CompletableFuture promise
+              ^String source-file-attribute
               ^boolean collect-macro-definitions?])
 
 (defn close-queue? ^boolean [^Msg msg]
@@ -147,7 +148,8 @@
   (send-to-emit ^Object [^int task ^Object x])
   
   (fork-function ^Future [^Callable f])
-  
+
+  (with-source-file ^CompileIO [^String source-file-attribute])
   (compile-io-in ^CompileIO [^Class cl]))
 
 (definterface BuildFiles
@@ -179,7 +181,8 @@
   ;; instance is blank, and as a (absolute or relative) path when it
   ;; is associated with a source file.  If `compile-resource?` is
   ;; true, then the path's resource URL is obtained.  Note: The
-  ;; returned object shares mutable state with its parent.
+  ;; returned object shares mutable state with its parent, and it has
+  ;; a new and distinct instance of CompileIO.
   (enter-source-file ^NmspIO [^String nmsp-or-path
                               ^boolean compile-resource?])
   (assoc-source-file ^ExceptionInfo [^ExceptionInfo e])
@@ -189,8 +192,9 @@
   (register-ch-info! ^void [^ClassDesc this-class
                             ^ClassHierarchyResolver$ClassHierarchyInfo ch-info])
   ;; Builds, writes, and defines class `this-class` from `cbh`.  Sets
-  ;; this instance's source file and the default classfile version.
-  (produce-class ^Class [^ClassDesc this-class ^Consumer cbh])
+  ;; the source file attribute and the default classfile version.
+  (produce-class ^Class [^ClassDesc this-class ^String sourc-file-attribute
+                         ^Consumer cbh])
 
   ;; Given the class file `capstone`, extract its map of public globals.
   (extract-publics ^IPersistentMap [^IPersistentMap known-ns ^Class capstone])

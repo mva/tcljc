@@ -198,14 +198,50 @@
                           (str segment-class-prefix first-segm-id))]
     (SegmState. ctx nmsp-io first-segm-id cld [] (ArrayDeque.) [])))
 
-(defn- emit-segments ^Namespace [^SegmState segm]
+(defn- delayed-but-ready ^DelayedMacroFn [^SegmState segm]
+  (when-some [mfn ^DelayedMacroFn (.peekFirst (.!delayed-macros segm))]
+    (when (.realized? (.bref mfn))
+      mfn)))
+
+(defn- write-segment ^SegmState [^SegmState segm ^boolean force-clinit?
+                                 ^String source-file-attribute]
+  (letfn [(load-bref ^Object [^CompileIO compile-io ^BindingRef bref]
+            (.invoke-global-mh compile-io
+                               (.mh-if-global (x/deref-load bref)
+                                              (.lookup-in-pkg compile-io))))]
+    
+    (if (and (not force-clinit?) (zero? (count (.tlfv segm))))
+      segm ;nothing to do for empty segment
+      ;; Note: There is no point to move the segment class into a
+      ;; future, because it is immediately required -- either for a
+      ;; macro value or for namespace completion.
+      (let [segm-cld (segment-cld segm 0)
+            cbh (builder-segment segm segm-cld force-clinit?)
+            ;; macros from this segment class can be invoked once it is
+            ;; defined: make sure there are no pending dependencies
+            segm (with-collect-fn-classes segm)
+            cbd (.produce-class (.nmsp-io segm) segm-cld source-file-attribute
+                                cbh)]
+        (loop []
+          (when-some [mfn (delayed-but-ready segm)]
+            (when-not (.complete (.value-promise mfn)
+                                 (load-bref (-> segm .ctx .compile-io)
+                                            (.bref mfn)))
+              (throw (IllegalStateException.)))
+            (.removeFirst (.!delayed-macros segm))
+            (recur)))
+        (with-next-segm segm)))))
+
+(defn- complete-req! ^SegmState [^SegmState segm ^Msg msg]
   (letfn [(schedule-fn-class ^SegmState [^SegmState segm ^FnCode fnc]
             (if-some [cbh (.fn-cbh (.emit-plan fnc))]
               (with-fn-class-fut segm
                 (.fork-worker (.nmsp-io segm) cfg/fork-work?
                               (^Callable fn []
                                (.produce-class (.nmsp-io segm)
-                                               ^ClassDesc (.ld-clx fnc) cbh))))
+                                               ^ClassDesc (.ld-clx fnc)
+                                               (.source-file-attribute msg)
+                                               cbh))))
               segm))
           (schedule-fn-classes ^SegmState [^SegmState segm ^TopLevelForm tlf]
             (let [segm (with-tlf segm tlf)
@@ -213,36 +249,7 @@
               (doseq [^FnCode fnc fncs]
                 (.register-ch-info! (.emit-plan fnc) (.nmsp-io segm)))
               (reduce schedule-fn-class segm fncs)))
-          (delayed-but-ready ^DelayedMacroFn [^SegmState segm]
-            (when-some [mfn ^DelayedMacroFn (.peekFirst (.!delayed-macros segm))]
-              (when (.realized? (.bref mfn))
-                mfn)))
-          (load-bref ^Object [^CompileIO compile-io ^BindingRef bref]
-            (.invoke-global-mh compile-io
-                               (.mh-if-global (x/deref-load bref)
-                                              (.lookup-in-pkg compile-io))))
-          (write-segment ^SegmState [^SegmState segm ^boolean force-clinit?]
-            (if (and (not force-clinit?) (zero? (count (.tlfv segm))))
-              segm                    ;nothing to do for empty segment
-              ;; Note: There is no point to move the segment class into
-              ;; a future, because it is immediately required -- either
-              ;; for a macro value or for namespace completion.
-              (let [segm-cld (segment-cld segm 0)
-                    cbh (builder-segment segm segm-cld force-clinit?)
-                    ;; macros from this segment class can be invoked
-                    ;; once it is defined: make sure there are no
-                    ;; pending dependencies
-                    segm (with-collect-fn-classes segm)
-                    cbd (.produce-class (.nmsp-io segm) segm-cld cbh)]
-                (loop []
-                  (when-some [mfn (delayed-but-ready segm)]
-                    (when-not (.complete (.value-promise mfn)
-                                         (load-bref (-> segm .ctx .compile-io)
-                                                    (.bref mfn)))
-                      (throw (IllegalStateException.)))
-                    (.removeFirst (.!delayed-macros segm))
-                    (recur)))
-                (with-next-segm segm))))
+          
           (write-and-define ^SegmState [^SegmState segm ^ClassDef cdef
                                         ^CompletableFuture promise]
             (.register-ch-info! (.nmsp-io segm) (.this-class cdef)
@@ -253,15 +260,10 @@
                             (.withInterfaceSymbols (.itfs cdef)))
                         (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef)))
                   this-class (.this-class cdef)
-                  cl (.produce-class (.nmsp-io segm) this-class cbh)]
+                  cl (.produce-class (.nmsp-io segm) this-class
+                                     (.source-file-attribute msg) cbh)]
               (.complete promise cl)
               segm))
-          (write-capstone ^Namespace [^SegmState segm ^Namespace nmsp]
-            (let [nmsp-io (.nmsp-io segm)
-                  cl (.produce-class nmsp-io (capstone-cld segm)
-                                     (builder-capstone segm nmsp))]
-              (mk-capstone nmsp-io (.ctx nmsp) (.provided-nmsp nmsp)
-                           (.req-strs nmsp) cl false)))
           
           (fn-specs-from-methods ^IPersistentVector [mdefs ^SegmState segm]
             (reduce
@@ -269,53 +271,61 @@
                (let [body (.body-expr mdef)
                      tlf (prepare/collect-fn-info body)]
                  (into acc (.fn-specs tlf))))
-             [] mdefs))
-          (complete-req! ^SegmState [^SegmState segm ^Msg msg]
-            (condp = (.task msg)
-              io/msg-emit-tlf
-              (let [tlf (prepare/collect-fn-info (.x msg))]
-                (prepare/prepare-fns! (.segm-cld segm) (.fn-specs tlf))
-                (prepare/prepare-globals! (.segm-cld segm) (.global-bs tlf))
-                (cond-> (schedule-fn-classes segm tlf)
-                  (and (not (.collect-macro-definitions? msg))
-                       (some? (delayed-but-ready segm)))
-                  (write-segment false)))
+             [] mdefs))]
+    
+    (condp = (.task msg)
+      io/msg-emit-tlf
+      (let [tlf (prepare/collect-fn-info (.x msg))]
+        (prepare/prepare-fns! (.segm-cld segm) (.fn-specs tlf))
+        (prepare/prepare-globals! (.segm-cld segm) (.global-bs tlf))
+        (cond-> (schedule-fn-classes segm tlf)
+          (and (not (.collect-macro-definitions? msg))
+               (some? (delayed-but-ready segm)))
+          (write-segment false (.source-file-attribute msg))))
 
-              io/msg-macro-of-next-tlf
-              (do (.addLast (.!delayed-macros segm) (.x msg))
-                  segm)
+      io/msg-macro-of-next-tlf
+      (do (.addLast (.!delayed-macros segm) (.x msg))
+          segm)
 
-              io/msg-flush-macro-definitions
-              (cond-> segm
-                (and (.collect-macro-definitions? msg)
-                     (some? (delayed-but-ready segm)))
-                (write-segment false))
-              
-              io/req-define-class
-              (if (instance? ClassDef (.x msg))
-                (write-and-define segm ^ClassDef (.x msg) (.promise msg))
-                (let [dtdef ^DeftypeDef (.x msg)
-                      fn-specs (fn-specs-from-methods (.method-defs dtdef) segm)
-                      tlf (TopLevelForm. fn-specs nil x/expr-empty)]
-                  (prepare/prepare-fns! (.segm-cld segm) fn-specs)
-                  (-> (schedule-fn-classes segm tlf)
-                      (write-and-define (build-deftype dtdef) (.promise msg)))))
-              
-              io/req-flush-namespace-segment
-              (let [cl (write-segment segm true)]
-                ;; segment class `cl` exists and can now be looked up
-                (.complete (.promise msg) (x/invoke-force-clinit (.segm-cld segm)))
-                cl)
-              
-              io/msg-fatal-error
-              (throw ^Throwable (.x msg))
-              
-              #_else (throw (IllegalStateException. (str (.task msg))))))]
+      io/msg-flush-macro-definitions
+      (cond-> segm
+        (and (.collect-macro-definitions? msg)
+             (some? (delayed-but-ready segm)))
+        (write-segment false (.source-file-attribute msg)))
+      
+      io/req-define-class
+      (if (instance? ClassDef (.x msg))
+        (write-and-define segm ^ClassDef (.x msg) (.promise msg))
+        (let [dtdef ^DeftypeDef (.x msg)
+              fn-specs (fn-specs-from-methods (.method-defs dtdef) segm)
+              tlf (TopLevelForm. fn-specs nil x/expr-empty)]
+          (prepare/prepare-fns! (.segm-cld segm) fn-specs)
+          (-> (schedule-fn-classes segm tlf)
+              (write-and-define (build-deftype dtdef) (.promise msg)))))
+      
+      io/req-flush-namespace-segment
+      (let [cl (write-segment segm true (.source-file-attribute msg))]
+        ;; segment class `cl` exists and can now be looked up
+        (.complete (.promise msg) (x/invoke-force-clinit (.segm-cld segm)))
+        cl)
+      
+      io/msg-fatal-error
+      (throw ^Throwable (.x msg))
+      
+      #_else (throw (IllegalStateException. (str (.task msg)))))))
 
-    (let [msg (.recv-from-compile (.nmsp-io segm))]
-      (if (= (.task msg) io/msg-close-queue)
-        (-> segm (write-segment false) (write-capstone (.x msg)))
-        (recur (complete-req! segm msg))))))
+(defn- emit-segments ^Namespace [^SegmState segm]
+  (let [msg (.recv-from-compile (.nmsp-io segm))]
+    (if (= (.task msg) io/msg-close-queue)
+      (let [segm (write-segment segm false (.source-file-attribute msg))
+            nmsp ^Namespace (.x msg)
+            nmsp-io (.nmsp-io segm)
+            cl (.produce-class nmsp-io (capstone-cld segm)
+                               (.source-file-attribute msg)
+                               (builder-capstone segm nmsp))]
+        (mk-capstone nmsp-io (.ctx nmsp) (.provided-nmsp nmsp)
+                     (.req-strs nmsp) cl false))
+      (recur (complete-req! segm msg)))))
 
 (defn mk-provided-nmsp
   ([]
@@ -354,7 +364,7 @@
                         nsd (nmsp/compile-thread nmsp ctx)]
                     ;; regular completion: pass back result in first
                     ;; `close-queue` message
-                    (.send-to-emit (-> segm .nmsp-io .compile-io)
+                    (.send-to-emit (.compile-io nmsp-io)
                                    io/msg-close-queue nsd))
                   (catch java.lang.InterruptedException _
                     ;; emitter thread is shutting down and is not taking

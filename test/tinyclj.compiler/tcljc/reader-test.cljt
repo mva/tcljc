@@ -37,7 +37,7 @@
 (def stub-compile-io
   (tcljc.main.tclj0.CompileIOImpl.
    (java.lang.invoke.MethodHandles/lookup) nil nil
-   nil nil false))
+   nil nil nil false))
 
 (defn stub-ctx
   (^Ctx []

@@ -213,6 +213,9 @@
                                    io/req-flush-namespace-segment nil))
                   (reduce
                    (fn ^Namespace [^Namespace nmsp ^String path-str]
+                     ;; FIXME... flush namespace segment before and
+                     ;; after processing the file?  this way, its code
+                     ;; get the correct source file attribute
                      (top-level-file nmsp (.enter-source-file
                                            file-nmsp-io path-str true)))
                    nmsp (next form)))
@@ -230,14 +233,24 @@
                   nmsp))))
         (top-level-file ^Namespace [^Namespace nmsp ^NmspIO file-nmsp-io]
           (try
-            (let [rdr (.forms-reader file-nmsp-io)]
+            (let [rdr (.forms-reader file-nmsp-io)
+                  
+                  ;; assume that the compile-io of file-nmsp-io
+                  ;; differs from that in (.ctx nmsp):
+                  prev-compile-io (.set-compile-io (.ctx nmsp)
+                                                   (.compile-io file-nmsp-io))]
               (loop [nmsp nmsp]
                 (let [form (.read-1 rdr (.ctx nmsp) ::eof)]
                   (cond
-                    (identical? ::eof form) nmsp
-                    (seq? form) (recur
-                                 (wrong/with-list-context form
-                                   (top-level-list-form nmsp file-nmsp-io form)))
+                    (identical? ::eof form)
+                    (do (.set-compile-io (.ctx nmsp) prev-compile-io)
+                        nmsp)
+                    
+                    (seq? form)
+                    (recur
+                     (wrong/with-list-context form
+                       (top-level-list-form nmsp file-nmsp-io form)))
+                    
                     :else (do (compiler/top-level-form form (.ctx nmsp))
                               (recur nmsp))))))
             (catch ExceptionInfo e
