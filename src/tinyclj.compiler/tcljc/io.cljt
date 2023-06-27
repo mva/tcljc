@@ -148,8 +148,9 @@
   (send-to-emit ^Object [^int task ^Object x])
   
   (fork-function ^Future [^Callable f])
+  (assoc-source-file ^ExceptionInfo [^ExceptionInfo e])
 
-  (with-source-file ^CompileIO [^String source-file-attribute])
+  (with-source-file ^CompileIO [^URL rurl ^String source-file-attribute])
   (compile-io-in ^CompileIO [^Class cl]))
 
 (definterface BuildFiles
@@ -185,7 +186,6 @@
   ;; a new and distinct instance of CompileIO.
   (enter-source-file ^NmspIO [^String nmsp-or-path
                               ^boolean compile-resource?])
-  (assoc-source-file ^ExceptionInfo [^ExceptionInfo e])
   (forms-reader ^Reader [])
   (collect-rpaths ^IPersistentSet [])
 

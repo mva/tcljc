@@ -47,6 +47,7 @@
                         ^TaskScope fct-task-scope
                         
                         ^ArrayBlockingQueue compile-to-emit-q 
+                        ^URL rurl
                         ^String source-file-attribute
                         ^boolean collect-macro-definitions?]
   CompileIO
@@ -102,16 +103,23 @@
                 (Msg. task x nil source-file-attribute
                       collect-macro-definitions?))
           nil)))
-  (fork-function [_ f]
-    (.fork-task fct-task-scope true f))
+  (fork-function [this f]
+    (.fork-task fct-task-scope true
+                (^Callable fn []
+                 (try
+                   (.call f)
+                   (catch ExceptionInfo e
+                     (throw (.assoc-source-file this e)))))))
+  (assoc-source-file [_ ^ExceptionInfo e]
+    (wrong/assoc-if-new e :file/resource-url rurl))
 
-  (with-source-file [_ src-file-attr]
+  (with-source-file [_ rurl src-file-attr]
     (CompileIOImpl. lookup-in-pkg apply-mh private-name-map
-                    fct-task-scope compile-to-emit-q src-file-attr
+                    fct-task-scope compile-to-emit-q rurl src-file-attr
                     collect-macro-definitions?))
   (compile-io-in [_ cl]
     (CompileIOImpl. (.in lookup-in-pkg cl) apply-mh private-name-map
-                    fct-task-scope compile-to-emit-q source-file-attribute
+                    fct-task-scope compile-to-emit-q rurl source-file-attribute
                     collect-macro-definitions?)))
 
 (defn- get-apply-mh ^MethodHandle [^MethodHandles$Lookup rt-lookup]
@@ -163,12 +171,10 @@
                           (let [s (.getPath ^URL rurl)]
                             (subs s (inc (.lastIndexOf s "/")))))]
       (.add !rpath-set rpath)
-      (NmspIOImpl. build-files (.with-source-file compile-io src-file-attr)
+      (NmspIOImpl. build-files (.with-source-file compile-io rurl src-file-attr)
                    rt-lookup initial-imports initial-globals
                    rpath rurl !rpath-set nmsp-builder nmsp-task-scope
                    pkg-dir-prepared dyn-chr compile-to-emit-q)))
-  (assoc-source-file [_ ^ExceptionInfo e]
-    (wrong/assoc-if-new e :file/resource-url rurl))
   (forms-reader [_]
     (.forms-reader build-files rurl))
   (collect-rpaths [_]
@@ -276,7 +282,7 @@
                              (task/calling-task-scope))
             compile-io (CompileIOImpl. lookup-in-pkg (get-apply-mh rt-lookup)
                                        (ConcurrentHashMap.) fct-task-scope
-                                       compile-to-emit-q nil deterministic?)]
+                                       compile-to-emit-q nil nil deterministic?)]
         (NmspIOImpl. build-files compile-io rt-lookup initial-imports initial-globals
                      nil nil !rpath-set nmsp-builder nmsp-task-scope pdp dyn-chr
                      compile-to-emit-q)))

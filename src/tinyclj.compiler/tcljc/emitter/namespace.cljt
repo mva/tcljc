@@ -254,7 +254,7 @@
                     :else (do (compiler/top-level-form form (.ctx nmsp))
                               (recur nmsp))))))
             (catch ExceptionInfo e
-              (throw (.assoc-source-file file-nmsp-io e)))))]
+              (throw (.assoc-source-file (.compile-io file-nmsp-io) e)))))]
   
   (defn compile-thread [^Namespace nmsp ^Ctx ctx]
     (let [l (-> ctx .compile-io .lookup-in-pkg)]
