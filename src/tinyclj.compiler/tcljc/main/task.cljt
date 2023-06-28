@@ -27,20 +27,25 @@
                                     binding-frame]
   TaskScope
   (fork-task [_ fork-work? f]
+    ;; prevent shutdown of exec-service before task runs or during task
     (.acquire sem)
-    (try
-      (if fork-work?
-        (try
-          (.submit exec-service
-                   (^Callable fn []
+    (if fork-work?
+      (try
+        (.submit exec-service
+                 (^Callable fn []
+                  (try
                     (clojure.lang.Var/resetThreadBindingFrame binding-frame)
-                    (.call f)))
-          (catch Throwable t
-            (.printStackTrace t)
-            (throw t)))
-        (CompletableFuture/completedFuture (.call f)))
-      (finally
-        (.release sem))))
+                    (.call f)
+                    (finally ;task completed (normally or exceptionally)
+                      (.release sem)))))
+        (catch Throwable t
+          (.release sem)       ;task was rejected and will never run
+          (.printStackTrace t)
+          (throw t)))
+      (try
+        (CompletableFuture/completedFuture (.call f))
+        (finally         ;task completed (normally or exceptionally)
+          (.release sem)))))
   (shutdown-without-close [_]
     (.shutdown exec-service))
   (wait-then-close [_]
