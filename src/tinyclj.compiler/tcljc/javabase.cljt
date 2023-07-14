@@ -23,7 +23,7 @@
 (def long Long/TYPE)
 (def float Float/TYPE)
 (def double Double/TYPE)
-;;; "computational int" types
+;;; the other "computational int" types
 (def boolean Boolean/TYPE)
 (def char Character/TYPE)
 (def byte Byte/TYPE)
@@ -141,9 +141,6 @@
 (defn import-symbol-short ^Symbol [^Class cl]
   (let [s (.getName cl), i (.lastIndexOf s (tinyclj.core/int \.))]
     (symbol nil (.substring s (inc i)))))
-;; (defn import-symbol-long ^Symbol [^Class cl]
-;;   (let [s (.getName cl)]
-;;     (symbol nil s)))
 
 (def jvm-imports
   (let [m (java.util.HashMap.)]
@@ -158,10 +155,10 @@
     ;; exist, but for symmetry it does
     (.put m 'object Object)
     (.put m 'objects (.arrayType Object))
-    (.put m 'void Void/TYPE)
     ;; type `void` is treated specially (the JVM considers it to be a
     ;; primitive as well), and null_type does not exist as a named
     ;; entity
+    (.put m 'void Void/TYPE)
     (doseq [^Class cl [boolean byte short char int float long double]
             :let [nm (.getSimpleName cl)]]
       (.put m (symbol nil nm) cl)

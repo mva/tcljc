@@ -15,14 +15,10 @@
    [tcljc.expr :as x]
    [tcljc.compiler :as compiler])
   (:import
-   (tcljc.classfile ILdStInstr)
    (tcljc.expr Expr BindingRef FnPrimitiveFn FnMacroFn)
-   (tcljc.context Ctx)
-   (clojure.lang Symbol IPersistentMap)
+   (clojure.lang Symbol)
    (jdk.internal.classfile Opcode)
-   (java.lang.invoke MethodHandles$Lookup)
-   (java.util HashMap)
-   (java.util.regex Pattern PatternSyntaxException)))
+   (java.util HashMap)))
 
 (defn- globals-ns-primitive []
   (letfn [(put-prim [m ^Symbol nm ^FnPrimitiveFn pfn]
@@ -108,15 +104,15 @@
 (def macro-regex-literal
   (^FnMacroFn fn [ctx form]
    (try
-     (Pattern/compile (second form))
-     (catch PatternSyntaxException e
+     (java.util.regex.Pattern/compile (second form))
+     (catch java.util.regex.PatternSyntaxException e
        (wrong/other (str "invalid regex: " e) form)))))
 
 (letfn [(assoc-predef-macro [m ^Symbol sym ^FnMacroFn mfn]
           (let [nm (name sym)]
             (assoc m nm
                    (x/macro-ref (symbol nil nm) cfg/core-lib mfn nil nil))))
-        (mk-ld ^ILdStInstr [^String field-nm]
+        (mk-ld ^tcljc.classfile.ILdStInstr [^String field-nm]
           (cf/ld-st-static rt/ClojureRT field-nm rt/Var))
         (conj-var! [acc ^String field-nm ^Class tp ^Symbol nm]
           (let [bref (x/global-ref nm cfg/core-lib tp false true nil)]
