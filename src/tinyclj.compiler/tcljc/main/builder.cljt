@@ -157,7 +157,7 @@
             (into {} !futs)
             
             (catch Throwable t
-              (.shutdown-without-close build-task-scope)
+              (.wait-then-shutdown-without-close build-task-scope)
               (throw (wrong/assoc-dep-map t (dependency-map !futs))))))))))
 
 (defn single-threaded ^NmspBuilder [^BuildIO env ^IPersistentMap builtin-nmsp ns-strs]

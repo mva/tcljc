@@ -218,7 +218,7 @@
     (.fork-task nmsp-task-scope fork-work? f))
   (stop [_ abort?]
     (if abort?
-      (.shutdown-without-close nmsp-task-scope)
+      (.wait-then-shutdown-without-close nmsp-task-scope)
       (.wait-then-close nmsp-task-scope))))
 
 ;; Source files are obtained from `app-ld` via `.getResource`.  If the

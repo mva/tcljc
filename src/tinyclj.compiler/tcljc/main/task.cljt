@@ -15,7 +15,7 @@
 ;;; frame within submitted tasks.
 (definterface TaskScope
   (fork-task ^Future [^boolean fork-work? ^Callable f])
-  (shutdown-without-close ^void [])
+  (wait-then-shutdown-without-close ^void [])
   (wait-then-close ^void []))
 
 
@@ -46,7 +46,9 @@
         (CompletableFuture/completedFuture (.call f))
         (finally         ;task completed (normally or exceptionally)
           (.release sem)))))
-  (shutdown-without-close [_]
+  (wait-then-shutdown-without-close [_]
+    ;; only continue after all permits have been released again
+    (.tryAcquire sem Integer/MAX_VALUE 60 TimeUnit/SECONDS)
     (.shutdown exec-service))
   (wait-then-close [_]
     ;; only continue after all permits have been released again
@@ -64,7 +66,7 @@
   TaskScope
   (fork-task [_ fork-work? f]
     (CompletableFuture/completedFuture (.call f)))
-  (shutdown-without-close [_]
+  (wait-then-shutdown-without-close [_]
     nil)
   (wait-then-close [_]
     nil))
