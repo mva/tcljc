@@ -10,7 +10,7 @@
 ;;; Should styled text be used or not?  Currently checks for a
 ;;; non-empty COLORTERM environment variable to enable colored output.
 ;;; (The non-nil value of System.console() does not seem to be
-;;; affected by redirection to file or pipe.)
+;;; affected by redirection to file or pipe, nor does its isTerminal().)
 (def enable-color-output (if-some [s (System/getenv "COLORTERM")]
                            (pos? (.length s))
                            false))
