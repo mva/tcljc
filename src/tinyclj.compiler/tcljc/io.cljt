@@ -108,7 +108,10 @@
      (try
        (.get ^Future x seconds TimeUnit/SECONDS)
        (catch java.util.concurrent.ExecutionException e ;unwrap
-         (throw (or (.getCause e) ^Throwable e))))
+         (throw (or (.getCause e) ^Throwable e)))
+       (catch java.util.concurrent.TimeoutException e
+         (.printStackTrace e)
+         (throw e)))
      x)))
 
 (defn get-result-now [x]        ;pre: computation of `x` has completed

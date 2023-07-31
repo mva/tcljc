@@ -316,7 +316,7 @@
 
 (defn- emit-segments ^Namespace [^SegmState segm]
   (let [msg (.recv-from-compile (.nmsp-io segm))]
-    (if (= (.task msg) io/msg-close-queue)
+    (if (io/close-queue? msg)
       (let [segm (write-segment segm false (.source-file-attribute msg))
             nmsp ^Namespace (.x msg)
             nmsp-io (.nmsp-io segm)
@@ -326,6 +326,16 @@
         (mk-capstone nmsp-io (.ctx nmsp) (.provided-nmsp nmsp)
                      (.req-strs nmsp) cl false))
       (recur (complete-req! segm msg)))))
+
+(defn- exceptionally-complete-any-req ^void [^NmspIO nmsp-io ^Throwable t]
+  (let [msg (.recv-from-compile nmsp-io)]
+    (when-not (io/close-queue? msg)
+      (when-some [p (.promise msg)]
+        ;; if there are still compile threads sending requests, make
+        ;; sure that they get *something* back instead of letting
+        ;; their gets timeout
+        (.complete p t))
+      (recur nmsp-io t))))
 
 (defn mk-provided-nmsp
   ([]
@@ -372,9 +382,19 @@
                     nil)
                   (catch Throwable t
                     (.send-to-emit (-> segm .nmsp-io .compile-io)
-                                   io/msg-fatal-error t))))
+                                   io/msg-fatal-error t))
+                  (finally
+                    ;; make sure that there is always a `close-queue`
+                    ;; entry for the cleanup loop to terminate on in
+                    ;; `exceptionally-complete-any-req`
+                    (.send-to-emit (-> segm .nmsp-io .compile-io)
+                                   io/msg-close-queue nil))))
           c-thread (.fork-worker (.nmsp-io segm) true c-fn)
-          nmsp (emit-segments segm)]
+          nmsp (try
+                 (emit-segments segm)
+                 (catch Throwable t
+                   (exceptionally-complete-any-req (.nmsp-io segm) t)
+                   (throw t)))]
       (.get c-thread)                   ;pick up any exceptions
       nmsp)))
 
