@@ -855,10 +855,13 @@
 (definterface ILoadPromise
   (deliver-load ^void [^ILdStInstr ld-st-instr])
   (deref-load ^ILdStInstr [])
-  (realized? ^boolean []))
+  (provided-ld-st ^ILdStInstr []))
 
 (defn deref-load ^ILdStInstr [^ILoadPromise x]
   (.deref-load x))
+
+(defn realized? ^boolean [^ILoadPromise x]
+  (some? (.provided-ld-st x)))
 
 (deftype BindingRef
     [^:pass-to-super-constructor ^Object _form
@@ -892,8 +895,8 @@
     (assert (some? load-promise) (str "no load value has been delivered for"
                                       " nm `" (form this) "`"))
     load-promise)
-  (realized? [_]
-    (some? load-promise)))
+  (provided-ld-st [_]
+    load-promise))
 
 (defn bref? ^boolean [x]
   (instance? BindingRef x))
@@ -954,7 +957,14 @@
                    ^:pass-to-super-constructor ^int flags
                    ^:pass-to-super-constructor ^ILdStInstr load-promise
                    ^BindingRef alias-for]
-  BindingRef)
+  BindingRef
+  (deref-load [this]
+    ;; If no other load instruction has been provided, fall back to
+    ;; that of `alias-for`.  This fixes the case of a function closing
+    ;; over a an alias for an immutable global var, where the AliasRef
+    ;; representing the closed over let binding has no load of its
+    ;; own.
+    (or (.provided-ld-st this) (.deref-load alias-for))))
 
 (defn alias-ref ^AliasRef [^int level ^Symbol simple-nm ^String ns-str
                            ^BindingRef alias-for ^int kind]

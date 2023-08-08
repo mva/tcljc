@@ -200,7 +200,7 @@
 
 (defn- delayed-but-ready ^DelayedMacroFn [^SegmState segm]
   (when-some [mfn ^DelayedMacroFn (.peekFirst (.!delayed-macros segm))]
-    (when (.realized? (.bref mfn))
+    (when (x/realized? (.bref mfn))
       mfn)))
 
 (defn- write-segment ^SegmState [^SegmState segm ^boolean force-clinit?
