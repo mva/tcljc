@@ -272,47 +272,53 @@
                      tlf (prepare/collect-fn-info body)]
                  (into acc (.fn-specs tlf))))
              [] mdefs))]
-    
-    (condp = (.task msg)
-      io/msg-emit-tlf
-      (let [tlf (prepare/collect-fn-info (.x msg))]
-        (prepare/prepare-fns! (.segm-cld segm) (.fn-specs tlf))
-        (prepare/prepare-globals! (.segm-cld segm) (.global-bs tlf))
-        (cond-> (schedule-fn-classes segm tlf)
-          (and (not (.collect-macro-definitions? msg))
+
+    (try
+      (condp = (.task msg)
+        io/msg-emit-tlf
+        (let [tlf (prepare/collect-fn-info (.x msg))]
+          (prepare/prepare-fns! (.segm-cld segm) (.fn-specs tlf))
+          (prepare/prepare-globals! (.segm-cld segm) (.global-bs tlf))
+          (cond-> (schedule-fn-classes segm tlf)
+            (and (not (.collect-macro-definitions? msg))
+                 (some? (delayed-but-ready segm)))
+            (write-segment false (.source-file-attribute msg))))
+
+        io/msg-macro-of-next-tlf
+        (do (.addLast (.!delayed-macros segm) (.x msg))
+            segm)
+
+        io/msg-flush-macro-definitions
+        (cond-> segm
+          (and (.collect-macro-definitions? msg)
                (some? (delayed-but-ready segm)))
-          (write-segment false (.source-file-attribute msg))))
+          (write-segment false (.source-file-attribute msg)))
+        
+        io/req-define-class
+        (if (instance? ClassDef (.x msg))
+          (write-and-define segm ^ClassDef (.x msg) (.promise msg))
+          (let [dtdef ^DeftypeDef (.x msg)
+                fn-specs (fn-specs-from-methods (.method-defs dtdef) segm)
+                tlf (TopLevelForm. fn-specs nil x/expr-empty)]
+            (prepare/prepare-fns! (.segm-cld segm) fn-specs)
+            (-> (schedule-fn-classes segm tlf)
+                (write-and-define (build-deftype dtdef) (.promise msg)))))
+        
+        io/req-flush-namespace-segment
+        (let [cl (write-segment segm true (.source-file-attribute msg))]
+          ;; segment class `cl` exists and can now be looked up
+          (.complete (.promise msg) (x/invoke-force-clinit (.segm-cld segm)))
+          cl)
+        
+        io/msg-fatal-error
+        (throw ^Throwable (.x msg))
+        
+        #_else (throw (IllegalStateException. (str (.task msg)))))
 
-      io/msg-macro-of-next-tlf
-      (do (.addLast (.!delayed-macros segm) (.x msg))
-          segm)
-
-      io/msg-flush-macro-definitions
-      (cond-> segm
-        (and (.collect-macro-definitions? msg)
-             (some? (delayed-but-ready segm)))
-        (write-segment false (.source-file-attribute msg)))
-      
-      io/req-define-class
-      (if (instance? ClassDef (.x msg))
-        (write-and-define segm ^ClassDef (.x msg) (.promise msg))
-        (let [dtdef ^DeftypeDef (.x msg)
-              fn-specs (fn-specs-from-methods (.method-defs dtdef) segm)
-              tlf (TopLevelForm. fn-specs nil x/expr-empty)]
-          (prepare/prepare-fns! (.segm-cld segm) fn-specs)
-          (-> (schedule-fn-classes segm tlf)
-              (write-and-define (build-deftype dtdef) (.promise msg)))))
-      
-      io/req-flush-namespace-segment
-      (let [cl (write-segment segm true (.source-file-attribute msg))]
-        ;; segment class `cl` exists and can now be looked up
-        (.complete (.promise msg) (x/invoke-force-clinit (.segm-cld segm)))
-        cl)
-      
-      io/msg-fatal-error
-      (throw ^Throwable (.x msg))
-      
-      #_else (throw (IllegalStateException. (str (.task msg)))))))
+      (catch Throwable t
+        (when-some [p (.promise msg)] ;compile thread blocking on `p`?
+          (.complete p t))
+        (throw t)))))
 
 (defn- emit-segments ^Namespace [^SegmState segm]
   (let [msg (.recv-from-compile (.nmsp-io segm))]

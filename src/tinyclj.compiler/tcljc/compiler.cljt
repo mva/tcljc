@@ -940,6 +940,7 @@
                cdef (dtp-class-def env short-sym fq-sym binary-sym
                                    field-sig opts methods)
                cl (.send-to-emit (compile-io env) io/req-define-class cdef)]
+           ;; only continue once the class has been defined
            x/expr-empty))
 
        (reify*-form ^Expr [[_ itf-vector & methods :as form]]
