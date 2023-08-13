@@ -81,10 +81,11 @@
         (.get fut cfg/wait-cyclic-ms java.util.concurrent.TimeUnit/MILLISECONDS)
         (catch java.util.concurrent.ExecutionException e ;unwrap
           (throw (or (.getCause e) ^Throwable e)))
-        (catch TimeoutException e     ;may not be repeatable!
-          (wrong/mk-e (str "Wait for require " (wrong/q (symbol nil ns-str))
-                           " timed out.  Maybe a cyclic import?  "
-                           "Use --deterministic for better feedback.")))))
+        (catch TimeoutException e       ;may not be repeatable!
+          (throw (wrong/mk-e (str "Wait for require "
+                                  (wrong/q (symbol nil ns-str))
+                                  " timed out.  Maybe a cyclic import?  "
+                                  "Use --deterministic for better feedback."))))))
 
     :else x))
 
