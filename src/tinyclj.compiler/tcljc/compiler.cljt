@@ -881,11 +881,12 @@
              (x/mk-arity-code at (.bref receiver-b)
                               (compile-body env at 2)))))
        (method-def ^MethodDef [^Env env form ^Class etp]
-         (let [at (sigclass/method-arity-type etp form x/lvl-environment
-                                              -1 (.ctx env))
-               ac (parse-method env at etp)]
-           (MethodDef. (.at ac) Classfile/ACC_PUBLIC
-                       (.this-bref ac) (.body-expr ac))))
+         (wrong/with-list-context form
+           (let [at (sigclass/method-arity-type etp form x/lvl-environment
+                                                -1 (.ctx env))
+                 ac (parse-method env at etp)]
+             (MethodDef. (.at ac) Classfile/ACC_PUBLIC
+                         (.this-bref ac) (.body-expr ac)))))
        (create-ephemeral-class ^Class [^ClassDef cdef]
          (let [bs (cf/build
                    (.this-class cdef)
@@ -968,11 +969,12 @@
                etp (create-ephemeral-class eph-cdef)
                
                atv (reduce (fn [acc form]
-                             (let [at-idx (count acc)
-                                   level (level-fn-form env)
-                                   at (sigclass/method-arity-type
-                                       etp form level at-idx ctx)]
-                               (conj acc at)))
+                             (wrong/with-list-context form
+                               (let [at-idx (count acc)
+                                     level (level-fn-form env)
+                                     at (sigclass/method-arity-type
+                                         etp form level at-idx ctx)]
+                                 (conj acc at))))
                            [] methods)
                m (compile-meta (cfg/source-meta form))
 
