@@ -63,7 +63,7 @@ Design notes for tinyclj.string:
   [^CharSequence s re f]
   (let [m (re-matcher re s)]
     (if (.find m)
-      (let [buffer (StringBuffer. (.length s))]
+      (let [buffer (StringBuilder. (.length s))]
         (loop [found true]
           (if found
             (do (.appendReplacement m buffer (Matcher/quoteReplacement (f (re-groups m))))
@@ -112,7 +112,7 @@ Design notes for tinyclj.string:
   [^CharSequence s ^Pattern re f]
   (let [m (re-matcher re s)]
     (if (.find m)
-      (let [buffer (StringBuffer. (.length s))
+      (let [buffer (StringBuilder. (.length s))
             rep (Matcher/quoteReplacement (f (re-groups m)))]
         (.appendReplacement m buffer rep)
         (.appendTail m buffer)

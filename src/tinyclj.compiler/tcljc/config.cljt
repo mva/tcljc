@@ -59,7 +59,7 @@
    Float InheritableThreadLocal Integer Long Math Number Object
    Package Process ProcessBuilder Runtime RuntimePermission
    Short StackTraceElement StrictMath String
-   StringBuffer StringBuilder System Thread ThreadGroup ThreadLocal
+   #_StringBuffer StringBuilder System Thread ThreadGroup ThreadLocal
    Throwable Void Appendable CharSequence Cloneable Comparable
    Iterable Readable Runnable Callable BigInteger BigDecimal
              
