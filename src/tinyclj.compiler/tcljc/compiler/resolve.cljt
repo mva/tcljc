@@ -120,6 +120,11 @@
     (when (zero? (alength atypes))
       (fields-with false owner nm))))
 
+;;; Problem: class MethodHandle.PolymorphicSignature is not public
+(def ^:private ann-polymorphic-signature
+  (Class/forName "java.lang.invoke.MethodHandle$PolymorphicSignature"
+                 false (ClassLoader/getPlatformClassLoader)))
+
 (letfn [(compatible-prefix? ^boolean [^"[Ljava.lang.Class;" atypes
                                       ^"[Ljava.lang.Class;" ptypes
                                       ^int pdelta-end]
@@ -158,17 +163,7 @@
                (compatible-prefix? atypes ptypes -2)))
 
         (signature-polymorphic* ^boolean [^Method m] ;pre: m.isVarArgs()
-          ;; problem: class MethodHandle.PolymorphicSignature is not public
-          (let [rt (.getReturnType m)]
-            (and (or (jb/object? rt) (jb/statement? rt)) ;valid assumption?
-                 (= (.getParameterCount m) 1) ;always just Object[]?
-                 (let [as (.getAnnotations m)]
-                   (loop [i (dec (alength as))]
-                     (cond
-                       (neg? i) false
-                       (= "java.lang.invoke.MethodHandle$PolymorphicSignature"
-                          (-> (aget as i) (.annotationType) (.getName))) true
-                       :else (recur (dec i))))))))]
+          (.isAnnotationPresent m ann-polymorphic-signature))]
   
   (defn signature-polymorphic? ^boolean [^Executable e] ;pre: e.isVarArgs()
     (and (instance? Method e) (signature-polymorphic* ^Method e)))
