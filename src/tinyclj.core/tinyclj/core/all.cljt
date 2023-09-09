@@ -9,6 +9,7 @@
    tinyclj.java.io
 
    ;; rest of core library not required by tinyclj.core
+   tinyclj.datafy
    tinyclj.edn
    tinyclj.set
    tinyclj.test

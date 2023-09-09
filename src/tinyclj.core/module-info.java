@@ -11,6 +11,7 @@ module tinyclj.core {
   exports tinyclj.math;
   exports tinyclj.java.io;
 
+  exports tinyclj.datafy;
   exports tinyclj.edn;
   exports tinyclj.set;
   exports tinyclj.test;
