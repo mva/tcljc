@@ -1238,3 +1238,165 @@
                    [clojure.lang.IType]
                    (toString [_] (.toString nds)))
                  (def ^"[Lpkg.ns0.Node;" a)])))) ;non-trivial descriptor
+
+;;; ------------------------------------------------------------------------
+
+(deftest java-record-data-test
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/Rec"
+                   nil "java/lang/Record" [IType])
+            [(FIELD [PRIVATE FINAL] "a" "I")]
+            [(FIELD [PRIVATE FINAL] "b" "I")]
+            
+            [(METHOD [PUBLIC] "<init>" "(II)V")
+             (ALOAD_0)
+             (INVOKESPECIAL Record "<init>" "()V")
+             (ALOAD_0)
+             (ILOAD_1)
+             (PUTFIELD . "a" "I")
+             (ALOAD_0)
+             (ILOAD_2)
+             (PUTFIELD . "b" "I")
+             (RETURN)]
+
+            [(METHOD [PUBLIC FINAL] "toString" "()Ljava/lang/String;")
+             (ALOAD_0)
+             (INVOKEDYNAMIC "toString" "(Lpkg/ns0/Rec;)Ljava/lang/String;"
+                            :bsm-object-method [. "a;b"
+                                                [GETTER . "a" "I"]
+                                                [GETTER . "b" "I"]])
+             (ARETURN)]
+            [(METHOD [PUBLIC FINAL] "hashCode" "()I")
+             (ALOAD_0)
+             (INVOKEDYNAMIC "hashCode" "(Lpkg/ns0/Rec;)I"
+                            :bsm-object-method [. "a;b"
+                                                [GETTER . "a" "I"]
+                                                [GETTER . "b" "I"]])
+             (IRETURN)]
+            [(METHOD [PUBLIC FINAL] "equals" "(Ljava/lang/Object;)Z")
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKEDYNAMIC "equals" "(Lpkg/ns0/Rec;Ljava/lang/Object;)Z"
+                            :bsm-object-method [. "a;b"
+                                                [GETTER . "a" "I"]
+                                                [GETTER . "b" "I"]])
+             (IRETURN)]
+
+            [(METHOD [PUBLIC] "a" "()I")
+             (ALOAD_0) (GETFIELD . "a" "I") (IRETURN)]
+            [(METHOD [PUBLIC] "b" "()I")
+             (ALOAD_0) (GETFIELD . "b" "I") (IRETURN)]
+
+            [:RecordAttribute
+             [a "I"]
+             [b "I"]]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/Rec
+                   pkg.ns0.Rec
+                   [^int a ^int b]
+                   :implements [java.lang.Record clojure.lang.IType])]))))
+
+(deftest java-record-empty-test
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/Rec"
+                   nil "java/lang/Record" [IType])
+            [(METHOD [PUBLIC] "<init>" "()V")
+             (ALOAD_0)
+             (INVOKESPECIAL Record "<init>" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "toString" "()Ljava/lang/String;")
+             (ALOAD_0)
+             (INVOKEDYNAMIC "toString" "(Lpkg/ns0/Rec;)Ljava/lang/String;"
+                            :bsm-object-method [. ""])
+             (ARETURN)]
+            [(METHOD [PUBLIC FINAL] "hashCode" "()I")
+             (ALOAD_0)
+             (INVOKEDYNAMIC "hashCode" "(Lpkg/ns0/Rec;)I"
+                            :bsm-object-method [. ""])
+             (IRETURN)]
+            [(METHOD [PUBLIC FINAL] "equals" "(Ljava/lang/Object;)Z")
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKEDYNAMIC "equals" "(Lpkg/ns0/Rec;Ljava/lang/Object;)Z"
+                            :bsm-object-method [. ""])
+             (IRETURN)]
+            
+            [:RecordAttribute
+             ]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/Rec
+                   pkg.ns0.Rec
+                   []
+                   :implements [java.lang.Record clojure.lang.IType])]))))
+
+(deftest java-record-custom-toString-test
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/Rec"
+                   nil "java/lang/Record" [IType])
+            [(METHOD [PUBLIC] "<init>" "()V")
+             (ALOAD_0)
+             (INVOKESPECIAL Record "<init>" "()V")
+             (RETURN)]
+            
+            [(METHOD [PUBLIC FINAL] "hashCode" "()I")
+             (ALOAD_0)
+             (INVOKEDYNAMIC "hashCode" "(Lpkg/ns0/Rec;)I"
+                            :bsm-object-method [. ""])
+             (IRETURN)]
+            [(METHOD [PUBLIC FINAL] "equals" "(Ljava/lang/Object;)Z")
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKEDYNAMIC "equals" "(Lpkg/ns0/Rec;Ljava/lang/Object;)Z"
+                            :bsm-object-method [. ""])
+             (IRETURN)]
+
+            [(METHOD [PUBLIC] "toString" "()Ljava/lang/String;")
+             ["LOCAL 0: Rec _"]
+             (LDC "foo")
+             (ARETURN)]
+            
+            [:RecordAttribute
+             ]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/Rec
+                   pkg.ns0.Rec
+                   []
+                   :implements [java.lang.Record clojure.lang.IType]
+                   (toString [_] "foo"))]))))

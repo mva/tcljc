@@ -23,9 +23,11 @@
    (tcljc.expr Arity Binding)
    (tcljc.context Ctx)
    (clojure.lang Symbol IPersistentMap IPersistentVector)
-   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder)
-   (java.lang.constant ClassDesc MethodTypeDesc DirectMethodHandleDesc
-                       ConstantDesc ConstantDescs)
+   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
+   (jdk.internal.classfile.attribute RecordAttribute RecordComponentInfo)
+   (java.lang.constant ClassDesc MethodTypeDesc MethodHandleDesc
+                       DirectMethodHandleDesc ConstantDesc ConstantDescs
+                       DynamicCallSiteDesc)
    (java.lang.reflect Method)
    (java.util.function Consumer)))
 
@@ -169,12 +171,19 @@
     
     (let [if-nm (wrong/ensure-simple-sym if-nm)]
       (cf/class-def (ClassDesc/of pkg-name (name if-nm))
-                    rt/object
                     (bit-or Classfile/ACC_PUBLIC Classfile/ACC_INTERFACE
                             Classfile/ACC_ABSTRACT)
                     () nil [] (mapv method-cbh methods)))))
 
 ;;; ------------------------------------------------------------------------
+
+;;; See JLS "8.10.1 Record Components": It is a compile-time error for
+;;; a record declaration to declare a record component with the name
+;;; `clone`, `finalize`, `getClass`, `hashCode`, `notify`,
+;;; `notifyAll`, `toString`, or `wait`.
+(def ^:private prohibited-record-fields
+  #{"clone" "finalize" "getClass" "hashCode" "notify" "notifyAll"
+    "toString" "wait"})
 
 (defn- pass-to-super? ^boolean [^Symbol nm]
   (boolean (-> nm (meta) :pass-to-super-constructor)))
@@ -182,7 +191,7 @@
 (defn- take-super-mhd [tps field-sig ^Ctx ctx]
   (let [cl ^Class (first tps)]
     (if (or (nil? cl) (jb/array? cl) (jb/primitive? cl) (jb/interface? cl))
-      [(rt/no-args-constructor rt/object) tps]
+      [rt/object-constructor tps]
       ;; Right now, this does not check whether a constructor with
       ;; this signature exists.  This check is complicated by the fact
       ;; that the constructor does not to be public.  For example,
@@ -203,13 +212,21 @@
         (sig/ensure-interface tp))
       supers)))
 
-(letfn [(field-flags ^int [nm]
+(letfn [(check-mutable ^int [^int flags nm ^boolean java-record?]
+          (when java-record?
+            (wrong/other (str "java.lang.Record cannot have mutable field "
+                              (wrong/q nm))))
+          flags)
+        (field-flags ^int [nm ^boolean java-record?]
           (let [m (meta nm)]
             (cond
               (:unsynchronized-mutable m)
-              Classfile/ACC_PRIVATE
+              (check-mutable Classfile/ACC_PRIVATE nm java-record?)
               (:volatile-mutable m)
-              (bit-or Classfile/ACC_PRIVATE Classfile/ACC_VOLATILE)
+              (check-mutable (bit-or Classfile/ACC_PRIVATE Classfile/ACC_VOLATILE)
+                             nm java-record?)
+              java-record?
+              (bit-or Classfile/ACC_PRIVATE Classfile/ACC_FINAL)
               :else 
               (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL))))
         (record-deftype? ^boolean [^IPersistentVector fieldv]
@@ -221,6 +238,12 @@
                    (= "__extmap" (nth-last-mnm 3))
                    (= "__hash" (nth-last-mnm 2))
                    (= "__hasheq" (nth-last-mnm 1))))))
+
+        (field-getter ^void [^CodeBuilder xb ^ClassDesc this-class
+                             ^FieldDef field]
+          (-> (.aload xb 0)
+              (.getfield this-class (.mnm field) (.tpd field))
+              (.returnInstruction (TypeKind/from (.tpd field)))))
         
         (kw-instr ^CodeBuilder [^CodeBuilder xb ^FieldDef fdef]
           (rt/load-constant xb (keyword nil (.mnm fdef))))
@@ -260,15 +283,9 @@
               (.areturn)))]
   
   (defn eph-dtp-class-def ^ClassDef [^String pkg-name ^IPersistentMap imports
-                                     ^ClassDesc this-class field-sig opts
-                                     ^Ctx ctx]
-    (letfn [(eph-field ^FieldDef [nm]
-              ;; mirrors `field-bref` below
-              (let [tpd (tag-desc-of pkg-name imports nm false rt/object)
-                    mnm (cfg/munge-name nm)]
-                (cf/field-def mnm tpd (field-flags nm) (pass-to-super? nm))))
-
-            (constr-argn ^int [^DirectMethodHandleDesc mhd]
+                                     ^ClassDesc this-class field-sig
+                                     opts methods ^Ctx ctx]
+    (letfn [(constr-argn ^int [^DirectMethodHandleDesc mhd]
               (-> mhd .invocationType .parameterCount))
             (parameter-ld ^ILdStInstr [^int i ^FieldDef fdef]
               (cf/ld-st-parameter (.tpd fdef) (.mnm fdef) i))
@@ -300,28 +317,108 @@
                                        (record-factory xb this-class
                                                        primary-param-lds
                                                        factory-fieldv)))))))
+
+            (no-toString? ^boolean [methods]
+              (->> methods
+                   (filter #(and (= (first %) 'toString)
+                                 (= (count (second %)) 1)))
+                   (first)
+                   (nil?)))
+            (object-method ^ClassBuilder [^ClassBuilder cb
+                                          ^DynamicCallSiteDesc dcsd]
+              (.withMethodBody
+               cb (.invocationName dcsd)
+               (-> dcsd (.invocationType) (.dropParameterTypes 0 1))
+               (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL)
+               (cf/with-xbh [xb]
+                 (let [tk (-> (.invocationType dcsd)
+                              (.returnType)
+                              (TypeKind/from))]
+                   (cond-> (.aload xb 0)
+                     (= (.invocationName dcsd) "equals") (.aload 1)
+                     true (.invokedynamic dcsd)
+                     true (.returnInstruction tk))))))
+            (object-method-args ^"[Ljava.lang.constant.ConstantDesc;" [^IPersistentVector fieldv]
+              (let [n (count fieldv)
+                    a (new "[Ljava.lang.constant.ConstantDesc;" (+ n 2))]
+                (aset a 0 this-class)
+                (aset a 1 (str/join ";" (map #(.mnm ^FieldDef %) fieldv)))
+                (dotimes [i n]
+                  (let [field ^FieldDef (nth fieldv i)]
+                    (aset a (+ i 2)
+                          (MethodHandleDesc/ofField rt/mhk-getter this-class
+                                                    (.mnm field) (.tpd field)))))
+                a))
+            (java-record-elements ^Consumer [^IPersistentVector fieldv
+                                             ^boolean provide-toString?]
+              (cf/with-cbh [cb]
+                (let [inv-toString (rt/mtd-of* rt/String this-class)
+                      inv-hashCode (rt/mtd-of* rt/int this-class)
+                      inv-equals (rt/mtd-of* rt/boolean this-class rt/object)
+                      dcsd (DynamicCallSiteDesc/of rt/bsm-object-method
+                                                   "toString" inv-toString
+                                                   (object-method-args fieldv))]
+                  (-> (if provide-toString?
+                        (object-method cb dcsd)
+                        cb)
+                      (object-method (.withNameAndType dcsd "hashCode"
+                                                       inv-hashCode))
+                      (object-method (.withNameAndType dcsd "equals"
+                                                       inv-equals))))
+
+                (doseq [^FieldDef field fieldv]
+                  (.withMethodBody cb (.mnm field) (rt/mtd-of* (.tpd field))
+                                   Classfile/ACC_PUBLIC
+                                   (cf/with-xbh [xb]
+                                     (field-getter xb this-class field))))
+
+                (let [comps (map (fn [^FieldDef field]
+                                   (RecordComponentInfo/of
+                                    (.mnm field) (.tpd field)))
+                                 fieldv)]
+                  (.with cb (RecordAttribute/of ^java.util.List comps)))))
             
             (field-cbh ^Consumer [^FieldDef fdef]
               (cf/with-cbh [cb]
                 (.withField cb (.mnm fdef) (.tpd fdef) (.flags fdef))))]
-      (let [fieldv (->> (if-some [s (seq (filter pass-to-super? field-sig))]
+      (let [[super-mhd itfs] (super-classes (:implements opts) field-sig ctx)
+            java-record? (.equals rt/Record (.owner ^DirectMethodHandleDesc super-mhd))
+
+            eph-field (fn ^FieldDef [nm]
+                        ;; mirrors `field-bref` below
+                        (let [tpd (tag-desc-of pkg-name imports nm false rt/object)
+                              mnm (cfg/munge-name nm)]
+                          (cf/field-def mnm tpd (field-flags nm java-record?)
+                                        (pass-to-super? nm))))
+            fieldv (->> (if-some [s (seq (filter pass-to-super? field-sig))]
                           ;; sort "pass to super" entries to front
                           (concat s (remove pass-to-super? field-sig))
                           field-sig)
                         (mapv eph-field))
-            [super-mhd itfs] (super-classes (:implements opts) field-sig ctx)
-            flags (bit-or Classfile/ACC_PUBLIC (if (:abstract opts)
-                                                 Classfile/ACC_ABSTRACT
-                                                 Classfile/ACC_FINAL))
+
+            flags (-> (if (:abstract opts)
+                        (do (when java-record?
+                              (wrong/other "java.lang.Record cannot be declared :abstract"))
+                            Classfile/ACC_ABSTRACT)
+                        Classfile/ACC_FINAL)
+                      (bit-or Classfile/ACC_PUBLIC))
             record? (record-deftype? fieldv)]
+        (when java-record?
+          (doseq [^FieldDef field fieldv
+                  :let [nm (.mnm field)]
+                  :when (contains? prohibited-record-fields nm)]
+            (wrong/other (str "java.lang.Record cannot declare field with name "
+                              "of no-arg Object method " (wrong/q (symbol nm))))))
+        
         ;; put constructor into class definition, so that it is
         ;; visible for methods of the deftype*
-        (cf/class-def this-class (.owner ^DirectMethodHandleDesc super-mhd)
-                      flags (map rt/cd-of itfs) super-mhd fieldv
-                      (cond-> [(primary-constructor super-mhd fieldv)]
-                        record? (conj (record-constructors fieldv))
-                        true (into (map field-cbh)
-                                   (subvec fieldv (constr-argn super-mhd))))))))
+        (cf/class-def
+         this-class flags (map rt/cd-of itfs) super-mhd fieldv
+         (cond-> [(primary-constructor super-mhd fieldv)]
+           record? (conj (record-constructors fieldv))
+           java-record? (conj (java-record-elements fieldv (no-toString? methods)))
+           true (into (map field-cbh)
+                      (subvec fieldv (constr-argn super-mhd))))))))
 
   (defn dtp-field-brefs [^ClassDesc this-class field-sig ^Ctx ctx]
     (letfn [(field-bref [nm]
@@ -329,8 +426,11 @@
               (when-not (pass-to-super? nm)
                 (let [tp (sig/tag-of nm false jb/Object ctx)
                       mnm (cfg/munge-name nm)
-                      flags (field-flags nm)
-                      mutable? (zero? (bit-and flags Classfile/ACC_FINAL))
+                      ;; Note: Java records with mutable fields are
+                      ;; rejected anyway
+                      mutable? (-> (field-flags nm false)
+                                   (bit-and Classfile/ACC_FINAL)
+                                   (zero?))
                       bref (x/field-ref nm tp mutable?)]
                   (.deliver-load bref (cf/ld-st-virtual this-class mnm
                                                         (rt/cd-of tp)))
@@ -344,5 +444,4 @@
           [super-mhd itfs] (super-classes itfs field-sig ctx)
           itfs (cons (ctx/get-type rt/clnm-iobj ctx) itfs)
           flags Classfile/ACC_PUBLIC]
-      (cf/class-def this-class (.owner ^DirectMethodHandleDesc super-mhd)
-                    flags (map rt/cd-of itfs) super-mhd [] [])))
+      (cf/class-def this-class flags (map rt/cd-of itfs) super-mhd [] [])))

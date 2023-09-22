@@ -253,10 +253,10 @@
           (write-and-define ^SegmState [^SegmState segm ^ClassDef cdef
                                         ^CompletableFuture promise]
             (.register-ch-info! (.nmsp-io segm) (.this-class cdef)
-                                (.ch-info cdef))
+                                (cf/ch-info cdef))
             (let [cbh (cf/with-cbh [cb]
                         (-> (.withFlags cb (.flags cdef))
-                            (.withSuperclass (.super-class cdef))
+                            (.withSuperclass (cf/super-class cdef))
                             (.withInterfaceSymbols (.itfs cdef)))
                         (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef)))
                   this-class (.this-class cdef)

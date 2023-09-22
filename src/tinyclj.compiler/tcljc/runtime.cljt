@@ -95,8 +95,8 @@
   (MethodTypeDesc/of (cd-of return-type) (cd-list-of parameter-types)))
 
 
-(defn no-args-constructor ^DirectMethodHandleDesc [clx]
-  (MethodHandleDesc/ofConstructor (cd-of clx) no-param-types))
+(def object-constructor
+  (MethodHandleDesc/ofConstructor ConstantDescs/CD_Object no-param-types))
 (defn fixed-args-constructor ^DirectMethodHandleDesc [clx cdxs]
   (let [pdescs (-> (cd-list-of cdxs)
                    ^"[Ljava.lang.constant.ClassDesc;" (.toArray no-param-types))]
@@ -123,11 +123,11 @@
 (def pattern (ClassDesc/of "java.util.regex.Pattern"))
 (def iobj (ClassDesc/of clnm-iobj))
 
-(def ^:private int ConstantDescs/CD_int)
+(def int ConstantDescs/CD_int)
 (def ^:private long ConstantDescs/CD_long)
 (def ^:private float ConstantDescs/CD_float)
 (def ^:private double ConstantDescs/CD_double)
-(def ^:private boolean ConstantDescs/CD_boolean)
+(def boolean ConstantDescs/CD_boolean)
 (def ^:private char ConstantDescs/CD_char)
 (def ^:private byte ConstantDescs/CD_byte)
 (def ^:private short ConstantDescs/CD_short)
@@ -151,12 +151,15 @@
 (def ^:private Lookup ConstantDescs/CD_MethodHandles_Lookup)
 (def ^:private MethodType ConstantDescs/CD_MethodType)
 (def ^:private CallSite ConstantDescs/CD_CallSite)
+(def ^:private TypeDescriptor (ClassDesc/of "java.lang.invoke.TypeDescriptor"))
 (def ^:private LambdaMetafactory (ClassDesc/of "java.lang.invoke.LambdaMetafactory"))
+(def ^:private ObjectMethods (ClassDesc/of "java.lang.runtime.ObjectMethods"))
 (def ^:private Member (ClassDesc/of "java.lang.reflect.Member"))
 
 (def ^:private Object object)
 (def ^:private ObjectArray (.arrayType Object))
 (def ^:private Class ConstantDescs/CD_Class)
+(def Record (ClassDesc/of "java.lang.Record"))
 (def String (ClassDesc/of "java.lang.String"))
 (def ^:private Exception (ClassDesc/of "java.lang.Exception"))
 (def ^:private Function (ClassDesc/of "java.util.function.Function"))
@@ -383,6 +386,9 @@
 (def bsm-metafactory (mhd-static [LambdaMetafactory "metafactory"]
                                  CallSite [Lookup String MethodType MethodType
                                            MethodHandle MethodType]))
+(def bsm-object-method (mhd-static [ObjectMethods "bootstrap"]
+                                   Object [Lookup String TypeDescriptor
+                                           Class String MethodHandleArray]))
 
 ;;; ------------------------------------------------------------------------
 

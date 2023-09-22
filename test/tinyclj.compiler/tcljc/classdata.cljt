@@ -18,7 +18,9 @@
    (jdk.internal.classfile.instruction LocalVariable BranchInstruction SwitchCase
                               TableSwitchInstruction LookupSwitchInstruction
                               ExceptionCatch LabelTarget)
-   (jdk.internal.classfile.attribute CodeAttribute RuntimeVisibleAnnotationsAttribute)
+   (jdk.internal.classfile.attribute CodeAttribute RuntimeVisibleAnnotationsAttribute
+                                     SourceFileAttribute BootstrapMethodsAttribute
+                                     RecordAttribute RecordComponentInfo)
    (java.lang.constant ConstantDesc ConstantDescs ClassDesc)
    (java.lang.reflect AccessFlag)
    (java.util HashMap LinkedList)))
@@ -38,6 +40,7 @@
    rt/bsm-invoke-fn :bsm-invoke-fn
    rt/bsm-clause-code :bsm-clause-code
    rt/bsm-metafactory :bsm-metafactory
+   rt/bsm-object-method :bsm-object-method
       
    ;; rt/mhd-byteCast :mhd-byte-int
    ;; rt/mhd-shortCast :mhd-short-int
@@ -414,12 +417,31 @@
                 (-> fm .fieldName .stringValue)
                 (-> fm .fieldType .stringValue)))
         (field-data [^FieldModel fm]
-          (into [(field-header fm)] (keep field-element) (.elements fm)))]
+          (into [(field-header fm)] (keep field-element) (.elements fm)))
+
+        
+        (attribute-data [^Attribute attr]
+          (switch-on-type
+           attr
+
+           SourceFileAttribute
+           nil
+
+           BootstrapMethodsAttribute
+           nil
+           
+           RecordAttribute
+           (into [:RecordAttribute]
+                 (map (fn [^RecordComponentInfo rci]
+                        [(-> rci (.name) (.stringValue) (symbol))
+                         (-> rci (.descriptor) (.stringValue))]))
+                 (.components attr))))]
   (defn extract [^bytes bs]
     (let [cm (-> (Classfile/of) (.parse bs))]
       (-> [(class-header cm)]
           (into (map field-data) (.fields cm))
-          (into (map method-data) (.methods cm))))))
+          (into (map method-data) (.methods cm))
+          (into (keep attribute-data) (.attributes cm))))))
 
 (defn class-name [^IPersistentVector class-data]
   (nth (nth class-data 0) 3))

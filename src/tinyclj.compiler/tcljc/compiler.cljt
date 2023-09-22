@@ -893,7 +893,7 @@
                    (cf/with-cbh [cb]
                      (-> (cf/with-version cb)
                          (.withFlags (.flags cdef))
-                         (.withSuperclass (.super-class cdef))
+                         (.withSuperclass (cf/super-class cdef))
                          (.withInterfaceSymbols (.itfs cdef)))
                      (run! #(.accept ^Consumer % cb) (.cb-handlerv cdef))))
                dyn-ld (ctx/dyn-ld (.ctx env))
@@ -910,7 +910,7 @@
                cdef (sigclass/eph-dtp-class-def (ctx/this-ns ctx)
                                                 (.get-imports ctx)
                                                 this-class field-sig opts
-                                                ctx)
+                                                methods ctx)
                
                ;; Construct ephemeral type instance that is only valid
                ;; inside this deftype* and derive the deftype's

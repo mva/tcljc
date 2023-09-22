@@ -413,31 +413,32 @@
 ;;; Holds just enough information to pass a definterface* class or a
 ;;; skeletal deftype* class to the emitter.
 (deftype ClassDef [^ClassDesc this-class
-                   ^ClassDesc super-class
-                   ^ClassHierarchyResolver$ClassHierarchyInfo ch-info
                    ^int flags
                    itfs                 ;seq of ClassDesc
-                   ^DirectMethodHandleDesc super-mhd
+                   ^DirectMethodHandleDesc super-mhd ;nil if interface
                    ^IPersistentVector fieldv ;vector of FieldDef
                    ^IPersistentVector cb-handlerv]) ;vector to force eager
                    
+(defn super-class ^ClassDesc [^ClassDef cdef]
+  (if-some [mhd (.super-mhd cdef)]
+    (.owner mhd)
+    rt/object))
+
+(defn ch-info ^ClassHierarchyResolver$ClassHierarchyInfo [^ClassDef cdef]
+  (if (not (zero? (bit-and (.flags cdef) Classfile/ACC_INTERFACE)))
+    (ClassHierarchyResolver$ClassHierarchyInfo/ofInterface)
+    (ClassHierarchyResolver$ClassHierarchyInfo/ofClass (super-class cdef))))
 
 (defn class-def ^ClassDef [^ClassDesc this-class
-                           ^ClassDesc super-class
                            ^int flags
                            itfs
                            ^DirectMethodHandleDesc super-mhd ;nil for interface
                            ^IPersistentVector fieldv
                            ^IPersistentVector cb-handlerv]
-  (ClassDef. this-class super-class
-             (if (not (zero? (bit-and flags Classfile/ACC_INTERFACE)))
-               (ClassHierarchyResolver$ClassHierarchyInfo/ofInterface)
-               (ClassHierarchyResolver$ClassHierarchyInfo/ofClass super-class))
-             flags itfs super-mhd fieldv cb-handlerv))
+  (ClassDef. this-class flags itfs super-mhd fieldv cb-handlerv))
 
 (defn with-methods ^ClassDef [^ClassDef cdef cbhs]
-  (ClassDef. (.this-class cdef) (.super-class cdef) (.ch-info cdef)
-             (.flags cdef) (.itfs cdef)
+  (ClassDef. (.this-class cdef) (.flags cdef) (.itfs cdef)
              (.super-mhd cdef) (.fieldv cdef) (into (.cb-handlerv cdef) cbhs)))
 
 ;;; ------------------------------------------------------------------------
