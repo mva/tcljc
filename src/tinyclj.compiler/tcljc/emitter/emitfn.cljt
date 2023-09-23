@@ -375,9 +375,7 @@
             patched-ees (patched-entries fspec)
             all-ees (concat final-ees patched-ees)]
         (cf/with-cbh [cb]
-          (-> (.withFlags cb (bit-or Classfile/ACC_PUBLIC
-                                     Classfile/ACC_FINAL
-                                     Classfile/ACC_SUPER))
+          (-> (.withFlags cb (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL))
               (.withSuperclass (.owner super-mhd)))
 
           (doseq [^EnvEntry ee all-ees
@@ -488,9 +486,7 @@
                       (cons (EnvEntry. bref bref nil field-ld false)
                             (final-entries fspec)))]
         (cf/with-cbh [cb]
-          (-> (.withFlags cb (bit-or Classfile/ACC_PUBLIC
-                                     Classfile/ACC_FINAL
-                                     Classfile/ACC_SUPER))
+          (-> (.withFlags cb (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL))
               (.withSuperclass (.owner super-mhd))
               (.withInterfaceSymbols itfs))
 
