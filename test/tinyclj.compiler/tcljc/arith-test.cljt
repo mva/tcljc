@@ -6,8 +6,7 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.arith-test
-  (:require [tcljc.bootstrap :refer [asm-expr call-expr fn-call-method
-                                     is-class]]
+  (:require [tcljc.bootstrap :refer [asm-expr fn-call-method is-class]]
             [tinyclj.alpha.ptest :refer :all]))
 
 (deftest int-add-test

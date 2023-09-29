@@ -82,7 +82,7 @@
 (def jvm-float-one (Float/valueOf 1))
 
 (defn in-short? ^boolean [^int n]
-  (<= Short/MIN_VALUE n Short/MAX_VALUE))
+  (= n (tinyclj.core/short n)))
 
 (def Object java.lang.Object)
 (def ObjectArray (.arrayType Object))

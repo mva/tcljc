@@ -6,7 +6,7 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.loop-test
-  (:require [tcljc.bootstrap :refer [asm-expr call-expr nmsp]]
+  (:require [tcljc.bootstrap :refer [asm-expr nmsp]]
             [tinyclj.alpha.ptest :refer :all]))
 
 (deftest counting-loop-int-test

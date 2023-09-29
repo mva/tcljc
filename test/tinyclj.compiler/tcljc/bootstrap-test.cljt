@@ -6,8 +6,15 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.bootstrap-test
-  (:require [tcljc.bootstrap :refer [nmsp asm-expr call-expr]]
+  (:require [tcljc.javabase :as jb]
+            [tcljc.bootstrap :refer [nmsp asm-expr call-expr]]
             [tinyclj.alpha.ptest :refer :all]))
+
+(deftest in-short?-test
+  (is (jb/in-short? Short/MIN_VALUE))
+  (is (jb/in-short? Short/MAX_VALUE))
+  (is (not (jb/in-short? (dec Short/MIN_VALUE))))
+  (is (not (jb/in-short? (inc Short/MAX_VALUE)))))
 
 (deftest empty-namespace-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")

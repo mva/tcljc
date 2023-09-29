@@ -6,7 +6,7 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.xcmp-test
-  (:require [tcljc.bootstrap :refer [asm-expr]]
+  (:require [tcljc.bootstrap :refer [asm-expr call-expr]]
             [tinyclj.alpha.ptest :refer :all]))
 
 ;; See "3.5 More Control Examples" of JVMS for details on the NaN
@@ -73,3 +73,45 @@
            (ICONST_1) (IRETURN)
            [L:0] (ICONST_M1) (IRETURN)]
          (asm-expr [^double d] (if (not (== d 100.0)) +1 -1)))))
+
+
+(deftest three-arg-compare-test
+  (is (= '[["LOCAL 0: int n"]
+           (GETSTATIC Short "MIN_VALUE" "S")
+           (ISTORE_1)
+           ["LOCAL 1: short __temp"]
+           (GETSTATIC Short "MAX_VALUE" "S")
+           (ISTORE_2)
+           ["LOCAL 2: short __temp"]
+           (ILOAD_1)
+           (ILOAD_0)
+           (IF_ICMPGT L:1)              ;if MIN_VALUE > n: false
+           (ILOAD_0)
+           (ILOAD_2)
+           (IF_ICMPGT L:0)              ;if n > MAX_VALUE: false
+           (ICONST_1)    ;true if (MIN_VALUE <= n) && (n <= MAX_VALUE)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)
+           [L:1]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^int n] (<= Short/MIN_VALUE n Short/MAX_VALUE))))
+  (true? (call-expr (#(<= Short/MIN_VALUE ^int % Short/MAX_VALUE) Short/MIN_VALUE)))
+  (false? (call-expr (#(<= Short/MIN_VALUE ^int % Short/MAX_VALUE) (dec Short/MIN_VALUE)))))
+
+(deftest short-predicate-via-narrow-test
+  (is (= '[["LOCAL 0: int n"]
+           (ILOAD_0)
+           (ILOAD_0)
+           (I2S)                        ;narrow to short
+           (IF_ICMPNE L:0)
+           (ICONST_1)
+           (IRETURN)
+           [L:0]
+           (ICONST_0)
+           (IRETURN)]
+         (asm-expr [^int n] (= n (short n)))))
+  (true? (call-expr (#(= ^int % (short ^int %)) Short/MIN_VALUE)))
+  (false? (call-expr (#(= ^int % (short ^int %)) (dec Short/MIN_VALUE)))))
