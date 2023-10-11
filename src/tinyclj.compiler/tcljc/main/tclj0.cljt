@@ -35,7 +35,7 @@
    (java.net URL)
    (java.nio.file Path Files)
    (java.util HashSet)
-   (java.util.concurrent ConcurrentHashMap ArrayBlockingQueue)
+   (java.util.concurrent ConcurrentHashMap LinkedBlockingQueue)
    (java.util.concurrent.atomic AtomicBoolean)))
 
 ;;; Implementation of in/out infrastructure when running the compiler
@@ -46,7 +46,7 @@
                         ^ConcurrentHashMap private-name-map
                         ^TaskScope fct-task-scope
                         
-                        ^ArrayBlockingQueue compile-to-emit-q 
+                        ^LinkedBlockingQueue compile-to-emit-q 
                         ^URL rurl
                         ^String source-file-attribute
                         ^boolean collect-macro-definitions?]
@@ -148,7 +148,7 @@
                      
                      ^AtomicBoolean pkg-dir-prepared
                      ^tcljc.classfile.CHR dyn-chr
-                     ^ArrayBlockingQueue compile-to-emit-q]
+                     ^LinkedBlockingQueue compile-to-emit-q]
   NmspIO
   (compile-io [_]
     compile-io)
@@ -266,8 +266,7 @@
                             (beachhead/mk-lookup-in-pkg rt-lookup dyn-ld ns-str)
                             (.in (MethodHandles/publicLookup) ^Class str-or-class))
 
-            capacity-q 16 ;prevent compilation from reaching too far ahead
-            compile-to-emit-q (ArrayBlockingQueue. capacity-q)
+            compile-to-emit-q (LinkedBlockingQueue.)
             
             !rpath-set (HashSet.)
             pdp (java.util.concurrent.atomic.AtomicBoolean. false)
