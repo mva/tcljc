@@ -22,6 +22,16 @@
 
 (defn -main [& args]
   (letfn [(coded-exit ^void [^boolean success]
+            #_(let [t (-> (^Runnable fn []
+                           nil)
+                          (Thread/startVirtualThread))]
+                (prn :final-virtual-thread-id (.threadId t))
+                (.join t))
+            #_(when (seq (System/getenv "TCLJ0_REPEAT"))
+                (println "jcmd" (.pid java.lang.ProcessHandle/current) "JFR.view" "hot-methods")
+                (let [seconds 60]
+                  (println "Sleeping for" seconds "seconds...")
+                  (Thread/sleep (* seconds 1000))))
             (System/exit (if success 0 1)))
           (usage ^boolean []
             (println (str "usage: java ... [--watch] [-d <dest-dir] "
@@ -36,7 +46,14 @@
                              "/tmp/threads.json")
                   (if (.watch-mode? opts)
                     (tclj1/run opts)
-                    (tclj0/run opts)))
+                    (do #_(dotimes [_ (if-some [repeat (System/getenv "TCLJ0_REPEAT")]
+                                        (try
+                                          (dec (Integer/parseInt repeat))
+                                          (catch NumberFormatException _
+                                            0))
+                                        0)]
+                            (tclj0/run opts))
+                        (tclj0/run opts))))
               false))
           (catch clojure.lang.ExceptionInfo e
             (print-exception-info e)
