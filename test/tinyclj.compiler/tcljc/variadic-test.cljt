@@ -1064,14 +1064,15 @@
            (ARETURN)]
       (asm-expr (.formatted "%3.1f %3.1f" (object 1.0) (object 2.0))))))
 
-(deftest varargs-array-element-var-handle
-  (is (= '[(GETSTATIC ValueLayout "JAVA_FLOAT"
-                      "Ljava/lang/foreign/ValueLayout$OfFloat;")
+(deftest varargs-ints-of-virtual
+  (is (= '[(NEW Calendar$Builder)
+           (DUP)
+           (INVOKESPECIAL Calendar$Builder "<init>" "()V")
            (ICONST_0)
            (NEWARRAY "int[]")
-           (INVOKEINTERFACE ValueLayout$OfFloat "arrayElementVarHandle"
-                            "([I)Ljava/lang/invoke/VarHandle;" :itf)
+           (INVOKEVIRTUAL Calendar$Builder "setFields"
+                          "([I)Ljava/util/Calendar$Builder;")
            (ARETURN)]
-         (asm-expr (.arrayElementVarHandle
-                    java.lang.foreign.ValueLayout/JAVA_FLOAT
+         (asm-expr (.setFields
+                    (java.util.Calendar$Builder.)
                     (new ints 0))))))
