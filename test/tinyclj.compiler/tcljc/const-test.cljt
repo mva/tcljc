@@ -233,3 +233,32 @@
            (ARETURN)]
          (asm-expr [^String foo ^String bar]
                    #{foo bar}))))
+
+(deftest class-symbols
+  (is (= '[(LDC Object)
+           (ARETURN)]
+         (asm-expr java.lang.Object)))
+  (is (= '[(LDC "Object[]")
+           (ARETURN)]
+         (asm-expr java.lang.Object*)))
+
+  ;; regular quote
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;"
+                 [[:bsm-quote "symbol" "Lclojure/lang/Symbol;"
+                   ["java.lang.Object*"]]]])
+           (ARETURN)]
+         (asm-expr '(java.lang.Object*))))
+
+  ;; syntax quote
+  (is (= '[(LDC [:bsm-quote "symbol" "Lclojure/lang/Symbol;"
+                 ["java.lang.Object"]])
+           (ARETURN)]
+         (str-expr "`java.lang.Object")))
+  (is (= '[(LDC [:bsm-quote "symbol" "Lclojure/lang/Symbol;"
+                 ["java.lang.Object*"]])
+           (ARETURN)]
+         (str-expr "`java.lang.Object*")))
+  (is (= '[(LDC [:bsm-quote "symbol" "Lclojure/lang/Symbol;"
+                 ["java.lang.Object*"]])
+           (ARETURN)]
+         (str-expr "`Object*"))))

@@ -168,17 +168,29 @@
 ;; of the application under construction.  Return nil if the type does
 ;; not exist.
 (defn lookup-type ^Class [tp ^Ctx ctx]
-  (if (class? tp)
-    tp
-    (or (.valAt (.get-imports ctx) tp) ;symbols only
-        (try
-          (.resolveConstantDesc
-           (if (symbol? tp)
-             (ClassDesc/of (str tp))
-             (rt/str-to-cld tp))
-           (-> ctx .compile-io .lookup-in-pkg))
-          (catch ClassNotFoundException _
-            nil)))))
+  (letfn [(resolve-class-symbol ^Class [^Symbol tp]
+            (or (.valAt (.get-imports ctx) tp)
+                (.resolveConstantDesc (ClassDesc/of (name tp))
+                                      (-> ctx .compile-io .lookup-in-pkg))))
+          (resolve-type-symbol ^Class [^Symbol tp]
+            (let [nm (name tp)
+                  array-rank (cfg/array-dimensions nm)]
+              (if (zero? array-rank) ;not an array & valAt lookup failed
+                (resolve-class-symbol tp)
+                (loop [cl (-> (cfg/strip-array-suffix nm array-rank)
+                              (resolve-class-symbol))
+                       i array-rank]
+                  (if (zero? i)
+                    cl
+                    (recur (.arrayType cl) (dec i)))))))]
+    (try
+      (cond
+        (class? tp) tp
+        (symbol? tp) (resolve-type-symbol tp)
+        :else (.resolveConstantDesc (rt/str-to-cld tp)
+                                    (-> ctx .compile-io .lookup-in-pkg)))
+      (catch ClassNotFoundException _
+        nil))))
 
 (defn get-type ^Class [tp ^Ctx ctx]
   (or (lookup-type tp ctx)

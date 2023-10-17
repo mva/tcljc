@@ -58,6 +58,50 @@
                    [clojure.lang.IType])
                  (def ^"[Lpkg.ns0.Vec3;" a)]))))
 
+(deftest c-style-array-syntax
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
+                   nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "x" "[Ljava/lang/Object;")]
+            [(FIELD [PUBLIC FINAL] "y" "[Ljava/lang/Object;")]
+            [(FIELD [PUBLIC FINAL] "z" "[I")]
+            
+            [(METHOD [PUBLIC] "<init>" "([Ljava/lang/Object;[Ljava/lang/Object;[I)V")
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "x" "[Ljava/lang/Object;")
+             (ALOAD_0)
+             (ALOAD_2)
+             (PUTFIELD . "y" "[Ljava/lang/Object;")
+             (ALOAD_0)
+             (ALOAD_3)
+             (PUTFIELD . "z" "[I")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
+            [(FIELD [PUBLIC STATIC VOLATILE] "a" "[Lpkg/ns0/T;")]
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
+            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
+             (RETURN)]
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.ns0)
+                 (deftype*
+                   pkg.ns0/T
+                   pkg.ns0.T
+                   [^java.lang.Object* x
+                    ^Object* y
+                    ^int* z]
+                   :implements
+                   [clojure.lang.IType])
+                 (def ^pkg.ns0.T* a)]))))
+
 (deftest data-only-reference-within-do
   (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/A"
                    nil "java/lang/Object" [IType])

@@ -1377,7 +1377,9 @@
 
              :else x)))]             ;`x` can be a compile-time entity
     
-      #_(binding [*print-meta* #_false true] (prn :compile-form form))
+      #_(binding [*print-meta* #_false true]
+        (prn :compile-form form)
+        #_(when (seq? form) (prn :classes (map class form))))
       (-> (if (seq? form)
             (wrong/with-list-context form
               (maybe-type-hint (compile-list form) form))

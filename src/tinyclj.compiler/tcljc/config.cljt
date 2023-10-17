@@ -85,6 +85,21 @@
    Thread$UncaughtExceptionHandler Thread$State
    Deprecated Override SuppressWarnings])
 
+(defn array-dimensions ^int [^String nm] ;zero if `nm` does not match #".+\*"
+  (let [len (.length nm)]
+    (loop [i 0]
+      (if (and (< (inc i) len) (= (.charAt nm (- len (inc i))) \*))
+        (recur (inc i))
+        i))))
+
+(defn strip-array-suffix ^clojure.lang.Symbol [^String nm ^int array-rank]
+  (symbol nil (.substring nm 0 (- (.length nm) array-rank))))
+
+(defn array-suffix ^String [^String nm ^int array-rank]
+  (if (zero? array-rank)
+    nm
+    (str nm (.repeat "*" array-rank))))
+
 ;;; ------------------------------------------------------------------------
 
 (def source-suffix ".cljt")

@@ -9,6 +9,81 @@
   (:require [tcljc.bootstrap :refer [asm-expr call-expr]]
             [tinyclj.alpha.ptest :refer :all]))
 
+(deftest c-style-array-syntax
+  ;; class values
+  (is (= '[(LDC "Object[]") (ARETURN)]
+         (asm-expr java.lang.Object*)))
+  (is (= '[(LDC "Object[][]") (ARETURN)]
+         (asm-expr java.lang.Object**)))
+
+  (is (= '[(LDC "Object[]") (ARETURN)]
+         (asm-expr Object*)))
+  (is (= '[(LDC "Object[][]") (ARETURN)]
+         (asm-expr Object**)))
+  
+  (is (= '[(LDC "int[]") (ARETURN)]
+         (asm-expr int*)))
+  (is (= '[(LDC "int[][]") (ARETURN)]
+         (asm-expr int**)))
+  
+  ;; array creation using (new <type> ...) syntax
+  (is (= '[(ICONST_2)
+           (ANEWARRAY "Object[]")
+           (ARETURN)]
+         (asm-expr (new java.lang.Object* 2))))
+  (is (= '[(ICONST_2)
+           (ANEWARRAY "Object[][]")
+           (ARETURN)]
+         (asm-expr (new java.lang.Object** 2))))
+
+  (is (= '[(ICONST_2)
+           (ANEWARRAY "Object[]")
+           (ARETURN)]
+         (asm-expr (new Object* 2))))
+  (is (= '[(ICONST_2)
+           (ANEWARRAY "Object[][]")
+           (ARETURN)]
+         (asm-expr (new Object** 2))))
+
+  (is (= '[(ICONST_2)
+           (NEWARRAY "int[]")
+           (ARETURN)]
+         (asm-expr (new int* 2))))
+  (is (= '[(ICONST_2)
+           (ANEWARRAY "int[][]")
+           (ARETURN)]
+         (asm-expr (new int** 2))))
+
+  ;; array creation using (<type>. ...) syntax -- not sure if this is
+  ;; a good idea, but it should work for symmetry reasons
+  (is (= '[(ICONST_2)
+           (ANEWARRAY "Object[]")
+           (ARETURN)]
+         (asm-expr (java.lang.Object*. 2))))
+  (is (= '[(ICONST_2)
+           (ANEWARRAY "Object[][]")
+           (ARETURN)]
+         (asm-expr (java.lang.Object**. 2))))
+
+  (is (= '[(ICONST_2)
+           (ANEWARRAY "Object[]")
+           (ARETURN)]
+         (asm-expr (Object*. 2))))
+  (is (= '[(ICONST_2)
+           (ANEWARRAY "Object[][]")
+           (ARETURN)]
+         (asm-expr (Object**. 2))))
+
+  (is (= '[(ICONST_2)
+           (NEWARRAY "int[]")
+           (ARETURN)]
+         (asm-expr (int*. 2))))
+  (is (= '[(ICONST_2)
+           (ANEWARRAY "int[][]")
+           (ARETURN)]
+         (asm-expr (int**. 2)))))
+
+
 (deftest make-array-test
   (is (= '[(ICONST_2)
            (ANEWARRAY "Object[]")

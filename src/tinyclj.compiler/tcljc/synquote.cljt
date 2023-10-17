@@ -55,9 +55,12 @@
 ;;; ------------------------------------------------------------------------
 
 (defn- encode-symbol [sym ^Ctx ctx]
-  (letfn [(resolve-class-name ^String [^String nm]
+  (letfn [(resolve-type-name ^String [^String nm]
             (if-some [tp (ctx/lookup-type (symbol nil nm) ctx)]
-              (.getName tp)
+              (loop [array-rank 0, tp tp]
+                (if-some [tp' (.getComponentType tp)]
+                  (recur (inc array-rank) tp')
+                  (cfg/array-suffix (.getName tp) array-rank)))
               (when-not (neg? (.indexOf nm (int \.)))
                 nm)))
           (trim-last ^String [^String nm]
@@ -70,20 +73,20 @@
           (symbol nil nm)
             
           (.endsWith nm ".")            ;shorthand for (new ...)
-          (if-some [nm' (resolve-class-name (trim-last nm))]
+          (if-some [nm' (resolve-type-name (trim-last nm))]
             (symbol nil (str nm' "."))
             (symbol nil nm))
             
           :else
           (if-some [bref ^BindingRef (.valAt (.get-globals ctx) nm)]
             (x/qname bref)
-            (if-some [nm' (resolve-class-name nm)]
+            (if-some [nm' (resolve-type-name nm)]
               (symbol nil nm')
               (symbol (.ns-str ctx) nm))))
         
         (if-some [ns-part' (and ns-part
                                 (or (.valAt (.get-ns-alias-map ctx) ns-part nil)
-                                    (resolve-class-name ns-part)))]
+                                    (resolve-type-name ns-part)))]
           (symbol ns-part' nm)
           sym)))))
 

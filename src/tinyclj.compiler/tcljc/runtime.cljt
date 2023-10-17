@@ -190,7 +190,7 @@
 
 (defmacro aclass-desc [ptypev]
   (assert (vector? ptypev))
-  `(doto (new "[Ljava.lang.constant.ClassDesc;" ~(count ptypev))
+  `(doto (new java.lang.constant.ClassDesc* ~(count ptypev))
      ~@(map-indexed #(tinyclj.core/list 'aset %1 %2) ptypev)))
 
 (defmacro mtd [rtype ptypev]

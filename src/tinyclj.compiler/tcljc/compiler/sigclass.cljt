@@ -103,19 +103,30 @@
 
 (defn- tag-desc-of ^ClassDesc [^String pkg-name ^IPersistentMap imports
                                form ^boolean void? ^ClassDesc no-hint]
-  (letfn [(as-class-desc ^ClassDesc [x]
+  (letfn [(get-cld ^ClassDesc [^String x]
+            (try
+              (rt/str-to-cld x)
+              (catch IllegalArgumentException _
+                (wrong/syntax "invalid class name" x))))
+          (symbol-class-desc ^ClassDesc [^Symbol x]
+            (or (some-> (get imports x nil) (rt/describe-class))
+                (let [nm (name x)
+                      nm (if (str/includes? nm ".")
+                           nm
+                           (str pkg-name "." nm))]
+                  (get-cld nm))))
+          (as-class-desc ^ClassDesc [x]
             ;; used by definterface to accept class names without
             ;; existing definition
             (if (symbol? x)
-              (or (some-> (get imports x nil) (rt/describe-class))
-                  (let [s (str x)]
-                    (if (str/includes? s ".")
-                      (recur s)
-                      (recur (str pkg-name "." s)))))
-              (try
-                (rt/str-to-cld x)
-                (catch IllegalArgumentException _
-                  (wrong/syntax "invalid class name" x)))))]
+              (let [nm (name x)
+                    array-rank (cfg/array-dimensions nm)]
+                (if (zero? array-rank)
+                  (symbol-class-desc x)
+                  (-> (cfg/strip-array-suffix nm array-rank)
+                      (symbol-class-desc)
+                      (.arrayType array-rank))))
+              (get-cld x)))]
     
     (if-some [tag (sig/get-tag form)]
       (let [tp (as-class-desc tag)]
