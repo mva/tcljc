@@ -60,19 +60,28 @@
                        `(let* [~e ~(with-meta e {:tag tp})] ~expr)])))
      :else (str ~e)))
 
+(defn- type-name [tp]                   ;returns symbol or string
+  (condp instance? tp
+    ClassDesc
+    (let [cd ^ClassDesc tp]
+      (cond->> (.displayName cd)
+        (not (.isArray cd)) (symbol nil)))
+    ClassEntry
+    (recur (.asSymbol ^ClassEntry tp))
+    #_else (throw (IllegalArgumentException. (str (class tp))))))
+
 (defn- constant-desc [const ^ClassDesc owner-cld]
   (letfn [(const-desc [const]
             (constant-desc const owner-cld))
-          (owner-name ^Symbol [^ClassDesc cld]
+          (class-desc [^ClassDesc cld]
             (if (= cld owner-cld)
               '.
-              (let [s (.displayName cld)]
-                (symbol nil s))))]
+              (type-name cld)))]
     (switch-on-type
      const
 
      ClassDesc
-     (owner-name const)
+     (class-desc const)
              
      Number
      const
@@ -83,7 +92,7 @@
      java.lang.constant.DirectMethodHandleDesc
      (or (get named-mhd const nil)
          [(symbol nil (-> const .kind .name))
-          (owner-name (.owner const))
+          (class-desc (.owner const))
           (const-desc (.methodName const))
           (const-desc (.lookupDescriptor const))])
              
@@ -95,16 +104,6 @@
              
      jdk.internal.classfile.constantpool.LoadableConstantEntry
      (recur (.constantValue const) owner-cld))))
-
-(defn- type-name [tp]                   ;returns symbol or string
-  (condp instance? tp
-    ClassDesc
-    (let [cd ^ClassDesc tp]
-      (cond->> (.displayName cd)
-        (not (.isArray cd)) (symbol nil)))
-    ClassEntry
-    (recur (.asSymbol ^ClassEntry tp))
-    #_else (throw (IllegalArgumentException. (str (class tp))))))
 
 (defn- instruction-data [insn ^ClassDesc owner-cld ^HashMap label-names]
   (letfn [(opcode ^Symbol [^CodeElement ce]
