@@ -150,19 +150,10 @@
     (doseq [^Class cl config/java-lang-classes]
       (.put m (import-symbol-short cl) cl))
     
-    ;; pseudo-import of primitive and primitive array types types by
-    ;; their lower-case Java name; technically, `^object` should not
-    ;; exist, but for symmetry it does
-    (.put m 'object Object)
-    (.put m 'objects (.arrayType Object))
-    ;; type `void` is treated specially (the JVM considers it to be a
-    ;; primitive as well), and null_type does not exist as a named
-    ;; entity
-    (.put m 'void Void/TYPE)
-    (doseq [^Class cl [boolean byte short char int float long double]
-            :let [nm (.getSimpleName cl)]]
-      (.put m (symbol nil nm) cl)
-      (.put m (symbol nil (str nm "s")) (.arrayType cl)))
+    ;; pseudo-import of primitive types types by their lower-case Java
+    ;; name
+    (doseq [^Class cl [void boolean byte short char int float long double]]
+      (.put m (symbol nil (.getSimpleName cl)) cl))
     (into {} m)))
 
 (defn computational-const ^Object [^Object x]
