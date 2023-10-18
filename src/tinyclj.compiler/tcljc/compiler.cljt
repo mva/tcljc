@@ -356,7 +356,7 @@
        (consume-args acc argv ptypes Integer/MAX_VALUE jb/Object))))
   (^IPersistentVector [^IPersistentVector acc
                        ^IPersistentVector argv
-                       ^"[Ljava.lang.Class;" ptypes
+                       ^Class* ptypes
                        ^int vararg-start ^Class vararg-tp]
    (loop [acc acc, i 0]
      (if (= i (count argv))
@@ -380,7 +380,7 @@
      ^IPersistentMap locals
      ;; Maps String to BindingRef.
      
-     ^objects !closes-over
+     ^Object* !closes-over
      ;; Small mutable hash table recording the bindings that this
      ;; function closes over.  Will usually hold at most a handful of
      ;; entries, and is empty for most functions.  Entries can be
@@ -535,7 +535,7 @@
          (let [env' (with-ctx env (ctx/locked (.ctx env)))
                at-fn (^Callable fn []
                       (let [n (count (.at-sigs fn-form))
-                            aca (new "[Ltcljc.expr.ArityCode;" n)]
+                            aca (new ArityCode* n)]
                         (dotimes [i n]
                           (let [at ^Arity (nth (.at-sigs fn-form) i)
                                 this-bref (x/local-ref
@@ -557,7 +557,7 @@
                fn-form (if (some auto-rtype? (.at-sigs fn-form))
                          ;; Must force future early to pick up the
                          ;; replacement type from the arity body.
-                         (->> ^"[Ltcljc.expr.ArityCode;"
+                         (->> ^ArityCode*
                               (io/wait-for-result body-fut)
                               (mapv #(.at ^ArityCode %))
                               (x/with-at-sigs fn-form))
@@ -782,13 +782,13 @@
          (let [import-map (grammar/parse-import-specs (rest form))]
            (add-imports import-map (.ctx env))))
 
-       (argument-types ^"[Ljava.lang.Class;" [^IPersistentVector xv]
-         (let [a (new "[Ljava.lang.Class;" (count xv))]
+       (argument-types ^Class* [^IPersistentVector xv]
+         (let [a (new Class* (count xv))]
            (dotimes [i (alength a)]
              (aset a i (x/type (nth xv i))))
            a))
        (pick-member [members ^String member-label ^Class owner ^String nm
-                     ^"[Ljava.lang.Class;" atypes]
+                     ^Class* atypes]
          (letfn [(invoke-ex-data []
                    {:invoke/name nm
                     :invoke/owner owner
@@ -901,7 +901,7 @@
                ld (cfg/class-loader-instance dyn-ld "tclj-eph" nil)
                m (.getDeclaredMethod (class ld) "ephemeralClass"
                                      (.arrayType Byte/TYPE))]
-           (-> (.invoke m ld (doto (new objects 1) (aset 0 bs)))
+           (-> (.invoke m ld (doto (new Object* 1) (aset 0 bs)))
                (cfg/validate-defined-class))))
        (dtp-class-def ^DeftypeDef [^Env env short-sym fq-sym binary-sym
                                    field-sig opts methods]
@@ -985,7 +985,7 @@
                m-fn (^Callable fn []
                      (let [
                            n (count atv)
-                           aca (new "[Ltcljc.expr.ArityCode;" n)]
+                           aca (new ArityCode* n)]
                        (dotimes [i n]
                          (let [at ^Arity (nth atv i)]
                            (aset aca i (-> (enter-fn-arity env' unique-mnm
@@ -1662,7 +1662,7 @@
    (let [a (ensure-array (nth args 0))
          atp (x/type a)
          ms (resolve/static-methods java.util.Arrays "copyOf"
-                                    (doto (new "[Ljava.lang.Class;" 2)
+                                    (doto (new Class* 2)
                                       (aset 0 atp)
                                       (aset 1 jb/int)))
          x (resolve/invoke-static java.util.Arrays (first ms)

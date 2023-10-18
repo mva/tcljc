@@ -273,7 +273,7 @@
                (let [p (point-at-parameter r temp)]
                  (hit-record temp p (v3-smul (/ radius) (v3-sub p center))))))))))))
 
-(defn mk-hlist ^FnHitable [& ^"[Ltcljc.rtiow-nocore-ref.FnHitable;" hs]
+(defn mk-hlist ^FnHitable [& ^FnHitable* hs]
   (^FnHitable fn [r t-min t-max]
    (loop [i 0
           closest-so-far t-max

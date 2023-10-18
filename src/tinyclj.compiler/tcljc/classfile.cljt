@@ -51,7 +51,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(def ^:private bytecode2opcode (new "[Ljdk.internal.classfile.Opcode;" 256))
+(def ^:private bytecode2opcode (new Opcode* 256))
 (doseq [^Opcode opc (Opcode/values)]
   (when-not (.isWide opc)
     (aset bytecode2opcode (.bytecode opc) opc)))
@@ -172,9 +172,9 @@
         (ConcurrentHashMap.)))
 
 (defn build
-  (^bytes [^ClassDesc this-class ^Consumer cbh] ;for ephemeral classes
+  (^byte* [^ClassDesc this-class ^Consumer cbh] ;for ephemeral classes
    (-> (Classfile/of) (.build this-class cbh)))
-  (^bytes [^ClassDesc this-class ^Consumer cbh
+  (^byte* [^ClassDesc this-class ^Consumer cbh
            ^ClassHierarchyResolver dyn-chr]
    (-> (Classfile/of
         jdk.internal.classfile.Classfile$DeadCodeOption/KEEP_DEAD_CODE

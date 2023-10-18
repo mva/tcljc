@@ -206,7 +206,7 @@
                                                    (cons name
                                                          (cons (sigs fdecl) nil)))))
                  ;; pkg/ns0/_102.class
-                 (my-defn to-array ^objects [coll]
+                 (my-defn to-array ^Object* [coll]
                           (. clojure.lang.RT (toArray coll)))]))))
 
 
@@ -280,7 +280,7 @@
          
          (nmsp '[(ns pkg.ns0)
                  
-                 (def list (fn* list [& ^objects items]
+                 (def list (fn* list [& ^Object* items]
                                 (tinyclj.lang.Literal/list items)))
                  
                  (def __nil-pred (fn* __nil-pred ^boolean [x]

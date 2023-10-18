@@ -56,7 +56,7 @@
                    [^float x ^float y ^float z]
                    :implements
                    [clojure.lang.IType])
-                 (def ^"[Lpkg.ns0.Vec3;" a)]))))
+                 (def ^pkg.ns0.Vec3* a)]))))
 
 (deftest c-style-array-syntax
   (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/ns0/T"
@@ -1218,7 +1218,7 @@
                    :implements
                    [clojure.lang.IType]
                    (toString [_] (.toString left)))
-                 (def ^"[Lpkg.ns0.Node;" a)]))) ;non-trivial descriptor
+                 (def ^pkg.ns0.Node* a)]))) ;non-trivial descriptor
   (is (= exp-simple-self-reference-field
          (nmsp '[(ns pkg.ns0)
                  (deftype*
@@ -1228,7 +1228,7 @@
                    :implements
                    [clojure.lang.IType]
                    (toString [_] (.toString left)))
-                 (def ^"[Lpkg.ns0.Node;" a)]))) ;non-trivial descriptor
+                 (def ^pkg.ns0.Node* a)]))) ;non-trivial descriptor
   (is (= exp-simple-self-reference-field
          (nmsp '[(ns pkg.ns0)
                  (deftype*
@@ -1238,7 +1238,7 @@
                    :implements
                    [clojure.lang.IType]
                    (toString [_] (.toString left)))
-                 (def ^"[Lpkg.ns0.Node;" a)])))) ;non-trivial descriptor
+                 (def ^pkg.ns0.Node* a)])))) ;non-trivial descriptor
 
 ;;; EXPERIMENTAL
 (deftest array-self-reference-field
@@ -1277,11 +1277,11 @@
                  (deftype*
                    pkg.ns0/Node
                    pkg.ns0.Node
-                   [^"[Lpkg.ns0.Node;" nds]
+                   [^pkg.ns0.Node* nds]
                    :implements
                    [clojure.lang.IType]
                    (toString [_] (.toString nds)))
-                 (def ^"[Lpkg.ns0.Node;" a)])))) ;non-trivial descriptor
+                 (def ^pkg.ns0.Node* a)])))) ;non-trivial descriptor
 
 ;;; ------------------------------------------------------------------------
 

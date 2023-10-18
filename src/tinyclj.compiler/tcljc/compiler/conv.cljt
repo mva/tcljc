@@ -80,7 +80,7 @@
     (x/type arg0)
     (x/type arg1)))
 
-(def ^:private ^objects aopcd-conv-to
+(def ^:private ^Object* aopcd-conv-to
   (into-array Object [to-int to-long to-float to-double
                       nil to-byte to-char to-short]))
 

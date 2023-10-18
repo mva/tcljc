@@ -15,30 +15,30 @@
 ;; closes over.  Will usually hold at most a handful of entries, and
 ;; is empty for most functions.  Entries can be traversed in insertion
 ;; order.
-(defn mk-shm ^objects []
-  (new objects (inc (* initial-capacity 2))))
+(defn mk-shm ^Object* []
+  (new Object* (inc (* initial-capacity 2))))
 
-(letfn [(cont-hm ^objects [^objects hm]
+(letfn [(cont-hm ^Object* [^Object* hm]
           (let [i (dec (alength hm))]
             (aget hm i)))
-        (next-hm ^objects [^objects hm]
+        (next-hm ^Object* [^Object* hm]
           (let [i (dec (alength hm))]
             (if-some [x (aget hm i)]
               x
-              (aset hm i (new objects (dec (* (alength hm) 2)))))))
-        (first-key-idx ^int [^objects hm]
+              (aset hm i (new Object* (dec (* (alength hm) 2)))))))
+        (first-key-idx ^int [^Object* hm]
           (dec (quot (alength hm) 2)))
-        (val-idx ^int [^objects hm ^int key-idx]
+        (val-idx ^int [^Object* hm ^int key-idx]
           (+ key-idx (quot (alength hm) 2)))]
 
-  (defn sim-empty? ^boolean [^objects hm]
+  (defn sim-empty? ^boolean [^Object* hm]
     (nil? (aget hm (first-key-idx hm))))
   
-  (defn sim-keys ^LazySeq [^objects hm]
+  (defn sim-keys ^LazySeq [^Object* hm]
     ((fn lazy-keys
-       ([^objects hm]
+       ([^Object* hm]
         (lazy-keys hm (first-key-idx hm)))
-       ([^objects hm ^int i]
+       ([^Object* hm ^int i]
         (lazy-seq (if (neg? i)
                     (when-some [hm' (cont-hm hm)]
                       (lazy-keys hm'))
@@ -46,7 +46,7 @@
                       (cons k (lazy-keys hm (dec i))))))))
      hm))
   
-  (defn sim-get ^Object [^objects hm k]
+  (defn sim-get ^Object [^Object* hm k]
     (assert (some? k))
     (loop [i (dec (quot (alength hm) 2))]
       (if (neg? i)
@@ -56,7 +56,7 @@
             (aget hm (val-idx hm i))
             (recur (dec i)))))))
 
-  (defn sim-put-absent! ^Object [^objects hm k v] ;returns `v`
+  (defn sim-put-absent! ^Object [^Object* hm k v] ;returns `v`
     (assert (some? k))
     (assert (some? v))
     ;; note: the precondition "absent" allows to skip all segments
@@ -70,7 +70,7 @@
           (do (aset hm i k)
               (aset hm (val-idx hm i) v))))))
 
-  (defn sim-sum-keys! ^int [^ToIntFunction f! ^int acc ^objects hm]
+  (defn sim-sum-keys! ^int [^ToIntFunction f! ^int acc ^Object* hm]
     (loop [acc acc, i (dec (quot (alength hm) 2))]
       (if (neg? i)
         (if-some [cont (cont-hm hm)]

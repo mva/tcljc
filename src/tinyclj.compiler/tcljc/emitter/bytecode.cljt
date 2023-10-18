@@ -81,7 +81,7 @@
 ;;; ------------------------------------------------------------------------
 
 (deftype EmitState [^int arity-level
-                    ^objects arity-closes-over
+                    ^Object* arity-closes-over
                     ^ILdStInstr ld-this
                     ^Label recur-target]
   IProvidedValue
@@ -540,11 +540,11 @@
   (letfn [(macro-annotation ^void [^ClassfileBuilder b ^BindingRef bref]
             (when (x/b-macro? bref)
               (let [ae (if-some [macro-v ^BindingRef (.const-value bref)]
-                         (doto (new "[Ljdk.internal.classfile.AnnotationElement;" 1)
+                         (doto (new AnnotationElement* 1)
                            (aset 0 (AnnotationElement/ofString
                                     "macroValue" (str (x/qname macro-v)))))
-                         (new "[Ljdk.internal.classfile.AnnotationElement;" 0))
-                    ann (doto (new "[Ljdk.internal.classfile.Annotation;" 1)
+                         (new AnnotationElement* 0))
+                    ann (doto (new Annotation* 1)
                           (aset 0 (Annotation/of rt/Macro ae)))]
                 (.with b (RuntimeVisibleAnnotationsAttribute/of ann)))))
           (static-flags ^int [^BindingRef bref]
@@ -582,11 +582,11 @@
                           (.with (ConstantValueAttribute/of
                                   ^ConstantDesc (.const-value init-x)))))]
               (.withField cb mnm member-tp fbh)))
-          (alias-annotation ^"[Ljdk.internal.classfile.Annotation;" [^AliasRef bref]
+          (alias-annotation ^Annotation* [^AliasRef bref]
             (let [qnm (-> (.alias-for bref) (x/qname) (str))
-                  ae (doto (new "[Ljdk.internal.classfile.AnnotationElement;" 1)
+                  ae (doto (new AnnotationElement* 1)
                        (aset 0 (AnnotationElement/ofString "of" qnm)))]
-              (doto (new "[Ljdk.internal.classfile.Annotation;" 1)
+              (doto (new Annotation* 1)
                 (aset 0 (Annotation/of rt/Alias ae)))))
           (alias-field! ^void [^AliasRef bref]
             (let [member-tp rt/object

@@ -365,7 +365,7 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def list
-                   (fn* [& ^objects items]
+                   (fn* [& ^Object* items]
                         (loop* [i (- (alength items) 1), ret ()]
                                (if (>= i 0)
                                  (recur (- i 1) (.cons ret (aget items i)))

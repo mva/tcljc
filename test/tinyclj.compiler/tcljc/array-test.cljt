@@ -88,19 +88,19 @@
   (is (= '[(ICONST_2)
            (ANEWARRAY "Object[]")
            (ARETURN)]
-         (asm-expr (new objects 2)))))
+         (asm-expr (new Object* 2)))))
 
 (deftest alength-test
   (is (= '[["LOCAL 0: Object[] a"]
            (ALOAD_0)
            (ARRAYLENGTH)
            (IRETURN)]
-         (asm-expr [^objects a] (alength a))))
+         (asm-expr [^Object* a] (alength a))))
   (is (= '[["LOCAL 0: boolean[] a"]
            (ALOAD_0)
            (ARRAYLENGTH)
            (IRETURN)]
-         (asm-expr [^booleans a] (alength a)))))
+         (asm-expr [^boolean* a] (alength a)))))
 
 (deftest array-get-test
   (is (= '[["LOCAL 0: Object[] a"]
@@ -108,13 +108,13 @@
            (ICONST_0)
            (AALOAD)
            (ARETURN)]
-         (asm-expr [^objects a] (aget a 0))))
+         (asm-expr [^Object* a] (aget a 0))))
   (is (= '[["LOCAL 0: double[] a"]
            (ALOAD_0)
            (ICONST_0)
            (DALOAD)
            (DRETURN)]
-         (asm-expr [^doubles a] (aget a 0))))
+         (asm-expr [^double* a] (aget a 0))))
   
   (is (= '[(ICONST_2)
            (ICONST_3)
@@ -124,7 +124,7 @@
            (ICONST_1)
            (AALOAD)
            (ARETURN)]
-         (asm-expr (aget (new "[[Ljava.lang.Object;" 2 3) 0 1)))))
+         (asm-expr (aget (new Object** 2 3) 0 1)))))
 
 (deftest array-set-test
   (is (= '[["LOCAL 0: Object[] a"]
@@ -134,7 +134,7 @@
            (DUP_X2)
            (AASTORE)
            (ARETURN)]
-         (asm-expr [^objects a] (aset a 0 nil))))
+         (asm-expr [^Object* a] (aset a 0 nil))))
   (is (= '[["LOCAL 0: double[] a"]
            (ALOAD_0)
            (ICONST_0)
@@ -142,14 +142,14 @@
            (DUP2_X2)
            (DASTORE)
            (DRETURN)]
-         (asm-expr [^doubles a] (aset a 0 1.0))))
+         (asm-expr [^double* a] (aset a 0 1.0))))
   (is (= '[["LOCAL 0: double[] a"]
            (ALOAD_0)
            (ICONST_0)
            (DCONST_1)
            (DASTORE)
            (RETURN)]
-         (asm-expr ^void [^doubles a] (aset a 0 1.0))))
+         (asm-expr ^void [^double* a] (aset a 0 1.0))))
 
   (is (= '[(ICONST_2)
            (ICONST_3)
@@ -161,4 +161,4 @@
            (DUP_X2)
            (AASTORE)
            (ARETURN)]
-         (asm-expr (aset (new "[[Ljava.lang.Object;" 2 3) 0 1 nil)))))
+         (asm-expr (aset (new Object** 2 3) 0 1 nil)))))

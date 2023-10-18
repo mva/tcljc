@@ -53,7 +53,7 @@
 
 (deftype Arr [^int render-class
               ^boolean alignment?
-              ^objects data             ;array of Step if alignment
+              ^Object* data             ;array of Step if alignment
               ^int cost])
 
 (defn- arr? ^boolean [x]
@@ -80,28 +80,28 @@
 (deftype Step [^int idx ^int mask ^int cost ^Object x #_Step prefix])
 
 (defn- mk-arr ^Arr [^int render-class ^clojure.lang.ISeq data]
-  (letfn [(cost* ^int [^objects objs]
+  (letfn [(cost* ^int [^Object* objs]
             (loop [acc 1, i (dec (alength objs))]
               (if (neg? i)
                 acc
                 (recur (+ acc (cost (aget objs i)) ) (dec i)))))]
-    (let [objs ^objects (into-array Object data)]
+    (let [objs ^Object* (into-array Object data)]
       (Arr. render-class false objs (cost* objs)))))
 
 (defn- mk-alignment ^Arr [^int render-class ^Step rpath]
-  (let [steps (new "[Ltinyclj.alpha.ptest__align.Step;" (inc (.idx rpath)))]
+  (let [steps (new Step* (inc (.idx rpath)))]
     (loop [s rpath]
       (when (>= (.idx s) 0)
         (aset steps (.idx s) s)
         (recur (.prefix s))))
     (Arr. render-class true steps (.cost rpath))))
 
-(defn- al-steps ^"[Ltinyclj.alpha.ptest__align.Step;" [^Arr al]
-  ^"[Ltinyclj.alpha.ptest__align.Step;" (.data al))
+(defn- al-steps ^Step* [^Arr al]
+  ^Step* (.data al))
 
 
 (defn- equal? ^boolean [a b]          ;list is *never* equal to vector
-  (letfn [(data-equal ^boolean [^objects a ^objects b]
+  (letfn [(data-equal ^boolean [^Object* a ^Object* b]
             (loop [i (dec (alength a))]
               (cond
                 (neg? i) true
@@ -157,7 +157,7 @@
 
 ;;; FIXME... memoize (align a b) calls?
 (defn align ^Arr [^Arr a ^Arr b]
-  (let [grid (new "[[Ltinyclj.alpha.ptest__align.Step;" (inc (arr-length a)))]
+  (let [grid (new Step** (inc (arr-length a)))]
     (letfn [(step-at ^Step [^int i ^int j]
               (if (zero? (+ i j))
                 init-step
@@ -197,7 +197,7 @@
                 invalid-step))]
       
       (dotimes [i (alength grid)]
-        (let [row (new "[Ltinyclj.alpha.ptest__align.Step;"
+        (let [row (new Step*
                        (inc (arr-length b)))]
           (aset grid i row)
           (dotimes [j (alength row)]
@@ -304,8 +304,8 @@
 (definterface FnSideStyle
   ;; Takes an array of [mask doc] pairs of an alignment, and returns a
   ;; seq of `Doc` representing the indicated side.
-  (apply [^int this-side-mask ^ints masks
-          ^"[Ltinyclj.alpha.ptest__pp.Doc;" docs]))
+  (apply [^int this-side-mask ^int* masks
+          ^Doc* docs]))
 
 (defn alignment-doc ^Doc [^FnSideStyle style ^int this-side-mask ^Arr al]
   (letfn [(open-text ^Doc [^int render-class]
@@ -338,7 +338,7 @@
                 d0)))
           (doc-alignment ^Doc [^Arr al]
             (let [steps (al-steps al)
-                  masks (new ints (alength steps))
+                  masks (new int* (alength steps))
                   docs (pp/mk-array* (alength steps))]
               (dotimes [i (alength steps)]
                 (aset masks i (.mask (aget steps i))))

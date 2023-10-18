@@ -313,7 +313,7 @@
 ;;; Note: The current implementation uses HashMap and HashSet.  It is
 ;;; only determistic in its output as long as the underlying hash
 ;;; function is fixed.
-(letfn [(get-closes-over ^objects [^ArityId aid]
+(letfn [(get-closes-over ^Object* [^ArityId aid]
           (-> (.fn-form aid)
               (.at-sigs)
               ^Arity (nth (.at-idx aid))
@@ -329,7 +329,7 @@
           (if-some [co-fn (x/root-fn-form closing-over)]
             (identical? this-fnc (.!fnc co-fn))
             false))
-        (propagate-closes-over! ^boolean [^ArityId provider ^object closes-over]
+        (propagate-closes-over! ^boolean [^ArityId provider ^Object closes-over]
           (let [p-level (-> provider .fn-form .level)
                 p-fnc (-> provider .fn-form .!fnc)
                 p-co (get-closes-over provider)]
@@ -493,7 +493,7 @@
 
 ;;; Returns a seq of EnvEntry based on deduplicated `origin-bref`
 ;;; values from all arities of `fn-form`.
-(defn- fn-env ^"[Ltcljc.emitter.emitfn.EnvEntry;" [^FnForm fn-form]
+(defn- fn-env ^EnvEntry* [^FnForm fn-form]
   (letfn [(env-entry ^EnvEntry [^BindingRef origin-bref]
             (let [root-bref (x/root-bref origin-bref)
                   root-fnc (when-some [fn-form (x/root-fn-form root-bref)]
@@ -506,7 +506,7 @@
          (sort-by (fn [^BindingRef bref]
                     [(x/b-level bref) (x/form bref)]))
          (map env-entry)
-         ^"[Ltcljc.emitter.emitfn.EnvEntry;" (into-array EnvEntry))))
+         ^EnvEntry* (into-array EnvEntry))))
 
 (defn collect-fn-info ^TopLevelForm [^Expr x]
   (let [fn-specs (ArrayList.)

@@ -171,7 +171,7 @@
     (when-some [xs (seq ctx)]
       (summarize [] xs))))
 
-(defn- style-parameters [^"[Ljava.lang.Class;" ptypes ^boolean varargs?]
+(defn- style-parameters [^Class* ptypes ^boolean varargs?]
   (letfn [(pstr ^String [^int i]
             (let [cl (aget ptypes i)]
               (if (and varargs? (= (inc i) (alength ptypes)))
@@ -186,7 +186,7 @@
               (.append sb (pstr i))
               (recur (inc i))))))))
 
-(defn- print-sig [^String prefix ^"[Ljava.lang.Class;" ptypes ^boolean varargs?
+(defn- print-sig [^String prefix ^Class* ptypes ^boolean varargs?
                   ^int arg-count]
   (let [matching-count? (if varargs?
                           (>= arg-count (dec (alength ptypes)))
@@ -212,12 +212,12 @@
           (print-field [^Field f]
             (let [mods (.getModifiers f)]
               (print-sig (str "  " (static-indicator mods) "f")
-                         (new "[Ljava.lang.Class;" 0) false arg-count)))]
+                         (new Class* 0) false arg-count)))]
     (if (instance? Executable x)
       (print-executable ^Executable x)
       (print-field ^Field x))))
 
-(defn print-arity [^Arity at  ^"[Ljava.lang.Class;" arg-types]
+(defn print-arity [^Arity at  ^Class* arg-types]
   (let [ptypes (into-array Class (x/at-parameter-types at))]
     (print-sig (String/format "%4d" (x/at-n at)) ptypes
                (some? (x/at-extern-vararg-type at)) (alength arg-types))))
@@ -249,7 +249,7 @@
                             (filter #(= nm (.getName ^Member %)))))]
         (println (str "members " (term/highlight nm) " of "
                       (term/highlight (type-str owner)) ":"))
-        (when-some [arg-types ^"[Ljava.lang.Class;" (:invoke/arg-types data)]
+        (when-some [arg-types ^Class* (:invoke/arg-types data)]
           (doseq [m ms]
             (print-member m (alength arg-types))))
         (when-not (seq ms)
@@ -258,7 +258,7 @@
 
     (when-some [fn-form ^FnForm (:invoke/fn-form data)]
       (println "arities:")
-      (let [arg-types ^"[Ljava.lang.Class;" (:invoke/arg-types data)]
+      (let [arg-types ^Class* (:invoke/arg-types data)]
         (doseq [at (sort-by x/at-n (.at-sigs fn-form))]
           (print-arity at arg-types)))
       (println "args" (map type-str (:invoke/arg-types data))))

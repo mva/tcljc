@@ -45,15 +45,15 @@
 (def ^:private tag-vector (int 4))
 (def ^:private tag-set (int 5))
 
-(defn- tagged-named ^objects [^int tag meta ^clojure.lang.Named t]
-  (doto (new objects 4)
+(defn- tagged-named ^Object* [^int tag meta ^clojure.lang.Named t]
+  (doto (new Object* 4)
     (aset 0 (object tag))
     (aset 1 meta)
     (aset 2 (namespace t))
     (aset 3 (name t))))
 
-(defn- tagged-coll ^objects [^int tag ^clojure.lang.IObj coll]
-  (doto (new objects 3)
+(defn- tagged-coll ^Object* [^int tag ^clojure.lang.IObj coll]
+  (doto (new Object* 3)
     (aset 0 (object tag))
     (aset 1 (meta coll))
     (aset 2 coll)))
@@ -97,18 +97,18 @@
   (apply [_ t]
     (when (some? t)
       (cond
-        (instance? objects t)
-        (let [t ^objects t, tag (aget t 0), meta (aget t 1), data0 (aget t 2)]
+        (instance? Object* t)
+        (let [t ^Object* t, tag (aget t 0), meta (aget t 1), data0 (aget t 2)]
           (-> (case ^int tag
-                0 (let [data0 ^objects data0]
+                0 (let [data0 ^Object* data0]
                     (if (zero? (alength data0))
                       ()
                       (clojure.lang.ArraySeq/create data0)))
-                1 (clojure.lang.PersistentHashMap/create ^objects data0)
+                1 (clojure.lang.PersistentHashMap/create ^Object* data0)
                 2 (clojure.lang.Symbol/intern data0 (aget t 3))
                 3 (clojure.lang.Keyword/intern data0 (aget t 3))
-                4 (clojure.lang.LazilyPersistentVector/createOwning ^objects data0)
-                5 (clojure.lang.PersistentHashSet/create ^objects data0)
+                4 (clojure.lang.LazilyPersistentVector/createOwning ^Object* data0)
+                5 (clojure.lang.PersistentHashSet/create ^Object* data0)
                 (throw (IllegalStateException. (str tag))))
               (add-meta meta)))
         

@@ -318,7 +318,7 @@
                             injected-file-forms !render-to)
          ans-strs (->> ns-forms-seq
                        (map (comp nmsp-name-str first))
-                       ^"[Ljava.lang.String;" (into-array String))
+                       ^String* (into-array String))
          provided-nmsp (em/mk-provided-nmsp cfg/core-lib bootstrap-globals-core)]
      
      ;; manual unrolled reduce to reduce stack trace noise; during

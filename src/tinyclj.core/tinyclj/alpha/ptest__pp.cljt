@@ -24,7 +24,7 @@
 (defn txt ^String [^Doc doc]
   (._data doc))
 
-(defn children ^"[Ltinyclj.alpha.ptest__pp.Doc;" [^Doc doc]
+(defn children ^Doc* [^Doc doc]
   (._data doc))
 
 (defn width
@@ -34,21 +34,21 @@
    (+ (width doc) reserve)))
 
 (defn- width*
-  (^int [^"[Ltinyclj.alpha.ptest__pp.Doc;" docs]
+  (^int [^Doc* docs]
    (width* 0 (dec (alength docs)) docs))
-  (^int [^int acc ^int i ^"[Ltinyclj.alpha.ptest__pp.Doc;" docs]
+  (^int [^int acc ^int i ^Doc* docs]
    (if (neg? i)
      acc
      (recur (+ acc (width (aget docs i))) (dec i) docs))))
 
 (defn- mk-doc
-  (^Doc [^int tag ^"[Ltinyclj.alpha.ptest__pp.Doc;" children]
+  (^Doc [^int tag ^Doc* children]
    (mk-doc tag children (width* children)))
-  (^Doc [^int tag ^"[Ltinyclj.alpha.ptest__pp.Doc;" children ^int width]
+  (^Doc [^int tag ^Doc* children ^int width]
    (Doc. tag children width)))
 
-(defn mk-array* ^"[Ltinyclj.alpha.ptest__pp.Doc;" [^int n]
-  (new "[Ltinyclj.alpha.ptest__pp.Doc;" n))
+(defn mk-array* ^Doc* [^int n]
+  (new Doc* n))
 
 
 
@@ -84,7 +84,7 @@
 ;;; The factory function maps less than two children to non-aggregate
 ;;; nodes.
 (def ^:private tag-aggr 2)
-(defn aggr ^Doc [& ^"[Ltinyclj.alpha.ptest__pp.Doc;" children]
+(defn aggr ^Doc [& ^Doc* children]
   (case (alength children)
     0 text-empty
     1 (aget children 0)
@@ -110,7 +110,7 @@
   (if-some [s (seq elem-docs)]
     (let [sep (if comma? sep-comma-space sep-space)
           ds (into-array Doc (list* open sep close s))
-          w (+ (width* ds) (* (- (alength ^objects ds) 5) (width sep)))]
+          w (+ (width* ds) (* (- (alength ^Object* ds) 5) (width sep)))]
       (mk-doc tag-dgroup ds w))
     ;; Degenerate group without any elements.  Note: Doing the same
     ;; for a one element dgroup does not work, because then formatting

@@ -162,8 +162,8 @@
           ;; keep this in sync with emitter/import-from-capstone
           (let [req-strs (grammar/required-ns-strs deps)
                 n (alength req-strs)
-                a (new objects n)
-                apublics (new "[Lclojure.lang.IPersistentMap;" n)
+                a (new Object* n)
+                apublics (new IPersistentMap* n)
                 provide-nmsp (core-provided-nmsp nmsp (some? deps))]
             ;; schedule namespaces in parallel
             (dotimes [i n]

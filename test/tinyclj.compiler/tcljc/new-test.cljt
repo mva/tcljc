@@ -38,52 +38,52 @@
 (deftest new-array-test
   ;; array of primitives
   (let [exp-asm '[(BIPUSH 123) (NEWARRAY "int[]") (ARETURN)]]
-    (is (= exp-asm (asm-expr (new ints 123))))
+    (is (= exp-asm (asm-expr (new int* 123))))
     (is (= exp-asm (asm-expr (new "[I" 123))))
     (is (= (.arrayType Integer/TYPE)
-           (.getClass (call-expr (new ints 123))))))
+           (.getClass (call-expr (new int* 123))))))
   (let [exp-asm '[(BIPUSH 123) (NEWARRAY "double[]") (ARETURN)]]
-    (is (= exp-asm (asm-expr (new doubles 123))))
+    (is (= exp-asm (asm-expr (new double* 123))))
     (is (= exp-asm (asm-expr (new "[D" 123))))
     (is (= (.arrayType Double/TYPE)
-           (.getClass (call-expr (new doubles 123))))))
+           (.getClass (call-expr (new double* 123))))))
   
   ;; array of objects
   (let [exp-asm '[(BIPUSH 123) (ANEWARRAY "Object[]") (ARETURN)]]
-    (is (= exp-asm (asm-expr (new objects 123))))
-    (is (= exp-asm (asm-expr (new "[Ljava.lang.Object;" 123))))
+    (is (= exp-asm (asm-expr (new Object* 123))))
+    (is (= exp-asm (asm-expr (new Object* 123))))
     (is (= (.arrayType Object)
-           (.getClass (call-expr (new objects 123))))))
+           (.getClass (call-expr (new Object* 123))))))
   
   ;; 2d array of objects
   (is (= '[(BIPUSH 11) (BIPUSH 22)
            (MULTIANEWARRAY "Object[][]" 2)
            (ARETURN)]
-         (asm-expr (new "[[Ljava.lang.Object;" 11 22))))
+         (asm-expr (new Object** 11 22))))
   (is (= (-> Object .arrayType .arrayType)
-         (.getClass (call-expr (new "[[Ljava.lang.Object;" 11 22)))))
+         (.getClass (call-expr (new Object** 11 22)))))
   
   ;; 3d array of objects
   (is (= '[(BIPUSH 11) (BIPUSH 22)
            (MULTIANEWARRAY "Object[][][]" 2)
            (ARETURN)]
-         (asm-expr (new "[[[Ljava.lang.Object;" 11 22))))
+         (asm-expr (new Object*** 11 22))))
   (is (= (-> Object .arrayType .arrayType .arrayType)
-         (.getClass (call-expr (new "[[[Ljava.lang.Object;" 11 22)))))  
+         (.getClass (call-expr (new Object*** 11 22)))))  
   (is (= '[(BIPUSH 11) (BIPUSH 22) (BIPUSH 33)
            (MULTIANEWARRAY "Object[][][]" 3)
            (ARETURN)]
-         (asm-expr (new "[[[Ljava.lang.Object;" 11 22 33))))
+         (asm-expr (new Object*** 11 22 33))))
   (is (= (-> Object .arrayType .arrayType .arrayType)
-         (.getClass (call-expr (new "[[[Ljava.lang.Object;" 11 22 33))))))
+         (.getClass (call-expr (new Object*** 11 22 33))))))
 
 (deftest new-array-errors-test
   (is-error (new Object 123) #"no constructor matching")
   (is-error (new int) #"no constructor matching")
 
-  (is-error (new objects) #"expect one dimension length")
-  (is-error (new objects 11 22) #"expect one dimension length")
-  (is-error (new "[[Ljava.lang.Object;" 11 22 33)
+  (is-error (new Object*) #"expect one dimension length")
+  (is-error (new Object* 11 22) #"expect one dimension length")
+  (is-error (new Object** 11 22 33)
             #"expect 1 to 2 dimension lengths")
   
   (is-error (new nil) #"classname must be symbol or string \(got: .*nil.*\)")

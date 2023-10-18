@@ -148,7 +148,7 @@
             ;; original exceptions are reported in arbitrary order.  It should
             ;; also report the same error in multi-threaded mode as in
             ;; single-threaded mode.
-            (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
+            (let [a ^String* (into-array ns-strs)]
               ;; loop over array to avoid stack frame spamming
               (dotimes [i (alength a)]
                 (io/get-result-now (.get !futs (aget a i))))) ;forces exception
@@ -185,7 +185,7 @@
           ;; first, force discovery of core library
           (.schedule this cfg/core-lib builtin-nmsp)
           ;; then handle all namespaces from `ns-strs`
-          (let [a ^"[Ljava.lang.String;" (into-array ns-strs)]
+          (let [a ^String* (into-array ns-strs)]
             ;; loop over array to avoid stack frame spamming
             (dotimes [i (alength a)]
               (.schedule this (aget a i) builtin-nmsp)))

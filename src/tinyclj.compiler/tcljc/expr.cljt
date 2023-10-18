@@ -690,7 +690,7 @@
 (defn guard-paths ^IPersistentVector [^IPersistentVector guardv]
   (let [path-count (when-some [g ^Guard (peek guardv)] ;zero if empty
                      (inc (.path-idx g)))
-        a (new "[Ltcljc.expr.Expr;" path-count)]
+        a (new Expr* path-count)]
     (doseq [^Guard g guardv]
       (aset a (.path-idx g) (.path-expr g)))
     (vec a)))
@@ -1137,7 +1137,7 @@
      ;; A form ([...] ...), even if the original fn* used the
      ;; abbreviated single arity variant.
 
-     ^objects !closes-over
+     ^Object* !closes-over
      ;; Map of [closed-over-binding-ref, local-alias-ref].  Copied to
      ;; the Env member during compilation, and populated by
      ;; `resolve-sname-local` with the bindings this arity closes over
@@ -1214,7 +1214,7 @@
               (if (nil? load-mh-ext) load-mh-impl load-mh-ext)
               load-mh-impl body-node?))
 
-(defn aca-by-n ^"[Ltcljc.expr.ArityCode;" [^"[Ltcljc.expr.ArityCode;" aca]
+(defn aca-by-n ^ArityCode* [^ArityCode* aca]
   (let [a (aclone aca)]
     (sort-by #(at-n (.at ^ArityCode %)) a)
     a))
@@ -1262,7 +1262,7 @@
   (set-emit-plan ^void [^IEmitPlan emit-plan])
 
   (arity-count ^int [])
-  (arity-code-array ^"[Ltcljc.expr.ArityCode;" [])
+  (arity-code-array ^ArityCode* [])
   (arity-code ^ArityCode [^int i])
   (set-arity-code ^void [^int i ^ArityCode ac]))
 
@@ -1298,7 +1298,7 @@
      ^:volatile-mutable ^IEmitPlan _emit-plan
      ;; Translation pattern for fn.
 
-     ^:unsynchronized-mutable ^"[Ltcljc.expr.ArityCode;" _arity-code]
+     ^:unsynchronized-mutable ^ArityCode* _arity-code]
   IFnCode
   (seqnum [_]
     _seqnum)
@@ -1339,7 +1339,7 @@
     (aset _arity-code i ac)))
 
 (defn mk-fn-code ^FnCode [^int n ^boolean always-instance?]
-  (let [arity-code (new "[Ltcljc.expr.ArityCode;" n)]
+  (let [arity-code (new ArityCode* n)]
     (FnCode. 0 always-instance? always-instance? nil nil arity-code)))
 
 
@@ -1368,7 +1368,7 @@
                  ;; compilation.
                  
                  ^DirectMethodHandleDesc super-mhd
-                 ^"[Ljava.lang.Class;" itf-tags ;nil for regular function
+                 ^Class* itf-tags ;nil for regular function
                  ^IPersistentVector at-sigs ;vector of Arity
                  ^Future body-fut           ;array of ArityCode or nil
                  ^FnCode !fnc]
@@ -1389,7 +1389,7 @@
 (defn fn-form-itf                       ;aka lambda expression
   ^FnForm [form ^Class itf-tp ^int level ^String unique-mnm
            ^IPersistentVector at-sigs]
-  (let [itf-tags (doto (new "[Ljava.lang.Class;" 1) (aset 0 itf-tp))
+  (let [itf-tags (doto (new Class* 1) (aset 0 itf-tp))
         fnc (mk-fn-code (count at-sigs) true)]
     (FnForm. form itf-tp [] nil level unique-mnm
              rt/mhd-Object itf-tags at-sigs nil fnc)))

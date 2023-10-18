@@ -190,7 +190,7 @@
        (wrong/other (str "ns name mismatch, expected " (wrong/q (symbol nil ns-str))
                          " but got " (wrong/q ns-sym)))))))
 
-(defn required-ns-strs ^"[Ljava.lang.String;" [deps]
+(defn required-ns-strs ^String* [deps]
   (->> (filter require? deps)
        (map #(name (:ns-sym %)))
        (into-array String)))

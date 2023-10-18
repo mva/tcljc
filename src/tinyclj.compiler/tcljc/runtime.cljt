@@ -83,13 +83,12 @@
 (defn cd-list-of ^List [cdxs]
   (tinyclj.core/map cd-of cdxs))
 
-(def no-param-types (new "[Ljava.lang.constant.ClassDesc;" 0))
+(def no-param-types (new ClassDesc* 0))
 
 ;;; FIXME... bootstrap chokes on MethodTypeDesc/of overloads, so
 ;;; provide a wrapper that bypasses the confusing stuff for now; can
 ;;; this be removed once tcljc is its own one and only bootstrap?
-(defn mtd-of* ^MethodTypeDesc [^ClassDesc return-type
-                               & ^"[Ljava.lang.constant.ClassDesc;" parameter-types]
+(defn mtd-of* ^MethodTypeDesc [^ClassDesc return-type & ^ClassDesc* parameter-types]
   (MethodTypeDesc/of return-type parameter-types))
 (defn mtd-of ^MethodTypeDesc [return-type parameter-types]
   (MethodTypeDesc/of (cd-of return-type) (cd-list-of parameter-types)))
@@ -99,7 +98,7 @@
   (MethodHandleDesc/ofConstructor ConstantDescs/CD_Object no-param-types))
 (defn fixed-args-constructor ^DirectMethodHandleDesc [clx cdxs]
   (let [pdescs (-> (cd-list-of cdxs)
-                   ^"[Ljava.lang.constant.ClassDesc;" (.toArray no-param-types))]
+                   ^ClassDesc* (.toArray no-param-types))]
     (MethodHandleDesc/ofConstructor (cd-of clx) pdescs)))
 
 ;;; ------------------------------------------------------------------------
@@ -299,7 +298,7 @@
 
 ;;; boxed type of given primitive:
 (def ^:private box-types                ;types produced by the reader
-  (doto (new objects 8)
+  (doto (new Object* 8)
     (aset 0 java.lang.Integer)
     (aset 1 java.lang.Long)
     (aset 2 java.lang.Float)
@@ -315,7 +314,7 @@
 
 ;;; converting object to primitive value (currently "checked" variant):
 (def ^:private primitive-conv-method
-  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 8)
+  (doto (new DirectMethodHandleDesc* 8)
     (aset 0 (mhd-static [ClojureRT "intCast"] int [object]))
     (aset 1 (mhd-static [ClojureRT "longCast"] long [object]))
     (aset 2 (mhd-static [ClojureRT "floatCast"] float [object]))
@@ -331,7 +330,7 @@
 
 ;;; boxing:
 (def ^:private box-factory
-  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 8)
+  (doto (new DirectMethodHandleDesc* 8)
     (aset 0 (mhd-static [Integer "valueOf"] Integer [int]))
     (aset 1 (mhd-static [Long "valueOf"] Long [long]))
     (aset 2 (mhd-static [Float "valueOf"] Float [float]))
@@ -347,7 +346,7 @@
 
 ;;; unboxing:
 (def ^:private primitive-accessor
-  (doto (new "[Ljava.lang.constant.DirectMethodHandleDesc;" 8)
+  (doto (new DirectMethodHandleDesc* 8)
     (aset 0 (mhd-virtual [Integer "intValue"] int []))
     (aset 1 (mhd-virtual [Long "longValue"] long []))
     (aset 2 (mhd-virtual [Float "floatValue"] float []))

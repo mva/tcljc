@@ -28,7 +28,7 @@
  ^{:arglists '([& items])
    :doc "Creates a new list containing the items."
    :added "1.0"}
- __list (fn* __list [& ^objects items]
+ __list (fn* __list [& ^Object* items]
              (tinyclj.lang.Literal/list items)))
 (def
  ^{:arglists '([& items])
@@ -352,7 +352,7 @@
   can be any Collection.  Maps to java.util.Collection.toArray()."
   {:added "1.0"
    :static true}
-  ^objects [coll] (. clojure.lang.RT (toArray coll)))
+  ^Object* [coll] (. clojure.lang.RT (toArray coll)))
 
 (defn cast
   "Throws a ClassCastException if x is not a c, else returns x."
@@ -394,7 +394,7 @@
   {:added "1.0"
    :static true}
   ([] {})
-  ([& ^objects keyvals]
+  ([& ^Object* keyvals]
    (. clojure.lang.PersistentHashMap (create keyvals))))
 
 (defn hash-set
@@ -403,7 +403,7 @@
   {:added "1.0"
    :static true}
   ([] #{})
-  ([& ^objects keys]
+  ([& ^Object* keys]
    (clojure.lang.PersistentHashSet/create keys)))
 
 (defn sorted-map
@@ -3932,8 +3932,8 @@
    :static true}
   ([^Class type ^int len]
    (. Array (newInstance type (int len))))
-  ([^Class type ^int dim & ^ints more-dims]
-   (let [dimarray (new ints (inc (alength more-dims)))]
+  ([^Class type ^int dim & ^int* more-dims]
+   (let [dimarray (new int* (inc (alength more-dims)))]
      (aset dimarray 0 dim)
      (dotimes [i (alength more-dims)]
        (aset dimarray (inc i) (aget more-dims i)))
@@ -3945,8 +3945,8 @@
   Collection."
   {:added "1.0"
    :static true}
-  ^"[[Ljava.lang.Object;" [^java.util.Collection coll]
-    (let [ret ^"[[Ljava.lang.Object;" (make-array (.arrayType Object) (. coll (size)))]
+  ^Object** [^java.util.Collection coll]
+    (let [ret ^Object** (make-array (.arrayType Object) (. coll (size)))]
       (loop [i 0 xs (seq coll)]
         (when xs
           (aset ret i (to-array (first xs)))
@@ -5036,7 +5036,7 @@
    :static true}
   ([]
    (iterate (fn [x] (clojure.lang.Numbers/incP x)) (object (long 0)))) ;inc' + 0
-  ([& ^objects args]
+  ([& ^Object* args]
    (case* (alength args)
           1 (let [end (aget args 0)]
               (cond
@@ -5301,71 +5301,71 @@
   {:inline (fn [& args] `(. clojure.lang.Numbers float_array ~@args))
    :inline-arities #{1 2}
    :added "1.0"}
-  (^floats [size-or-seq] (. clojure.lang.Numbers float_array size-or-seq))
-  (^floats [^int size init-val-or-seq] (. clojure.lang.Numbers float_array size init-val-or-seq)))
+  (^float* [size-or-seq] (. clojure.lang.Numbers float_array size-or-seq))
+  (^float* [^int size init-val-or-seq] (. clojure.lang.Numbers float_array size init-val-or-seq)))
 
 (defn boolean-array
   "Creates an array of booleans"
   {:inline (fn [& args] `(. clojure.lang.Numbers boolean_array ~@args))
    :inline-arities #{1 2}
    :added "1.1"}
-  (^booleans [size-or-seq] (. clojure.lang.Numbers boolean_array size-or-seq))
-  (^booleans [^int size init-val-or-seq] (. clojure.lang.Numbers boolean_array size init-val-or-seq)))
+  (^boolean* [size-or-seq] (. clojure.lang.Numbers boolean_array size-or-seq))
+  (^boolean* [^int size init-val-or-seq] (. clojure.lang.Numbers boolean_array size init-val-or-seq)))
 
 (defn byte-array
   "Creates an array of bytes"
   {:inline (fn [& args] `(. clojure.lang.Numbers byte_array ~@args))
    :inline-arities #{1 2}
    :added "1.1"}
-  (^bytes [size-or-seq] (. clojure.lang.Numbers byte_array size-or-seq))
-  (^bytes [^int size init-val-or-seq] (. clojure.lang.Numbers byte_array size init-val-or-seq)))
+  (^byte* [size-or-seq] (. clojure.lang.Numbers byte_array size-or-seq))
+  (^byte* [^int size init-val-or-seq] (. clojure.lang.Numbers byte_array size init-val-or-seq)))
 
 (defn char-array
   "Creates an array of chars"
   {:inline (fn [& args] `(. clojure.lang.Numbers char_array ~@args))
    :inline-arities #{1 2}
    :added "1.1"}
-  (^chars [size-or-seq] (. clojure.lang.Numbers char_array size-or-seq))
-  (^chars [^int size init-val-or-seq] (. clojure.lang.Numbers char_array size init-val-or-seq)))
+  (^char* [size-or-seq] (. clojure.lang.Numbers char_array size-or-seq))
+  (^char* [^int size init-val-or-seq] (. clojure.lang.Numbers char_array size init-val-or-seq)))
 
 (defn short-array
   "Creates an array of shorts"
   {:inline (fn [& args] `(. clojure.lang.Numbers short_array ~@args))
    :inline-arities #{1 2}
    :added "1.1"}
-  (^shorts [size-or-seq] (. clojure.lang.Numbers short_array size-or-seq))
-  (^shorts [^int size init-val-or-seq] (. clojure.lang.Numbers short_array size init-val-or-seq)))
+  (^short* [size-or-seq] (. clojure.lang.Numbers short_array size-or-seq))
+  (^short* [^int size init-val-or-seq] (. clojure.lang.Numbers short_array size init-val-or-seq)))
 
 (defn double-array
   "Creates an array of doubles"
   {:inline (fn [& args] `(. clojure.lang.Numbers double_array ~@args))
    :inline-arities #{1 2}
    :added "1.0"}
-  (^doubles [size-or-seq] (. clojure.lang.Numbers double_array size-or-seq))
-  (^doubles [^int size init-val-or-seq] (. clojure.lang.Numbers double_array size init-val-or-seq)))
+  (^double* [size-or-seq] (. clojure.lang.Numbers double_array size-or-seq))
+  (^double* [^int size init-val-or-seq] (. clojure.lang.Numbers double_array size init-val-or-seq)))
 
 (defn object-array
   "Creates an array of objects"
   {:inline (fn [arg] `(. clojure.lang.RT object_array ~arg))
    :inline-arities #{1}
    :added "1.2"}
-  (^objects [size-or-seq] (. clojure.lang.RT object_array size-or-seq)))
+  (^Object* [size-or-seq] (. clojure.lang.RT object_array size-or-seq)))
 
 (defn int-array
   "Creates an array of ints"
   {:inline (fn [& args] `(. clojure.lang.Numbers int_array ~@args))
    :inline-arities #{1 2}
    :added "1.0"}
-  (^ints [size-or-seq] (. clojure.lang.Numbers int_array size-or-seq))
-  (^ints [^int size init-val-or-seq] (. clojure.lang.Numbers int_array size init-val-or-seq)))
+  (^int* [size-or-seq] (. clojure.lang.Numbers int_array size-or-seq))
+  (^int* [^int size init-val-or-seq] (. clojure.lang.Numbers int_array size init-val-or-seq)))
 
 (defn long-array
   "Creates an array of longs"
   {:inline (fn [& args] `(. clojure.lang.Numbers long_array ~@args))
    :inline-arities #{1 2}
    :added "1.0"}
-  (^longs [size-or-seq] (. clojure.lang.Numbers long_array size-or-seq))
-  (^longs [^int size init-val-or-seq] (. clojure.lang.Numbers long_array size init-val-or-seq)))
+  (^long* [size-or-seq] (. clojure.lang.Numbers long_array size-or-seq))
+  (^long* [^int size init-val-or-seq] (. clojure.lang.Numbers long_array size init-val-or-seq)))
 
 ;; (definline booleans
 ;;   "Casts to boolean[]"

@@ -349,9 +349,9 @@
                      (= (.invocationName dcsd) "equals") (.aload 1)
                      true (.invokedynamic dcsd)
                      true (.returnInstruction tk))))))
-            (object-method-args ^"[Ljava.lang.constant.ConstantDesc;" [^IPersistentVector fieldv]
+            (object-method-args ^ConstantDesc* [^IPersistentVector fieldv]
               (let [n (count fieldv)
-                    a (new "[Ljava.lang.constant.ConstantDesc;" (+ n 2))]
+                    a (new ConstantDesc* (+ n 2))]
                 (aset a 0 this-class)
                 (aset a 1 (str/join ";" (map #(.mnm ^FieldDef %) fieldv)))
                 (dotimes [i n]

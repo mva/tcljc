@@ -65,13 +65,12 @@
     :else true))
 
 
-(deftype FnSpec [^FnForm fn-form
-                 ^"[Ltcljc.emitter.emitfn.EnvEntry;" fn-env])
+(deftype FnSpec [^FnForm fn-form ^EnvEntry* fn-env])
 
 (defn fn-spec ^FnSpec [^FnForm fn-form]
   (FnSpec. fn-form nil))
 
-(defn- arity-code-array ^"[Ltcljc.expr.ArityCode;" [^FnSpec fspec]
+(defn- arity-code-array ^ArityCode* [^FnSpec fspec]
   (-> fspec .fn-form .!fnc (.arity-code-array)))
 
 (defn materialized-env? ^boolean [^FnSpec fspec]
@@ -145,7 +144,7 @@
                           (into-array ConstantDesc))]
         (DynamicConstantDesc/ofNamed
          rt/bsm-static-fn rt/dcd-default-name rt/StaticFnMh
-         ^"[Ljava.lang.constant.ConstantDesc;" mh-array)))
+         ^ConstantDesc* mh-array)))
     (fn-value-instr [this xb bref-mapper]
       (.constantInstruction xb (.fn-value-const this)))
     (fn-patch-instr [_ xb bref-mapper bref]
@@ -176,7 +175,7 @@
 ;;; ------------------------------------------------------------------------
 
 (defn- return-switch-fixargs ^void [^CodeBuilder xb
-                                    ^"[Ltcljc.expr.ArityCode;" aca]
+                                    ^ArityCode* aca]
   (loop [acc {}, i 0]
     (if (= i (alength aca))
       (cf/const-switch-return xb jb/jvm-null acc)
@@ -186,7 +185,7 @@
                (inc i))))))
 
 (defn- return-switch-varargs ^void [^CodeBuilder xb
-                                    ^"[Ltcljc.expr.ArityCode;" aca]
+                                    ^ArityCode* aca]
   (let [aca (x/aca-by-n aca)
         vac (aget aca (dec (alength aca)))
         vat (.at vac)]
@@ -220,7 +219,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn- dmh-method ^void [^ClassBuilder cb ^"[Ltcljc.expr.ArityCode;" aca]
+(defn- dmh-method ^void [^ClassBuilder cb ^ArityCode* aca]
   (let [aca (x/aca-by-n aca)
         xbh (cf/with-xbh [xb]
               (if (= (alength aca) 1)
@@ -420,7 +419,7 @@
             m (-> ac .at .method)
             m-mtd (rt/mtd-of (.getReturnType m) (.getParameterTypes m))
             d-mtd (-> ac .at (x/at-mtd))
-            bs-args (doto (new "[Ljava.lang.constant.ConstantDesc;" 3)
+            bs-args (doto (new ConstantDesc* 3)
                       (aset 0 m-mtd)
                       (aset 1 (.load-mh-impl ac))
                       (aset 2 d-mtd))

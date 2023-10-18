@@ -15,16 +15,16 @@
    [tcljc.io :as io]
    [tinyclj.string :as str])
   (:import
-   (tcljc.expr BindingRef FnForm)
+   (tcljc.expr BindingRef FnForm ArityCode)
    (tcljc.io CompileIO)
    (clojure.lang Symbol Keyword IPersistentVector IPersistentMap ExceptionInfo)
    (java.lang.constant ClassDesc)
    (java.lang.invoke MethodHandles$Lookup)
    (java.util.concurrent Future ArrayBlockingQueue ExecutorService)))
 
-(defn wait-for-fn-body ^"[Ltcljc.expr.ArityCode;" [^FnForm fn-form]
+(defn wait-for-fn-body ^ArityCode* [^FnForm fn-form]
   (io/wait-for-result (.body-fut fn-form)))
-(defn fn-body-now ^"[Ltcljc.expr.ArityCode;" [^FnForm fn-form]
+(defn fn-body-now ^ArityCode* [^FnForm fn-form]
   (.resultNow (.body-fut fn-form)))
 
 ;;; ------------------------------------------------------------------------

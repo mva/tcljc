@@ -108,7 +108,7 @@
 (defn path-of
   (^Path [^String x]
    (Path/of x))
-  (^Path [^String x & ^"[Ljava.lang.String;" more]
+  (^Path [^String x & ^String* more]
    (Path/of x more)))
 
 (defn path-url ^URL [^Path p]
@@ -168,7 +168,7 @@
    (delete-package-classes (package-directory dest-dir ns-str))))
 
 #_
-(defn spit-class ^void [^Path dest-prefix ^String owner-name ^bytes b]
+(defn spit-class ^void [^Path dest-prefix ^String owner-name ^byte* b]
   (when (some? dest-prefix)
     (let [f (.resolve dest-prefix (path-of (str owner-name class-suffix)))]
       #_(println :spit-class (.toString f))
@@ -190,7 +190,7 @@
 (defn app-class-loader ^URLClassLoader [parent class-paths]
   (URLClassLoader. "tclj-app"
                    (->> (map #(-> ^Path % (.toUri) (.toURL)) class-paths)
-                        ^"[Ljava.net.URL;" (into-array URL))
+                        ^URL* (into-array URL))
                    (case parent
                      :platform (ClassLoader/getPlatformClassLoader)
                      :system (ClassLoader/getSystemClassLoader))))

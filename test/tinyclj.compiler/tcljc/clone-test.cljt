@@ -16,7 +16,7 @@
            (ARRAYLENGTH)
            (INVOKESTATIC Arrays "copyOf" "([II)[I")
            (ARETURN)]
-         (asm-expr [^ints x] (aclone x)))))
+         (asm-expr [^int* x] (aclone x)))))
 
 (deftest clone-strings-test
   (is (= '[["LOCAL 0: String[] x"]
@@ -26,7 +26,7 @@
            (INVOKESTATIC Arrays "copyOf" "([Ljava/lang/Object;I)[Ljava/lang/Object;")
            (CHECKCAST "String[]")
            (ARETURN)]
-         (asm-expr [^"[Ljava.lang.String;" x] (aclone x)))))
+         (asm-expr [^String* x] (aclone x)))))
 
 (deftest clone-multi-test
   (is (= '[["LOCAL 0: int[][] x"]
@@ -36,7 +36,7 @@
            (INVOKESTATIC Arrays "copyOf" "([Ljava/lang/Object;I)[Ljava/lang/Object;")
            (CHECKCAST "int[][]")
            (ARETURN)]
-         (asm-expr [^"[[I" x] (aclone x)))))
+         (asm-expr [^int** x] (aclone x)))))
 
 (deftest clone-then-toString-test
   (is (= '[["LOCAL 0: int[] x"]
@@ -46,5 +46,5 @@
            (INVOKESTATIC Arrays "copyOf" "([II)[I")
            (INVOKEVIRTUAL Object "toString" "()Ljava/lang/String;")
            (ARETURN)]
-         (asm-expr [^ints x] (.toString (aclone x))))))
+         (asm-expr [^int* x] (.toString (aclone x))))))
 

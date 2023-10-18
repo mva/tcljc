@@ -386,7 +386,7 @@
            #_["POP 1: seq_126"]
            (ARETURN)
            #_["POP 0: aframe"]]
-         (asm-expr (let* [aframe (new objects 2)]
+         (asm-expr (let* [aframe (new Object* 2)]
                      (try
                        nil
                        (finally

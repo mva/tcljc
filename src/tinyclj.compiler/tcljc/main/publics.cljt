@@ -47,7 +47,7 @@
 (def ^:private emit-virtuals-import (mk-emit-import true))
 
 (defn- call-only-fn-form ^FnForm [^Class declared-tp ^boolean virtual?
-                                  ^"[Ljava.lang.invoke.MethodHandle;" mhs]
+                                  ^MethodHandle* mhs]
   (letfn [(import-parameter ^Binding [^Class tp]
             (-> (x/local-ref x/lvl-outermost-fn nil tp x/b-parameter)
                 (x/local-binding nil)))
@@ -64,7 +64,7 @@
             (let [mhd (.get (.describeConstable mh))]
               (ArityCode. at nil nil mhd nil false)))]
     (let [ep (if virtual? emit-virtuals-import emit-statics-import)
-          ac (new "[Ltcljc.expr.Arity;" (alength mhs))]
+          ac (new Arity* (alength mhs))]
       (dotimes [i (alength ac)]
         (aset ac i (import-arity i (aget mhs i))))
       (let [fn-form (x/fn-form-fct nil declared-tp x/lvl-outermost-fn nil
@@ -81,7 +81,7 @@
 (defn- import-fn-form ^FnForm [^CompileIO compile-io
                                ^MethodHandle arity-handles-mh
                                ^Class declared-tp ^Object value]
-  (when-some [mhs ^"[Ljava.lang.invoke.MethodHandle;"
+  (when-some [mhs ^MethodHandle*
               (.invokeExact arity-handles-mh (.lookup-in-pkg compile-io)
                             declared-tp value)]
     (let [static? (jb/same-classname? rt/clnm-static-fn (.getClass value))]
@@ -110,8 +110,8 @@
                   (when-not (Modifier/isTransient mods)
                     (when-some [const (x/singleton-template tp value)]
                       (x/const tp const)))))
-            (public-def-info ^objects [^Member member]
-              ^objects (.invokeExact pdf-mh (.lookup-in-pkg compile-io)
+            (public-def-info ^Object* [^Member member]
+              ^Object* (.invokeExact pdf-mh (.lookup-in-pkg compile-io)
                                      member))
             (resolve-sym ^BindingRef [^Symbol sym acc-publics]
               (if (= (namespace sym) (ns-str))
@@ -180,13 +180,13 @@
                     ld-st (cf/ld-st-method cld (.getName m) (rt/cd-of tp))]
                 (.deliver-load bref ld-st)
                 bref))
-            (add-macro* [acc ^String nm ^objects pdf ^ValueRef mimpl
+            (add-macro* [acc ^String nm ^Object* pdf ^ValueRef mimpl
                          ^BindingRef mvalue]
               (let [f (aget pdf 1)
                     mfn (ImportedMacroFn. compile-io f)
                     mref (x/macro-ref (symbol nil nm) (ns-str) mfn mvalue mimpl)]
                 (put! acc nm mref)))
-            (add-macro [acc ^String nm ^objects pdf ^ValueRef mimpl]
+            (add-macro [acc ^String nm ^Object* pdf ^ValueRef mimpl]
               (if-some [sym-str (aget pdf 2)]
                 (let [sym (symbol sym-str)]
                   (if-some [mvalue (resolve-sym sym acc)]

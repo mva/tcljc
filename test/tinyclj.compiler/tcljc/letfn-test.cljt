@@ -510,7 +510,7 @@
              (LDC "tinyclj.core")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (def f (fn* f ^int [^ints a]
+                 (def f (fn* f ^int [^int* a]
                              (letfn* [(flyweight ^int []
                                                  (aget a 0))]
                                      (flyweight))))]))))
@@ -544,8 +544,8 @@
              (LDC "tinyclj.core")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (def f (fn* f ^int [^ints a]
-                             (letfn* [(flyweight ^int [^ints a]
+                 (def f (fn* f ^int [^int* a]
+                             (letfn* [(flyweight ^int [^int* a]
                                                  (aget a 0))]
                                      (flyweight a))))]))))
 
@@ -583,7 +583,7 @@
              (LDC "tinyclj.core")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (def f (fn* f ^int [^ints a]
+                 (def f (fn* f ^int [^int* a]
                              (letfn* [(fw1 ^int []
                                            (aget a 0))
                                       (fw2 ^int []
@@ -624,7 +624,7 @@
              (LDC "tinyclj.core")
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
-                 (def f (fn* f ^int [^ints a]
+                 (def f (fn* f ^int [^int* a]
                              (letfn* [(fw2 ^int []
                                            (fw1))
                                       (fw1 ^int []
@@ -1115,7 +1115,7 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (fn* align []
-                      (let* [grid (new "[[Ljava.lang.Object;" 2 3)]
+                      (let* [grid (new Object** 2 3)]
                         (letfn* [(step-at [^int i ^int j]
                                           (aget (aget grid i) j))
                                  (extend* [^int i ^int j]

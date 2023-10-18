@@ -574,7 +574,7 @@
          (write [_ ^String str-cbuf ^int off ^int len]
                 (when (pos? len)
                   (.append sb str-cbuf off len)))
-         (write [_ ^chars str-cbuf ^int off ^int len]
+         (write [_ ^char* str-cbuf ^int off ^int len]
                 (when (pos? len)
                   (.append sb str-cbuf off len))))
         java.io.BufferedWriter.

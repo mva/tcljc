@@ -574,7 +574,7 @@
 
   ;; second meta (to left) overwrites first meta (to right)
   (is (= 'int
-         (-> (read1 "#(^int ^longs %)") (second) (first) (meta) :tag)))
+         (-> (read1 "#(^int ^long* %)") (second) (first) (meta) :tag)))
   (is (thrown-with-msg?
        ExceptionInfo
        #"conflicting type tags for arg literal: int long"

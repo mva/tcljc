@@ -32,20 +32,20 @@
   (defn inv [xs]
     (mapv inv1 xs))
 
-  (defn inv-constr [^Class owner & ^"[Ljava.lang.Class;" atypes]
+  (defn inv-constr [^Class owner & ^Class* atypes]
     (->> (constructors owner atypes)
          (map #(invoke-constr owner % []))
          (inv)))
-  (defn inv-static [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
+  (defn inv-static [^Class owner ^String nm & ^Class* atypes]
     (->> (static-methods owner nm atypes)
          (map #(invoke-static owner % []))
          (inv)))
-  (defn inv-virtual [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
+  (defn inv-virtual [^Class owner ^String nm & ^Class* atypes]
     (->> (virtual-methods owner nm atypes)
          (map #(invoke-virtual owner % []))
          (inv))))
 
-(defn acl [& ^"[Ljava.lang.Class;" atypes]
+(defn acl [& ^Class* atypes]
   atypes)
 
 
@@ -58,7 +58,7 @@
 
 
 (deftest static-field-test
-  (letfn [(ld-static [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
+  (letfn [(ld-static [^Class owner ^String nm & ^Class* atypes]
             (->> (static-fields owner nm atypes)
                  (map #(load-static owner % []))
                  (inv)))]
@@ -108,7 +108,7 @@
 
 
 (deftest virtual-field-test
-  (letfn [(ld-virtual [^Class owner ^String nm & ^"[Ljava.lang.Class;" atypes]
+  (letfn [(ld-virtual [^Class owner ^String nm & ^Class* atypes]
             (->> (virtual-fields owner nm atypes)
                  (map #(load-virtual owner % []))
                  (inv)))]

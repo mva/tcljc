@@ -165,7 +165,7 @@
   (forms-reader ^Reader [^URL rurl])
 
   (prepare-package-directory ^void [^String ns-str])
-  (write-class-file ^void [^String owner-nm ^bytes bs]))
+  (write-class-file ^void [^String owner-nm ^byte* bs]))
 
 ;;; Holds mutable state for the namespace thread, which means that the
 ;;; corresponding methods must *not* be called from other threads.

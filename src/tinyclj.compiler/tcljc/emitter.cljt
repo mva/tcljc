@@ -406,11 +406,11 @@
 
 ;;; ------------------------------------------------------------------------
 
-(letfn [(extract-req-strs ^"[Ljava.lang.String;" [^Class cl]
+(letfn [(extract-req-strs ^String* [^Class cl]
           (let [s (-> (.getDeclaredMethod cl rt/name-requires)
                       ^String (.invoke nil))]
             (if (= s "")
-              (new "[Ljava.lang.String;" 0)
+              (new String* 0)
               (into-array String (str/split s #",")))))]
   (defn import-from-capstone ^Namespace [^BuildIO env
                                          ^NmspBuilder nmsp-builder
@@ -425,8 +425,8 @@
       (let [ns-str (.getPackageName capstone)
             req-strs (extract-req-strs capstone)
             n (count req-strs)
-            a (new objects n)
-            apublics (new "[Lclojure.lang.IPersistentMap;" n)]
+            a (new Object* n)
+            apublics (new IPersistentMap* n)]
         ;; schedule namespaces in parallel
         (dotimes [i n]
           (let [req-str (aget req-strs i)]

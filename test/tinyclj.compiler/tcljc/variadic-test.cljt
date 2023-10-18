@@ -36,7 +36,7 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def list
-                   (fn* ^clojure.lang.IPersistentList [& ^objects items]
+                   (fn* ^clojure.lang.IPersistentList [& ^Object* items]
                         (clojure.lang.PersistentList/create (java.util.Arrays/asList items))))]))))
 
 (deftest varargs-invoke
@@ -78,7 +78,7 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def as-list
-                   (fn* as-list ^java.util.List [& ^objects items]
+                   (fn* as-list ^java.util.List [& ^Object* items]
                         (java.util.Arrays/asList items)))
                  (def l0 (as-list))
                  (def l1 (as-list 1))
@@ -134,19 +134,19 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def as-list
-                   (fn* as-list ^java.util.List [& ^objects items]
+                   (fn* as-list ^java.util.List [& ^Object* items]
                         ;; method call passes array `items` unmodified to
                         ;; `asList` (the "varargs agnostic" calling
                         ;; convention)
                         (java.util.Arrays/asList items)))
                  (def as-list-wrapped
-                   (fn* as-list-wrapped ^java.util.List [& ^objects items]
+                   (fn* as-list-wrapped ^java.util.List [& ^Object* items]
                         ;; function call wraps array `items` in another
                         ;; array before calling `as-list` (i.e. an
                         ;; `(Object)items` is passed on)
                         (as-list items)))
                  (def lnested (as-list-wrapped 1))
-                 (def lints (as-list-wrapped (new ints 0)))])))
+                 (def lints (as-list-wrapped (new int* 0)))])))
   ;; At the moment, ints cannot be passed to an objects vararg
   ;; directly.  As such there is no need to cast them to object if
   ;; they appear in a vararg argument position.  This will probably
@@ -224,7 +224,7 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def as-list
-                   (fn* as-list ^java.util.List [& ^objects items]
+                   (fn* as-list ^java.util.List [& ^Object* items]
                         (java.util.Arrays/asList items)))
                  (def apply-0 (fn* apply-0 [f] (f)))
                  (def apply-1 (fn* apply-1 [f] (f 1)))
@@ -377,7 +377,7 @@
          (nmsp '[(ns pkg.ns0)
                  (def mk-as-list
                    (fn* mk-as-list ^auto-return-type [^String s]
-                        (fn* as-list ^java.util.List [& ^objects items]
+                        (fn* as-list ^java.util.List [& ^Object* items]
                              (.print System/out s)
                              (java.util.Arrays/asList items))))
                  (def apply-0 (fn* apply-0 [f] (f)))
@@ -429,13 +429,13 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (def as-list
-                   (fn* as-list ^java.util.List [& ^objects items]
+                   (fn* as-list ^java.util.List [& ^Object* items]
                         ;; method call passes array `items` unmodified to
                         ;; `asList` (the "varargs agnostic" calling
                         ;; convention)
                         (java.util.Arrays/asList items)))
                  (def apply-1
-                   (fn* apply-1 ^java.util.List [f & ^objects items]
+                   (fn* apply-1 ^java.util.List [f & ^Object* items]
                         ;; function call wraps array `items` in another
                         ;; array before calling `as-list` (i.e. an
                         ;; `(Object)items` is passed on)
@@ -548,14 +548,14 @@
          (nmsp '[(ns pkg.ns0)
                  (def mk-as-list
                    (fn* mk-as-list ^auto-return-type [^String s]
-                        (fn* as-list ^java.util.List [& ^objects items]
+                        (fn* as-list ^java.util.List [& ^Object* items]
                              (.print System/out s)
                              ;; method call passes array `items` unmodified to
                              ;; `asList` (the "varargs agnostic" calling
                              ;; convention)
                              (java.util.Arrays/asList items))))
                  (def apply-1
-                   (fn* apply-1 ^java.util.List [f & ^objects items]
+                   (fn* apply-1 ^java.util.List [f & ^Object* items]
                         ;; function call wraps array `items` in another
                         ;; array before calling `as-list` (i.e. an
                         ;; `(Object)items` is passed on)
@@ -942,9 +942,9 @@
          (nmsp '[(ns pkg.ns0)
                  (def concat (fn* concat [x y & zs]
                                   nil))
-                 (def x (concat (new objects 0)
-                                (new objects 0)
-                                (new "[Ljava.lang.Integer;" 0)))]))))
+                 (def x (concat (new Object* 0)
+                                (new Object* 0)
+                                (new Integer* 0)))]))))
 
 (deftest void-as-variadic-arg
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
@@ -998,7 +998,7 @@
          (nmsp '[(ns pkg.ns0)
                  (def void-fn (fn* void-fn ^void [^String s]))
                  (def as-list
-                   (fn* as-list ^java.util.List [& ^objects items]
+                   (fn* as-list ^java.util.List [& ^Object* items]
                         (java.util.Arrays/asList items)))
                  (def x (as-list (void-fn "foo")))
                  (def y (fn* [f] (f (void-fn "foo"))))]))))
@@ -1075,4 +1075,4 @@
            (ARETURN)]
          (asm-expr (.setFields
                     (java.util.Calendar$Builder.)
-                    (new ints 0))))))
+                    (new int* 0))))))

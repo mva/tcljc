@@ -21,7 +21,7 @@
   (letfn [(trace-sequential ^Expr [^Expr x ^IAdaptResult adpt-res]
             ;; pre: (pos? (x/arg-count x))
             (let [argv (x/argv x)
-                  a (new "[Ltcljc.expr.Expr;" (count argv))
+                  a (new Expr* (count argv))
                   n-1 (dec (alength a))
                   adpt-last (.after adpt-res (if (x/progn? x)
                                                (.adpt-paths ^Progn x)
@@ -38,7 +38,7 @@
                       (x/with-code x tp (vec a))))))))
           (trace-instruction ^Expr [^Expr x ^IAdaptResult adpt-res]
             (let [argv (x/argv x)
-                  a (new "[Ltcljc.expr.Expr;" (count argv))
+                  a (new Expr* (count argv))
                   n (alength a)]
               (loop [i 0]
                 (if (< i n)
@@ -54,10 +54,9 @@
                     (.apply-to-instr adpt-res x)
                     :else
                     (.apply-to-instr adpt-res (x/with-code x (vec a))))))))
-          (trace-paths ^"[Ltcljc.expr.Expr;" [^Expr x ^int dstart ^int dend
-                                              ^IAdaptResult adpt-res]
+          (trace-paths ^Expr* [^Expr x ^int dstart ^int dend ^IAdaptResult adpt-res]
             (let [argv (x/argv x)
-                  a (new "[Ltcljc.expr.Expr;" (count argv))
+                  a (new Expr* (count argv))
                   end (+ (alength a) dend)]
               (loop [i dstart]
                 (when (< i end)
@@ -85,8 +84,7 @@
               :else b))
           (boolean-identities ^Branch [^Branch b]
             (boolean-identities* b (x/nth-arg b 0) (x/nth-arg b 1)))
-          (returning-type ^Class [^Expr x ^"[Ltcljc.expr.Expr;" a
-                                  ^int dstart ^int dend]
+          (returning-type ^Class [^Expr x ^Expr* a ^int dstart ^int dend]
             ;; `no-return` if none of the expressions returns, and
             ;; `(type x)` otherwise
             (loop [i (dec (+ (alength a) dend))]

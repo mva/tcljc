@@ -15,7 +15,7 @@
       cd-MethodHandles (ClassDesc/of "java.lang.invoke" "MethodHandles")
       cd-Lookup (ClassDesc/of "java.lang.invoke" "MethodHandles$Lookup")]
   
-  (defn- beachhead ^bytes [^String pkg-name]
+  (defn- beachhead ^byte* [^String pkg-name]
     (let [bhl-xb (cf/with-xbh [xb]
                    (-> (.invokestatic xb cd-MethodHandles "lookup"
                                       (MethodTypeDesc/of cd-Lookup))

@@ -28,7 +28,7 @@
          (nmsp '[(ns pkg.ns0)
                  (definterface* IInterface
                    (foo ^int [^Class cl]))
-                 (def ^"[Lpkg.ns0.IInterface;" a)]))))
+                 (def ^pkg.ns0.IInterface* a)]))))
 
 (deftest default-type-test
   (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/IInterface")
@@ -68,7 +68,7 @@
              (ARETURN)]]]
          (nmsp '[(ns pkg.ns0)
                  (definterface* IInterface
-                   (foo [& ^objects a]))]))))
+                   (foo [& ^Object* a]))]))))
 
 (deftest function-itf-test
   (is (= '[[(CLASS Vx [PUBLIC INTERFACE ABSTRACT] "pkg/ns0/FnBinaryInt")

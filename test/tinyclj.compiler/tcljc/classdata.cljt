@@ -435,7 +435,7 @@
                         [(-> rci (.name) (.stringValue) (symbol))
                          (-> rci (.descriptor) (.stringValue))]))
                  (.components attr))))]
-  (defn extract [^bytes bs]
+  (defn extract [^byte* bs]
     (let [cm (-> (Classfile/of) (.parse bs))]
       (-> [(class-header cm)]
           (into (map field-data) (.fields cm))
