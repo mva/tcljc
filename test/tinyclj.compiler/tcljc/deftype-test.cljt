@@ -1234,7 +1234,7 @@
                  (deftype*
                    pkg.ns0/Node
                    pkg.ns0.Node
-                   [^"Lpkg.ns0.Node;" left] ;descriptor
+                   [^pkg.ns0.Node left] ;descriptor
                    :implements
                    [clojure.lang.IType]
                    (toString [_] (.toString left)))

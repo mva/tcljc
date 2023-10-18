@@ -105,7 +105,7 @@
                                form ^boolean void? ^ClassDesc no-hint]
   (letfn [(get-cld ^ClassDesc [^String x]
             (try
-              (rt/str-to-cld x)
+              (ClassDesc/of x)
               (catch IllegalArgumentException _
                 (wrong/syntax "invalid class name" x))))
           (symbol-class-desc ^ClassDesc [^Symbol x]

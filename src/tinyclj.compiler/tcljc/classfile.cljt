@@ -23,21 +23,6 @@
    (java.util.concurrent ConcurrentHashMap)
    (java.util.function Consumer Function)))
 
-(def ^:private dot \.)
-(defn valid-java-class-name? ^boolean [^String s]
-  ;; reject dot at beginning or end, consecutive dots, and munged characters
-  (if (or (.isEmpty s) (= (.charAt s 0) dot)
-          (= (.charAt s (dec (.length s))) dot))
-    false
-    (loop [i 0]
-      (if (= i (.length s))
-        true
-        (let [c (.charAt s i)]
-          (if (or (nil? (cfg/nm-repl c))
-                  (and (= c dot) (not (= (.charAt s (inc i)) dot))))
-            (recur (inc i))
-            false))))))
-
 ;;; Constants of this type are always materialized via LDC, even when
 ;;; loaded in other classes.
 (defn constant-loads-as-ldc? ^boolean [^TypeDescriptor$OfField tp]

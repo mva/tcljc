@@ -187,8 +187,7 @@
       (cond
         (class? tp) tp
         (symbol? tp) (resolve-type-symbol tp)
-        :else (.resolveConstantDesc (rt/str-to-cld tp)
-                                    (-> ctx .compile-io .lookup-in-pkg)))
+        :else nil)
       (catch ClassNotFoundException _
         nil))))
 

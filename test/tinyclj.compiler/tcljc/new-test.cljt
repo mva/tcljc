@@ -39,12 +39,10 @@
   ;; array of primitives
   (let [exp-asm '[(BIPUSH 123) (NEWARRAY "int[]") (ARETURN)]]
     (is (= exp-asm (asm-expr (new int* 123))))
-    (is (= exp-asm (asm-expr (new "[I" 123))))
     (is (= (.arrayType Integer/TYPE)
            (.getClass (call-expr (new int* 123))))))
   (let [exp-asm '[(BIPUSH 123) (NEWARRAY "double[]") (ARETURN)]]
     (is (= exp-asm (asm-expr (new double* 123))))
-    (is (= exp-asm (asm-expr (new "[D" 123))))
     (is (= (.arrayType Double/TYPE)
            (.getClass (call-expr (new double* 123))))))
   
@@ -127,7 +125,7 @@
            (INSTANCEOF String)
            (IRETURN)]
          (asm-expr ^boolean [^Object x]
-                   (instanceof* "java.lang.String" x)))))
+                   (instanceof* java.lang.String x)))))
 
 (deftest instanceof-expr
   (is (= '[["LOCAL 0: Object x"]

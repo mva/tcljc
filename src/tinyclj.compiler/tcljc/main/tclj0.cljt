@@ -304,7 +304,7 @@
                              ^ClassLoader app-ld ^ClassLoader dyn-ld]
   (let [rt-lookup (cfg/get-rt-lookup app-ld)
         initial-imports (reduce-kv (fn [acc nm-sym clnm]
-                                     (let [cl (.findClass rt-lookup clnm)]
+                                     (let [cl (.findClass rt-lookup (name clnm))]
                                        (assoc acc nm-sym cl)))
                                    jb/jvm-imports
                                    {'symbol rt/clnm-symbol

@@ -33,8 +33,8 @@
 
 (defn same-class? ^boolean [^Class a ^Class b]
   (identical? a b))
-(defn same-classname? ^boolean [^String clnm ^Class a]
-  (= clnm (.getName a)))
+(defn same-classname? ^boolean [^Symbol clnm ^Class a]
+  (= (name clnm) (.getName a)))
 
 ;; Note: `void` is also considered a primitive.  Result is undefined
 ;; for `no-return`.

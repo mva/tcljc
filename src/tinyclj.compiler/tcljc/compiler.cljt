@@ -89,15 +89,10 @@
                   (implements-ifn? op-x ctx))
       (x/wrong-type "called function's type does not implement `IFn`" op-x))))
 
-(defn- resolve-class-name ^Class [^String nm ^Ctx ctx]
-  (when (cf/valid-java-class-name? nm) ;reject class names like "/"
-    (ctx/get-type nm ctx)))
-
-(defn classname-expr ^Const [ssym-or-str ^Ctx ctx]
-  (when-some [tp (if (symbol? ssym-or-str)
-                   (ctx/lookup-type ssym-or-str ctx)
-                   (resolve-class-name ssym-or-str ctx))]
-    (x/const jb/Class tp)))
+(defn classname-expr ^Const [ssym ^Ctx ctx]
+  (when (symbol? ssym)
+    (when-some [tp (ctx/lookup-type ssym ctx)]
+      (x/const jb/Class tp))))
 
 (defn add-imports ^Expr [import-map ^Ctx ctx]
   (assert (identical? :import (:tag import-map)))
@@ -119,7 +114,7 @@
                  form))
   ctx)
 
-(defn- compile-named ^Expr [^clojure.lang.Named nm ^String tp-clnm ^Ctx ctx]
+(defn- compile-named ^Expr [^clojure.lang.Named nm ^Symbol tp-clnm ^Ctx ctx]
   (x/const (ctx/get-type tp-clnm ctx) nm))
 
 (defn- compile-constant-nometa ^Expr [form ^Ctx ctx]
@@ -1076,15 +1071,11 @@
                     (jdk.internal.classfile.instruction.MonitorInstruction/of opc))))
 
        (class-const-or-expr ^Expr [form]
-         (-> (cond
-               (symbol? form)
+         (-> (if (symbol? form)
                (or (when (nil? (namespace form))
                      (classname-expr form (.ctx env)))
                    (expr-form form))
-               (string? form)
-               (or (classname-expr form (.ctx env))
-                   (wrong/unresolved "unresolved type " form form))
-               :else (expr-form form))
+               (expr-form form))
              (conv/consume jb/Class)))
        (array-dims ^int [^int n ^Class cl]
          (if (.isArray cl)
@@ -1193,7 +1184,7 @@
            (compile-atom (if-some [[k v] (find m :tag)]
                            (assoc m k (list cfg/sym-quote v))
                            m))))
-       (collection-form ^Expr [^String tp-clnm elems ^DirectMethodHandleDesc mhd]
+       (collection-form ^Expr [^Symbol tp-clnm elems ^DirectMethodHandleDesc mhd]
          (coll-literal (ctx/get-type tp-clnm (.ctx env))
                        (map conv/consume-poly (expr-forms elems)) mhd))
        (resolve-static-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
@@ -1378,8 +1369,8 @@
              :else x)))]             ;`x` can be a compile-time entity
     
       #_(binding [*print-meta* #_false true]
-        (prn :compile-form form)
-        #_(when (seq? form) (prn :classes (map class form))))
+          (prn :compile-form form)
+          #_(when (seq? form) (prn :classes (map class form))))
       (-> (if (seq? form)
             (wrong/with-list-context form
               (maybe-type-hint (compile-list form) form))

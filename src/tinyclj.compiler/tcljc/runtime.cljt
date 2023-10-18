@@ -53,12 +53,6 @@
 (defn describe-class ^ClassDesc [^Class tp]
   ^ClassDesc (.get (.describeConstable tp)))
 
-(defn str-to-cld ^ClassDesc [^String s]
-  (if (or (.startsWith s "[") (.endsWith s ";"))
-    ;; array type or "L...;" or maybe even "Q...;"
-    (ClassDesc/ofDescriptor (str/replace s "." "/")) 
-    (ClassDesc/of s)))
-
 
 (defn null-value-pred ^Boolean [const-value]
   ;; This function assumes that any `const-value` is produced by
@@ -103,24 +97,24 @@
 
 ;;; ------------------------------------------------------------------------
 
-(def clnm-symbol "clojure.lang.Symbol")
-(def clnm-keyword "clojure.lang.Keyword")
-(def clnm-vector "clojure.lang.IPersistentVector")
-(def clnm-map "clojure.lang.IPersistentMap")
-(def clnm-set "clojure.lang.IPersistentSet")
-(def clnm-list "clojure.lang.IPersistentList")
-(def clnm-seq "clojure.lang.ISeq")
-(def clnm-iobj "clojure.lang.IObj")
+(def clnm-symbol 'clojure.lang.Symbol)
+(def clnm-keyword 'clojure.lang.Keyword)
+(def clnm-vector 'clojure.lang.IPersistentVector)
+(def clnm-map 'clojure.lang.IPersistentMap)
+(def clnm-set 'clojure.lang.IPersistentSet)
+(def clnm-list 'clojure.lang.IPersistentList)
+(def clnm-seq 'clojure.lang.ISeq)
+(def clnm-iobj 'clojure.lang.IObj)
 
-(def symbol (ClassDesc/of clnm-symbol))
-(def keyword (ClassDesc/of clnm-keyword))
-(def ^:private vector (ClassDesc/of clnm-vector))
-(def map (ClassDesc/of clnm-map))
-(def ^:private set (ClassDesc/of clnm-set))
-(def list (ClassDesc/of clnm-list))
-(def ^:private seq (ClassDesc/of clnm-seq))
+(def symbol (ClassDesc/of (name clnm-symbol)))
+(def keyword (ClassDesc/of (name clnm-keyword)))
+(def ^:private vector (ClassDesc/of (name clnm-vector)))
+(def map (ClassDesc/of (name clnm-map)))
+(def ^:private set (ClassDesc/of (name clnm-set)))
+(def list (ClassDesc/of (name clnm-list)))
+(def ^:private seq (ClassDesc/of (name clnm-seq)))
 (def pattern (ClassDesc/of "java.util.regex.Pattern"))
-(def iobj (ClassDesc/of clnm-iobj))
+(def iobj (ClassDesc/of (name clnm-iobj)))
 
 (def int ConstantDescs/CD_int)
 (def ^:private long ConstantDescs/CD_long)
@@ -169,20 +163,20 @@
 (def ^:private Literal (ClassDesc/of "tinyclj.lang.Literal"))
 (def ^:private BootstrapMethod (ClassDesc/of "tinyclj.lang.BootstrapMethod"))
 
-(def clnm-Var "clojure.lang.Var")
+(def clnm-Var 'clojure.lang.Var)
 
 (def ClojureRT (ClassDesc/of "clojure.lang.RT"))
 (def ^:private ClojureUtil (ClassDesc/of "clojure.lang.Util"))
-(def Var (ClassDesc/of clnm-Var))
+(def Var (ClassDesc/of (name clnm-Var)))
 (def ^:private ArraySeq (ClassDesc/of "clojure.lang.ArraySeq"))
 
-(def clnm-ifn "clojure.lang.IFn")
-(def clnm-abstract-fn "tinyclj.lang.AFnMh")
-(def clnm-static-fn "tinyclj.lang.StaticFnMh")
+(def clnm-ifn 'clojure.lang.IFn)
+(def clnm-abstract-fn 'tinyclj.lang.AFnMh)
+(def clnm-static-fn 'tinyclj.lang.StaticFnMh)
 
-(def IFn (ClassDesc/of clnm-ifn))
-(def AFn (ClassDesc/of clnm-abstract-fn))
-(def StaticFnMh (ClassDesc/of clnm-static-fn))
+(def IFn (ClassDesc/of (name clnm-ifn)))
+(def AFn (ClassDesc/of (name clnm-abstract-fn)))
+(def StaticFnMh (ClassDesc/of (name clnm-static-fn)))
 
 (def name-force-clinit "forceClinit~1")
 (def name-requires "requires~1")
