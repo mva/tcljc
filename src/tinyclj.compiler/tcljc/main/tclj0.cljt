@@ -240,8 +240,6 @@
         (cfg/create-directories (cfg/package-directory dest-dir ns-str))))
     (write-class-file [_ owner-nm bs]
       (when (some? dest-dir) ;expects output directory to exist
-        ;; FIXME... maybe move writing the class file to the send-off
-        ;; thread pool in clojure.lang.Agent/soloExecutor?
         (with-open [w (-> dest-dir
                           (.resolve (Path/of (str owner-nm cfg/class-suffix)))
                           (Files/newOutputStream))]
