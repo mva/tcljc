@@ -23,8 +23,6 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]]
@@ -46,8 +44,6 @@
              (INVOKESTATIC RT "markCoreInitialization" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "tinyclj/core/___" nil "tinyclj/core/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "")
              (ARETURN)]]]
@@ -70,8 +66,6 @@
              (INVOKESTATIC RT "markCoreInitialization" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "tinyclj/core/___" nil "tinyclj/core/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "")
              (ARETURN)]]]
@@ -99,8 +93,6 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]]
@@ -122,8 +114,6 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]]

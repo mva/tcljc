@@ -51,8 +51,6 @@
              (PUTSTATIC . "two" "I")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]]
@@ -91,8 +89,6 @@
              (PUTSTATIC . "f" "Ljava/lang/Runnable;")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]]
@@ -139,8 +135,6 @@
              (PUTSTATIC . "f" "Ljava/util/Comparator;")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]]
@@ -201,8 +195,6 @@
              (PUTSTATIC . "fn-2" "Lpkg/ns0/FnMyFn;")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]]
@@ -248,8 +240,6 @@
              (INVOKEINTERFACE Consumer "accept" "(Ljava/lang/Object;)V" :itf)
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]]

@@ -83,20 +83,13 @@
               (.segm-id segm) (.segm-cld segm) (.tlfv segm)
               (.!delayed-macros segm) []))
 
-(defn- capstone-cld ^ClassDesc [^SegmState segm]
-  (ClassDesc/of (-> segm .ctx .ns-str) capstone-class-name))
+(defn capstone-cld ^ClassDesc [^String ns-str]
+  (ClassDesc/of ns-str capstone-class-name))
 
-(defn with-force-clinit ^ClassBuilder [^ClassBuilder cb]
-  ;; Static method with zero parameters, cannot clash with a regular
-  ;; function's method name because of the suffix "~1".  Note: Could
-  ;; also use requires~1 instead and drop its result.
-  (.withMethodBody cb rt/name-force-clinit rt/mtd-void-void
-                   (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
-                           Classfile/ACC_FINAL)
-                   (cf/with-xbh [xb] (.return_ xb))))
+(defn invoke-force-clinit ^Expr [^ClassDesc owner]
+  (x/invoke-xref jb/void [(x/const Class owner)] rt/mhd-RT-ensureInitialized))
 
-(defn- builder-segment ^Consumer [^SegmState segm ^ClassDesc segm-cld
-                                  ^boolean force-clinit?]
+(defn- builder-segment ^Consumer [^SegmState segm ^ClassDesc segm-cld]
   (let [clinit (fn []
                  (let [ns-str (segment-ns-str segm)]
                    (-> []
@@ -122,7 +115,6 @@
         (doseq [^FnSpec fspec (.fn-specs tlf)]
           (.fn-methods (-> fspec .fn-form .!fnc .emit-plan) cb)))
       (-> (.withFlags cb Classfile/ACC_PUBLIC)
-          (cond-> force-clinit? (with-force-clinit))
           (.withMethodBody ConstantDescs/CLASS_INIT_NAME rt/mtd-void-void
                            (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
                            (cf/with-xbh [xb]
@@ -156,7 +148,6 @@
     (cf/with-cbh [cb]
       (-> (.withFlags cb Classfile/ACC_PUBLIC)
           (.withSuperclass (segment-cld segm -1))
-          (with-force-clinit)
           (.withMethodBody rt/name-requires rt/mtd-String-void
                            (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
                                    Classfile/ACC_FINAL)
@@ -203,20 +194,19 @@
     (when (x/realized? (.bref mfn))
       mfn)))
 
-(defn- write-segment ^SegmState [^SegmState segm ^boolean force-clinit?
-                                 ^String source-file-attribute]
+(defn- write-segment ^SegmState [^SegmState segm ^String source-file-attribute]
   (letfn [(load-bref ^Object [^CompileIO compile-io ^BindingRef bref]
             (.invoke-global-mh compile-io
                                (.mh-if-global (x/deref-load bref)
                                               (.lookup-in-pkg compile-io))))]
     
-    (if (and (not force-clinit?) (zero? (count (.tlfv segm))))
+    (if (zero? (count (.tlfv segm)))
       segm ;nothing to do for empty segment
       ;; Note: There is no point to move the segment class into a
       ;; future, because it is immediately required -- either for a
       ;; macro value or for namespace completion.
       (let [segm-cld (segment-cld segm 0)
-            cbh (builder-segment segm segm-cld force-clinit?)
+            cbh (builder-segment segm segm-cld)
             ;; macros from this segment class can be invoked once it is
             ;; defined: make sure there are no pending dependencies
             segm (with-collect-fn-classes segm)
@@ -282,7 +272,7 @@
           (cond-> (schedule-fn-classes segm tlf)
             (and (not (.collect-macro-definitions? msg))
                  (some? (delayed-but-ready segm)))
-            (write-segment false (.source-file-attribute msg))))
+            (write-segment (.source-file-attribute msg))))
 
         io/msg-macro-of-next-tlf
         (do (.addLast (.!delayed-macros segm) (.x msg))
@@ -292,7 +282,7 @@
         (cond-> segm
           (and (.collect-macro-definitions? msg)
                (some? (delayed-but-ready segm)))
-          (write-segment false (.source-file-attribute msg)))
+          (write-segment (.source-file-attribute msg)))
         
         io/req-define-class
         (if (instance? ClassDef (.x msg))
@@ -305,9 +295,10 @@
                 (write-and-define (build-deftype dtdef) (.promise msg)))))
         
         io/req-flush-namespace-segment
-        (let [cl (write-segment segm true (.source-file-attribute msg))]
+        (let [cl (-> (with-tlf segm (TopLevelForm. [] [] x/expr-empty))
+                     (write-segment (.source-file-attribute msg)))]
           ;; segment class `cl` exists and can now be looked up
-          (.complete (.promise msg) (x/invoke-force-clinit (.segm-cld segm)))
+          (.complete (.promise msg) (invoke-force-clinit (.segm-cld segm)))
           cl)
         
         io/msg-fatal-error
@@ -323,10 +314,10 @@
 (defn- emit-segments ^Namespace [^SegmState segm]
   (let [msg (.recv-from-compile (.nmsp-io segm))]
     (if (io/close-queue? msg)
-      (let [segm (write-segment segm false (.source-file-attribute msg))
+      (let [segm (write-segment segm (.source-file-attribute msg))
             nmsp ^Namespace (.x msg)
             nmsp-io (.nmsp-io segm)
-            cl (.produce-class nmsp-io (capstone-cld segm)
+            cl (.produce-class nmsp-io (-> segm .ctx .ns-str (capstone-cld))
                                (.source-file-attribute msg)
                                (builder-capstone segm nmsp))]
         (mk-capstone nmsp-io (.ctx nmsp) (.provided-nmsp nmsp)

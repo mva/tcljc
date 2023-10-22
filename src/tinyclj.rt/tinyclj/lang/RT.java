@@ -93,6 +93,14 @@ public final class RT {
   }
 
 
+  public static void ensureInitialized(Class cl) {
+    try {
+      MethodHandles.publicLookup().ensureInitialized(cl);
+    } catch (Exception e) {
+      throw clojure.lang.Util.sneakyThrow(e);
+    }
+  }
+  
   public static void markCoreInitialization(String className) {
     Compiler.partialCoreNamespace = className;
   }

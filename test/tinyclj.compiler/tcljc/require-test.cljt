@@ -16,8 +16,6 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
@@ -28,8 +26,6 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns1/___" nil "pkg/ns1/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]]
@@ -46,8 +42,6 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/exp/___" nil "pkg/exp/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
@@ -56,11 +50,10 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns1")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (INVOKESTATIC ___ "forceClinit~1" "()V")
+             (LDC ___)
+             (INVOKESTATIC RT "ensureInitialized" "(Ljava/lang/Class;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns1/___" nil "pkg/ns1/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "pkg.exp,tinyclj.core")
              (ARETURN)]]]
@@ -79,8 +72,6 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/exp/___" nil "pkg/exp/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
@@ -92,11 +83,10 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns1")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (INVOKESTATIC ___ "forceClinit~1" "()V")
+             (LDC ___)
+             (INVOKESTATIC RT "ensureInitialized" "(Ljava/lang/Class;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns1/___" nil "pkg/ns1/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "pkg.exp,tinyclj.core")
              (ARETURN)]]]
@@ -117,8 +107,6 @@
                 (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
                 (RETURN)]]
               [(CLASS Vx [PUBLIC] "pkg/exp/___" nil "pkg/exp/_10")
-               [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-                (RETURN)]
                [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
                 (LDC "tinyclj.core")
                 (ARETURN)]]
@@ -130,11 +118,10 @@
                [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
                 (LDC "pkg.ns0")
                 (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-                (INVOKESTATIC ___ "forceClinit~1" "()V")
+                (LDC ___)
+                (INVOKESTATIC RT "ensureInitialized" "(Ljava/lang/Class;)V")
                 (RETURN)]]
                             [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-               [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-                (RETURN)]
                [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
                 (LDC "pkg.exp,tinyclj.core")
                 (ARETURN)]]]]
@@ -188,7 +175,6 @@
 
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/exp/___" nil "pkg/exp/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
@@ -200,16 +186,15 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (INVOKESTATIC ___ "forceClinit~1" "()V")
-
+             (LDC ___)
+             (INVOKESTATIC RT "ensureInitialized" "(Ljava/lang/Class;)V")
+             
              (GETSTATIC _10 "public-var" "Lclojure/lang/Var;")
              (INVOKEVIRTUAL Var "deref" "()Ljava/lang/Object;")
              (PUTSTATIC . "local-var" "Ljava/lang/Object;")
              
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "pkg.exp,tinyclj.core")
              (ARETURN)]]]
@@ -238,8 +223,6 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/exp/___" nil "pkg/exp/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
@@ -271,8 +254,9 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (INVOKESTATIC ___ "forceClinit~1" "()V")
-
+             (LDC ___)
+             (INVOKESTATIC RT "ensureInitialized" "(Ljava/lang/Class;)V")
+             
              (INVOKESTATIC _10 "inc1" "()Ltinyclj/lang/StaticFnMh;")
              (ICONST_2)
              (INVOKESTATIC . "apply1~2" "(Ljava/lang/Object;I)Ljava/lang/Object;")
@@ -284,8 +268,6 @@
              
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V")
-             (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "pkg.exp,tinyclj.core")
              (ARETURN)]]]
@@ -318,7 +300,6 @@
              (PUTSTATIC . "src" "Ljava/lang/String;")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/exp/___" nil "pkg/exp/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
@@ -335,10 +316,10 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (INVOKESTATIC ___ "forceClinit~1" "()V")
+             (LDC ___)
+             (INVOKESTATIC RT "ensureInitialized" "(Ljava/lang/Class;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "pkg.exp,tinyclj.core")
              (ARETURN)]]]
@@ -370,7 +351,6 @@
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/exp/___" nil "pkg/exp/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
              (ARETURN)]]
@@ -387,10 +367,10 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-             (INVOKESTATIC ___ "forceClinit~1" "()V")
+             (LDC ___)
+             (INVOKESTATIC RT "ensureInitialized" "(Ljava/lang/Class;)V")
              (RETURN)]]
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "forceClinit~1" "()V") (RETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "pkg.exp,tinyclj.core")
              (ARETURN)]]]

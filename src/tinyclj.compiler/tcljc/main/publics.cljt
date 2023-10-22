@@ -195,16 +195,13 @@
                                          (add-macro* acc nm pdf mimpl mvalue)))))
                 (add-macro* acc nm pdf mimpl nil)))
             (add-method [acc ^Method m]
-              (if (= (.getName m) rt/name-force-clinit)
-                (let [cld (rt/describe-class cl)]
-                  (assoc acc cfg/key-force-clinit (x/invoke-force-clinit cld)))
-                (if-some [nm (when (zero? (.getParameterCount m)) ;skip main
-                               (global-nm m))]
-                  (if-some [pdf (public-def-info m)]
-                    (case (aget pdf 0)
-                      ":macro" (add-macro acc nm pdf (method-bref acc m nm)))
-                    (put! acc nm (method-bref acc m nm)))
-                  acc)))]
+              (if-some [nm (when (zero? (.getParameterCount m)) ;skip main
+                             (global-nm m))]
+                (if-some [pdf (public-def-info m)]
+                  (case (aget pdf 0)
+                    ":macro" (add-macro acc nm pdf (method-bref acc m nm)))
+                  (put! acc nm (method-bref acc m nm)))
+                acc))]
       (let [res (reduce add-field
                         (reduce add-method acc (.getDeclaredMethods cl))
                         (.getDeclaredFields cl))]

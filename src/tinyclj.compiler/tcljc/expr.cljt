@@ -331,11 +331,6 @@
 (defn settable-getter? ^boolean [^Expr x]
   (and (invoke-xref? x) (.settable-field? ^InvokeXref x)))
 
-(defn invoke-force-clinit ^Expr [^ClassDesc owner]
-  (let [mhd (MethodHandleDesc/ofMethod rt/mhk-static owner rt/name-force-clinit
-                                       rt/mtd-void-void)]
-    (invoke-xref jb/void [] nil mhd false)))
-
 
 (deftype InvokeDynamic [^:pass-to-super-constructor ^Object _form
                         ^:pass-to-super-constructor ^Class type

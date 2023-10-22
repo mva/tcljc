@@ -178,7 +178,6 @@
 (def AFn (ClassDesc/of (name clnm-abstract-fn)))
 (def StaticFnMh (ClassDesc/of (name clnm-static-fn)))
 
-(def name-force-clinit "forceClinit~1")
 (def name-requires "requires~1")
 
 (defmacro aclass-desc [ptypev]
@@ -359,6 +358,10 @@
                                           Object [ObjectArray]))
 (def mhd-MethodHandle-invokeExact (mhd-virtual [MethodHandle "invokeExact"]
                                                Object [ObjectArray]))
+
+;;; capstone and segment class initialization:
+(def mhd-RT-ensureInitialized (mhd-static [RT "ensureInitialized"]
+                                          void [Class]))
 
 ;;; bootstrap methods:
 (def bsm-null ConstantDescs/BSM_NULL_CONSTANT)
