@@ -20,6 +20,7 @@ JAVA_OPTS=--enable-preview \
 #JAVA_OPTS += -XX:+UseZGC -XX:+ZGenerational -Xlog:gc*
 #JAVA_OPTS += -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xlog:gc*
 #JAVA_OPTS += -Djdk.tracePinnedThreads=full
+#JAVA_OPTS += -XX:+UnlockDiagnosticVMOptions -XX:+PrintFlagsFinal
 
 #DET=--deterministic
 BOOTSTRAP_TCLJ_MAIN=$(if $(findstring /bootstrap-tcljc,$(BOOTSTRAP_TCLJ_MDIR)),tcljc.main.___,tinyclj.build.main.___)
