@@ -64,7 +64,7 @@
     (update-ex-data assoc k v)))
 
 (defn assoc-dep-map ^ExceptionInfo [^Throwable t ^IPersistentMap dep-map]
-  (.printStackTrace t)
+  #_(.printStackTrace t)
   (-> (if (instance? ExceptionInfo t)
         ^ExceptionInfo t
         (ex-info "unhandled exception" {} t))
