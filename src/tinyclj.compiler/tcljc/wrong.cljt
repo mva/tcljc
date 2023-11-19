@@ -86,7 +86,7 @@
       s')))
 
 (defn got ^String [x] (str " (got: " (str* x) ")"))
-(defn got-int ^String [^int i] (got (str i)))
+(defn got-int ^String [^int i] (got (object i)))
 (defn got-q ^String [x] (got (q x)))
 
 
