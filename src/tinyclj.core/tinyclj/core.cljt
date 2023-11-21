@@ -4733,11 +4733,10 @@
 
 (defn ^:private elide-top-frames
   [^Throwable ex ^int n]
-  (let [tr (.getStackTrace ex)]
-    (doto ex
-      (.setStackTrace
-        (when tr
-          (into-array StackTraceElement (drop n tr)))))))
+  (if-some [tr (.getStackTrace ex)]
+    (let [tr' (java.util.Arrays/copyOfRange tr (min n (alength tr)) (alength tr))]
+      (doto ex (.setStackTrace ^StackTraceElement* tr')))
+    ex))
 
 (defn ex-info
   "Create an instance of ExceptionInfo, a RuntimeException subclass
@@ -4774,9 +4773,9 @@
 
 (defn assertion-error
   (^AssertionError [^String form-str]
-   (new AssertionError (str "Assert failed: " form-str)))
+   (elide-top-frames (new AssertionError (str "Assert failed: " form-str)) 1))
   (^AssertionError [^String message ^String form-str]
-   (new AssertionError (str "Assert failed: " message "\n" form-str))))
+   (elide-top-frames (new AssertionError (str "Assert failed: " message "\n" form-str)) 1)))
 
 ;;; redefined after core_print with ~(pr-str x) instead of (pr-str '~x)
 (defmacro assert
