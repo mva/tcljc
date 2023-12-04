@@ -17,7 +17,7 @@
   (:import
    (tcljc.expr Expr BindingRef FnPrimitiveFn FnMacroFn)
    (clojure.lang Symbol)
-   (jdk.internal.classfile Opcode)
+   (java.lang.classfile Opcode)
    (java.util HashMap)))
 
 (defn- globals-ns-primitive []

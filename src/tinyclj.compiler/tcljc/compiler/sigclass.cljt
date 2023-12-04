@@ -23,8 +23,8 @@
    (tcljc.expr Arity Binding)
    (tcljc.context Ctx)
    (clojure.lang Symbol IPersistentMap IPersistentVector)
-   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
-   (jdk.internal.classfile.attribute RecordAttribute RecordComponentInfo)
+   (java.lang.classfile ClassFile ClassBuilder CodeBuilder TypeKind)
+   (java.lang.classfile.attribute RecordAttribute RecordComponentInfo)
    (java.lang.constant ClassDesc MethodTypeDesc MethodHandleDesc
                        DirectMethodHandleDesc ConstantDesc ConstantDescs
                        DynamicCallSiteDesc)
@@ -172,18 +172,18 @@
                                 "placed on the parameter vector, not the "
                                 "method name") tag))
             (let [mnm (cfg/munge-name mname)
-                  flags (cond-> (bit-or Classfile/ACC_PUBLIC
-                                        Classfile/ACC_ABSTRACT)
+                  flags (cond-> (bit-or ClassFile/ACC_PUBLIC
+                                        ClassFile/ACC_ABSTRACT)
                           (and (>= (count msig) 2) (= '& (peek (pop msig))))
-                          (bit-or Classfile/ACC_VARARGS))
+                          (bit-or ClassFile/ACC_VARARGS))
                   mtd (method-sig msig)]
               (cf/with-cbh [cb]
                 (.withMethod cb mnm mtd flags (cf/with-mbh [mb] nil)))))]
     
     (let [if-nm (wrong/ensure-simple-sym if-nm)]
       (cf/class-def (ClassDesc/of pkg-name (name if-nm))
-                    (bit-or Classfile/ACC_PUBLIC Classfile/ACC_INTERFACE
-                            Classfile/ACC_ABSTRACT)
+                    (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_INTERFACE
+                            ClassFile/ACC_ABSTRACT)
                     () nil [] (mapv method-cbh methods)))))
 
 ;;; ------------------------------------------------------------------------
@@ -232,14 +232,14 @@
           (let [m (meta nm)]
             (cond
               (:unsynchronized-mutable m)
-              (check-mutable Classfile/ACC_PRIVATE nm java-record?)
+              (check-mutable ClassFile/ACC_PRIVATE nm java-record?)
               (:volatile-mutable m)
-              (check-mutable (bit-or Classfile/ACC_PRIVATE Classfile/ACC_VOLATILE)
+              (check-mutable (bit-or ClassFile/ACC_PRIVATE ClassFile/ACC_VOLATILE)
                              nm java-record?)
               java-record?
-              (bit-or Classfile/ACC_PRIVATE Classfile/ACC_FINAL)
+              (bit-or ClassFile/ACC_PRIVATE ClassFile/ACC_FINAL)
               :else 
-              (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL))))
+              (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_FINAL))))
         (record-deftype? ^boolean [^IPersistentVector fieldv]
           (let [cnt (count fieldv)]
             (letfn [(nth-last-mnm ^String [^int i]
@@ -306,7 +306,7 @@
                                             ^IPersistentVector fieldv]
               (let [super-argn (constr-argn super-mhd)]
                 (cf/with-cbh [cb]
-                  (cf/constructor cb Classfile/ACC_PUBLIC super-mhd
+                  (cf/constructor cb ClassFile/ACC_PUBLIC super-mhd
                                   (map-indexed parameter-ld fieldv)
                                   (map field-st (subvec fieldv super-argn))))))
             (record-constructors ^Consumer [^IPersistentVector fieldv]
@@ -314,16 +314,16 @@
               (cf/with-cbh [cb]
                 (let [primary-param-lds (map-indexed parameter-ld fieldv)]
                   (cf/delegating-constructor
-                   cb Classfile/ACC_PUBLIC this-class primary-param-lds
+                   cb ClassFile/ACC_PUBLIC this-class primary-param-lds
                    [jb/jvm-null jb/jvm-null jb/jvm-int-zero jb/jvm-int-zero])
                   (cf/delegating-constructor
-                   cb Classfile/ACC_PUBLIC this-class primary-param-lds
+                   cb ClassFile/ACC_PUBLIC this-class primary-param-lds
                    [jb/jvm-int-zero jb/jvm-int-zero])
                   (let [factory-fieldv (subvec fieldv 0 (- (count fieldv) 4))]
                     (.withMethodBody cb "create"
                                      (rt/mtd-of* this-class rt/map)
-                                     (bit-or Classfile/ACC_PUBLIC
-                                             Classfile/ACC_STATIC)
+                                     (bit-or ClassFile/ACC_PUBLIC
+                                             ClassFile/ACC_STATIC)
                                      (cf/with-xbh [xb]
                                        (record-factory xb this-class
                                                        primary-param-lds
@@ -340,7 +340,7 @@
               (.withMethodBody
                cb (.invocationName dcsd)
                (-> dcsd (.invocationType) (.dropParameterTypes 0 1))
-               (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL)
+               (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_FINAL)
                (cf/with-xbh [xb]
                  (let [tk (-> (.invocationType dcsd)
                               (.returnType)
@@ -379,7 +379,7 @@
 
                 (doseq [^FieldDef field fieldv]
                   (.withMethodBody cb (.mnm field) (rt/mtd-of* (.tpd field))
-                                   Classfile/ACC_PUBLIC
+                                   ClassFile/ACC_PUBLIC
                                    (cf/with-xbh [xb]
                                      (field-getter xb this-class field))))
 
@@ -410,9 +410,9 @@
             flags (-> (if (:abstract opts)
                         (do (when java-record?
                               (wrong/other "java.lang.Record cannot be declared :abstract"))
-                            Classfile/ACC_ABSTRACT)
-                        Classfile/ACC_FINAL)
-                      (bit-or Classfile/ACC_PUBLIC))
+                            ClassFile/ACC_ABSTRACT)
+                        ClassFile/ACC_FINAL)
+                      (bit-or ClassFile/ACC_PUBLIC))
             record? (record-deftype? fieldv)]
         (when java-record?
           (doseq [^FieldDef field fieldv
@@ -440,7 +440,7 @@
                       ;; Note: Java records with mutable fields are
                       ;; rejected anyway
                       mutable? (-> (field-flags nm false)
-                                   (bit-and Classfile/ACC_FINAL)
+                                   (bit-and ClassFile/ACC_FINAL)
                                    (zero?))
                       bref (x/field-ref nm tp mutable?)]
                   (.deliver-load bref (cf/ld-st-virtual this-class mnm
@@ -454,5 +454,5 @@
     (let [field-sig []
           [super-mhd itfs] (super-classes itfs field-sig ctx)
           itfs (cons (ctx/get-type rt/clnm-iobj ctx) itfs)
-          flags Classfile/ACC_PUBLIC]
+          flags ClassFile/ACC_PUBLIC]
       (cf/class-def this-class flags (map rt/cd-of itfs) super-mhd [] [])))

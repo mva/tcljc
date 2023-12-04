@@ -35,7 +35,7 @@
                DeftypeDef MethodDef)
    (clojure.lang Symbol Var ISeq IPersistentVector IPersistentMap IMeta
                  ExceptionInfo)
-   (jdk.internal.classfile Classfile Opcode)
+   (java.lang.classfile ClassFile Opcode)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
                        ConstantDescs)
    (java.lang.invoke MethodHandle MethodHandles$Lookup)
@@ -877,7 +877,7 @@
            (let [at (sigclass/method-arity-type etp form x/lvl-environment
                                                 -1 (.ctx env))
                  ac (parse-method env at etp)]
-             (MethodDef. (.at ac) Classfile/ACC_PUBLIC
+             (MethodDef. (.at ac) ClassFile/ACC_PUBLIC
                          (.this-bref ac) (.body-expr ac)))))
        (create-ephemeral-class ^Class [^ClassDef cdef]
          (let [bs (cf/build
@@ -1065,7 +1065,7 @@
            (when-not (x/reference? lockee)
              (x/wrong-type "monitor operation requires a reference" lockee))
            (x/insn* jb/void [lockee]
-                    (jdk.internal.classfile.instruction.MonitorInstruction/of opc))))
+                    (java.lang.classfile.instruction.MonitorInstruction/of opc))))
 
        (class-const-or-expr ^Expr [form]
          (-> (if (symbol? form)
@@ -1667,7 +1667,7 @@
          ccl (.componentType (x/type a))
          opc (cf/bc2opc Opcode/IALOAD (cf/opcode-delta ccl))]
      (x/insn* ccl [a i]
-              (jdk.internal.classfile.instruction.ArrayLoadInstruction/of opc)))))
+              (java.lang.classfile.instruction.ArrayLoadInstruction/of opc)))))
 
 (def xastore-form
   (^FnPrimitiveFn fn [form args compile-io]
@@ -1681,7 +1681,7 @@
          v (conv/consume (nth args 2) ccl)
          opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ccl))]
      (x/insn* ccl [a i v (x/dup-x2 ccl)]
-              (jdk.internal.classfile.instruction.ArrayStoreInstruction/of opc)))))
+              (java.lang.classfile.instruction.ArrayStoreInstruction/of opc)))))
 
 ;;; ------------------------------------------------------------------------
 

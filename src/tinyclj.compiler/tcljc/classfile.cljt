@@ -11,11 +11,11 @@
    [tcljc.runtime :as rt])
   (:import
    (clojure.lang IPersistentVector)
-   (jdk.internal.classfile Classfile ClassHierarchyResolver
-                  ClassHierarchyResolver$ClassHierarchyInfo
-                  Opcode TypeKind ClassBuilder MethodBuilder CodeBuilder Label)
-   (jdk.internal.classfile.attribute SourceFileAttribute)
-   (jdk.internal.classfile.instruction SwitchCase)
+   (java.lang.classfile ClassFile ClassHierarchyResolver
+                        ClassHierarchyResolver$ClassHierarchyInfo
+                        Opcode TypeKind ClassBuilder MethodBuilder CodeBuilder Label)
+   (java.lang.classfile.attribute SourceFileAttribute)
+   (java.lang.classfile.instruction SwitchCase)
    (java.lang.constant ConstantDesc ClassDesc MethodTypeDesc MethodHandleDesc
                        DirectMethodHandleDesc DirectMethodHandleDesc$Kind
                        ConstantDescs)
@@ -97,7 +97,7 @@
   (assert (= (count sig) 1))
   (let [[nm] sig]
     `(^java.util.function.Consumer fn [~nm]
-      (let* [~nm ~(with-meta nm {:tag 'jdk.internal.classfile.ClassBuilder})]
+      (let* [~nm ~(with-meta nm {:tag 'java.lang.classfile.ClassBuilder})]
         #_(.println System/out ":accept ClassBuilder start")
         ~@body
         #_(.println System/out ":accept ClassBuilder end")))))
@@ -111,7 +111,7 @@
   (assert (= (count sig) 1))
   (let [[nm] sig]
     `(^java.util.function.Consumer fn [~nm]
-      (let* [~nm ~(with-meta nm {:tag 'jdk.internal.classfile.MethodBuilder})]
+      (let* [~nm ~(with-meta nm {:tag 'java.lang.classfile.MethodBuilder})]
         #_(.println System/out ":accept MethodBuilder start")
         ~@body
         #_(.println System/out ":accept MethodBuilder end")))))
@@ -121,7 +121,7 @@
   (assert (= (count sig) 1))
   (let [[nm] sig]
     `(^java.util.function.Consumer fn [~nm]
-      (let* [~nm ~(with-meta nm {:tag 'jdk.internal.classfile.CodeBuilder})]
+      (let* [~nm ~(with-meta nm {:tag 'java.lang.classfile.CodeBuilder})]
         #_(.println System/out "\n:accept CodeBuilder start")
         ~@body
         #_(.println System/out ":accept CodeBuilder end\n")))))
@@ -131,7 +131,7 @@
   (assert (= (count sig) 1))
   (let [[nm] sig]
     `(^java.util.function.Consumer fn [~nm]
-      (let* [~nm ~(with-meta nm {:tag 'jdk.internal.classfile.FieldBuilder})]
+      (let* [~nm ~(with-meta nm {:tag 'java.lang.classfile.FieldBuilder})]
         #_(.println System/out ":accept FieldBuilder start")
         ~@body
         #_(.println System/out ":accept FieldBuilder end")))))
@@ -158,17 +158,17 @@
 
 (defn build
   (^byte* [^ClassDesc this-class ^Consumer cbh] ;for ephemeral classes
-   (-> (Classfile/of) (.build this-class cbh)))
+   (-> (ClassFile/of) (.build this-class cbh)))
   (^byte* [^ClassDesc this-class ^Consumer cbh
            ^ClassHierarchyResolver dyn-chr]
-   (-> (Classfile/of
-        jdk.internal.classfile.Classfile$DeadCodeOption/KEEP_DEAD_CODE
-        (jdk.internal.classfile.Classfile$ClassHierarchyResolverOption/of dyn-chr))
+   (-> (ClassFile/of
+        java.lang.classfile.ClassFile$DeadCodeOption/KEEP_DEAD_CODE
+        (java.lang.classfile.ClassFile$ClassHierarchyResolverOption/of dyn-chr))
        (.build this-class cbh))))
 
 (defn with-version ^ClassBuilder [^ClassBuilder cb]
-  (let [major Classfile/JAVA_17_VERSION
-        minor 0 #_Classfile/PREVIEW_MINOR_VERSION]
+  (let [major ClassFile/JAVA_17_VERSION
+        minor 0 #_ClassFile/PREVIEW_MINOR_VERSION]
     (.withVersion cb major minor)))
 
 ;;; ------------------------------------------------------------------------
@@ -410,7 +410,7 @@
     rt/object))
 
 (defn ch-info ^ClassHierarchyResolver$ClassHierarchyInfo [^ClassDef cdef]
-  (if (not (zero? (bit-and (.flags cdef) Classfile/ACC_INTERFACE)))
+  (if (not (zero? (bit-and (.flags cdef) ClassFile/ACC_INTERFACE)))
     (ClassHierarchyResolver$ClassHierarchyInfo/ofInterface)
     (ClassHierarchyResolver$ClassHierarchyInfo/ofClass (super-class cdef))))
 

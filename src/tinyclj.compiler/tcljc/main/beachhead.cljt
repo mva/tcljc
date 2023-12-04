@@ -7,7 +7,7 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.main.beachhead
   (:require [tcljc.classfile :as cf])
-  (:import (jdk.internal.classfile Classfile)
+  (:import (java.lang.classfile ClassFile)
            (java.lang.constant ClassDesc MethodTypeDesc)
            (java.lang.invoke MethodHandles$Lookup MethodType)))
 
@@ -21,13 +21,13 @@
                                       (MethodTypeDesc/of cd-Lookup))
                        (.areturn)))]
       (.build
-       (Classfile/of)
+       (ClassFile/of)
        (ClassDesc/of pkg-name nm-beachhead)
        (cf/with-cbh [cb]
          (-> (cf/with-version cb)
-             (.withFlags Classfile/ACC_PUBLIC)
+             (.withFlags ClassFile/ACC_PUBLIC)
              (.withMethodBody "beachheadLookup" (MethodTypeDesc/of cd-Lookup)
-                              (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
+                              (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_STATIC)
                               bhl-xb))))))
 
   (defn mk-lookup-in-pkg ^MethodHandles$Lookup [^MethodHandles$Lookup rt-lookup

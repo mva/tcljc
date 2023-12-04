@@ -11,11 +11,7 @@ JAVAP=$(JAVA_BIN)javap
 # CICompilerCount=10 (instead of 8+0+0's 4).
 JAVA_ONCE=$(JAVA) -XX:TieredStopAtLevel=1
 
-JAVA_OPTS=--enable-preview \
-  --add-exports java.base/jdk.internal.classfile=ALL-UNNAMED \
-  --add-exports java.base/jdk.internal.classfile.constantpool=ALL-UNNAMED \
-  --add-exports java.base/jdk.internal.classfile.instruction=ALL-UNNAMED \
-  --add-exports java.base/jdk.internal.classfile.attribute=ALL-UNNAMED
+JAVA_OPTS=--enable-preview
 #JAVA_OPTS += -XX:+UseG1GC -Xlog:gc*
 #JAVA_OPTS += -XX:+UseZGC -XX:+ZGenerational -Xlog:gc*
 #JAVA_OPTS += -XX:+UnlockExperimentalVMOptions -XX:+UseEpsilonGC -Xlog:gc*
@@ -189,7 +185,7 @@ $(DEST_DIR).stageFI2/DONE: $(DEST_DIR).stageFI1/DONE
 $(DEST_DIR).rtiowFS/DONE: $(DEST_DIR).stageFI2/DONE
 	@echo; echo "### $(dir $@)"
 	@rm -rf "$(dir $@)"
-	$(TIME_JAVA_ONCE) --enable-preview --add-exports java.base/jdk.internal.classfile=tinyclj.compiler --add-exports java.base/jdk.internal.classfile.constantpool=tinyclj.compiler --add-exports java.base/jdk.internal.classfile.instruction=tinyclj.compiler --add-exports java.base/jdk.internal.classfile.attribute=tinyclj.compiler -p $(DEST_DIR).mdir -m tinyclj.compiler -d "$(dir $@)" -s test/tinyclj.compiler tcljc.rtiow-ref
+	$(TIME_JAVA_ONCE) --enable-preview -p $(DEST_DIR).mdir -m tinyclj.compiler -d "$(dir $@)" -s test/tinyclj.compiler tcljc.rtiow-ref
 	@echo "\nRun from class path:"
 	$(JAVA) -cp $(DEST_DIR).mdir/\*:$(dir $@) tcljc.rtiow-ref.___ >"$(dir $@)"ray.ppm
 	@echo "3cf6c9b9f93edb0de2bc24015c610d78  $(dir $@)ray.ppm" | md5sum -c -

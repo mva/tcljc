@@ -24,20 +24,20 @@
                Binding BindingRef AliasRef AssignDef VarRef
                FnForm ArityCode Arity FnPatch IEmitPlan IProvidedValue)
    (clojure.lang Symbol IPersistentVector IMeta)
-   (jdk.internal.classfile Classfile ClassfileBuilder ClassBuilder CodeBuilder
-                           FieldBuilder Opcode Label TypeKind
-                           Annotation AnnotationElement AnnotationValue
-                           Signature)
-   (jdk.internal.classfile.instruction SwitchCase)
-   (jdk.internal.classfile.attribute ConstantValueAttribute SignatureAttribute
-                                     RuntimeVisibleAnnotationsAttribute)
-   (jdk.internal.classfile.constantpool LoadableConstantEntry)
+   (java.lang.classfile ClassFile ClassFileBuilder ClassBuilder CodeBuilder
+                        FieldBuilder Opcode Label TypeKind
+                        Annotation AnnotationElement AnnotationValue
+                        Signature)
+   (java.lang.classfile.instruction SwitchCase)
+   (java.lang.classfile.attribute ConstantValueAttribute SignatureAttribute
+                                  RuntimeVisibleAnnotationsAttribute)
+   (java.lang.classfile.constantpool LoadableConstantEntry)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc$Kind
                        DirectMethodHandleDesc Constable)
    (java.lang.invoke TypeDescriptor$OfField)))
 
-(def acc-static (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC Classfile/ACC_FINAL))
-(def acc-virtual (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL))
+(def acc-static (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_STATIC ClassFile/ACC_FINAL))
+(def acc-virtual (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_FINAL))
 
 
 (deftype ReadCounts [^int local ^int incr ^boolean other?])
@@ -112,7 +112,7 @@
   (line-number* xb (x/form x)))
 
 ;;; CAUTION: This function must be free of side effects, because the
-;;; Classfile API can and will call the handlers that invoke `expr-insns`
+;;; ClassFile API can and will call the handlers that invoke `expr-insns`
 ;;; multiple times.
 (defn- expr-insns ^CodeBuilder [^CodeBuilder xb ^EmitState es ^Expr x]
   (letfn [(exprv-insns ^CodeBuilder [^CodeBuilder xb ^IPersistentVector exprv]
@@ -538,7 +538,7 @@
   ;; field/method return type must be the exact type of the function
   ;; instance.  It does not work if it's the abstract base type that
   ;; is used by the parser for function values.
-  (letfn [(macro-annotation ^void [^ClassfileBuilder b ^BindingRef bref]
+  (letfn [(macro-annotation ^void [^ClassFileBuilder b ^BindingRef bref]
             (when (x/b-macro? bref)
               (let [ae (if-some [macro-v ^BindingRef (.const-value bref)]
                          (doto (new AnnotationElement* 1)
@@ -550,8 +550,8 @@
                 (.with b (RuntimeVisibleAnnotationsAttribute/of ann)))))
           (static-flags ^int [^BindingRef bref]
             (if (x/b-private? bref)
-              Classfile/ACC_STATIC
-              (bit-or Classfile/ACC_STATIC Classfile/ACC_PUBLIC)))
+              ClassFile/ACC_STATIC
+              (bit-or ClassFile/ACC_STATIC ClassFile/ACC_PUBLIC)))
           (field-flags ^int [^BindingRef bref ^Expr init-x]
             (letfn [(init-with-const? ^boolean []
                       (or (some? (x/root-fn-const init-x))
@@ -559,10 +559,10 @@
                           (x/alias-ref? bref)))]
               (bit-or (static-flags bref)
                       (cond
-                        (x/b-mutable? bref) Classfile/ACC_VOLATILE
-                        (init-with-const?) Classfile/ACC_FINAL
-                        :else (bit-or Classfile/ACC_FINAL
-                                      Classfile/ACC_TRANSIENT)))))
+                        (x/b-mutable? bref) ClassFile/ACC_VOLATILE
+                        (init-with-const?) ClassFile/ACC_FINAL
+                        :else (bit-or ClassFile/ACC_FINAL
+                                      ClassFile/ACC_TRANSIENT)))))
           (static-field! ^void [^BindingRef bref ^Expr init-x]
             (let [member-tp (cf/member-tp ^LdStMember (x/deref-load bref))
                   mnm (x/mnm bref)
@@ -595,7 +595,7 @@
                   fbh (cf/with-fbh [fb]
                         (-> fb
                             (.withFlags (bit-or (static-flags bref)
-                                                Classfile/ACC_VOLATILE))
+                                                ClassFile/ACC_VOLATILE))
                             (.with (RuntimeVisibleAnnotationsAttribute/of
                                     (alias-annotation bref)))))]
               (.withField cb mnm member-tp fbh)))
@@ -609,7 +609,7 @@
                   mbh (cf/with-mbh [mb]
                         (macro-annotation mb bref)
                         (.withCode mb xbh))
-                  flags (bit-or (static-flags bref) Classfile/ACC_FINAL)]
+                  flags (bit-or (static-flags bref) ClassFile/ACC_FINAL)]
               (.withMethod cb mnm mtd flags mbh)))]
 
     (let [init-x (x/first-arg b)

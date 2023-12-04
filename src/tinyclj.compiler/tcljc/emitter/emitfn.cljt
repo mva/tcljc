@@ -20,7 +20,7 @@
    (tcljc.expr FnForm Arity FnCode ArityCode BindingRef IEmitPlan)
    (tcljc.emitter.bytecode EmitState)
    (clojure.lang IPersistentVector ISeq)
-   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
+   (java.lang.classfile ClassFile ClassBuilder CodeBuilder TypeKind)
    (java.lang.constant ClassDesc MethodTypeDesc MethodHandleDesc
                        ConstantDesc ConstantDescs DynamicConstantDesc
                        DirectMethodHandleDesc DynamicCallSiteDesc)
@@ -125,7 +125,7 @@
     (install-env! fspec ac)
     (let [at (.at ac)
           flags (cond-> bytecode/acc-static
-                  (.varargs? (.at ac)) (bit-or Classfile/ACC_VARARGS))
+                  (.varargs? (.at ac)) (bit-or ClassFile/ACC_VARARGS))
           nm (-> ac .load-mh-impl .methodName)
           mtd (-> ac .load-mh-impl .invocationType)
           xbh (cf/with-xbh [xb]
@@ -210,7 +210,7 @@
 
 (defn- arity-or-null-method ^void [^ClassBuilder cb ^FnForm fn-form]
   (let [aca (-> fn-form .!fnc .arity-code-array)
-        flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL)]
+        flags (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_FINAL)]
     (.withMethodBody cb rt/name-arity-method rt/mtd-arity-method flags
                      (cf/with-xbh [xb]
                        (if (some? (x/fn-rest-param fn-form))
@@ -235,7 +235,7 @@
                       (.invokevirtual rt/MethodHandle "invoke" mtd)
                       (.areturn)))))]
     (.withMethodBody cb rt/name-dmh-method rt/mtd-dmh-method
-                     (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL) xbh)))
+                     (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_FINAL) xbh)))
 
 ;;; ------------------------------------------------------------------------
 
@@ -245,14 +245,14 @@
                                ^DirectMethodHandleDesc super-mhd
                                ^IPersistentVector param-ldv ^ISeq ees]
   (let [field-lds (ld-sts-for ees)]
-    (cf/constructor cb Classfile/ACC_PRIVATE super-mhd
+    (cf/constructor cb ClassFile/ACC_PRIVATE super-mhd
                     (cf/as-parameters param-ldv field-lds)
                     field-lds)))
 
 (defn- create-itf-fn-method ^void [^ClassBuilder cb ^ClassDesc this-class
                                    ^ISeq ees]
-  (let [flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
-                      Classfile/ACC_FINAL)
+  (let [flags (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_STATIC
+                      ClassFile/ACC_FINAL)
         param-lds (cf/as-parameters [] (ld-sts-for ees))
         factory-mtd (ee-mtd this-class ees)
         constr-mtd (ee-mtd rt/void ees)
@@ -268,8 +268,8 @@
 
 (defn- create-afn-method ^void [^ClassBuilder cb ^ClassDesc this-class
                                 ^ISeq ees]
-  (let [flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
-                      Classfile/ACC_FINAL)
+  (let [flags (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_STATIC
+                      ClassFile/ACC_FINAL)
         param-lds (cf/as-parameters [] (ld-sts-for ees))
         factory-mtd (ee-mtd this-class ees)
         constr-mtd (.insertParameterTypes (ee-mtd rt/void ees) 0 rt/map)
@@ -285,7 +285,7 @@
     (.withMethodBody cb rt/name-factory-method factory-mtd flags xbh)))
 
 (defn- patch-fn-method ^void [^ClassBuilder cb ^ISeq ees]
-  (let [flags Classfile/ACC_FINAL
+  (let [flags ClassFile/ACC_FINAL
         param-lds (cf/as-parameters [] (ld-sts-for ees))
         patch-mtd (ee-mtd rt/void ees)
         xbh (cf/with-xbh [xb]
@@ -303,7 +303,7 @@
 
 (defn- with-meta-method ^void [^ClassBuilder cb ^ClassDesc this-class
                                ^ISeq ees]
-  (let [flags (bit-or Classfile/ACC_PROTECTED Classfile/ACC_FINAL)
+  (let [flags (bit-or ClassFile/ACC_PROTECTED ClassFile/ACC_FINAL)
         member-lds (ld-sts-for ees)
         constr-mtd (.insertParameterTypes (ee-mtd rt/void ees) 0 rt/map)
         xbh (cf/with-xbh [xb]
@@ -326,7 +326,7 @@
   (install-env! fspec ac)
   (let [at (.at ac)
         flags (cond-> bytecode/acc-virtual
-                (.varargs? (.at ac)) (bit-or Classfile/ACC_VARARGS))
+                (.varargs? (.at ac)) (bit-or ClassFile/ACC_VARARGS))
         nm (-> ac .load-mh-impl .methodName)
         mtd (-> ac .load-mh-impl .invocationType (.dropParameterTypes 0 1))
         xbh (cf/with-xbh [xb]
@@ -365,7 +365,7 @@
     (register-ch-info! [_ nmsp-io]
       (.register-ch-info!
        nmsp-io this-class
-       (jdk.internal.classfile.ClassHierarchyResolver$ClassHierarchyInfo/ofClass
+       (java.lang.classfile.ClassHierarchyResolver$ClassHierarchyInfo/ofClass
         (.owner super-mhd))))
     (fn-cbh [_]
       (let [aca (arity-code-array fspec)
@@ -374,15 +374,15 @@
             patched-ees (patched-entries fspec)
             all-ees (concat final-ees patched-ees)]
         (cf/with-cbh [cb]
-          (-> (.withFlags cb (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL))
+          (-> (.withFlags cb (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_FINAL))
               (.withSuperclass (.owner super-mhd)))
 
           (doseq [^EnvEntry ee all-ees
                   :let [ld ^LdStMember (.ld-st-instr ee)]]
             (.withField cb (cf/member-nm ld) (cf/member-tp ld)
-                        (cond-> Classfile/ACC_PRIVATE
+                        (cond-> ClassFile/ACC_PRIVATE
                           (not (.forward-ref? ee))
-                          (bit-or Classfile/ACC_FINAL))))
+                          (bit-or ClassFile/ACC_FINAL))))
                   
           (dotimes [i (alength aca)]
             (let [ac (aget aca i)]
@@ -447,7 +447,7 @@
 ;;; ------------------------------------------------------------------------
 
 (defn- meta-method ^ClassBuilder [^ClassBuilder cb ^EnvEntry meta-ee]
-  (let [flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL)
+  (let [flags (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_FINAL)
         mtd (MethodTypeDesc/of rt/map)
         xbh (cf/with-xbh [xb]
               (-> (cf/ld-insn xb (.ld-st-instr meta-ee))
@@ -473,7 +473,7 @@
     (register-ch-info! [_ nmsp-io]
       (.register-ch-info!
        nmsp-io this-class
-       (jdk.internal.classfile.ClassHierarchyResolver$ClassHierarchyInfo/ofClass
+       (java.lang.classfile.ClassHierarchyResolver$ClassHierarchyInfo/ofClass
         (.owner super-mhd))))
     (fn-cbh [_]
       (let [aca (arity-code-array fspec)
@@ -485,16 +485,16 @@
                       (cons (EnvEntry. bref bref nil field-ld false)
                             (final-entries fspec)))]
         (cf/with-cbh [cb]
-          (-> (.withFlags cb (bit-or Classfile/ACC_PUBLIC Classfile/ACC_FINAL))
+          (-> (.withFlags cb (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_FINAL))
               (.withSuperclass (.owner super-mhd))
               (.withInterfaceSymbols itfs))
 
           (doseq [^EnvEntry ee all-ees
                   :let [ld ^LdStMember (.ld-st-instr ee)]]
             (.withField cb (cf/member-nm ld) (cf/member-tp ld)
-                        (cond-> Classfile/ACC_PRIVATE
+                        (cond-> ClassFile/ACC_PRIVATE
                           (not (.forward-ref? ee))
-                          (bit-or Classfile/ACC_FINAL))))
+                          (bit-or ClassFile/ACC_FINAL))))
                   
           (dotimes [i (alength aca)]
             (let [ac (aget aca i)

@@ -34,7 +34,7 @@
    (tcljc.expr Expr Binding BindingRef FnForm)
    (clojure.lang ISeq IPersistentMap IPersistentVector IPersistentSet
                  ExceptionInfo)
-   (jdk.internal.classfile Classfile ClassBuilder CodeBuilder TypeKind)
+   (java.lang.classfile ClassFile ClassBuilder CodeBuilder TypeKind)
    (java.lang.constant ClassDesc MethodTypeDesc ConstantDescs)
    (java.util HashMap HashSet ArrayDeque)
    (java.util.concurrent Future CompletableFuture)
@@ -114,9 +114,9 @@
           (bytecode/emit-global-b cb segm-cld global-b))
         (doseq [^FnSpec fspec (.fn-specs tlf)]
           (.fn-methods (-> fspec .fn-form .!fnc .emit-plan) cb)))
-      (-> (.withFlags cb Classfile/ACC_PUBLIC)
+      (-> (.withFlags cb ClassFile/ACC_PUBLIC)
           (.withMethodBody ConstantDescs/CLASS_INIT_NAME rt/mtd-void-void
-                           (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC)
+                           (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_STATIC)
                            (cf/with-xbh [xb]
                              (bytecode/emit-body xb (clinit))))))))
 
@@ -128,8 +128,8 @@
                   bref))))]
     (when-some [bref (main-function)]
       (let [main-mtd (rt/mtd-of* rt/void (.arrayType rt/String))
-            flags (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
-                          Classfile/ACC_FINAL)
+            flags (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_STATIC
+                          ClassFile/ACC_FINAL)
             xbh (cf/with-xbh [xb]
                   (let [mtd (MethodTypeDesc/of rt/object rt/IFn rt/object)]
                     (-> (cf/ld-insn xb (x/deref-load bref))
@@ -146,11 +146,11 @@
                                 (str/join "," (sort (.req-strs nmsp))))]
                         (-> xb (.constantInstruction s) (.areturn))))]
     (cf/with-cbh [cb]
-      (-> (.withFlags cb Classfile/ACC_PUBLIC)
+      (-> (.withFlags cb ClassFile/ACC_PUBLIC)
           (.withSuperclass (segment-cld segm -1))
           (.withMethodBody rt/name-requires rt/mtd-String-void
-                           (bit-or Classfile/ACC_PUBLIC Classfile/ACC_STATIC
-                                   Classfile/ACC_FINAL)
+                           (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_STATIC
+                                   ClassFile/ACC_FINAL)
                            requires-xb)
           (with-main segm)))))
 

@@ -14,7 +14,7 @@
    (tcljc.expr Expr Insn Const Progn Block Branch SplitJoin Switch
                LoopBody Recur TryCatchFinally Setter IAdaptResult IAdapting)
    (clojure.lang Symbol IPersistentVector)
-   (jdk.internal.classfile TypeKind))
+   (java.lang.classfile TypeKind))
   (:refer-clojure :exclude [type]))
 
 (defn trace-flow ^Expr [^Expr x ^IAdaptResult adpt-res]
@@ -154,7 +154,7 @@
     (apply-to-instr [_ x]
       (x/insn* x/no-return [x]
                (-> (TypeKind/from (x/type x))
-                   (jdk.internal.classfile.instruction.ReturnInstruction/of))))
+                   (java.lang.classfile.instruction.ReturnInstruction/of))))
     (after [this before]
       (x/adpt-comp this before))
     (safe-instructions? [_]

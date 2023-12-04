@@ -8,7 +8,7 @@
 (ns tcljc.io
   (:import
    (clojure.lang ExceptionInfo IPersistentMap IPersistentSet)
-   (jdk.internal.classfile ClassHierarchyResolver$ClassHierarchyInfo)
+   (java.lang.classfile ClassHierarchyResolver$ClassHierarchyInfo)
    (java.lang.constant ClassDesc)
    (java.lang.invoke MethodHandles$Lookup MethodHandle)
    (java.net URL)

@@ -12,9 +12,9 @@
    [tinyclj.string :as str])
   (:import
    (clojure.lang Named ISeq IMeta)
-   (jdk.internal.classfile CodeBuilder)
-   (jdk.internal.classfile.constantpool ConstantPoolBuilder LoadableConstantEntry
-                               ConstantDynamicEntry)
+   (java.lang.classfile CodeBuilder)
+   (java.lang.classfile.constantpool ConstantPoolBuilder LoadableConstantEntry
+                                     ConstantDynamicEntry)
    (java.lang.constant ClassDesc ConstantDescs ConstantDesc Constable
                        DirectMethodHandleDesc DirectMethodHandleDesc$Kind
                        MethodTypeDesc MethodHandleDesc)

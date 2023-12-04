@@ -14,7 +14,7 @@
             [tcljc.exprfold :as xf]
             [tcljc.compiler.conv :as conv])
   (:import (tcljc.expr Expr Branch)
-           (jdk.internal.classfile Opcode)))
+           (java.lang.classfile Opcode)))
 
 ;;; Cast any computational int expression (including char and boolean)
 ;;; to an integer value.

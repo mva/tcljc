@@ -17,10 +17,10 @@
   (:import
    (tcljc.classfile CHR ILdStInstr ClassDef)
    (clojure.lang Symbol Keyword ISeq IPersistentVector)
-   (jdk.internal.classfile TypeKind Opcode Instruction FieldModel
-                  Classfile ClassBuilder CodeBuilder
-                  ClassHierarchyResolver$ClassHierarchyInfo)
-   (jdk.internal.classfile.instruction ConstantInstruction FieldInstruction)
+   (java.lang.classfile TypeKind Opcode Instruction FieldModel
+                        ClassFile ClassBuilder CodeBuilder
+                        ClassHierarchyResolver$ClassHierarchyInfo)
+   (java.lang.classfile.instruction ConstantInstruction FieldInstruction)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
                        DirectMethodHandleDesc$Kind MethodHandleDesc
                        MethodTypeDesc ConstantDescs)
@@ -402,7 +402,7 @@
   Expr
   (safe-to-discard? [this]
     (or (some? (.const-value ^Expr this))
-        (< (-> instr .opcode .bytecode) Classfile/IALOAD)))
+        (< (-> instr .opcode .bytecode) ClassFile/IALOAD)))
   (with-code [this tp argv]
     (Insn. (form this) tp argv (.const-value this) instr)))
 
@@ -414,30 +414,30 @@
 
 (defn dup? ^boolean [^Expr x]
   (and (insn? x)
-       (cf/between Classfile/DUP (-> ^Insn x .instr .opcode) Classfile/SWAP)))
+       (cf/between ClassFile/DUP (-> ^Insn x .instr .opcode) ClassFile/SWAP)))
 (defn dup ^Insn [^Class tp]
   (insn* tp [] (-> (cf/by-slot-size tp Opcode/DUP Opcode/DUP2)
-                   (jdk.internal.classfile.instruction.StackInstruction/of))))
+                   (java.lang.classfile.instruction.StackInstruction/of))))
 (defn dup-x1 ^Insn [^Class tp]
   (insn* tp [] (-> (cf/by-slot-size tp Opcode/DUP_X1 Opcode/DUP2_X1)
-                   (jdk.internal.classfile.instruction.StackInstruction/of))))
+                   (java.lang.classfile.instruction.StackInstruction/of))))
 (defn dup-x2 ^Insn [^Class tp]
   (insn* tp [] (-> (cf/by-slot-size tp Opcode/DUP_X2 Opcode/DUP2_X2)
-                   (jdk.internal.classfile.instruction.StackInstruction/of))))
+                   (java.lang.classfile.instruction.StackInstruction/of))))
 
 (defn array-length ^Insn [^Expr x]
-  (let [instr (jdk.internal.classfile.instruction.OperatorInstruction/of Opcode/ARRAYLENGTH)]
+  (let [instr (java.lang.classfile.instruction.OperatorInstruction/of Opcode/ARRAYLENGTH)]
      (insn* jb/int [x] instr)))
 
 (defn throw ^Expr [^Expr arg]
-  (insn* jb/void [arg] (jdk.internal.classfile.instruction.ThrowInstruction/of)))
+  (insn* jb/void [arg] (java.lang.classfile.instruction.ThrowInstruction/of)))
 (defn throw? ^boolean [^Expr x]
   (and (insn? x) (identical? Opcode/ATHROW (-> ^Insn x .instr .opcode))))
 
 ;;; JVM's "checkcast" and "instanceof".
 (defn type-check ^Insn [^Expr arg ^Opcode opcode ^Class check-tp]
   (let [cd (rt/describe-class check-tp)
-        instr (jdk.internal.classfile.instruction.TypeCheckInstruction/of opcode cd)
+        instr (java.lang.classfile.instruction.TypeCheckInstruction/of opcode cd)
         return-tp (condp identical? opcode
                     Opcode/CHECKCAST check-tp
                     Opcode/INSTANCEOF jb/boolean
@@ -881,7 +881,7 @@
   
   ILoadPromise
   (deliver-load [_ load]
-    #_(assert (nil? load-promise)) ;Classfile API can cause repeated deliver
+    #_(assert (nil? load-promise)) ;ClassFile API can cause repeated deliver
     (assert (some? load))
     ;; loads of this reference should not pull in the line number of
     ;; the expression that produced the value
@@ -1229,7 +1229,7 @@
   
   (register-ch-info! ^void [^tcljc.io.NmspIO nmsp-io])
   (fn-methods ^ClassBuilder [^ClassBuilder cb])
-  (fn-cbh ^java.util.function.Consumer []) ;input for Classfile/build
+  (fn-cbh ^java.util.function.Consumer []) ;input for ClassFile/build
   
   (invoke-arity-with-self? ^boolean [])
   (arity-env ^IPersistentVector [^CodeBuilder xb ^IProvidedValue bref-mapper

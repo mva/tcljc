@@ -10,7 +10,7 @@
    [tcljc.config :as config])
   (:import
    (clojure.lang Symbol)
-   (jdk.internal.classfile Opcode)
+   (java.lang.classfile Opcode)
    (java.lang.invoke MethodHandle)
    (java.lang.constant ClassDesc DirectMethodHandleDesc$Kind
                        ConstantDesc ConstantDescs))
