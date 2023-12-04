@@ -452,11 +452,8 @@
   ;; Note: Macro in an isolated runtime setup is much more expensive
   ;; than in the shared setup, where the compiler can call directly
   ;; into the macro function.
-  (let [ex (.expand (.macro-fn x) ctx form)
-        line (-> form (meta) :line)]
-    (cond-> ex
-      (and (some? line) (instance? clojure.lang.IObj ex))
-      (with-meta (assoc (meta ex) :line line)))))
+  (-> (.expand (.macro-fn x) ctx form)
+      (sig/with-line form)))
 
 ;;; Note: This function can produce a non-returning expression,
 ;;; including a reference to a macro or to a primitive function, but
@@ -1242,7 +1239,8 @@
        (init-value-of-def ^Expr [form]  ;nil if init is not specified
          (when-some [xs (nthnext form 2)]
            ;; accepts anything, including macros or primitive functions
-           (compile-form (clear-recur-fn env) (first xs))))
+           (compile-form (clear-recur-fn env)
+                         (-> (first xs) (sig/with-line form)))))
        (compile-list-special ^Expr [^Symbol op-form form] ;nil if regular
          (when (nil? (namespace op-form))
            (case op-form

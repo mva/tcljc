@@ -85,3 +85,32 @@
                                      ^{:line 5} (finally ;<--- line of ireturn
                                                   345))))]))))
 
+
+;;; ------------------------------------------------------------------------
+
+;;; for manual checking after compiling with **tcljc** with
+;;; javap -v /tmp/$USER/tinyclj/.../_10.class
+;;;
+;;; It's easy to copy these forms into a project that is compiled with
+;;; tcljc and check there if the expected LineNumberTable attributes
+;;; are present.
+
+(fn fn-arity-in-list
+  ([]
+   ""))
+(fn fn-compact []
+  "")
+
+#(identity "")
+
+(defn defn-arity-in-list
+  ([]
+   ""))
+(defn defn-compact []
+  "")
+
+(defn- defn-private--arity-in-list
+  ([]
+   ""))
+(defn- defn-private-compact []
+  "")
