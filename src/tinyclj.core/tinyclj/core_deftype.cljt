@@ -410,7 +410,7 @@
        ;; (declare ~(symbol (str 'map-> gname)))
        ~(emit-defrecord name gname (vec hinted-fields) (vec interfaces) methods opts)
        (import ~classname)
-       ;; ~(build-positional-factory gname classname hinted-fields)
+       ~(build-positional-factory gname classname hinted-fields)
        (defn ~(symbol (str 'map-> gname))
          ~(str "Factory function for class " classname ", taking a map of keywords to field values.")
          ([m#] (~(symbol (str classname "/create"))
