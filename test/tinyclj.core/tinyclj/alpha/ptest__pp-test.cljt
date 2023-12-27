@@ -85,6 +85,11 @@
   ;; order of elements not deterministic for two or more
   )
 
+(deftest pretty0-map-entry-test
+  (let [m (array-map :a 123 :b 345)]
+    (is-pr0 "{:a 123, :b 345}" m)
+    (is-pr0 "([:a 123] [:b 345])" (seq m))))
+
 (deftest pretty0-meta-test
   (is (= "^{} ()"
          (pretty0-form ^{} ())))

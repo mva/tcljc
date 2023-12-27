@@ -150,8 +150,10 @@
 (letfn
     [(coll-space ^Doc [^Doc begin xs ^Doc end]
        (dgroup* begin false end (map doc xs)))
-     (coll-comma-space ^Doc [^Doc begin xs ^Doc end]
-       (dgroup* begin true end (map doc xs)))
+     (doc-map-entry ^Doc [^Map$Entry form]
+       (pair (doc (key form)) (doc (val form))))
+     (coll-entry-comma ^Doc [^Doc begin xs ^Doc end]
+       (dgroup* begin true end (map doc-map-entry xs)))
      
      (cntrl? ^boolean [^char c]
        (or (< (int c) (int \u0020)) (= c \u007f)))
@@ -212,7 +214,7 @@
          (symbol? form) (text (str form))
          (seq? form) (coll-space lparen (seq form) rparen)
          (vector? form) (coll-space lbrack (seq form) rbrack)
-         (map? form) (coll-comma-space lbrace (seq form) rbrace)
+         (map? form) (coll-entry-comma lbrace (seq form) rbrace)
          (set? form) (coll-space lbrace-set (seq form) rbrace)
          :else (throw (IllegalArgumentException. (str (class form))))))
      (meta-value ^Object [^IPersistentMap m]
@@ -250,8 +252,8 @@
          (doc-imeta-form form)
          
          (instance? Map$Entry form)
-         (pair (doc (key form)) (doc (val form)))
-
+         (doc-imeta-value (vec form))
+         
          (instance? Datafiable form)
          (doc-datafiable form)
 
