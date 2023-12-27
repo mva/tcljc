@@ -170,7 +170,7 @@
                  (if (= i (.n at))
                    acc
                    (let [pclass (aget pclasses i)
-                         d (x/at-nth at i)
+                         d (x/at-nth-binding at i)
                          dclass (resolve (x/type (.bref d)) pclass)]
                      (if (jb/jvm-assignable-to? dclass pclass)
                        (recur (conj acc (with-method-ptype d dclass)) (inc i))

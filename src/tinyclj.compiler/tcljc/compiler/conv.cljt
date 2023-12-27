@@ -15,7 +15,7 @@
    [tcljc.compiler.resolve :as resolve]
    [tcljc.exprfold :as xf])
   (:import
-   (tcljc.expr Expr Progn IAdaptResult)
+   (tcljc.expr Expr Progn BindingRef IAdaptResult)
    (clojure.lang IPersistentVector)
    (java.lang.classfile Opcode)
    (java.lang.reflect Executable)))
@@ -176,54 +176,58 @@
       
       :else nil)))
 
-(defn- adapt-for-assign ^Expr [^Expr from ^Class to-tp]
-  (let [from-cl (x/type from)
-        to-cl to-tp]
-    (or (jvm-adapt-to to-tp from)
+(letfn [(adapt-for-assign ^Expr [^Expr from ^Class to-tp]
+          (let [from-cl (x/type from)
+                to-cl to-tp]
+            (or (jvm-adapt-to to-tp from)
 
-        (when (x/statement? from)
-          (xf/prog2-expr from (expr-default to-tp)))
+                (when (x/statement? from)
+                  (xf/prog2-expr from (expr-default to-tp)))
         
-        (when (jb/reference? to-tp)
-          (cond (jb/jvm-assignable-to? to-cl from-cl)
-                (xf/coerce from to-tp)  ;narrow
+                (when (jb/reference? to-tp)
+                  (cond (jb/jvm-assignable-to? to-cl from-cl)
+                        (xf/coerce from to-tp) ;narrow
 
-                (jb/same-class? Void/TYPE from-cl)
-                (xf/prog2-expr from (x/const to-tp nil))
+                        (jb/same-class? Void/TYPE from-cl)
+                        (xf/prog2-expr from (x/const to-tp nil))
                 
-                :else nil))
+                        :else nil)))))
+        (wrong-assign ^void [^Expr from ^Class to-tp ^String to-description]
+          (x/wrong-type (str "cannot assign to " (wrong/q to-tp)
+                             " " to-description)
+                        from))]
+  
+  ;; Transform `x` into a type that can be represented as a non-void
+  ;; type descriptor.  In particular, void is turned into an expression that
+  ;; pushes a nil operand of type Object.
+  ;; 
+  ;; pre: `x` is a runtime value & not polymorphic.
+  (defn consume-poly ^Expr [^Expr x]
+    (let [x-tp (x/type x)]
+      (if (jb/statement? x-tp)
+        (xf/prog2-expr x x/expr-nil-object)
+        x)))
 
-        (x/wrong-type (str "cannot assign to " (wrong/q to-tp)) from))))
+  ;; Transform `x` into a type that is assignment compatible to type
+  ;; `to-tp`.  If `to-tp` is jb/polymorphic?, this function delegates
+  ;; to `consume-poly`.
+  ;; 
+  ;; pre: `x` is a runtime value & not polymorphic.
+  (defn consume ^Expr [^Expr x ^Class to-tp to-form]
+    (if (jb/polymorphic? to-tp)
+      (consume-poly x)
+      (or (adapt-for-assign x to-tp)
+          (wrong-assign x to-tp (str " of " (wrong/q-symbol to-form))))))
+  (defn consume-for ^Expr [^Expr x ^BindingRef bref]
+    (consume x (x/type bref) (x/form bref)))
 
-;;; ------------------------------------------------------------------------
-
-;;; Transform `x` into a type that can be represented as a non-void
-;;; type descriptor.  In particular, void is turned into an expression that
-;;; pushes a nil operand of type Object.
-;;; 
-;;; pre: `x` is a runtime value & not polymorphic.
-(defn consume-poly ^Expr [^Expr x]
-  (let [x-tp (x/type x)]
-    (if (jb/statement? x-tp)
-      (xf/prog2-expr x x/expr-nil-object)
-      x)))
-
-;;; Transform `x` into a type that is assignment compatible to type
-;;; `to-tp`.  If `to-tp` is jb/polymorphic?, this function delegates
-;;; to `consume-poly`.
-;;; 
-;;; pre: `x` is a runtime value & not polymorphic.
-(defn consume ^Expr [^Expr x ^Class to-tp]
-  (if (jb/polymorphic? to-tp)
-    (consume-poly x)
-    (adapt-for-assign x to-tp)))
-
-;;; Special case of `consume` which passes on a statement `x` if
-;;; `to-tp` is polymorphic.
-(defn consume-body ^Expr [^Expr x ^Class to-tp]
-  (if (jb/polymorphic? to-tp)
-    x
-    (consume x to-tp)))
+  ;; Special case of `consume` which passes on an expression `x` if
+  ;; `to-tp` is polymorphic.
+  (defn consume-body ^Expr [^Expr x ^Class to-tp ^String to-result]
+    (if (jb/polymorphic? to-tp)
+      x
+      (or (adapt-for-assign x to-tp)
+          (wrong-assign x to-tp (str " of " to-result))))))
 
 ;;; ------------------------------------------------------------------------
 

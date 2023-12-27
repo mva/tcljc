@@ -1155,11 +1155,13 @@
 (defn at-n ^int [^Arity at]
   (.n at))
 
-(defn at-nth ^Binding [^Arity at ^int n]
-  (nth (.paramv at) n))
+(defn at-nth-binding ^Binding [^Arity at ^int i]
+  (nth (.paramv at) i))
+(defn at-nth-bref ^BindingRef [^Arity at ^int i]
+  (.bref (at-nth-binding at i)))
 
 (defn at-parameter-type ^Class [^Arity at ^int i]
-  (type (.bref ^Binding (nth (.paramv at) i))))
+  (type (at-nth-bref at i)))
 
 (defn at-parameter-types [^Arity at]
   (for [^Binding b (.paramv at)] (-> b .bref (type))))

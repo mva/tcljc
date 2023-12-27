@@ -84,6 +84,10 @@
     (if (identical? s s')
       (str "`" s "`")                 ;fallback if styles are disabled
       s')))
+(defn q-symbol ^String [x]
+  (if (symbol? x)
+    (q x)
+    (str x)))
 
 (defn got ^String [x] (str " (got: " (str* x) ")"))
 (defn got-int ^String [^int i] (got (object i)))

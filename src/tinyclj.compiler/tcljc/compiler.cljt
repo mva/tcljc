@@ -244,7 +244,7 @@
           (member-def-fresh ^Binding [^Symbol nm ^boolean redef?]
             ;; pre: non-var & non-alias & new member
             (let [dest-tag (sig/tag-of nm false jb/cl-polymorphic-type ctx)
-                  v (conv/consume v dest-tag)
+                  v (conv/consume v dest-tag nm)
                   ns-str (ctx/this-ns ctx)
                   bref (x/global-ref nm ns-str (x/type v) redef? false v)]
               (put-value-or-macro ns-str nm bref v)))
@@ -252,7 +252,7 @@
             (when-not (x/b-mutable? bref)
               (wrong/other (str "prior definition of " (wrong/q nm)
                                 " is final")))
-            (let [v (conv/consume v (x/type bref))]
+            (let [v (conv/consume-for v bref)]
               (x/assign-def v bref)))
           (member-def-alias ^Expr [^Symbol nm ^BindingRef bref]
             (let [nm* (with-meta (x/qname bref) (meta nm))
@@ -272,7 +272,7 @@
               (ctx/put-global (name nm) bref ctx)
               (x/global-binding bref nil)))
           (assign-var-def-form ^Expr [^BindingRef bref nm]
-            (let [x (conv/consume v (x/type bref))
+            (let [x (conv/consume-for v bref)
                   tp-Var (var-type ctx)
                   load-var (x/var-ref tp-Var bref)]
               (x/invoke-xref jb/void [load-var v] rt/mhd-Var-bindRoot)))
@@ -286,7 +286,7 @@
                                     (when-some [meta (cfg/source-meta nm)]
                                       (compile-quote meta ctx))
                                     (when (some? v)
-                                      (conv/consume v tp))
+                                      (conv/consume v tp nm))
                                     (x/meta-flag? nm :dynamic)
                                     ctx)
                   bref (x/global-ref nm (ctx/this-ns ctx) tp false true x)]
@@ -359,7 +359,7 @@
        (recur (conj acc (if (>= i vararg-start)
                           (-> (conv/consume-poly (nth argv i))
                               (xf/coerce-vararg vararg-tp))
-                          (conv/consume (nth argv i) (aget ptypes i))))
+                          (conv/consume (nth argv i) (aget ptypes i) "parameter")))
               (inc i))))))
 
 ;;; ------------------------------------------------------------------------
@@ -420,7 +420,7 @@
   (fn recur-fn ^Expr [^Env env form args]
     (wrong/check-argc (count bv) form)
     (let [values (mapv (fn ^Expr [^Binding b ^Expr arg]
-                         (conv/consume arg (x/type (.bref b))))
+                         (conv/consume-for arg (.bref b)))
                        bv args)]
       (x/insn-recur jb/void values bv))))
 
@@ -515,7 +515,9 @@
        (compile-body ^Expr [^Env env ^Arity at ^int body-idx]
          (-> (tail-forms (with-form-ctx env (mk-recur-fn (.paramv at)) true)
                          (nthrest (.aform at) body-idx))
-             (conv/consume-body (.rtype at))
+             (conv/consume-body (.rtype at) (if (some? (.method-name at))
+                                              "method result"
+                                              "arity result"))
              (x/with-innermost-form (.aform at))
              (x/loop-body)))
        (auto-rtype? ^boolean [^Arity at]
@@ -586,7 +588,7 @@
                          (-> (x/alias-ref (.level env) nm nil v x/b-let)
                              (x/local-binding v)))
                        (-> (x/ensure-runtime-value v)
-                           (conv/consume dest-tag)
+                           (conv/consume dest-tag nm)
                            (value-binding kind nm)))]
                (recur (add-local env b) (conj bexprs b) (nnext bs)))
              [env bexprs])))
@@ -635,7 +637,7 @@
                  (recur (into
                          guardv
                          (map #(do (-> (compile-quote % (.ctx env))
-                                       (conv/consume tp-test))
+                                       (conv/consume tp-test "case expression"))
                                    (x/mk-guard path-idx path-expr %)))
                          (if (seq? g)
                            (do (when-not (seq g)
@@ -852,7 +854,7 @@
          (wrong/check-argc 2 form)
          (let [v-expr (expr-form v)
                tp (x/type v-expr)
-               x-expr (conv/consume (expr-form x) tp)]
+               x-expr (conv/consume (expr-form x) tp v)]
            (cond
              (or (x/settable-getter? v-expr) (settable-deftype-field? v-expr))
              (x/setter tp v-expr x-expr (x/invoke-xref-static? v-expr))
@@ -1073,7 +1075,7 @@
                      (classname-expr form (.ctx env)))
                    (expr-form form))
                (expr-form form))
-             (conv/consume jb/Class)))
+             (conv/consume jb/Class "type expression")))
        (array-dims ^int [^int n ^Class cl]
          (if (.isArray cl)
            (recur (inc n) (.componentType cl))
@@ -1134,12 +1136,13 @@
                   ;; vararg arguments to parameter type as well?
                   (assoc acc (object i) (-> (conv/consume-poly arg)
                                             (xf/coerce-vararg vararg-tp)))
-                  (let [param-tp (x/at-parameter-type at (dec i))]
-                    (cond ;assume that acc isn't modified most of the time
-                      (jb/same-class? param-tp (x/type arg)) acc
-                      (and (jb/object? param-tp) (x/reference? arg)) acc
-                      :else (assoc acc (object i)
-                                   (conv/consume arg param-tp)))))
+                  (let [bref (x/at-nth-bref at (dec i)), param-tp (x/type bref)]
+                    (if (or (jb/same-class? param-tp (x/type arg))
+                            (and (jb/object? param-tp) (x/reference? arg)))
+                      ;; fast path: assume that acc isn't modified
+                      ;; most of the time
+                      acc
+                      (assoc acc (object i) (conv/consume-for arg bref)))))
                 (inc i)))
              acc)))
        (call-fn-def ^Expr [^FnForm fn-form op+argv]
@@ -1379,7 +1382,7 @@
   (let [env (Env. x/lvl-environment nil {} nil ctx nil true)
         x (-> (compile-form env form)
               (x/ensure-runtime-outcome)
-              (conv/consume jb/void))]
+              (conv/consume jb/void "top-level form"))]
     (.send-to-emit (.compile-io ctx) io/msg-emit-tlf x)
     (.increment-tlf-idx ctx)))
 
@@ -1678,7 +1681,7 @@
    (let [a (ensure-array (nth args 0))
          i (ensure-int (nth args 1))
          ccl (.componentType (x/type a))
-         v (conv/consume (nth args 2) ccl)
+         v (conv/consume (nth args 2) ccl "array component")
          opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ccl))]
      (x/insn* ccl [a i v (x/dup-x2 ccl)]
               (java.lang.classfile.instruction.ArrayStoreInstruction/of opc)))))
