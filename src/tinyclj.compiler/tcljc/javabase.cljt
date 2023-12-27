@@ -73,6 +73,8 @@
   ;; For type checking, the JVM itself treats an interface class
   ;; similar to java.lang.Object.
   (.isAssignableFrom b a))
+(defn jvm-castable-to? ^boolean [^Class a ^Class b]
+  (.isAssignableFrom a b))
 
 ;;; ------------------------------------------------------------------------
 

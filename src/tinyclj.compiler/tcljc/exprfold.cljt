@@ -185,11 +185,21 @@
       (x/identity? x) (recur (x/first-arg x) to-tp)
       :else (x/type-check x Opcode/CHECKCAST to-tp))))
 
+(defn primitive-unbox-expr ^Expr [^Class to-tp ^Expr arg]
+  (let [box-tp (rt/logical->box to-tp)
+        typed-x (checkcast arg box-tp)]
+    (x/invoke-xref to-tp [typed-x] (rt/logical->accessor-mhd to-tp))))
+
 (defn- coerce* ^Expr [^Expr x ^Class to-tp]
   ;; pre: `x` returns and is not branching
   (cond
     (x/type? to-tp x) x
     (jb/statement? to-tp) (pop x)
+
+    ;; note: attempt to unbox nil will fail at runtime
+    (rt/unboxing-assignable-to? (x/type x) to-tp)
+    (primitive-unbox-expr to-tp x)
+
     (x/expr-nil-object? x) (x/const to-tp nil)
     :else (checkcast x to-tp)))
 

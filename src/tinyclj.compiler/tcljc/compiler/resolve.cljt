@@ -27,8 +27,11 @@
             Byte/TYPE 0 
             Short/TYPE 2))]
   (defn numeric-assignable-to? ^boolean [^Class from-tp ^Class to-tp]
-    (and (jb/numeric? to-tp) (jb/numeric? from-tp)
-         (>= (numeric-order to-tp) (numeric-order from-tp)))))
+    (if (jb/numeric? to-tp)
+      (if (jb/numeric? from-tp)
+        (>= (numeric-order to-tp) (numeric-order from-tp))
+        (rt/unboxing-assignable-to? from-tp to-tp))
+      false)))
 
 (defn- assignable-to? ^boolean [^Class from-tp ^Class to-tp]
   (cond

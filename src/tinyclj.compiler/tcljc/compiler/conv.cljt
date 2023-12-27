@@ -129,14 +129,9 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn primitive-unbox-expr ^Expr [^Class to-tp ^Expr arg]
-  (let [box-tp (rt/logical->box to-tp)
-        typed-x (xf/coerce arg box-tp)]
-    (x/invoke-xref to-tp [typed-x] (rt/logical->accessor-mhd to-tp))))
-
 (defn primitive-conv-from-object ^Expr [^Class to-tp ^Expr arg]
   (if (x/type? (rt/logical->box to-tp) arg)
-    (primitive-unbox-expr to-tp arg)
+    (xf/primitive-unbox-expr to-tp arg)
     (x/invoke-xref to-tp [arg] (rt/logical->conv-object-mhd to-tp))))
 
 (defn box-expr ^Expr [^Expr prim-expr] ;pre: `prim-expr` is of primitive type
@@ -162,22 +157,24 @@
 ;;; ------------------------------------------------------------------------
 
 (defn- jvm-adapt-to ^Expr [^Class to-tp ^Expr from] ;returns nil on failure
-  (cond
-    (or (x/type? to-tp from)      ;cheapest: type of `from` is `to-tp`
-        (jb/polymorphic? to-tp))
-    from
-    
-    (or (jb/jvm-assignable-to? (x/type from) to-tp)
-        (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
-    (xf/coerce from to-tp)              ;widen
+  (let [from-tp (x/type from)]
+    (cond
+      (or (x/type? to-tp from)      ;cheapest: type of `from` is `to-tp`
+          (jb/polymorphic? to-tp))
+      from
 
-    (jb/statement? to-tp)
-    (xf/coerce-to-statm from)
+      (or (jb/jvm-assignable-to? from-tp to-tp)
+          (rt/unboxing-assignable-to? from-tp to-tp)
+          (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
+      (xf/coerce from to-tp)            ;widen
 
-    (resolve/numeric-assignable-to? (x/type from) to-tp)
-    (widen-from to-tp from)
-    
-    :else nil))
+      (jb/statement? to-tp)
+      (xf/coerce-to-statm from)
+
+      (resolve/numeric-assignable-to? from-tp to-tp)
+      (widen-from to-tp from)
+      
+      :else nil)))
 
 (defn- adapt-for-assign ^Expr [^Expr from ^Class to-tp]
   (let [from-cl (x/type from)

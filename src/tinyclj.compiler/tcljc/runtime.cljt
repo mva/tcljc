@@ -305,6 +305,11 @@
   ;; pre: `tp` is a non-void primitive type
   (aget box-types (aidx-primitive tpd)))
 
+(defn unboxing-assignable-to? ^boolean [^Class from-tp ^Class to-tp]
+  (and (jb/primitive? to-tp)
+       (not (jb/statement? to-tp))
+       (jb/jvm-castable-to? from-tp (logical->box to-tp))))
+
 ;;; converting object to primitive value (currently "checked" variant):
 (def ^:private primitive-conv-method
   (doto (new DirectMethodHandleDesc* 8)
