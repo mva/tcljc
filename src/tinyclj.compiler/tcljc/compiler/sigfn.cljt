@@ -49,14 +49,6 @@
   (tag-of* (get-tag form) void? no-hint ctx))
 
 
-(defn with-line [x form] ;copy form's :line if no line number is provided
-  (let [m (meta x)]
-    (if (and (seq? x) (not (contains? m :line)))
-      (if-some [line (-> form (meta) :line)]
-        (with-meta x (assoc m :line line))
-        x)
-      x)))
-
 ;;; ------------------------------------------------------------------------
 
 (defn ensure-parameter [x]
@@ -198,7 +190,7 @@
   (letfn [(arity-forms [xs]
             (if (vector? (first xs))
               (list (with-meta xs (meta form)))
-              (map #(with-line % form) xs)))
+              (map #(cfg/with-line % form) xs)))
           ;; Set fn-form-*'s form early, so that its available in the
           ;; forked of thread that compiles the function body.
           (mk-fn-form-fct [^Symbol this-name aforms]

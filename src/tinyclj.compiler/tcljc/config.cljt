@@ -226,6 +226,15 @@
 
 ;;; ------------------------------------------------------------------------
 
+(def no-line-number 0)
+(defn line-number ^int [form]
+  (if (instance? clojure.lang.IMeta form)
+    (if-some [m (.meta ^clojure.lang.IMeta form)]
+      (if-some [line (.valAt m :line nil)]
+        ^int line)
+      no-line-number)
+    no-line-number))
+
 ;;; Return the source code meta information of `x`.  For non-empty
 ;;; list `x`, first strip :line/:column information added by the
 ;;; reader.
@@ -237,6 +246,14 @@
           m'))
       m)))
 
+;;; Copy `form`'s :line to `x` if it has no line number of its own.
+(defn with-line [x form]
+  (let [m (meta x)]
+    (if (and (seq? x) (not (contains? m :line)))
+      (if-some [line (-> form (meta) :line)]
+        (with-meta x (assoc m :line line))
+        x)
+      x)))
 
 ;;; Because application and compiler can live in different class
 ;;; loaders with a different runtime (e.g. when bootstrapping
@@ -248,11 +265,11 @@
   (case c
     ;; \; nil                             ;invalid in symbol & class name
     ;; \[ nil                             ;invalid in symbol & class name
-    \/ "_SLASH_"                       ;"/"
-    \\ "_BSLASH_"                      ;"\\"
-    \< "_LT_"                          ;"<"
-    \> "_GT_"                          ;">"
-    \. "_DOT_"                         ;"."
+    \/ "_SLASH_"                        ;"/"
+    \\ "_BSLASH_"                       ;"\\"
+    \< "_LT_"                           ;"<"
+    \> "_GT_"                           ;">"
+    \. "_DOT_"                          ;"."
     nil))                              ;accept char
 
 (def ^:private ^java.util.Map de-repl

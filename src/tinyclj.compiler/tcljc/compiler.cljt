@@ -453,7 +453,7 @@
   ;; than in the shared setup, where the compiler can call directly
   ;; into the macro function.
   (-> (.expand (.macro-fn x) ctx form)
-      (sig/with-line form)))
+      (cfg/with-line form)))
 
 ;;; Note: This function can produce a non-returning expression,
 ;;; including a reference to a macro or to a primitive function, but
@@ -1051,7 +1051,7 @@
            (try-form* form)
            (-> (list (list 'fn* 'try (with-meta [] {:tag 'auto-return-type})
                            form))
-               (with-meta (meta form))  ;propagate :line meta
+               (cfg/with-line form)
                (expr-form))))
 
        (throw-form ^Expr [[_ arg :as form]]
@@ -1243,7 +1243,7 @@
          (when-some [xs (nthnext form 2)]
            ;; accepts anything, including macros or primitive functions
            (compile-form (clear-recur-fn env)
-                         (-> (first xs) (sig/with-line form)))))
+                         (-> (first xs) (cfg/with-line form)))))
        (compile-list-special ^Expr [^Symbol op-form form] ;nil if regular
          (when (nil? (namespace op-form))
            (case op-form

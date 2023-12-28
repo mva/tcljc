@@ -102,12 +102,10 @@
               (.ld-this es) recur-target))
 
 (defn- line-number* ^CodeBuilder [^CodeBuilder xb form]
-  (when cfg/enable-line-numbers
-    (when (instance? IMeta form)
-      (when-some [m (.meta ^IMeta form)]
-        (when-some [line (.valAt m :line nil)]
-          (.lineNumber xb ^int line)))))
-  xb)
+  (let [ln (cfg/line-number form)]
+    (cond-> xb
+      (and cfg/enable-line-numbers (not= ln cfg/no-line-number))
+      (.lineNumber ln))))
 (defn- line-number ^CodeBuilder [^CodeBuilder xb ^Expr x]
   (line-number* xb (x/form x)))
 
