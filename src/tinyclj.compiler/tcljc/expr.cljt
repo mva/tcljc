@@ -30,8 +30,8 @@
   (:refer-clojure :exclude [type identity pop]))
 
 (definterface __IExpr             ;template for the abstract base type
-  (form ^Object [])
-  (initialize-form ^void [^Object form])
+  (line-number ^int [])           ;or cfg/no-line-number
+  (initialize-ln ^void [^Object form])
   (safe-to-discard? ^boolean [])
   (with-code #_Expr [^Class tp ^IPersistentVector argv]))
 
@@ -39,9 +39,9 @@
 ;; source code.  If it's an ISeq with :line meta, it also provides the
 ;; line number.
 (deftype Expr
-    [^:unsynchronized-mutable ^Object !form
-     ;; The form from which this the expression was compiled.  Limited
-     ;; mutability: stable after `compile-form` is done.
+    [^:unsynchronized-mutable ^int !line-number
+     ;; The line number this the expression was compiled with.
+     ;; Limited mutability: stable after `compile-form` is done.
      
      ^Class type
      
@@ -66,14 +66,15 @@
   
   :abstract true
   __IExpr
-  (form [_]
-    !form)
-  (initialize-form [_ form]
-    ;; Only set `_form` once.  Important: Some expressions are shared
-    ;; (like `BindingRef` instances) and their form is set as part of
-    ;; the definition.  Uses must not clobber this value.
-    (when (nil? !form)
-      (set! !form form)))
+  (line-number [_]
+    !line-number)
+  (initialize-ln [_ form]
+    ;; Only set `!line-number` once.  Important: Some expressions are
+    ;; shared, like `BindingRef` instances, and their line number is
+    ;; set as part of the definition.  Uses must not clobber this
+    ;; value.
+    (when (= !line-number cfg/no-line-number)
+      (set! !line-number (cfg/line-number form))))
   (safe-to-discard? [_]
     ;; An expression is safe to discard as an argument of a POP/POP2
     ;; instruction, if its own operation and all its arguments have no
@@ -92,10 +93,10 @@
 (defn expr? ^boolean [x] (instance? Expr x))
 (defn type ^Class [^Expr x] (.type x))
 (defn argv ^IPersistentVector [^Expr x] (._args x))
-(defn form ^Object [^Expr x] (.form x))
+(defn line-number ^int [^Expr x] (.line-number x))
 
 (defn with-innermost-form ^Expr [^Expr x form]
-  (.initialize-form x form)
+  (.initialize-ln x form)
   x)
 
 (defn same-type? ^boolean [^Expr a ^Expr b]
@@ -125,9 +126,9 @@
   ([^String msg-prefix ^Expr x]
    (wrong-type msg-prefix x (type x)))
   ([^String msg-prefix ^Expr x ^Class tp]
-   (throw (wrong/mk-e (str msg-prefix (wrong/got tp)) {} (form x)))))
+   (throw (wrong/mk-e (str msg-prefix (wrong/got tp))))))
 (defn wrong [^String msg-prefix ^Expr x]
-  (throw (wrong/mk-e msg-prefix {} (form x))))
+  (throw (wrong/mk-e msg-prefix {} (line-number x))))
 
 (defn arg-count ^int [^Expr x]
   (count (argv x)))
@@ -230,14 +231,14 @@
 ;;; Represents constant literals and type converted constant literals.
 ;;; For example, `-1.0f` and `(float -1.0)` are both mapped to Const,
 ;;; but not `(- 1.0f)`.
-(deftype Const [^:pass-to-super-constructor ^Object _form
+(deftype Const [^:pass-to-super-constructor ^int _line-number
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
                 ^:pass-to-super-constructor ^Object const-value]
   Expr)
 
 (defn const ^Const [^Class type ^Object value]
-  (Const. nil type [] (jb/computational-const value)))
+  (Const. cfg/no-line-number type [] (jb/computational-const value)))
 
 (defn const? ^boolean [^Expr x]
   (instance? Const x))
@@ -295,7 +296,7 @@
 ;;; Constructor.  Vararg methods expect a matching array argument to
 ;;; be passed to the vararg parameter.  Fields are interpreted as
 ;;; "get" operations.  `Setter` takes care of the "put" operations.
-(deftype InvokeXref [^:pass-to-super-constructor ^Object _form
+(deftype InvokeXref [^:pass-to-super-constructor ^int _line-number
                      ^:pass-to-super-constructor ^Class type
                      ^:pass-to-super-constructor ^IPersistentVector argv
                      ^:pass-to-super-constructor ^Object const-value
@@ -303,14 +304,14 @@
                      ^boolean settable-field?]
   Expr
   (with-code [this tp argv]
-    (InvokeXref. (form this) tp argv (.const-value this) mhd settable-field?)))
+    (InvokeXref. (line-number this) tp argv (.const-value this) mhd settable-field?)))
 
 (defn invoke-xref
   (^InvokeXref [^Class type ^IPersistentVector argv ^DirectMethodHandleDesc mhd]
    (invoke-xref type argv nil mhd false))
   (^InvokeXref [^Class type ^IPersistentVector argv ^Object const-value
                 ^DirectMethodHandleDesc mhd ^boolean settable-field?]
-   (InvokeXref. nil type argv const-value mhd settable-field?)))
+   (InvokeXref. cfg/no-line-number type argv const-value mhd settable-field?)))
 
 (defn invoke-xref? ^boolean [^Expr x]
   (instance? InvokeXref x))
@@ -331,7 +332,7 @@
   (and (invoke-xref? x) (.settable-field? ^InvokeXref x)))
 
 
-(deftype InvokeDynamic [^:pass-to-super-constructor ^Object _form
+(deftype InvokeDynamic [^:pass-to-super-constructor ^int _line-number
                         ^:pass-to-super-constructor ^Class type
                         ^:pass-to-super-constructor ^IPersistentVector argv
                         ^:pass-to-super-constructor ^Object const-value
@@ -340,14 +341,14 @@
                         ^IPersistentVector cexprs]
   Expr
   (with-code [this tp argv]
-    (InvokeDynamic. (form this) tp argv (.const-value this)
+    (InvokeDynamic. (line-number this) tp argv (.const-value this)
                     invocation-name bsm cexprs)))
 
 (defn invoke-dynamic ^InvokeDynamic [^Class tp ^IPersistentVector argv
                                      ^DirectMethodHandleDesc bsm
                                      ^IPersistentVector cexprs]
   (let [invocation-name rt/dcd-default-name]
-    (InvokeDynamic. nil tp argv nil invocation-name bsm cexprs)))
+    (InvokeDynamic. cfg/no-line-number tp argv nil invocation-name bsm cexprs)))
 
 (defn invoke-fn ^InvokeDynamic [^Class tp ^IPersistentVector fn+argv]
   (invoke-dynamic tp fn+argv rt/bsm-invoke-fn []))
@@ -355,7 +356,7 @@
 
 ;;; `m` either satisfies `signature-polymorphic?` or is identical to
 ;;; `method-clone`.
-(deftype InvokePoly [^:pass-to-super-constructor ^Object _form
+(deftype InvokePoly [^:pass-to-super-constructor ^int _line-number
                      ^:pass-to-super-constructor ^Class type
                      ^:pass-to-super-constructor ^IPersistentVector argv
                      ^:pass-to-super-constructor ^Object const-value
@@ -365,7 +366,7 @@
                      ^boolean owner-interface?]
   Expr
   (with-code [this tp argv]
-    (InvokePoly. (form this) tp argv (.const-value this)
+    (InvokePoly. (line-number this) tp argv (.const-value this)
                  kind owner method-name owner-interface?)))
 
 (defn invoke-poly ^InvokePoly [^Class tp ^IPersistentVector argv
@@ -373,7 +374,7 @@
                                ^DirectMethodHandleDesc$Kind kind
                                ^ClassDesc owner ^String method-name
                                ^boolean owner-interface?]
-  (InvokePoly. nil tp argv const-value kind owner method-name owner-interface?))
+  (InvokePoly. cfg/no-line-number tp argv const-value kind owner method-name owner-interface?))
 
 (defn invoke-poly? ^boolean [^Expr x]
   (instance? InvokePoly x))
@@ -393,7 +394,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(deftype Insn [^:pass-to-super-constructor ^Object _form
+(deftype Insn [^:pass-to-super-constructor ^int _line-number
                ^:pass-to-super-constructor ^Class type
                ^:pass-to-super-constructor ^IPersistentVector argv
                ^:pass-to-super-constructor ^Object const-value
@@ -403,10 +404,10 @@
     (or (some? (.const-value ^Expr this))
         (< (-> instr .opcode .bytecode) ClassFile/IALOAD)))
   (with-code [this tp argv]
-    (Insn. (form this) tp argv (.const-value this) instr)))
+    (Insn. (line-number this) tp argv (.const-value this) instr)))
 
 (defn insn* ^Insn [^Class tp ^IPersistentVector argv ^Instruction instr]
-  (Insn. nil tp argv nil instr))        ;no constant folding!
+  (Insn. cfg/no-line-number tp argv nil instr)) ;no constant folding!
 
 (defn insn? ^boolean [^Expr x]
   (instance? Insn x))
@@ -465,31 +466,31 @@
 ;;; setter.  Third argument is a DUP* that leaves the value on the
 ;;; stack on completion (and which may be dropped when followed by a
 ;;; POP*).
-(deftype Setter [^:pass-to-super-constructor ^Object _form
+(deftype Setter [^:pass-to-super-constructor ^int _line-number
                  ^:pass-to-super-constructor ^Class type
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value]
   Expr
   (with-code [this tp argv]
-    (Setter. (form this) tp argv (.const-value this))))
+    (Setter. (line-number this) tp argv (.const-value this))))
 
 (defn setter ^Setter [^Class tp ^Expr var-expr ^Expr value ^boolean static?]
-  (Setter. nil tp [var-expr value (if static? (dup tp) (dup-x1 tp))] nil))
+  (Setter. cfg/no-line-number tp [var-expr value (if static? (dup tp) (dup-x1 tp))] nil))
 
 (defn setter? ^boolean [^Expr x]
   (instance? Setter x))
 
 
-(deftype NewArray [^:pass-to-super-constructor ^Object _form
+(deftype NewArray [^:pass-to-super-constructor ^int _line-number
                    ^:pass-to-super-constructor ^Class type
                    ^:pass-to-super-constructor ^IPersistentVector argv
                    ^:pass-to-super-constructor ^Object const-value]
   Expr
   (with-code [this tp argv]
-    (NewArray. (form this) tp argv (.const-value this))))
+    (NewArray. (line-number this) tp argv (.const-value this))))
 
 (defn new-array ^NewArray [^Class tp ^IPersistentVector argv]
-  (NewArray. nil tp argv nil))
+  (NewArray. cfg/no-line-number tp argv nil))
 
 ;;; ------------------------------------------------------------------------
 
@@ -518,65 +519,65 @@
 ;;; of the last argument.  A single argument models an identity
 ;;; operation that changes the compiler-level type without any effect
 ;;; on the bytecode-level's verification type.
-(deftype Progn [^:pass-to-super-constructor ^Object _form
+(deftype Progn [^:pass-to-super-constructor ^int _line-number
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
                 ^:pass-to-super-constructor ^Object const-value
                 ^IAdaptResult adpt-paths] ;nil if less than two arguments
   Expr
   (with-code [this tp argv]
-    (Progn. (form this) tp argv (const-value-progn argv) nil))
+    (Progn. (line-number this) tp argv (const-value-progn argv) nil))
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
-    (Progn. (form this) tp (argv this) (.const-value this)
+    (Progn. (line-number this) tp (argv this) (.const-value this)
             (.after then-adpt-paths adpt-paths))))
 
 (defn progn? ^boolean [x]
   (instance? Progn x))
 
 (def expr-empty                     ;empty expression "producing" void
-  (Progn. (list 'do) jb/void [] const-value-void nil)) ;stable non-nil form
+  (Progn. cfg/no-line-number jb/void [] const-value-void nil)) ;stable non-nil form
 
 ;;; "Produces" exception of catch handler, or method argument.  This
 ;;; is an empty instruction without arguments, but it is no constant.
 (defn expr-provided ^Expr [^Class tp]
-  (Progn. (list 'do) tp [] nil nil))    ;stable non-nil form
+  (Progn. cfg/no-line-number tp [] nil nil))    ;stable non-nil form
 
 (defn progn* ^Expr [^IPersistentVector argv]
   ;; pre: all but the last `argv` have been coerced to statement
   (case (count argv)
     0 expr-empty
     1 (nth argv 0)      ;different from the `identity` operation below
-    #_else (Progn. nil (type (peek argv)) argv (const-value-progn argv)
+    #_else (Progn. cfg/no-line-number (type (peek argv)) argv (const-value-progn argv)
                    adpt-identity)))
 
 (defn identity
   (^Expr [^Expr arg]
    (identity (type arg) arg))
   (^Expr [^Class tp ^Expr arg]
-   (Progn. nil tp [arg] (.const-value arg) adpt-identity)))
+   (Progn. cfg/no-line-number tp [arg] (.const-value arg) adpt-identity)))
 
 (defn identity? ^boolean [^Expr x]
   (and (instance? Progn x) (= (arg-count x) 1)))
 
-(defn identity-using-form ^Expr [^Expr arg ^Expr x]
-  (Progn. (form x) (type arg) [arg] (.const-value arg) adpt-identity))
+(defn identity-using-line-number ^Expr [^Expr arg ^Expr x]
+  (Progn. (line-number x) (type arg) [arg] (.const-value arg) adpt-identity))
 
 ;;; Lexically scoped block: the lifetime of locals created within the
 ;;; block ends with the end of the block.  It contains a non-empty
 ;;; sequence of Binding statements followed by a single Expr with the
 ;;; body.
-(deftype Block [^:pass-to-super-constructor ^Object _form
+(deftype Block [^:pass-to-super-constructor ^int _line-number
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
                 ^:pass-to-super-constructor ^Object const-value
                 ^IAdaptResult adpt-paths]
   Expr
   (with-code [this tp argv]
-    (Block. (form this) tp argv (.const-value this) nil))
+    (Block. (line-number this) tp argv (.const-value this) nil))
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
-    (Block. (form this) tp (argv this) (.const-value this)
+    (Block. (line-number this) tp (argv this) (.const-value this)
             (.after then-adpt-paths adpt-paths))))
 
 (defn block? ^boolean [x]
@@ -584,7 +585,7 @@
 
 (defn block ^Expr [bexprs ^Expr body]
   (if (some? (seq bexprs))
-    (Block. nil (type body) (conj (vec bexprs) body) nil adpt-identity)
+    (Block. cfg/no-line-number (type body) (conj (vec bexprs) body) nil adpt-identity)
     body))
 
 (letfn [(sequential? ^boolean [^Expr x] ;does not include empty-expr
@@ -610,20 +611,20 @@
 ;;; i.e. the one that must be fulfilled for the "branch to true" to be
 ;;; taken.  As a consequence, a non-nil `const-value` represents
 ;;; "branch taken" if 1, and "branch not taken" if 0.
-(deftype Branch [^:pass-to-super-constructor ^Object _form
+(deftype Branch [^:pass-to-super-constructor ^int _line-number
                  ^:pass-to-super-constructor ^Class type
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value
                  ^Opcode opcode ^int opcd]
   Expr          ;note: branch instruction itself is strictly evaluated
   (with-code [this tp argv]
-    (Branch. (form this) tp argv (.const-value this) opcode opcd)))
+    (Branch. (line-number this) tp argv (.const-value this) opcode opcd)))
 
 (defn branch? ^boolean [^Expr x]
   (instance? Branch x))
 
 (defn with-negate-cmp ^Branch [^Branch x]
-  (Branch. nil jb/boolean (argv x)
+  (Branch. cfg/no-line-number jb/boolean (argv x)
         (when-some [c (.const-value x)] (object (- 1 ^int c)))
         (.opcode x) (cf/negate-cmp (.opcd x))))
 
@@ -633,18 +634,18 @@
 ;;; three arguments `[branch-to-true if-true if-false]`.  During emit,
 ;;; the sense of the branch instructions is negated so that it targets
 ;;; the false path.
-(deftype SplitJoin [^:pass-to-super-constructor ^Object _form
+(deftype SplitJoin [^:pass-to-super-constructor ^int _line-number
                     ^:pass-to-super-constructor ^Class type
                     ^:pass-to-super-constructor ^IPersistentVector argv
                     ^:pass-to-super-constructor ^Object const-value
                     ^IAdaptResult adpt-paths]
   Expr
   (with-code [this tp argv]
-    (SplitJoin. (form this) tp argv (.const-value this) nil))
+    (SplitJoin. (line-number this) tp argv (.const-value this) nil))
   INonStrictEvaluation
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
-    (SplitJoin. (form this) tp (argv this) (.const-value this)
+    (SplitJoin. (line-number this) tp (argv this) (.const-value this)
                 (.after then-adpt-paths adpt-paths))))
 
 (defn split-join? ^boolean [x]
@@ -655,7 +656,7 @@
 ;;; the `if-false` path.
 (defn split&join
   (^Expr [^Branch branch-to-true]
-   (SplitJoin. (form branch-to-true) jb/boolean
+   (SplitJoin. (line-number branch-to-true) jb/boolean
                [branch-to-true expr-true expr-false]
                (.const-value branch-to-true) adpt-identity))
   (^Expr [^Branch branch-to-true ^Class tp ^Expr if-true ^Expr if-false
@@ -663,7 +664,7 @@
    (let [c (cond (const-value-true? branch-to-true) (.const-value if-true)
                  (const-value-false? branch-to-true) (.const-value if-false)
                  :else nil)]
-     (SplitJoin. nil tp [branch-to-true if-true if-false] c adpt-paths))))
+     (SplitJoin. cfg/no-line-number tp [branch-to-true if-true if-false] c adpt-paths))))
 
 
 
@@ -696,7 +697,7 @@
 ;;; Note: While Guard holds a path expression as well, only the entry
 ;;; from `argv` must be used to emit code.  `argv` may have been
 ;;; subjected to rewriting, e.g. pushing a return instruction into it.
-(deftype Switch [^:pass-to-super-constructor ^Object _form
+(deftype Switch [^:pass-to-super-constructor ^int _line-number
                  ^:pass-to-super-constructor ^Class type
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value
@@ -704,17 +705,17 @@
                  ^IAdaptResult adpt-paths]
   Expr
   (with-code [this tp argv]
-    (Switch. (form this) tp argv (.const-value this) guardv nil))
+    (Switch. (line-number this) tp argv (.const-value this) guardv nil))
   INonStrictEvaluation
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
-    (Switch. (form this) tp (argv this) (.const-value this)
+    (Switch. (line-number this) tp (argv this) (.const-value this)
              guardv (.after then-adpt-paths adpt-paths))))
 
 (defn switch ^Switch [^Class tp ^Expr test ^Expr dflt-path
                       ^IPersistentVector guardv ^IAdaptResult adpt-paths]
   (let [argv (-> [test] (into (guard-paths guardv)) (conj dflt-path))]
-    (Switch. nil tp argv nil guardv adpt-paths)))
+    (Switch. cfg/no-line-number tp argv nil guardv adpt-paths)))
 
 
 ;;; The body of a handler must take an "out of thin air" operand of
@@ -729,7 +730,7 @@
 ;;; finally statement.  The finally statement will be emitted 1+n+1
 ;;; times in total!
 (deftype TryCatchFinally
-    [^:pass-to-super-constructor ^Object _form
+    [^:pass-to-super-constructor ^int _line-number
      ^:pass-to-super-constructor ^Class type
      ^:pass-to-super-constructor ^IPersistentVector argv
      ^:pass-to-super-constructor ^Object const-value
@@ -737,11 +738,11 @@
      ^IAdaptResult adpt-paths]
   Expr
   (with-code [this tp argv]
-    (TryCatchFinally. (form this) tp argv (.const-value this) handlerv nil))
+    (TryCatchFinally. (line-number this) tp argv (.const-value this) handlerv nil))
   INonStrictEvaluation
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
-    (TryCatchFinally. (form this) tp (argv this) (.const-value this)
+    (TryCatchFinally. (line-number this) tp (argv this) (.const-value this)
                       handlerv (.after then-adpt-paths adpt-paths))))
 
 (defn try-catch-finally ^TryCatchFinally [^Class tp ^Expr body handlers
@@ -749,43 +750,43 @@
   (let [argv (-> [body]
                  (into (map #(.initial-body ^TryHandler %)) handlers)
                  (conj finally))]
-    (TryCatchFinally. nil tp argv nil (vec handlers) adpt-paths)))
+    (TryCatchFinally. cfg/no-line-number tp argv nil (vec handlers) adpt-paths)))
 
 
 ;;; Creates a label before emitting its arguments and pushes it onto
 ;;; the stack of recur targets.
-(deftype LoopBody [^:pass-to-super-constructor ^Object _form
+(deftype LoopBody [^:pass-to-super-constructor ^int _line-number
                    ^:pass-to-super-constructor ^Class type
                    ^:pass-to-super-constructor ^IPersistentVector argv
                    ^:pass-to-super-constructor ^Object const-value
                    ^IAdaptResult adpt-paths]
   Expr
   (with-code [this tp argv]
-    (LoopBody. (form this) tp argv (.const-value this) nil))
+    (LoopBody. (line-number this) tp argv (.const-value this) nil))
   INonStrictEvaluation
   IAdapting
   (with-adapt-paths [this tp then-adpt-paths]
-    (LoopBody. (form this) tp (argv this) (.const-value this)
+    (LoopBody. (line-number this) tp (argv this) (.const-value this)
                (.after then-adpt-paths adpt-paths))))
 
 (defn loop-body ^Expr [^Expr body]
-  (LoopBody. nil (type body) [body] nil adpt-identity))
+  (LoopBody. cfg/no-line-number (type body) [body] nil adpt-identity))
 
 
 ;;; Parallel assignment of the arguments to their corresponding
 ;;; variables, followed by an unconditional jump to `l-start`.
-(deftype Recur [^:pass-to-super-constructor ^Object _form
+(deftype Recur [^:pass-to-super-constructor ^int _line-number
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
                 ^:pass-to-super-constructor ^Object const-value
                 bv]             ;vec of Binding, one for each argument
   Expr
   (with-code [this tp argv]
-    (Recur. (form this) tp argv (.const-value this) bv)))
+    (Recur. (line-number this) tp argv (.const-value this) bv)))
 
 (defn insn-recur ^Recur [^Class tp ^IPersistentVector argv
                          ^IPersistentVector bv]
-  (Recur. nil tp argv nil bv))
+  (Recur. cfg/no-line-number tp argv nil bv))
 (defn recur? ^boolean [^Expr x]
   (instance? Recur x))
 
@@ -858,10 +859,12 @@
   (some? (.provided-ld-st x)))
 
 (deftype BindingRef
-    [^:pass-to-super-constructor ^Object _form
+    [^:pass-to-super-constructor ^int _line-number
      ^:pass-to-super-constructor ^Class type
      ^:pass-to-super-constructor ^IPersistentVector argv
      ^:pass-to-super-constructor ^Object const-value
+
+     ^Symbol simple-nm
      
      ^String ns-str
      ;; Non-nil if this refers to a namespace def.  This is equivalent
@@ -887,7 +890,7 @@
     (set! load-promise load))
   (deref-load [this]
     (assert (some? load-promise) (str "no load value has been delivered for"
-                                      " nm `" (form this) "`"))
+                                      " nm `" simple-nm "`"))
     load-promise)
   (provided-ld-st [_]
     load-promise))
@@ -896,11 +899,11 @@
   (instance? BindingRef x))
 
 (defn sname ^Symbol [^BindingRef x]     ;simple name without namespace
-  (form x))
+  (.simple-nm x))
 (defn qname ^Symbol [^BindingRef x] ;namespace qualified name if global
   (if-some [ns-part (.ns-str x)]
-    (symbol ns-part (name (sname x)))
-    (form x)))
+    (symbol ns-part (name (.simple-nm x)))
+    (.simple-nm x)))
 (defn mnm ^String [^BindingRef x]
   (cfg/munge-name (sname x))) ;munge, so that this can be the name of a field
 
@@ -943,10 +946,11 @@
 ;;; 
 ;;; In addition to this, an alias is created for a reference to a
 ;;; binding from another function.
-(deftype AliasRef [^:pass-to-super-constructor ^Object _form
+(deftype AliasRef [^:pass-to-super-constructor ^int _line-number
                    ^:pass-to-super-constructor ^Class type
                    ^:pass-to-super-constructor ^IPersistentVector argv
                    ^:pass-to-super-constructor ^Object const-value
+                   ^:pass-to-super-constructor ^Symbol simple-nm
                    ^:pass-to-super-constructor ^String ns-str
                    ^:pass-to-super-constructor ^int flags
                    ^:pass-to-super-constructor ^ILdStInstr load-promise
@@ -964,7 +968,8 @@
                            ^BindingRef alias-for ^int kind]
   ;; An alias inherits the category and flags of the root binding, but
   ;; its level may differ.
-  (AliasRef. simple-nm (type alias-for) [] (.const-value alias-for) ns-str
+  (AliasRef. cfg/no-line-number (type alias-for) [] (.const-value alias-for)
+             simple-nm ns-str
              (mk-flags 0 kind (bit-and b-alias-inherited (.flags alias-for))
                        level)
              nil alias-for))
@@ -1015,10 +1020,11 @@
   ;; `list-primitive` can look up c.l.IPersistentList.
   (assemble ^Expr [form args ^tcljc.io.CompileIO compile-io]))
 
-(deftype PrimitiveFnRef [^:pass-to-super-constructor ^Object _form
+(deftype PrimitiveFnRef [^:pass-to-super-constructor ^int _line-number
                          ^:pass-to-super-constructor ^Class type
                          ^:pass-to-super-constructor ^IPersistentVector argv
                          ^:pass-to-super-constructor ^Object const-value
+                         ^:pass-to-super-constructor ^Symbol simple-nm
                          ^:pass-to-super-constructor ^String ns-str
                          ^:pass-to-super-constructor ^int flags
                          ^:pass-to-super-constructor ^ILdStInstr load-promise
@@ -1027,19 +1033,19 @@
 
 (defn primitive-fn-ref ^PrimitiveFnRef [^Symbol simple-nm ^String ns-str
                                         ^FnPrimitiveFn pfn]
-  (PrimitiveFnRef. simple-nm jb/cl-compile-time-entity [] nil ns-str
+  (PrimitiveFnRef. cfg/no-line-number jb/cl-compile-time-entity [] nil simple-nm ns-str
                    (mk-flags b-primitive b-def 0 0) cf/ld-st-primitive pfn))
 
 ;;; ------------------------------------------------------------------------
 
-(deftype Binding [^:pass-to-super-constructor ^Object _form
+(deftype Binding [^:pass-to-super-constructor ^int _line-number
                   ^:pass-to-super-constructor ^Class type
                   ^:pass-to-super-constructor ^IPersistentVector argv
                   ^:pass-to-super-constructor ^Object const-value
                   ^BindingRef bref]
   Expr
   (with-code [this tp argv]
-    (Binding. (form this) tp argv (.const-value this) bref)))
+    (Binding. (line-number this) tp argv (.const-value this) bref)))
 
 (defn bref ^BindingRef [^Binding b]
   (.bref b))
@@ -1071,7 +1077,7 @@
 (defn local-binding ^Binding [^BindingRef bref ^Expr init-value]
   ;; binding a macro or primitive function to another name has no
   ;; effect for runtime code
-  (Binding. (form bref) jb/void (when (some? init-value) [init-value])
+  (Binding. (line-number bref) jb/void (when (some? init-value) [init-value])
             (empty-when (not (b-value? bref))) bref))
 
 
@@ -1083,8 +1089,8 @@
 ;;; i.e. the case of a global def returning a Var instance is *not*
 ;;; handled by the `Binding` itself.
 (defn global-binding ^Binding [^BindingRef bref ^Expr init-value]
-  (Binding. (form bref) jb/void (when (some? init-value) [init-value]) nil
-            bref))
+  (Binding. (line-number bref) jb/void (when (some? init-value) [init-value])
+            nil bref))
 
 ;;; ------------------------------------------------------------------------
 
@@ -1351,12 +1357,12 @@
 ;;; FnForm.  Because reify* fully participates in closures it is
 ;;; easier to handle it as a variant of fn*, notwithstanding all the
 ;;; differences between the two forms.
-(deftype FnForm [^:pass-to-super-constructor ^Object _form
+(deftype FnForm [^:pass-to-super-constructor ^int _line-number
                  ^:pass-to-super-constructor ^Class type
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value
-                 ^int level
                  
+                 ^int level
                  ^String unique-mnm
                  ;; Unique within namespace classes, and used either
                  ;; as prefix of a method name or as a class name.
@@ -1372,14 +1378,14 @@
   (safe-to-discard? [this]
     (nil? (seq (argv this))))
   (with-code [this tp argv]
-    (FnForm. (form this) tp argv (.const-value this)
+    (FnForm. (line-number this) tp argv (.const-value this)
              level unique-mnm super-mhd itf-tags at-sigs body-fut !fnc)))
 
 (defn fn-form-fct                       ;aka regular function
   ^FnForm [form ^Class type ^int level ^String unique-mnm
            ^IPersistentVector at-sigs]
   (let [fnc (mk-fn-code (count at-sigs) false)]
-    (FnForm. form type [] nil level unique-mnm
+    (FnForm. (cfg/line-number form) type [] nil level unique-mnm
              rt/mhd-AFn nil at-sigs nil fnc)))
 
 (defn fn-form-itf                       ;aka lambda expression
@@ -1387,13 +1393,14 @@
            ^IPersistentVector at-sigs]
   (let [itf-tags (doto (new Class* 1) (aset 0 itf-tp))
         fnc (mk-fn-code (count at-sigs) true)]
-    (FnForm. form itf-tp [] nil level unique-mnm
+    (FnForm. (cfg/line-number form) itf-tp [] nil level unique-mnm
              rt/mhd-Object itf-tags at-sigs nil fnc)))
 
 (defn fn-form-reify
   ^FnForm [form ^Class etp ^Expr meta ^int level ^String unique-mnm
            ^DirectMethodHandleDesc super-mhd ^IPersistentVector at-sigs]
-  (FnForm. form etp [meta] nil level unique-mnm super-mhd (.getInterfaces etp)
+  (FnForm. (cfg/line-number form) etp [meta] nil level unique-mnm
+           super-mhd (.getInterfaces etp)
            at-sigs nil (mk-fn-code (count at-sigs) true)))
 
 (defn fn-reify? ^boolean [^FnForm fn-form]
@@ -1405,7 +1412,7 @@
 ;;; value that is defined later in the same letfn*: this opcode fills
 ;;; in any forward references.  Takes no arguments and return type is
 ;;; void.
-(deftype FnPatch [^:pass-to-super-constructor ^Object _form
+(deftype FnPatch [^:pass-to-super-constructor ^int _line-number
                   ^:pass-to-super-constructor ^Class type
                   ^:pass-to-super-constructor ^IPersistentVector argv
                   ^:pass-to-super-constructor ^Object const-value
@@ -1413,16 +1420,16 @@
                   ^BindingRef bref]
   Expr
   (with-code [this tp argv]
-    (FnPatch. (form this) tp argv (.const-value this) fn-form bref)))
+    (FnPatch. (line-number this) tp argv (.const-value this) fn-form bref)))
 
 (defn with-at-sigs ^FnForm [^FnForm fn-form ^IPersistentVector at-sigs]
-  (FnForm. (form fn-form) (type fn-form) (argv fn-form) (.const-value fn-form)
+  (FnForm. (line-number fn-form) (type fn-form) (argv fn-form) (.const-value fn-form)
            (.level fn-form) (.unique-mnm fn-form)
            (.super-mhd fn-form) (.itf-tags fn-form)
            at-sigs (.body-fut fn-form) (.!fnc fn-form)))
 
 (defn with-body-fut ^FnForm [^FnForm fn-form ^Future body-fut]
-  (FnForm. (form fn-form) (type fn-form) (argv fn-form) (.const-value fn-form)
+  (FnForm. (line-number fn-form) (type fn-form) (argv fn-form) (.const-value fn-form)
            (.level fn-form) (.unique-mnm fn-form)
            (.super-mhd fn-form) (.itf-tags fn-form)
            (.at-sigs fn-form) body-fut (.!fnc fn-form)))
@@ -1450,7 +1457,7 @@
 ;;; First argument is always a function expression that bottoms out in
 ;;; `fn-form`.  Depending on the function's translation pattern, it
 ;;; can be skipped when emitting this expression.
-(deftype InvokeArity [^:pass-to-super-constructor ^Object _form
+(deftype InvokeArity [^:pass-to-super-constructor ^int _line-number
                       ^:pass-to-super-constructor ^Class type
                       ^:pass-to-super-constructor ^IPersistentVector argv
                       ^:pass-to-super-constructor ^Object const-value
@@ -1458,11 +1465,11 @@
                       ^int at-idx]
   Expr
   (with-code [this tp argv]
-    (InvokeArity. (form this) tp argv (.const-value this) fn-form at-idx)))
+    (InvokeArity. (line-number this) tp argv (.const-value this) fn-form at-idx)))
 
 (defn invoke-arity ^InvokeArity [^Class tp ^IPersistentVector argv
                                  ^FnForm fn-form ^int at-idx]
-  (InvokeArity. nil tp argv nil fn-form at-idx))
+  (InvokeArity. cfg/no-line-number tp argv nil fn-form at-idx))
 
 ;;; Bridge gap between Clojure variadic function and JVM vararg method
 ;;; by casting the argument that can unintentionally match the vararg
@@ -1486,10 +1493,11 @@
 
 ;;; ------------------------------------------------------------------------
 
-(deftype ValueRef [^:pass-to-super-constructor ^Object _form
+(deftype ValueRef [^:pass-to-super-constructor ^int _line-number
                    ^:pass-to-super-constructor ^Class type
                    ^:pass-to-super-constructor ^IPersistentVector argv
                    ^:pass-to-super-constructor ^Object const-value
+                   ^:pass-to-super-constructor ^Symbol simple-nm
                    ^:pass-to-super-constructor ^String ns-str
                    ^:pass-to-super-constructor ^int flags
                    ^:pass-to-super-constructor ^ILdStInstr load-promise
@@ -1519,7 +1527,7 @@
    (let [f 0
          let? (= kind b-let)
          c (when let? (.const-value init-x))]
-     (ValueRef. simple-nm tp [] c
+     (ValueRef. cfg/no-line-number tp [] c simple-nm
                 nil (mk-flags b-value kind f level) nil
                 (when (or let? (= kind b-this-object))
                   (root-fn-form init-x))))))
@@ -1533,21 +1541,22 @@
         entity (if (meta-flag? simple-nm :macro) b-macro b-def)]
     (if redef? 
       (let [f (bit-or f b-mutable)]
-        (ValueRef. simple-nm tp [] nil
+        (ValueRef. cfg/no-line-number tp [] nil simple-nm
                    ns-str (mk-flags b-value entity f 0) nil nil))
       ;; also propagate fn-form if `init-x` is a let binding
-      (ValueRef. simple-nm tp []
+      (ValueRef. cfg/no-line-number tp []
                  (singleton-template tp (some-> init-x .const-value))
-                 ns-str (mk-flags b-value entity f 0) nil
+                 simple-nm ns-str (mk-flags b-value entity f 0) nil
                  (root-fn-form init-x)))))
 
 (defn field-ref ^ValueRef [^Symbol simple-nm ^Class tp ^boolean mutable?]
   (let [f (cond-> 0 mutable? (bit-or b-mutable))]
-    (ValueRef. simple-nm tp [] nil
+    (ValueRef. cfg/no-line-number tp [] nil simple-nm
                nil (mk-flags b-value b-field f lvl-environment) nil nil)))
 
 (defn with-macro-value ^ValueRef [^ValueRef bref ^Expr macro-v]
-  (ValueRef. (form bref) (type bref) (argv bref) macro-v (.ns-str bref)
+  (ValueRef. (line-number bref) (type bref) (argv bref) macro-v
+             (.simple-nm bref) (.ns-str bref)
              (.flags bref) nil (.to-fn-form bref)))
 
 ;;; Returns nil if `fn-form` is an unnamed function.
@@ -1561,10 +1570,11 @@
 (definterface FnMacroFn
   (expand ^Object [ctx form])) ;`ctx` is not the `env` seen by macro fn
 
-(deftype MacroRef [^:pass-to-super-constructor ^Object _form
+(deftype MacroRef [^:pass-to-super-constructor ^int _line-number
                    ^:pass-to-super-constructor ^Class type
                    ^:pass-to-super-constructor ^IPersistentVector argv
                    ^:pass-to-super-constructor ^Object const-value
+                   ^:pass-to-super-constructor ^Symbol simple-nm
                    ^:pass-to-super-constructor ^String ns-str
                    ^:pass-to-super-constructor ^int flags
                    ^:pass-to-super-constructor ^ILdStInstr load-promise
@@ -1575,7 +1585,7 @@
 
 (defn macro-ref ^MacroRef [^Symbol simple-nm ^String ns-str
                            ^FnMacroFn mfn ^BindingRef mvalue ^ValueRef mimpl]
-  (MacroRef. simple-nm jb/cl-compile-time-entity [] nil ns-str
+  (MacroRef. cfg/no-line-number jb/cl-compile-time-entity [] nil simple-nm ns-str
              (mk-flags b-macro b-def 0 0) cf/ld-st-primitive mfn mvalue mimpl))
 
 (defn macro-ref? ^boolean [^Expr x]
@@ -1583,22 +1593,22 @@
 
 
 
-(deftype AssignDef [^:pass-to-super-constructor ^Object _form
+(deftype AssignDef [^:pass-to-super-constructor ^int _line-number
                     ^:pass-to-super-constructor ^Class type
                     ^:pass-to-super-constructor ^IPersistentVector argv
                     ^:pass-to-super-constructor ^Object const-value
                     ^BindingRef bref]
   Expr
   (with-code [this tp argv]
-    (AssignDef. (form this) tp argv (.const-value this) bref)))
+    (AssignDef. (line-number this) tp argv (.const-value this) bref)))
 
 (defn assign-def ^AssignDef [^Expr v ^BindingRef bref]
-  (AssignDef. nil jb/void [v] nil bref))
+  (AssignDef. cfg/no-line-number jb/void [v] nil bref))
 
 
 ;;; Loads the var instance underlying a :var definition.  It is
 ;;; similar to `ValueRef`, but lacks the `derefVar` call.
-(deftype VarRef [^:pass-to-super-constructor ^Object _form
+(deftype VarRef [^:pass-to-super-constructor ^int _line-number
                  ^:pass-to-super-constructor ^Class type
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value]
@@ -1606,10 +1616,10 @@
   (safe-to-discard? ^boolean [_]
     true)
   (with-code [this tp argv]
-    (VarRef. (form this) tp argv (.const-value this))))
+    (VarRef. (line-number this) tp argv (.const-value this))))
 
 (defn var-ref ^VarRef [^Class tp ^BindingRef v]
-  (VarRef. nil tp [v] nil))
+  (VarRef. cfg/no-line-number tp [v] nil))
 
 
 
@@ -1677,10 +1687,10 @@
 (defn with-monomorphic-result ^Expr [^Expr x ^Class tp]
   (condp instance? x
     InvokeDynamic (let [x ^InvokeDynamic x]
-                    (InvokeDynamic. (form x) tp (argv x) (.const-value x)
+                    (InvokeDynamic. (line-number x) tp (argv x) (.const-value x)
                                     (.invocation-name x) (.bsm x) (.cexprs x)))
     InvokePoly (let [x ^InvokePoly x]
-                 (InvokePoly. (form x) tp (argv x) (.const-value x)
+                 (InvokePoly. (line-number x) tp (argv x) (.const-value x)
                               (.kind x) (.owner x) (.method-name x)
                               (.owner-interface? x)))
     #_else (throw (IllegalArgumentException. (str x)))))

@@ -106,7 +106,7 @@
    (try
      (java.util.regex.Pattern/compile (second form))
      (catch java.util.regex.PatternSyntaxException e
-       (wrong/other (str "invalid regex: " e) form)))))
+       (wrong/other (str "invalid regex: " e))))))
 
 (letfn [(assoc-predef-macro [m ^Symbol sym ^FnMacroFn mfn]
           (let [nm (name sym)]

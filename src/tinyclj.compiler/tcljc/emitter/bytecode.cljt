@@ -101,13 +101,12 @@
   (EmitState. (.arity-level es) (.arity-closes-over es)
               (.ld-this es) recur-target))
 
-(defn- line-number* ^CodeBuilder [^CodeBuilder xb form]
-  (let [ln (cfg/line-number form)]
-    (cond-> xb
-      (and cfg/enable-line-numbers (not= ln cfg/no-line-number))
-      (.lineNumber ln))))
+(defn- line-number* ^CodeBuilder [^CodeBuilder xb ^int ln]
+  (cond-> xb
+    (and cfg/enable-line-numbers (not= ln cfg/no-line-number))
+    (.lineNumber ln)))
 (defn- line-number ^CodeBuilder [^CodeBuilder xb ^Expr x]
-  (line-number* xb (x/form x)))
+  (line-number* xb (x/line-number x)))
 
 ;;; CAUTION: This function must be free of side effects, because the
 ;;; ClassFile API can and will call the handlers that invoke `expr-insns`
@@ -528,7 +527,7 @@
          (.deliver-load bref ld-st))
        (recur (inc i))))
    (let [es (EmitState. (.level at) (.!closes-over at) ld-this nil)]
-     (line-number* xb (.aform at))
+     (line-number* xb (cfg/line-number (.aform at)))
      (expr-insns xb es (xc/as-returning-code body-expr)))))
 
 (defn emit-global-b ^void [^ClassBuilder cb ^ClassDesc segm-cld ^Binding b]

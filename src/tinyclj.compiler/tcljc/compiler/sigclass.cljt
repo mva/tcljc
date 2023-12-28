@@ -170,7 +170,7 @@
             (when-some [tag (sig/get-tag mname)]
               (wrong/other (str "method result tag " (wrong/q tag) " must be "
                                 "placed on the parameter vector, not the "
-                                "method name") tag))
+                                "method name")))
             (let [mnm (cfg/munge-name mname)
                   flags (cond-> (bit-or ClassFile/ACC_PUBLIC
                                         ClassFile/ACC_ABSTRACT)

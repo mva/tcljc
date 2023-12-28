@@ -182,7 +182,7 @@
                 (.add !field-names unm)
                 unm))
             (env-as-field ^ILdStInstr [^EnvEntry ee]
-              (cf/ld-st-virtual this-class (unique-mnm (x/form (.root-bref ee)))
+              (cf/ld-st-virtual this-class (unique-mnm (.simple-nm (.root-bref ee)))
                                 (rt/cd-of (emitfn/ee-exact-type ee))))]
       (let [a (.fn-env fspec)
             b (aclone a)
@@ -340,7 +340,7 @@
                               (some? (util/sim-get p-co closing-over))
                               (outside-reference-to-this? p-fnc closing-over))
                         0
-                        (let [x (x/closure-alias p-level (x/form closing-over)
+                        (let [x (x/closure-alias p-level (.simple-nm closing-over)
                                                  closing-over)]
                           (util/sim-put-absent! p-co closing-over x)
                           1))))
@@ -385,7 +385,7 @@
                 (doseq [^EnvEntry ee (.fn-env fspec)
                         :let [bref (.origin-bref ee)]]
                   (println " "  :closes-over
-                           (str "lvl" (x/b-level bref) "." (x/form bref))
+                           (str "lvl" (x/b-level bref) "." (.simple-nm bref))
                            (if (emitfn/ee-materialized? ee)
                              :materialized-in-env
                              :inlined-constant))))
@@ -504,7 +504,7 @@
          (mapcat #(util/sim-keys (.!closes-over ^Arity %)))
          (dedupe)
          (sort-by (fn [^BindingRef bref]
-                    [(x/b-level bref) (x/form bref)]))
+                    [(x/b-level bref) (.simple-nm bref)]))
          (map env-entry)
          ^EnvEntry* (into-array EnvEntry))))
 

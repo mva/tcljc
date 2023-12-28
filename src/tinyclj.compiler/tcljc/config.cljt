@@ -228,7 +228,7 @@
 
 (def no-line-number 0)
 (defn line-number ^int [form]
-  (if (instance? clojure.lang.IMeta form)
+  (if (seq? form)
     (if-some [m (.meta ^clojure.lang.IMeta form)]
       (if-some [line (.valAt m :line nil)]
         ^int line)

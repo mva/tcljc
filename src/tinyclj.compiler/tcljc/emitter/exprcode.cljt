@@ -45,7 +45,7 @@
                   (let [arg' (aset a i (trace-flow (nth argv i) x/adpt-identity))]
                     (if (x/returns? arg')
                       (recur (inc i))
-                      (Progn. (x/form x) x/no-return (subvec (vec a) 0 (inc i))
+                      (Progn. (x/line-number x) x/no-return (subvec (vec a) 0 (inc i))
                               nil nil)))
                   (cond
                     (or (x/recur? x) (x/throw? x))
@@ -101,7 +101,7 @@
                           (aset 0 branch))]
                   (if (x/const-value? branch) ;unpack constant test
                     (-> (aget a (if (x/const-value-true? branch) 1 2))
-                        (x/identity-using-form x)) ;preserve if's :line
+                        (x/identity-using-line-number x)) ;preserve if's :line
                     (x/with-code x (returning-type x a 1 0) (vec a))))
                 branch)))
           (trace-switch ^Expr [^Switch x]

@@ -203,10 +203,10 @@
           (let [resolved-ns-nm (.valAt (.get-ns-alias-map ctx) ns ns)]
             (if (.equals (.ns-str ctx) resolved-ns-nm)
               (or (.valAt (.get-globals ctx) nm nil) ;same as for (nil? ns)
-                  (wrong/unresolved resolved-ns-nm (symbol ns nm)))
+                  (wrong/unresolved-nmsp-sym resolved-ns-nm (symbol ns nm)))
               (when-some [publics (.valAt (.get-known-ns ctx) resolved-ns-nm nil)]
                 (or (.valAt ^IPersistentMap publics nm nil)
-                    (wrong/unresolved resolved-ns-nm (symbol ns nm)))))))]
+                    (wrong/unresolved-nmsp-sym resolved-ns-nm (symbol ns nm)))))))]
   (defn lookup-sname-global ^BindingRef [^Symbol nm ^Ctx ctx]
     (.valAt (.get-globals ctx) (name nm) nil))
   (defn lookup-qname-global ^BindingRef [^Symbol nm ^Ctx ctx]

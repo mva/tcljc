@@ -25,7 +25,7 @@
   (if (instance? NoClassDefFoundError x)
     (wrong-class (ex-message ^NoClassDefFoundError x))
     (let [sym (symbol x)]               ;idempotent
-      (wrong/unresolved "class not found " sym sym))))
+      (wrong/unresolved "class not found: " sym))))
 
 (defn ensure-interface ^Class [^Class tp]
   (if (jb/interface? tp)
@@ -137,7 +137,7 @@
 
 (defn- with-method-ptype ^Binding [^Binding b ^Class tp]
   (let [bref (.bref b)]
-    (-> (x/local-ref (x/b-level bref) (x/form bref) tp x/b-parameter)
+    (-> (x/local-ref (x/b-level bref) (.simple-nm bref) tp x/b-parameter)
         (x/local-binding (first (x/argv b))))))
 
 ;;; FIXME... revise type checks to whatever the JVM allows, in

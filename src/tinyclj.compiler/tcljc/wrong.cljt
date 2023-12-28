@@ -29,15 +29,14 @@
 ;;; If an `ExceptionInfo` is decorated with a ex-cause value, then it
 ;;; is assumed that this Throwable originates outside of the control
 ;;; of the compiler (e.g. during macro expansion).
-(defn- push-line-number ^ExceptionInfo [^ExceptionInfo ex form]
-  (let [ln (cfg/line-number form)]
-    (cond-> ex
-      (and (not= ln cfg/no-line-number)
-           (not (contains? (ex-data ex) :form/line-number)))
-      (update-ex-data assoc :form/line-number (object ln)))))
+(defn- push-line-number ^ExceptionInfo [^ExceptionInfo ex ^int ln]
+  (cond-> ex
+    (and (not= ln cfg/no-line-number)
+         (not (contains? (ex-data ex) :form/line-number)))
+    (update-ex-data assoc :form/line-number (object ln))))
 
-(defn rethrow-with-line-number ^void [^ExceptionInfo e form]
-  (throw (push-line-number e form)))
+(defn rethrow-with-line-number ^void [^ExceptionInfo e ^int ln]
+  (throw (push-line-number e ln)))
 
 (defn mk-e
   (^ExceptionInfo [msg]
@@ -46,8 +45,8 @@
    #_(prn :error msg data)
    #_(.printStackTrace (Throwable.))
    (ex-info msg data))
-  (^ExceptionInfo [msg data form]
-   (push-line-number (mk-e msg data) form)))
+  (^ExceptionInfo [msg data ^int line-number]
+   (push-line-number (mk-e msg data) line-number)))
 
 ;;; Only assoc `k` to the exception's data if this key is not defined
 ;;; yet.  With exceptions decorated from the most to the least
@@ -94,7 +93,7 @@
   ([^String msg]
    (throw (mk-e msg)))
   ([^String msg-prefix form]
-   (throw (mk-e (str msg-prefix (got-q form)) {} form))))
+   (throw (mk-e (str msg-prefix (got-q form)) {} (cfg/line-number form)))))
 (defn ensure-sym
   (^Symbol [form]
    (if (symbol? form)
@@ -112,12 +111,11 @@
 
 
 
-(defn unresolved
-  ([resolved-ns-nm ^Symbol fq-sym]
-   (throw (mk-e (str "no public var " (q (name fq-sym)) " in namespace "
-                     (q resolved-ns-nm)))))
-  ([^String msg-prefix sym-or-str context]
-   (throw (mk-e (str msg-prefix (q sym-or-str)) {} context))))
+(defn unresolved [^String msg-prefix sym-or-str]
+  (throw (mk-e (str msg-prefix (q sym-or-str)) {})))
+(defn unresolved-nmsp-sym [resolved-ns-nm ^Symbol fq-sym]
+  (throw (mk-e (str "no public var " (q (name fq-sym)) " in namespace "
+                    (q resolved-ns-nm)))))
 (defn unresolved-interop [^String msg-prefix ^String nm ^Class opt-owner
                           ^IPersistentMap data]
   (throw (mk-e (cond-> (str msg-prefix (q (symbol nil nm)))
@@ -128,7 +126,7 @@
   (if (instance? NoClassDefFoundError x)
     (class-not-found (ex-message ^NoClassDefFoundError x))
     (let [sym (symbol x)]               ;idempotent
-      (unresolved "class not found " sym sym))))
+      (unresolved "class not found: " sym))))
 (defn no-class-def-found ^ExceptionInfo [^NoClassDefFoundError e]
   (let [nm (.replace (ex-message e) \/ \.)]
     (ex-info (str "failed to load class " (q (symbol nil nm))) {} e)))
@@ -140,14 +138,14 @@
 ;;; but it should also be done for any syntactic list that the parser
 ;;; takes apart.
 (defmacro with-error-context [form & body] ;pre: (seq? form)
-  `(let [form# ~form]
+  `(let [ln# (cfg/line-number ~form)]
      (try
        ~@body
        (catch NoClassDefFoundError e#
-         (rethrow-with-line-number (no-class-def-found e#) form#)
+         (rethrow-with-line-number (no-class-def-found e#) ln#)
          nil)
        (catch clojure.lang.ExceptionInfo e#
-         (rethrow-with-line-number e# form#)
+         (rethrow-with-line-number e# ln#)
          nil))))
 
 (defn file [^Path rpath]
@@ -165,8 +163,8 @@
 (defn other
   ([^String msg]
    (throw (mk-e msg)))
-  ([^String msg context]
-   (throw (mk-e msg {} context))))
+  ([^String msg ^int line-number]
+   (throw (mk-e msg {} line-number))))
 
 ;;; ------------------------------------------------------------------------
 

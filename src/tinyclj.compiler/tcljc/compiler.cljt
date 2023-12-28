@@ -44,14 +44,10 @@
    (java.util.function Consumer))
   (:refer-clojure :exclude [type]))
 
-(defn wrong-unresolved
-  (^Expr [^Symbol sym]
-   (wrong/unresolved "undefined symbol " sym sym))
-  (^Expr [^Symbol sym ^Symbol context]
-   (wrong/unresolved "undefined symbol " sym context)))
-
-(defn wrong-unresolved-nmsp ^Expr [^String ns-part ^Symbol context]
-  (wrong-unresolved (symbol ns-part "...") context))
+(defn wrong-unresolved ^Expr [^Symbol sym]
+  (wrong/unresolved "undefined symbol " sym))
+(defn wrong-unresolved-nmsp ^Expr [^String ns-part ^Symbol sym]
+  (wrong-unresolved (symbol ns-part "...")))
 
 
 (defn- assoc-fn-form ^ExceptionInfo [^ExceptionInfo e fn-form [op & args]]
@@ -60,9 +56,10 @@
                  (assoc :invoke/arg-types (into-array Class (map x/type args))))]
     (ex-info (ex-message e) data (ex-cause e))))
 (defn- wrong-no-arity [^FnForm fn-form [^Expr op & args]]
-  (throw (wrong/mk-e (str "function " (wrong/q (.form op)) " has no arity "
-                          (count args))
-                     {} (.form ^Expr op))))
+  (let [nm (when (instance? BindingRef op)
+             (wrong/q (.simple-nm ^BindingRef op)))]
+    (throw (wrong/mk-e (str "function " nm " has no arity " (count args))
+                       {} (x/line-number op)))))
 
 
 (defn ensure-int ^Expr [^Expr from]
@@ -111,7 +108,7 @@
   ;; deftype* method, or a reify* method.
   (when-not (ctx/global? ctx)
     (wrong/other (str "cannot " (wrong/q (first form)) " in this position")
-                 form))
+                 (cfg/line-number form)))
   ctx)
 
 (defn- compile-named ^Expr [^clojure.lang.Named nm ^Symbol tp-clnm ^Ctx ctx]
@@ -312,7 +309,7 @@
                 (var-binding-then-get))
             (do
               (when (x/meta-flag? nm :dynamic)
-                (wrong/other "flag :dynamic requires flag :var" nm))
+                (wrong/other (str "flag :dynamic requires flag :var for " (wrong/q nm))))
               (if (some? v)
                 (let [redef? (x/meta-flag? nm :redef)]
                   (if (and (not redef?)
@@ -726,7 +723,7 @@
            (ensure-distinct-fn-names fnv)
            (into [] (map destructure-to-fn*) fnv)))
        (invoke-patch-fn ^Expr [^Binding b]
-         (FnPatch. nil jb/void [] nil ^FnForm (x/first-arg b) (.bref b)))
+         (FnPatch. cfg/no-line-number jb/void [] nil ^FnForm (x/first-arg b) (.bref b)))
        (letfn*-form [[_ fnv & body :as form]]
          (let [fn-formv (mapv (fn ^FnForm [form]
                                 (let [level (level-fn-form env)
@@ -769,7 +766,7 @@
          (let [arg (wrong/ensure-sym arg)
                v ^BindingRef (ensure-resolve-global arg (.ctx env))]
            (when (not (x/b-def-var? v))
-             (wrong/other "not a ^:var def" arg))
+             (wrong/other (str (wrong/q arg) " is not a ^:var def")))
            (x/var-ref (var-type (.ctx env)) v)))
        
        (import*-form ^Expr [form] ;returns the value of the last class
@@ -865,7 +862,7 @@
                    (xf/checkcast tp)))
              
              :else
-             (wrong/other (str "not a settable variable: " (wrong/q v)) v))))
+             (wrong/other (str "not a settable variable: " (wrong/q v))))))
 
        (parse-method ^ArityCode [^Env env ^Arity at ^Class etp]
          ;; based on `parse-arity-bodies` above

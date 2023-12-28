@@ -219,9 +219,9 @@
           (wrong-assign x to-tp (when (some? to-form)
                                   (str " of " (wrong/q-symbol to-form)))))))
   (defn consume-for ^Expr [^Expr x ^BindingRef bref]
-    ;; FIXME... `x/form` is nil for imported parameters because
+    ;; FIXME... `simple-nm` is nil for imported parameters because
     ;; reflection does not offer this information
-    (consume x (x/type bref) (x/form bref)))
+    (consume x (x/type bref) (.simple-nm bref)))
 
   ;; Special case of `consume` which passes on an expression `x` if
   ;; `to-tp` is polymorphic.
