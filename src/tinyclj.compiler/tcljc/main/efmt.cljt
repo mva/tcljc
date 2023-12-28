@@ -7,7 +7,6 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.main.efmt
   (:require
-   [tcljc.config :as cfg]
    [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
    [tinyclj.string :as str]
@@ -39,12 +38,8 @@
 
 
 (defn- file-line-column ^String [emap]
-  (if-some [line (or (:reader/line emap)
-                     (->> (:form/context emap)
-                          (reverse)
-                          (filter #(-> % (meta) :line))
-                          (first) (meta) :line))]
-    (str ":" (term/highlight (str line))
+  (if-some [ln (or (:reader/line emap) (:form/line-number emap))]
+    (str ":" (term/highlight (str ln))
          (if-some [column (:reader/column emap)]
            (str ":" column)
            ""))
@@ -102,74 +97,6 @@
     (instance? Class clx) (recur (.get (.describeConstable ^Class clx)))
     :else (.displayName ^ClassDesc clx)))
 
-(defn- context-summary [ctx]
-  (letfn [(shorten [x]
-            (cond
-              (vector? x) '[...]
-              (seq? x) (if (nil? (next x))
-                         x              ;list of one element
-                         (list (first x) '...))
-              :else x))
-          (line-number ^Integer [x]
-            (when (seq? x)
-              (let [l (some-> x (meta) :line)]
-                (when (instance? Integer l)
-                  ^Integer l))))
-          (format-line ^String [x]
-            (-> (if-some [line (line-number x)]
-                  (String/format "%4d:" line)
-                  "    :")
-                (term/dim)))
-
-          (op? ^boolean [^Pattern re x]
-            (and (symbol? x)
-                 (some? (re-matches re (name x)))
-                 (or (nil? (namespace x)) (cfg/core-lib? (namespace x)))))
-          (take-n [^int n xs]
-            (if (zero? n)
-              (if (seq xs) (list '...) ())
-              (cons (first xs) (take-n (dec n) (rest xs)))))
-          (mark-first-seq [kw [x & xr :as xs]]
-            (if (seq? x)
-              (with-meta
-                (cons (vary-meta x assoc kw true) xr)
-                (meta xs))
-              xs))
-          (marked-up-tail [[x & xr :as xs]] ;pre: (seq? x)
-            (assert (seq? x))
-            (condp = (first x)
-              'deftype* (mark-first-seq ::arity-or-method xr)
-              'reify* (mark-first-seq ::arity-or-method xr)
-              'fn* (if (symbol? (first xr))
-                     (->> (mark-first-seq ::arity-or-method (next xr))
-                          (cons (first xr)))
-                     (mark-first-seq ::arity-or-method xr))
-              #_else xr))
-          (rewrite-ctx [x]              ;pre: (seq? x)
-            ;; return nil to suggest omitting this line from the
-            ;; context summary
-            (condp op? (first x)
-              #"defn-?" (take-n 2 x)
-              #"fn\*?" (take-n (if (symbol? (second x)) 2 1) x)
-              #"reify\*?" (take-n 2 x)  ;show itf vector for reify*
-              #"loop\*?" (take-n 1 x)
-              #"deftype\*?" (take-n 2 x)
-              #_else (when (::arity-or-method (meta x))
-                       (take-n (if (symbol? (first x)) 2 1) x))))
-          (summarize [acc [x & xr :as xs]] ;pre: (some? xs)
-            (if (nil? xr)
-              (conj acc (fit-string (format-line x) (wrong/str* (shorten x))))
-              (let [acc (summarize acc (marked-up-tail xs))
-                    x* (when (some? (line-number x))
-                         (or (rewrite-ctx x)
-                             ;; unconditionally show some number of
-                             ;; lines of top context
-                             (when (< (count acc) 3) (shorten x))))]
-                (cond-> acc
-                  (some? x*)
-                  (conj (fit-string (format-line x) (wrong/str* x*)))))))]
-    (when-some [xs (seq ctx)]
-      (summarize [] xs))))
 
 (defn- style-parameters [^Class* ptypes ^boolean varargs?]
   (letfn [(pstr ^String [^int i]
@@ -237,10 +164,6 @@
         (println (fit-string "cause:" (ex-message t))) ;expansion of let etc.
         (.printStackTrace t)))
     
-    (when-some [ctx (:form/context data)]
-      (doseq [lines (context-summary ctx)]
-        (println lines)))
-
     (when-some [owner ^Class (:invoke/owner data)]
       (let [nm ^String (:invoke/name data)
             ms (concat (when (= nm ConstantDescs/INIT_NAME)
@@ -263,15 +186,13 @@
           (print-arity at arg-types)))
       (println "args" (map type-str (:invoke/arg-types data))))
     
-    (doseq [[k v] (-> data
-                      (update :form/context last)
-                      (dissoc :file/resource-url
-                              :reader/line
-                              :reader/column
-                              :emitter/namespaces
-                              :form/context
-                              :invoke/owner :invoke/name :invoke/arg-types
-                              :invoke/fn-form))]
+    (doseq [[k v] (sort-by key (dissoc data
+                                       :file/resource-url
+                                       :reader/line :reader/column
+                                       :emitter/namespaces
+                                       :form/line-number
+                                       :invoke/owner :invoke/name
+                                       :invoke/arg-types :invoke/fn-form))]
       (println k v))))
 
 (defn print-emap [^ExceptionInfo e]

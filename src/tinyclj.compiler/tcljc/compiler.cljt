@@ -537,7 +537,7 @@
                                            (x/type fn-form) x/b-this-object
                                            fn-form)
                                 unique-mnm (.unique-mnm fn-form)
-                                body (wrong/with-list-context (.aform at)
+                                body (wrong/with-error-context (.aform at)
                                        (-> (enter-fn-arity env' unique-mnm
                                                            at this-bref)
                                            (add-locals (.paramv at))
@@ -733,7 +733,7 @@
                                       mnm (.pick-unique-mnm (compile-io env)
                                                             (.mnm-path env) 'fn
                                                             form)]
-                                  (wrong/with-list-context form
+                                  (wrong/with-error-context form
                                     (sig/destructure-fn*-form form level mnm (.ctx env)))))
                               (macroexpand-fnvec fnv))
                bexprv (mapv (fn [^FnForm fn-form]
@@ -837,7 +837,7 @@
          (wrong/check-argc-min 2 form)
          (let [cl-or-inst (expr-form owner)]
            (if (seq? member-or-list)
-             (wrong/with-list-context member-or-list
+             (wrong/with-error-context member-or-list
                (wrong/check-argc 2 form)
                (dot-form* cl-or-inst (take-member (first member-or-list))
                           (next member-or-list)))
@@ -869,13 +869,13 @@
 
        (parse-method ^ArityCode [^Env env ^Arity at ^Class etp]
          ;; based on `parse-arity-bodies` above
-         (wrong/with-list-context (.aform at)
+         (wrong/with-error-context (.aform at)
            (let [receiver-b (sig/mk-receiver (.level at) (.this-name at) etp)
                  env (add-locals env (cons receiver-b (.paramv at)))]
              (x/mk-arity-code at (.bref receiver-b)
                               (compile-body env at 2)))))
        (method-def ^MethodDef [^Env env form ^Class etp]
-         (wrong/with-list-context form
+         (wrong/with-error-context form
            (let [at (sigclass/method-arity-type etp form x/lvl-environment
                                                 -1 (.ctx env))
                  ac (parse-method env at etp)]
@@ -963,7 +963,7 @@
                etp (create-ephemeral-class eph-cdef)
                
                atv (reduce (fn [acc form]
-                             (wrong/with-list-context form
+                             (wrong/with-error-context form
                                (let [at-idx (count acc)
                                      level (level-fn-form env)
                                      at (sigclass/method-arity-type
@@ -1373,7 +1373,7 @@
           (prn :compile-form form)
           #_(when (seq? form) (prn :classes (map class form))))
       (-> (if (seq? form)
-            (wrong/with-list-context form
+            (wrong/with-error-context form
               (maybe-type-hint (compile-list form) form))
             (compile-atom form))
           (x/with-innermost-form form))))

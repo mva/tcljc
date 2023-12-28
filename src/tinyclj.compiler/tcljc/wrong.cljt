@@ -6,7 +6,8 @@
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.wrong
-  (:require [tcljc.javabase :as jb]
+  (:require [tcljc.config :as cfg]
+            [tcljc.javabase :as jb]
             [tinyclj.alpha.ptest__term :as term])
   (:import (clojure.lang Symbol ExceptionInfo IPersistentMap)
            (java.lang.invoke TypeDescriptor$OfField)
@@ -22,27 +23,21 @@
 ;;; Its data map encodes information about the context of the error,
 ;;; while the exception's message is a free form error message.
 ;;;
-;;; :form/context is a seq of forms, with each element but the last
-;;; one being the parent list of the next element.  The last element
-;;; is the innermost form that could not be processed by the
-;;; compiler's frontend.  Identical duplicates of the current head are
-;;; omitted.  Forms from source code provide :line numbers,
-;;; but most forms created by macro expansion are not decorated like
-;;; this.
+;;; If it exists, then :form/line-number is the line number of the
+;;; innermost list form "around" the point of error.
 ;;;
 ;;; If an `ExceptionInfo` is decorated with a ex-cause value, then it
 ;;; is assumed that this Throwable originates outside of the control
 ;;; of the compiler (e.g. during macro expansion).
-(defn- push-context ^ExceptionInfo [^ExceptionInfo ex context]
-  (if (identical? :tinyclj.frontend.expr/no-form context)
-    ex
-    (let [ctxs (get (ex-data ex) :form/context)]
-      (cond-> ex
-        (or (nil? ctxs) (not (identical? context (first ctxs))))
-        (update-ex-data assoc :form/context (cons context ctxs))))))
+(defn- push-line-number ^ExceptionInfo [^ExceptionInfo ex form]
+  (let [ln (cfg/line-number form)]
+    (cond-> ex
+      (and (not= ln cfg/no-line-number)
+           (not (contains? (ex-data ex) :form/line-number)))
+      (update-ex-data assoc :form/line-number (object ln)))))
 
-(defn rethrow-with-list-context ^void [^ExceptionInfo e form]
-  (throw (push-context e form)))
+(defn rethrow-with-line-number ^void [^ExceptionInfo e form]
+  (throw (push-line-number e form)))
 
 (defn mk-e
   (^ExceptionInfo [msg]
@@ -51,8 +46,8 @@
    #_(prn :error msg data)
    #_(.printStackTrace (Throwable.))
    (ex-info msg data))
-  (^ExceptionInfo [msg data context]
-   (push-context (mk-e msg data) context)))
+  (^ExceptionInfo [msg data form]
+   (push-line-number (mk-e msg data) form)))
 
 ;;; Only assoc `k` to the exception's data if this key is not defined
 ;;; yet.  With exceptions decorated from the most to the least
@@ -139,20 +134,21 @@
     (ex-info (str "failed to load class " (q (symbol nil nm))) {} e)))
 
 
-;;; If body raises an ExceptionInfo, then push seq `form` onto its
-;;; :form/context in the exception handler before re-raising it.
-;;; Primary use is around `compile-list` and `top-level-list`, but it
-;;; should also be done for any syntactic list that the parser takes
-;;; apart.
-(defmacro with-list-context [form & body] ;pre: (seq? form)
-  `(try
-     ~@body
-     (catch NoClassDefFoundError e#
-       (rethrow-with-list-context (no-class-def-found e#) ~form)
-       nil)
-     (catch clojure.lang.ExceptionInfo e#
-       (rethrow-with-list-context e# ~form)
-       nil)))
+;;; If body raises an ExceptionInfo, then see if its `form` provides
+;;; the best line number approximation of the error before re-raising
+;;; it.  Primary use is around `compile-list` and `top-level-list`,
+;;; but it should also be done for any syntactic list that the parser
+;;; takes apart.
+(defmacro with-error-context [form & body] ;pre: (seq? form)
+  `(let [form# ~form]
+     (try
+       ~@body
+       (catch NoClassDefFoundError e#
+         (rethrow-with-line-number (no-class-def-found e#) form#)
+         nil)
+       (catch clojure.lang.ExceptionInfo e#
+         (rethrow-with-line-number e# form#)
+         nil))))
 
 (defn file [^Path rpath]
   (throw (mk-e (str "failed to locate resource file " (q (str rpath))))))

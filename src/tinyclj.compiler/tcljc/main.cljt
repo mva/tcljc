@@ -17,8 +17,7 @@
 
 (defn print-exception-info [^clojure.lang.ExceptionInfo e]
   (println "ExceptionInfo:" (ex-message e))
-  (doseq [[k v] (sort-by key (ex-data e))]
-    (println k (if (= k :form/context) (last v) v))))
+  (run! println (sort-by key (ex-data e))))
 
 (defn -main [& args]
   (letfn [(coded-exit ^void [^boolean success]

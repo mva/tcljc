@@ -249,7 +249,7 @@
                     
                     (seq? form)
                     (recur
-                     (wrong/with-list-context form
+                     (wrong/with-error-context form
                        (top-level-list-form nmsp file-nmsp-io form)))
                     
                     :else (do (compiler/top-level-form form (.ctx nmsp))
