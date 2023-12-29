@@ -87,7 +87,8 @@
   (ClassDesc/of ns-str capstone-class-name))
 
 (defn invoke-force-clinit ^Expr [^ClassDesc owner]
-  (x/invoke-xref jb/void [(x/const Class owner)] rt/mhd-RT-ensureInitialized))
+  (x/invoke-xref x/x-env-no-ln jb/void [(x/const Class owner)]
+                 rt/mhd-RT-ensureInitialized))
 
 (defn- builder-segment ^Consumer [^SegmState segm ^ClassDesc segm-cld]
   (let [clinit (fn []
@@ -95,12 +96,14 @@
                    (-> []
                        (cond-> (= (.segm-id segm) first-segm-id)
                          (conj (x/invoke-xref
+                                x/x-env-no-ln
                                 jb/void [(x/const String ns-str)]
                                 rt/mhd-createNamespace)))
                        (into (map #(.top-level-form ^TopLevelForm %))
                              (.tlfv segm))
                        (cond-> (cfg/core-lib? ns-str)
                          (conj (x/invoke-xref
+                                x/x-env-no-ln
                                 jb/void [(x/const String (segment-name segm 0))]
                                 rt/mhd-markCoreInitialization)))
                        (x/progn*))))]

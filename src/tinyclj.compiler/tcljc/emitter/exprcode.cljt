@@ -152,7 +152,7 @@
 (def ^:private adpt-return-from-method  ;terminating adapter
   (reify IAdaptResult
     (apply-to-instr [_ x]
-      (x/insn* x/no-return [x]
+      (x/insn* (x/x-env-of x) x/no-return [x]
                (-> (TypeKind/from (x/type x))
                    (java.lang.classfile.instruction.ReturnInstruction/of))))
     (after [this before]

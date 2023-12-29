@@ -22,7 +22,7 @@
    (java.util.regex Matcher)))
 
 (defn- wrong [& msg-parts]
-  (throw (wrong/mk-e (str/join " " msg-parts) {})))
+  (throw (wrong/mk-e (str/join " " msg-parts))))
 
 (defn- mk-arg-env ^ArrayList []
   (doto (ArrayList.) (.add nil)))

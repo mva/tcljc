@@ -45,8 +45,9 @@
     Long/TYPE (xf/conv jb/int arg Opcode/L2I)
     Float/TYPE (xf/conv jb/int arg Opcode/F2I)
     Double/TYPE (xf/conv jb/int arg Opcode/D2I)
-    Boolean/TYPE (x/invoke-xref jb/int [arg] (.const-value arg)
-                                rt/mhd-boolean-to-zero-one false)
+    Boolean/TYPE (x/invoke-xref (x/x-env-of arg) jb/int [arg]
+                                (.const-value arg) rt/mhd-boolean-to-zero-one
+                                false)
     #_else (x/identity jb/int arg)))
 
 (defn to-long ^Expr [^Expr arg]
@@ -132,11 +133,12 @@
 (defn primitive-conv-from-object ^Expr [^Class to-tp ^Expr arg]
   (if (x/type? (rt/logical->box to-tp) arg)
     (xf/primitive-unbox-expr to-tp arg)
-    (x/invoke-xref to-tp [arg] (rt/logical->conv-object-mhd to-tp))))
+    (x/invoke-xref (x/x-env-of arg) to-tp [arg]
+                   (rt/logical->conv-object-mhd to-tp))))
 
 (defn box-expr ^Expr [^Expr prim-expr] ;pre: `prim-expr` is of primitive type
   (let [from-tp (x/type prim-expr)]
-    (x/invoke-xref (rt/logical->box from-tp) [prim-expr]
+    (x/invoke-xref (x/x-env-of prim-expr) (rt/logical->box from-tp) [prim-expr]
                    (rt/logical->box-factory from-tp))))
 
 (defn box-any-expr ^Expr [^Expr x]

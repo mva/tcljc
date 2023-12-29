@@ -44,9 +44,9 @@
   (^ExceptionInfo [msg data]
    #_(prn :error msg data)
    #_(.printStackTrace (Throwable.))
-   (ex-info msg data))
-  (^ExceptionInfo [msg data ^int line-number]
-   (push-line-number (mk-e msg data) line-number)))
+   (ex-info msg data)))
+(defn- mk-e-line-number ^ExceptionInfo [msg form]
+  (push-line-number (mk-e msg) (cfg/line-number form)))
 
 ;;; Only assoc `k` to the exception's data if this key is not defined
 ;;; yet.  With exceptions decorated from the most to the least
@@ -93,7 +93,7 @@
   ([^String msg]
    (throw (mk-e msg)))
   ([^String msg-prefix form]
-   (throw (mk-e (str msg-prefix (got-q form)) {} (cfg/line-number form)))))
+   (throw (mk-e-line-number (str msg-prefix (got-q form)) form))))
 (defn ensure-sym
   (^Symbol [form]
    (if (symbol? form)
@@ -112,7 +112,7 @@
 
 
 (defn unresolved [^String msg-prefix sym-or-str]
-  (throw (mk-e (str msg-prefix (q sym-or-str)) {})))
+  (throw (mk-e (str msg-prefix (q sym-or-str)))))
 (defn unresolved-nmsp-sym [resolved-ns-nm ^Symbol fq-sym]
   (throw (mk-e (str "no public var " (q (name fq-sym)) " in namespace "
                     (q resolved-ns-nm)))))
@@ -132,28 +132,8 @@
     (ex-info (str "failed to load class " (q (symbol nil nm))) {} e)))
 
 
-;;; If body raises an ExceptionInfo, then see if its `form` provides
-;;; the best line number approximation of the error before re-raising
-;;; it.  Primary use is around `compile-list` and `top-level-list`,
-;;; but it should also be done for any syntactic list that the parser
-;;; takes apart.
-(defmacro with-error-context [form & body] ;pre: (seq? form)
-  `(let [ln# (cfg/line-number ~form)]
-     (try
-       ~@body
-       (catch NoClassDefFoundError e#
-         (rethrow-with-line-number (no-class-def-found e#) ln#)
-         nil)
-       (catch clojure.lang.ExceptionInfo e#
-         (rethrow-with-line-number e# ln#)
-         nil))))
-
 (defn file [^Path rpath]
   (throw (mk-e (str "failed to locate resource file " (q (str rpath))))))
-
-;;; see expr/wrong
-;; (defn expr [^String msg-prefix ^Expr x]
-;;   (throw (mk-e msg-prefix {} (.form x))))
 
 ;;; This indicates an error regarding a type expression, i.e. an
 ;;; expression of type Class.
@@ -163,8 +143,8 @@
 (defn other
   ([^String msg]
    (throw (mk-e msg)))
-  ([^String msg ^int line-number]
-   (throw (mk-e msg {} line-number))))
+  ([^String msg form]
+   (throw (mk-e-line-number msg form))))
 
 ;;; ------------------------------------------------------------------------
 

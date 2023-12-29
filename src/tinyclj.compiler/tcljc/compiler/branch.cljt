@@ -30,7 +30,7 @@
     (xf/prog2-expr x (x/expr-boolean (x/pushes-result? x))) 
 
     (and (not (x/const-value? x)) (.isAssignableFrom (x/type x) Boolean))
-    (x/invoke-xref jb/boolean [x] rt/mhd-truthy-reference)
+    (x/invoke-xref (x/x-env-of x) jb/boolean [x] rt/mhd-truthy-reference)
 
     :else       ;any reference that is a non-Boolean subtype of Object
     (xf/acmp x x/expr-nil-object cf/ne)))

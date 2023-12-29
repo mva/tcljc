@@ -105,20 +105,22 @@
 (letfn [(settable? ^boolean [^Field f]  ;pre: `f` is public
           (not (Modifier/isFinal (.getModifiers f))))]
 
-  (defn load-static ^Expr [^Class owner ^Field f ^IPersistentVector argv]
+  (defn load-static ^Expr [^long x-env ^Class owner ^Field f
+                           ^IPersistentVector argv]
     (let [mhd (MethodHandleDesc/ofField rt/mhk-static-getter
                                         (rt/describe-class owner) (.getName f)
                                         (rt/cd-of (.getType f)))]
-      (x/invoke-xref (.getType f) argv nil mhd (settable? f))))
+      (x/invoke-xref x-env (.getType f) argv nil mhd (settable? f))))
   (defn static-fields [^Class owner ^String nm ^Class* atypes]
     (when (zero? (alength atypes))
       (fields-with true owner nm)))
 
-  (defn load-virtual ^Expr [^Class owner ^Field f ^IPersistentVector argv]
+  (defn load-virtual ^Expr [^long x-env ^Class owner ^Field f
+                            ^IPersistentVector argv]
     (let [mhd (MethodHandleDesc/ofField rt/mhk-getter
                                         (rt/describe-class owner) (.getName f)
                                         (rt/cd-of (.getType f)))]
-      (x/invoke-xref (.getType f) argv nil mhd (settable? f))))
+      (x/invoke-xref x-env (.getType f) argv nil mhd (settable? f))))
   (defn virtual-fields [^Class owner ^String nm ^Class* atypes]
     (when (zero? (alength atypes))
       (fields-with false owner nm))))
@@ -201,64 +203,67 @@
                          atype (x/type (peek argv))]
                      (not (.isAssignableFrom ptype atype))))))]
 
-  (defn invoke-constr ^Expr [^Class owner ^Constructor c ^IPersistentVector argv]
+  (defn invoke-constr ^Expr [^long x-env ^Class owner ^Constructor c
+                             ^IPersistentVector argv]
     (let [owner-cd (rt/describe-class owner)
           desc (-> (rt/mtd-of rt/void (.getParameterTypes c))
                    (.descriptorString))]
       (if (invoke-via-method-handle? c argv)
-        (x/mh-invoke-xref owner argv nil rt/mhk-constructor
+        (x/mh-invoke-xref x-env owner argv nil rt/mhk-constructor
                           owner-cd ConstantDescs/INIT_NAME desc)
         (let [mhd (MethodHandleDesc/of rt/mhk-constructor owner-cd
                                        ConstantDescs/INIT_NAME desc)]
-          (x/invoke-xref owner argv nil mhd false)))))
+          (x/invoke-xref x-env owner argv nil mhd false)))))
   (defn constructors [^Class owner ^Class* atypes]
     (or (constructors-exact owner atypes)
         (->> (constructors-with owner (alength atypes))
              (filter #(compatible-args? atypes %))
              (filter-dominators))))
 
-  (defn invoke-static ^Expr [^Class owner ^Method m ^IPersistentVector argv]
+  (defn invoke-static ^Expr [^long x-env ^Class owner ^Method m
+                             ^IPersistentVector argv]
     (let [owner-cd (rt/describe-class owner)
           k (if (.isInterface owner)
               rt/mhk-interface-static
               rt/mhk-static)]
       (cond
         (signature-polymorphic? m)
-        (x/invoke-poly jb/cl-polymorphic-type argv nil k owner-cd (.getName m)
+        (x/invoke-poly x-env jb/cl-polymorphic-type argv nil k owner-cd (.getName m)
                        (.isInterface owner))
 
         (invoke-via-method-handle? m argv)
-        (x/mh-invoke-xref (.getReturnType m) argv nil k
+        (x/mh-invoke-xref x-env (.getReturnType m) argv nil k
                           owner-cd (.getName m) (method-descriptor m))
 
         :else
         (let [mhd (MethodHandleDesc/of k owner-cd (.getName m)
                                        (method-descriptor m))]
-          (x/invoke-xref (.getReturnType m) argv nil mhd false)))))
+          (x/invoke-xref x-env (.getReturnType m) argv nil mhd false)))))
   (defn static-methods [^Class owner ^String nm ^Class* atypes]
     (or (methods-exact true owner nm atypes)
         (->> (methods-with true owner nm (alength atypes))
              (filter #(compatible-args? atypes %))
              (filter-dominators))))
 
-  (defn invoke-virtual ^Expr [^Class owner ^Method m ^IPersistentVector argv]
+  (defn invoke-virtual ^Expr [^long x-env ^Class owner ^Method m
+                              ^IPersistentVector argv]
     (let [owner-cd (if (jb/array? owner) rt/object (rt/describe-class owner))
           k (if (.isInterface owner)
               rt/mhk-interface-virtual
               rt/mhk-virtual)]
       (cond
         (signature-polymorphic? m)
-        (x/invoke-poly jb/cl-polymorphic-type argv nil k owner-cd (.getName m)
-                       (.isInterface owner))
+        (x/invoke-poly x-env jb/cl-polymorphic-type argv nil k
+                       owner-cd (.getName m) (.isInterface owner))
 
         (invoke-via-method-handle? m argv)
-        (x/mh-invoke-xref (.getReturnType m) argv nil k
+        (x/mh-invoke-xref x-env (.getReturnType m) argv nil k
                           owner-cd (.getName m) (method-descriptor m))
 
         :else
         (let [mhd (MethodHandleDesc/of k owner-cd (.getName m)
                                        (method-descriptor m))]
-          (x/invoke-xref (.getReturnType m) argv nil mhd false)))))
+          (x/invoke-xref x-env (.getReturnType m) argv nil mhd false)))))
   (defn virtual-methods [^Class owner ^String nm ^Class* atypes]
     ;; `atypes` does not include receiver, but the receiver is counted
     ;; as an implicit invocation argument

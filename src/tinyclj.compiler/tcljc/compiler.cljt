@@ -49,6 +49,24 @@
 (defn wrong-unresolved-nmsp ^Expr [^String ns-part ^Symbol sym]
   (wrong-unresolved (symbol ns-part "...")))
 
+;;; If body raises an ExceptionInfo, then see if its `form` provides
+;;; the best line number approximation of the error before re-raising
+;;; it.  Primary use is around `compile-list` and `top-level-list`,
+;;; but it should also be done for any syntactic list that the parser
+;;; takes apart.
+(defmacro with-error-context [[x-env form :as b] & body]
+  (assert (vector? b))
+  (assert (symbol? x-env))
+  #_(assert (seq? form))
+  `(let [~x-env (x/with-line-number ~x-env ~form)]
+     (try
+       ~@body
+       (catch NoClassDefFoundError e#
+         (wrong/rethrow-with-line-number (wrong/no-class-def-found e#)
+                                         (x/x-ln ~x-env)))
+       (catch clojure.lang.ExceptionInfo e#
+         (wrong/rethrow-with-line-number e# (x/x-ln ~x-env))))))
+
 
 (defn- assoc-fn-form ^ExceptionInfo [^ExceptionInfo e fn-form [op & args]]
   (let [data (-> (ex-data e)
@@ -58,8 +76,7 @@
 (defn- wrong-no-arity [^FnForm fn-form [^Expr op & args]]
   (let [nm (when (instance? BindingRef op)
              (wrong/q (.simple-nm ^BindingRef op)))]
-    (throw (wrong/mk-e (str "function " nm " has no arity " (count args))
-                       {} (x/line-number op)))))
+    (throw (wrong/mk-e (str "function " nm " has no arity " (count args))))))
 
 
 (defn ensure-int ^Expr [^Expr from]
@@ -108,7 +125,7 @@
   ;; deftype* method, or a reify* method.
   (when-not (ctx/global? ctx)
     (wrong/other (str "cannot " (wrong/q (first form)) " in this position")
-                 (cfg/line-number form)))
+                 form))
   ctx)
 
 (defn- compile-named ^Expr [^clojure.lang.Named nm ^Symbol tp-clnm ^Ctx ctx]
@@ -142,7 +159,7 @@
     (if (and (x/const-value? x) (x/const-value? m))
       (x/const tp (with-meta (x/recover-primitive-const x)
                     (x/recover-primitive-const m)))
-      (x/invoke-xref tp [x m] nil rt/mhd-with-meta false))))
+      (x/invoke-xref x/x-env-no-ln tp [x m] nil rt/mhd-with-meta false))))
 
 (defn- coll-literal ^Expr [^Class tp elems ^DirectMethodHandleDesc mhd]
   (if (every? x/const-value? elems)
@@ -153,8 +170,9 @@
                     rt/mhd-set (set cs)
                     rt/mhd-list (or (list* cs) ())
                     (throw (IllegalArgumentException.)))))
-    (x/mh-invoke-inexact tp (->> (map #(xf/coerce-vararg % jb/Object) elems)
-                                 (cons (x/const jb/MethodHandle mhd))) nil)))
+    (x/mh-invoke-inexact x/x-env-no-ln tp
+                         (->> (map #(xf/coerce-vararg % jb/Object) elems)
+                              (cons (x/const jb/MethodHandle mhd))) nil)))
 
 (defn- compile-quote ^Expr [form ^Ctx ctx]
   (if (instance? IMeta form)
@@ -179,12 +197,16 @@
               (let [ldc-ns (x/const jb/String (ctx/this-ns ctx))
                     ldc-nm (x/const jb/String nm-str)]
                 (if (some? init-expr)
-                  (x/invoke-xref tp-Var [ldc-ns ldc-nm init-expr] rt/mhd-var-3)
-                  (x/invoke-xref tp-Var [ldc-ns ldc-nm] rt/mhd-var-2))))
+                  (x/invoke-xref x/x-env-no-ln tp-Var [ldc-ns ldc-nm init-expr]
+                                 rt/mhd-var-3)
+                  (x/invoke-xref x/x-env-no-ln tp-Var [ldc-ns ldc-nm]
+                                 rt/mhd-var-2))))
             (set-meta ^Expr [^Expr clj-var ^Expr meta]
-              (x/invoke-xref tp-Var [clj-var meta] rt/mhd-Var-setMeta))
+              (x/invoke-xref x/x-env-no-ln tp-Var [clj-var meta]
+                             rt/mhd-Var-setMeta))
             (set-dynamic ^Expr [^Expr clj-var]
-              (x/invoke-xref tp-Var [clj-var] rt/mhd-Var-setDynamic))]
+              (x/invoke-xref  x/x-env-no-ln tp-Var [clj-var]
+                              rt/mhd-Var-setDynamic))]
       (cond-> (create-var nm-str init-x)
         (some? meta-x) (set-meta meta-x)
         dynamic? (set-dynamic)))))
@@ -272,7 +294,8 @@
             (let [x (conv/consume-for v bref)
                   tp-Var (var-type ctx)
                   load-var (x/var-ref tp-Var bref)]
-              (x/invoke-xref jb/void [load-var v] rt/mhd-Var-bindRoot)))
+              (x/invoke-xref x/x-env-no-ln jb/void [load-var v]
+                             rt/mhd-Var-bindRoot)))
           (var-def-fresh ^Binding [nm form] ;new Clojure var
             (when (x/meta-flag? nm :macro)
               (wrong/other ":macro and :var are mutually exclusive"))
@@ -383,9 +406,6 @@
      
      recur-fn
      ;; Nil if no recur possible.
-     ^boolean inline-tcf?
-     ;; If true, then a try/catch/finally expression can be used
-     ;; directly without wrapping it in a zero arg closure.
      ])
 
 (letfn [(assoc-bref ^IPersistentMap [^IPersistentMap acc ^BindingRef bref]
@@ -395,7 +415,7 @@
           (assoc-bref acc (.bref b)))
         (with-locals ^Env [^Env env locals]
           (Env. (.level env) (.mnm-path env) locals (.!closes-over env)
-                (.ctx env) (.recur-fn env) (.inline-tcf? env)))]
+                (.ctx env) (.recur-fn env)))]
   
   (defn add-local ^Env [^Env env ^Binding b]
     (with-locals env (assoc-b (.locals env) b)))
@@ -411,7 +431,7 @@
           (cond-> (.locals env)
             (and (some? (.this-name at)) (some? this-bref))
             (assoc-bref this-bref))
-          (.!closes-over at) (.ctx env) nil true)))
+          (.!closes-over at) (.ctx env) nil)))
 
 (defn mk-recur-fn [bv]
   (fn recur-fn ^Expr [^Env env form args]
@@ -452,30 +472,34 @@
   (-> (.expand (.macro-fn x) ctx form)
       (cfg/with-line form)))
 
+;;; Compile form with respect to the environment `env` and `x-env`.
+;;; New Expr instances are assigned the line number `(x-ln x-env)`,
+;;; which *must* be `form`'s line number if it is a seq.
+;;; 
 ;;; Note: This function can produce a non-returning expression,
 ;;; including a reference to a macro or to a primitive function, but
 ;;; not an expression of type `jb/polymorphic?`.
-(defn- compile-form ^Expr [^Env env form]
+(defn- compile-form* ^Expr [^Env env ^long x-env form]
   (letfn
       [(compile-io ^tcljc.io.CompileIO [^Env env]
          (-> env .ctx .compile-io))
+       (compile-form ^Expr [^Env env ^long x-env form]
+         (compile-form* env
+                        (cond-> x-env (seq? form) (x/with-line-number form))
+                        form))
        
-       (with-form-ctx ^Env [^Env env recur-fn ^boolean inline-tcf?]
-         (if (and (identical? (.recur-fn env) recur-fn)
-                  (= (.inline-tcf? env) inline-tcf?))
-           env
-           (Env. (.level env) (.mnm-path env) (.locals env) (.!closes-over env)
-                 (.ctx env) recur-fn inline-tcf?)))
-       (with-expr ^Env [^Env env]
-         (with-form-ctx env nil false))
-       (clear-recur-fn ^Env [^Env env]
-         (with-form-ctx env nil (.inline-tcf? env)))
+       (with-recur-fn ^Env [^Env env recur-fn]
+         (Env. (.level env) (.mnm-path env) (.locals env) (.!closes-over env)
+               (.ctx env) recur-fn))
+       (with-expr ^long [^long x-env]
+         #_(-> x-env (x/without-recur) (x/without-inline-tcf))
+         (x/x-ln x-env))                ;clear *all* flags
        (with-ctx ^Env [^Env env ^Ctx ctx]
          (Env. (.level env) (.mnm-path env) (.locals env) (.!closes-over env)
-               ctx (.recur-fn env) (.inline-tcf? env)))
+               ctx (.recur-fn env)))
        
        (expr-form ^Expr [form]    ;pre: `form` is not in tail position
-         (-> (compile-form (with-expr env) form)
+         (-> (compile-form env (with-expr x-env) form)
              (x/ensure-runtime-value)
              (conv/consume-poly)))
        (expr-forms ^IPersistentVector [forms] ;returns vector of Expr
@@ -490,9 +514,9 @@
            []))
 
        (tail-form ^Expr [form]
-         (-> (compile-form env form)
+         (-> (compile-form env x-env form)
              (x/ensure-runtime-outcome)))
-       (tail-forms ^Expr [^Env env forms]
+       (tail-forms ^Expr [^Env env ^long x-env forms]
          ;; Not a mapv to keep stacktrace shallow & avoid closures.
          ;; An empty `forms` is compiled to x/expr-empty.  For tcljc
          ;; itself, `forms` has exactly one element approximately 87%
@@ -501,21 +525,22 @@
          (if-some [forms (seq forms)]
            (loop [acc [], forms forms]
              (if-some [nxt (next forms)]
-               (let [x (-> (compile-form (clear-recur-fn env) (first forms))
+               (let [x (-> (compile-form env (x/without-recur x-env)
+                                         (first forms))
                            (x/ensure-runtime-outcome))]
                  (recur (conj acc x) nxt))
-               (let [tail (-> (compile-form env (first forms))
+               (let [tail (-> (compile-form env x-env (first forms))
                               (x/ensure-runtime-outcome))]
                  (xf/progn-expr acc tail))))
            x/expr-empty))
        
        (compile-body ^Expr [^Env env ^Arity at ^int body-idx]
-         (-> (tail-forms (with-form-ctx env (mk-recur-fn (.paramv at)) true)
+         (-> (with-recur-fn env (mk-recur-fn (.paramv at)))
+             (tail-forms (x/x-env-body (.aform at))
                          (nthrest (.aform at) body-idx))
              (conv/consume-body (.rtype at) (if (some? (.method-name at))
                                               "method result"
                                               "arity result"))
-             (x/with-innermost-form (.aform at))
              (x/loop-body)))
        (auto-rtype? ^boolean [^Arity at]
          (jb/polymorphic? (.rtype at)))
@@ -534,7 +559,7 @@
                                            (x/type fn-form) x/b-this-object
                                            fn-form)
                                 unique-mnm (.unique-mnm fn-form)
-                                body (wrong/with-error-context (.aform at)
+                                body (with-error-context [x-env (.aform at)]
                                        (-> (enter-fn-arity env' unique-mnm
                                                            at this-bref)
                                            (add-locals (.paramv at))
@@ -575,7 +600,7 @@
                 bs (seq bindings-vec)]
            (if-some [^Symbol nm (take-binding-sym bs)]
              (let [dest-tag (sig/tag-of nm false jb/cl-polymorphic-type (.ctx env))
-                   v (compile-form (clear-recur-fn env) (second bs))
+                   v (compile-form env (x/without-recur x-env) (second bs))
                    b (if (and (not= kind x/b-loop)
                               (x/pure-let-initialization? v)
                               (jb/polymorphic? dest-tag))
@@ -591,14 +616,14 @@
              [env bexprs])))
        (loop*-form ^Expr [[_ bindings-vec & body :as form]]
          (let [[^Env env bexprs] (bindings env bindings-vec x/b-loop)
-               body (tail-forms (with-form-ctx env
-                                  (mk-recur-fn bexprs) (.inline-tcf? env))
+               body (tail-forms (with-recur-fn env (mk-recur-fn bexprs))
+                                (x/with-recur x-env)
                                 body)]
            (x/block bexprs (x/loop-body body))))
        
        (recur-form ^Expr [form]
-         (if-some [f (.recur-fn env)]
-           (f env form (expr-forms (rest form)))
+         (if (x/x-recur? x-env)
+           ((.recur-fn env) env form (expr-forms (rest form)))
            (wrong/syntax "cannot recur from this position")))
        
        (if-form [[_ test if-true if-false :as form]]
@@ -611,7 +636,7 @@
            (branch/if-expr expr-test expr-true expr-false)))
 
        (throw-no-match [^Expr e]
-         (-> (x/invoke-xref jb/Exception [(conv/box-any-expr e)]
+         (-> (x/invoke-xref x-env jb/Exception [(conv/box-any-expr e)]
                             rt/mhd-no-matching-clause)
              (x/throw)))
        (parse-case-clauses ^IPersistentVector [^Expr test clauses]
@@ -652,7 +677,8 @@
        (clause-code-expr ^Expr [^Expr e guardv]
          (let [cexprv (->> (partition-by guard-path-idx guardv)
                            (mapv clause-code-segment))]
-           (x/invoke-dynamic jb/int [(x/identity jb/Object (conv/box-any-expr e))]
+           (x/invoke-dynamic x-env jb/int
+                             [(x/identity jb/Object (conv/box-any-expr e))]
                              rt/bsm-clause-code cexprv)))
        (case*-form [[_ expr & clauses :as form]]
          ;; Note: The test expression is evaluated again if a
@@ -686,7 +712,7 @@
        
        (let*-form ^Expr [[_ bindings-vec & body :as form]]
          (let [[env bexprs] (bindings env bindings-vec x/b-let)]
-           (x/block bexprs (tail-forms env body))))
+           (x/block bexprs (tail-forms env x-env body))))
        
        (ensure-distinct-fn-names [fnv]
          (doseq [x fnv]
@@ -723,14 +749,15 @@
            (ensure-distinct-fn-names fnv)
            (into [] (map destructure-to-fn*) fnv)))
        (invoke-patch-fn ^Expr [^Binding b]
-         (FnPatch. cfg/no-line-number jb/void [] nil ^FnForm (x/first-arg b) (.bref b)))
+         (FnPatch. (x/x-ln x-env) jb/void [] nil ^FnForm (x/first-arg b)
+                   (.bref b)))
        (letfn*-form [[_ fnv & body :as form]]
          (let [fn-formv (mapv (fn ^FnForm [form]
                                 (let [level (level-fn-form env)
                                       mnm (.pick-unique-mnm (compile-io env)
                                                             (.mnm-path env) 'fn
                                                             form)]
-                                  (wrong/with-error-context form
+                                  (with-error-context [x-env form]
                                     (sig/destructure-fn*-form form level mnm (.ctx env)))))
                               (macroexpand-fnvec fnv))
                bexprv (mapv (fn [^FnForm fn-form]
@@ -744,11 +771,11 @@
                                 (x/local-binding (.bref b) fn-form')))
                             bexprv)
                body (xf/progn-expr (mapv invoke-patch-fn bexprv)
-                                   (tail-forms env body))]
+                                   (tail-forms env x-env body))]
            (x/block bexprv body)))
        
        (do-form ^Expr [[_ & exprs :as form]]
-         (tail-forms env (rest form)))
+         (tail-forms env x-env (rest form)))
 
        (fn*-form ^FnForm [form]
          (let [level (level-fn-form env)
@@ -791,7 +818,7 @@
                    (wrong/unresolved-interop nm owner (invoke-ex-data))))
              (-> (str "no " member-label " matching ")
                  (wrong/unresolved-interop nm owner (invoke-ex-data))))))
-       (dot-form-static ^Expr [^Class owner ^String nm arg-forms]
+       (dot-form-static ^Expr [^long x-env ^Class owner ^String nm arg-forms]
          (let [argv (expr-forms arg-forms)
                atypes (argument-types argv)
                fields-only? (.startsWith nm "-")
@@ -804,11 +831,11 @@
                           (seq (resolve/static-methods owner nm atypes)))]
              (let [m ^Method (pick-member ms member-label owner nm atypes)]
                (->> (consume-args argv-prefix argv m)
-                    (resolve/invoke-static owner m)))
+                    (resolve/invoke-static x-env owner m)))
              (let [fs (resolve/static-fields owner nm atypes)
                    f ^Field (pick-member fs member-label owner nm atypes)]
-               (resolve/load-static owner f argv-prefix)))))
-       (dot-form-virtual ^Expr [^Expr inst ^String nm arg-forms]
+               (resolve/load-static x-env owner f argv-prefix)))))
+       (dot-form-virtual ^Expr [^long x-env ^Expr inst ^String nm arg-forms]
          (let [argv (expr-forms arg-forms)
                atypes (argument-types argv)
                fields-only? (.startsWith nm "-")
@@ -822,23 +849,23 @@
                           (seq (resolve/virtual-methods owner nm atypes)))]
              (let [m ^Method (pick-member ms member-label owner nm atypes)]
                (->> (consume-args argv-prefix argv m)
-                    (resolve/invoke-virtual owner m)))
+                    (resolve/invoke-virtual x-env owner m)))
              (let [fs (resolve/virtual-fields owner nm atypes)
                    f ^Field (pick-member fs member-label owner nm atypes)]
-               (resolve/load-virtual owner f argv-prefix)))))
-       (dot-form* ^Expr [^Expr cl-or-inst ^String nm arg-forms]
+               (resolve/load-virtual x-env owner f argv-prefix)))))
+       (dot-form* ^Expr [^long x-env ^Expr cl-or-inst ^String nm arg-forms]
          (if-some [owner (x/classname-type cl-or-inst)]
-           (dot-form-static owner nm arg-forms)
-           (dot-form-virtual cl-or-inst nm arg-forms)))
+           (dot-form-static x-env owner nm arg-forms)
+           (dot-form-virtual x-env cl-or-inst nm arg-forms)))
        (dot-form ^Expr [[_ owner member-or-list & xr :as form]]
          (wrong/check-argc-min 2 form)
          (let [cl-or-inst (expr-form owner)]
            (if (seq? member-or-list)
-             (wrong/with-error-context member-or-list
+             (with-error-context [x-env member-or-list]
                (wrong/check-argc 2 form)
-               (dot-form* cl-or-inst (take-member (first member-or-list))
+               (dot-form* x-env cl-or-inst (take-member (first member-or-list))
                           (next member-or-list)))
-             (dot-form* cl-or-inst (take-member member-or-list) xr))))
+             (dot-form* x-env cl-or-inst (take-member member-or-list) xr))))
 
        (settable-deftype-field? ^boolean [^Expr x]
          (if (x/bref? x)
@@ -858,7 +885,7 @@
              
              (settable-var? v-expr)
              (let [v-expr (x/var-ref (var-type (.ctx env)) ^BindingRef v-expr)]
-               (-> (x/invoke-xref jb/Object [v-expr x-expr] rt/mhd-Var-set)
+               (-> (x/invoke-xref x-env jb/Object [v-expr x-expr] rt/mhd-Var-set)
                    (xf/checkcast tp)))
              
              :else
@@ -866,13 +893,13 @@
 
        (parse-method ^ArityCode [^Env env ^Arity at ^Class etp]
          ;; based on `parse-arity-bodies` above
-         (wrong/with-error-context (.aform at)
+         (with-error-context [x-env (.aform at)]
            (let [receiver-b (sig/mk-receiver (.level at) (.this-name at) etp)
                  env (add-locals env (cons receiver-b (.paramv at)))]
              (x/mk-arity-code at (.bref receiver-b)
                               (compile-body env at 2)))))
        (method-def ^MethodDef [^Env env form ^Class etp]
-         (wrong/with-error-context form
+         (with-error-context [x-env form]
            (let [at (sigclass/method-arity-type etp form x/lvl-environment
                                                 -1 (.ctx env))
                  ac (parse-method env at etp)]
@@ -960,7 +987,7 @@
                etp (create-ephemeral-class eph-cdef)
                
                atv (reduce (fn [acc form]
-                             (wrong/with-error-context form
+                             (with-error-context [x-env form]
                                (let [at-idx (count acc)
                                      level (level-fn-form env)
                                      at (sigclass/method-arity-type
@@ -1023,18 +1050,20 @@
                ;; "out of thin air" character
                bref (x/local-ref (.level env) nm tp x/b-let)
                b (x/local-binding bref (x/expr-provided tp))]
-           [tp (-> (x/block [b] (tail-forms (-> (add-local env b)
-                                                (clear-recur-fn))
-                                            body))
-                   (x/with-innermost-form form))]))
+           [tp (-> (x/block [b] (tail-forms (add-local env b)
+                                            (-> (x/without-recur x-env)
+                                                (x/with-line-number form))
+                                            body)))]))
        (try-form* ^Expr [[_ & forms :as form]]
          (let [[body cs f] (split-body-catches-finally forms)
-               body-expr (-> (tail-forms (clear-recur-fn env) body)
-                             (x/with-innermost-form form))
+               body-expr (tail-forms env (-> (x/without-recur x-env)
+                                             (x/with-line-number form))
+                                     body)
                ecs (mapv #(catch-form env %) cs) ;eager
-               finally-statm (-> (tail-forms (with-expr env) (rest f))
-                                 (xf/coerce-to-statm)
-                                 (x/with-innermost-form f))]
+               finally-statm (-> (tail-forms env (-> (with-expr x-env)
+                                                     (x/with-line-number f))
+                                             (rest f))
+                                 (xf/coerce-to-statm))]
            (let [all-paths (cons body-expr (map second ecs))
                  to-tp (x/type (conv/path-join all-paths))]
              (x/try-catch-finally to-tp body-expr
@@ -1044,7 +1073,7 @@
                                   finally-statm
                                   (conv/adpt-for-path to-tp)))))
        (try-form ^Expr [form]
-         (if (.inline-tcf? env)
+         (if (x/x-inline-tcf? x-env)
            (try-form* form)
            (-> (list (list 'fn* 'try (with-meta [] {:tag 'auto-return-type})
                            form))
@@ -1063,7 +1092,7 @@
          (let [lockee (expr-form arg)]
            (when-not (x/reference? lockee)
              (x/wrong-type "monitor operation requires a reference" lockee))
-           (x/insn* jb/void [lockee]
+           (x/insn* x-env jb/void [lockee]
                     (java.lang.classfile.instruction.MonitorInstruction/of opc))))
 
        (class-const-or-expr ^Expr [form]
@@ -1086,7 +1115,7 @@
              (let [lengthv (mapv ensure-int args)
                    an (cfg/array-dims tp)]
                (if (<= 1 (count lengthv) an)
-                 (x/new-array tp lengthv)
+                 (x/new-array x-env tp lengthv)
                  (wrong/other (str (if (= an 1)
                                      "expect one dimension length"
                                      (str "expect 1 to " an " dimension lengths"))
@@ -1099,7 +1128,7 @@
                    c (-> (resolve/constructors owner atypes)
                          ^Constructor (pick-member member-label owner nm atypes))
                    argv (consume-args [] args c)]
-               (resolve/invoke-constr owner c argv)))))
+               (resolve/invoke-constr x-env owner c argv)))))
        
        (instanceof*-form ^Expr [[_ cl-arg arg :as form]]
          (wrong/check-argc 2 form)
@@ -1116,7 +1145,7 @@
              (do
                (when (jb/primitive? (x/type arg))
                  (x/wrong-type "expect argument of reference type" arg))
-               (x/invoke-xref jb/boolean [cn-expr arg] rt/mhd-isInstance)))))
+               (x/invoke-xref x-env jb/boolean [cn-expr arg] rt/mhd-isInstance)))))
 
        
        (adapt-args [op+argv ^Arity at ^int vararg-start ^Class vararg-tp]
@@ -1151,7 +1180,7 @@
                             (-> (adapt-args op+argv at (x/at-n at) vararg-tp)
                                 (x/fix-vararg-array at))
                             (adapt-args op+argv at Integer/MAX_VALUE jb/Object))]
-                 (x/invoke-arity rt argv fn-form (.at-idx at)))))
+                 (x/invoke-arity x-env rt argv fn-form (.at-idx at)))))
            (catch clojure.lang.ExceptionInfo e
              (throw (assoc-fn-form e fn-form op+argv))
              nil)))
@@ -1161,7 +1190,7 @@
            (if-some [fn-form (x/callable-root-fn-form op-x)]
              (call-fn-def fn-form op+argv)
              (do (check-callable op-x (.ctx env))
-                 (x/invoke-fn jb/cl-polymorphic-type
+                 (x/invoke-fn x-env jb/cl-polymorphic-type
                               (-> (mapv conv/consume-poly op+argv)
                                   (x/fix-vararg-array)))))))
        
@@ -1183,7 +1212,7 @@
        (resolve-static-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
          (let [ns-part (namespace sym)]
            (if-some [tp (ctx/get-type (symbol nil ns-part) (.ctx env))]
-             (dot-form-static tp (name sym) ())
+             (dot-form-static x-env tp (name sym) ())
              (wrong-unresolved-nmsp ns-part sym))))
        (compile-atom ^Expr [form]
          (if (instance? IMeta form)
@@ -1235,7 +1264,7 @@
        (init-value-of-def ^Expr [form]  ;nil if init is not specified
          (when-some [xs (nthnext form 2)]
            ;; accepts anything, including macros or primitive functions
-           (compile-form (clear-recur-fn env)
+           (compile-form env (x/without-recur x-env)
                          (-> (first xs) (cfg/with-line form)))))
        (compile-list-special ^Expr [^Symbol op-form form] ;nil if regular
          (when (nil? (namespace op-form))
@@ -1288,7 +1317,7 @@
                                        (list '. form member))
                                      inst formr)))
                (do (wrong/check-argc-min 1 form)
-                   (dot-form-virtual (expr-form inst) (subs nm 1) formr)))
+                   (dot-form-virtual x-env (expr-form inst) (subs nm 1) formr)))
              
              (and (nil? (namespace x)) (ends-with-dot? nm))
              (new-form (list* 'new (symbol nil (subs nm 0 (dec (count nm))))
@@ -1321,18 +1350,19 @@
                      (and (x/bref? x) (x/b-primitive? x))
                      (let [p ^PrimitiveFnRef (x/root-bref x)]
                        (.assemble (.primitive-fn p) form
-                                  (expr-forms (rest form)) (compile-io env)))
+                                  (expr-forms (rest form))
+                                  x-env (compile-io env)))
                      
                      (and (x/bref? x) (x/b-macro? x))
                      (let [m ^MacroRef (x/root-bref x)]
-                       ;; note: recursive `compile-form` picks up error context
-                       (compile-form env (expand-macro m form (.ctx env))))
+                       ;; compile macro with line number of this list form
+                       (compile-form env x-env (expand-macro m form (.ctx env))))
                      
                      :else
                      (call-fn-expr x form))))
 
              (if (seq form)             ;guard against empty list
-               (-> (compile-form (clear-recur-fn env) op-form)
+               (-> (compile-form env (x/without-recur x-env) op-form)
                    (call-fn-expr form))
                (compile-atom form))))) ;empty list (), possibly with meta
        
@@ -1366,14 +1396,13 @@
           (prn :compile-form form)
           #_(when (seq? form) (prn :classes (map class form))))
       (-> (if (seq? form)
-            (wrong/with-error-context form
+            (with-error-context [x-env form]
               (maybe-type-hint (compile-list form) form))
-            (compile-atom form))
-          (x/with-innermost-form form))))
+            (compile-atom form)))))
 
 (defn top-level-form ^void [form ^Ctx ctx]
-  (let [env (Env. x/lvl-environment nil {} nil ctx nil true)
-        x (-> (compile-form env form)
+  (let [env (Env. x/lvl-environment nil {} nil ctx nil)
+        x (-> (compile-form* env (x/x-env-top-level-form form) form)
               (x/ensure-runtime-outcome)
               (conv/consume jb/void "top-level form"))]
     (.send-to-emit (.compile-io ctx) io/msg-emit-tlf x)
@@ -1383,7 +1412,7 @@
 
 (defn primitive-conv-to ^FnPrimitiveFn [^Class to-tp]
   (let [conv-to-fn (conv/lookup-conv-to-fn* to-tp)]
-    (^FnPrimitiveFn fn [form argv compile-io]
+    (^FnPrimitiveFn fn [form argv x-env compile-io]
      (wrong/check-argc 1 form)
      (let [arg ^Expr (nth argv 0)]
        (if (x/reference? arg)
@@ -1391,17 +1420,17 @@
          (conv/conv-to to-tp conv-to-fn arg))))))
 
 (def identity-primitive
-  (^FnPrimitiveFn fn [form argv compile-io]
+  (^FnPrimitiveFn fn [form argv x-env compile-io]
    (wrong/check-argc 1 form)
    (x/identity (nth argv 0))))
 
 (def boolean-primitive
-  (^FnPrimitiveFn fn [form argv compile-io]
+  (^FnPrimitiveFn fn [form argv x-env compile-io]
    (wrong/check-argc 1 form)
    (branch/conv-to-boolean (nth argv 0))))
 
 (def object-primitive
-  (^FnPrimitiveFn fn [form argv compile-io]
+  (^FnPrimitiveFn fn [form argv x-env compile-io]
    (wrong/check-argc 1 form)
    (let [arg ^Expr (nth argv 0)]
      (cond
@@ -1410,21 +1439,21 @@
        :else (conv/box-expr arg)))))
 
 (def list-primitive
-  (^FnPrimitiveFn fn [form argv compile-io]
+  (^FnPrimitiveFn fn [form argv x-env compile-io]
    ;; mirrors `collection-form`, with `args` being Exprs already
    (let [tp (.resolveConstantDesc rt/list (.lookup-in-pkg compile-io))]
      (coll-literal tp argv rt/mhd-list))))
 
 (def not-primitive
-  (^FnPrimitiveFn fn [form argv compile-io]
-   (-> (.assemble boolean-primitive form argv compile-io) ;also checks argc
+  (^FnPrimitiveFn fn [form argv x-env compile-io]
+   (-> (.assemble boolean-primitive form argv x-env compile-io) ;also checks argc
        (xf/icmp x/expr-false cf/eq))))
 
 (def ^:private dyn-mark "\u0001")
 (def ^:private const-mark "\u0002")
 (def ^:private re-marks #"[\u0001\u0002]") ;note: hash of Pattern is not stable
 (def concat-primitive
-  (^FnPrimitiveFn fn [form argv compile-io] ;aka `str`
+  (^FnPrimitiveFn fn [form argv x-env compile-io] ;aka `str`
    (loop [rparts nil, dyn-args nil, const-args nil, i 0]
      (if (= i (count argv))
        (let [rstr (str/join "" (reverse rparts))
@@ -1440,7 +1469,8 @@
            (first const-args)
 
            :else
-           (x/invoke-dynamic jb/String (vec (reverse dyn-args)) rt/bsm-concat
+           (x/invoke-dynamic x-env jb/String (vec (reverse dyn-args))
+                             rt/bsm-concat
                              (into [recipe] (reverse const-args)))))
        
        (let [x (nth argv i)]
@@ -1455,7 +1485,8 @@
                       (inc i))
                (recur (cons s rparts) dyn-args const-args (inc i))))
            (let [x-non-nil (if (x/reference? x)
-                             (x/invoke-xref jb/String [x x/expr-empty-string]
+                             (x/invoke-xref x-env jb/String
+                                            [x x/expr-empty-string]
                                             rt/mhd-Objects-toString)
                              x)]
              (recur (cons dyn-mark rparts) (cons x-non-nil dyn-args) const-args
@@ -1473,18 +1504,18 @@
    (cf/bc2opc base-opcode (typed-opcode tp))))
 
 (defn arith-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn [form args compile-io]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
    (when (some? form)
      (wrong/check-argc 2 form))         ;unless called by nary-numeric
    (let [arg0 (conv/ensure-numeric (nth args 0))
          arg1 (conv/ensure-numeric (nth args 1))
          to-tp (conv/upper-numeric-tp arg0 arg1)]
-     (xf/arith-2 to-tp (conv/widen-from to-tp arg0)
+     (xf/arith-2 x-env to-tp (conv/widen-from to-tp arg0)
                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (def arith-2-xdiv-int
-  (^FnPrimitiveFn fn [form args compile-io]
-   (let [x (.assemble (arith-2 Opcode/IDIV) form args compile-io)]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   (let [x (.assemble (arith-2 Opcode/IDIV) form args x-env compile-io)]
      ;; FIXME... this does not work if the result is out of range of
      ;; long; maybe better: truncate with something along the line of
      ;; `(if (neg? x) (Math/ceil x) (Math/floor x))` (or put this into
@@ -1504,13 +1535,13 @@
     (x/wrong-type "expect float or double expression" from)))
 
 (defn arith-2-float ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn [form args compile-io]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
    (when (some? form)
      (wrong/check-argc 2 form))         ;unless called by nary-numeric
    (let [arg0 (ensure-float (nth args 0))
          arg1 (ensure-float (nth args 1))
          to-tp (conv/upper-numeric-tp arg0 arg1)]
-     (xf/arith-2 to-tp (conv/widen-from to-tp arg0)
+     (xf/arith-2 x-env to-tp (conv/widen-from to-tp arg0)
                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (defn- ensure-integral ^Expr [^Expr from]
@@ -1519,7 +1550,7 @@
     (x/wrong-type "expect integral expression" from)))
 
 (defn bits-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn [form args compile-io]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
    (when (some? form)
      (wrong/check-argc 2 form))         ;unless called by nary-numeric
    (let [arg0 (ensure-integral (nth args 0))
@@ -1529,7 +1560,7 @@
                 (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (defn shift-2 ^FnPrimitiveFn [^Opcode int-opc]
-  (^FnPrimitiveFn fn [form args compile-io]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
    (wrong/check-argc 2 form)
    (let [arg0 (ensure-integral (nth args 0))
          arg1 (ensure-int (nth args 1))
@@ -1538,25 +1569,26 @@
 
 
 (defn nary-numeric ^FnPrimitiveFn [^int min-argc ^Expr id ^FnPrimitiveFn pfn]
-  (^FnPrimitiveFn fn [form args compile-io]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
    (wrong/check-argc-min min-argc form)
    (case (bounded-count 3 args)
      0 id
-     1 (.assemble pfn nil (list id (first args)) compile-io)
-     2 (.assemble pfn form args compile-io)
-     (reduce #(.assemble pfn nil (list %1 %2) compile-io) (first args) (rest args)))))
+     1 (.assemble pfn nil (list id (first args)) x-env compile-io)
+     2 (.assemble pfn form args x-env compile-io)
+     (reduce #(.assemble pfn nil (list %1 %2) x-env compile-io)
+             (first args) (rest args)))))
 
 ;;; ------------------------------------------------------------------------
 
 (def xdefault
-  (^FnPrimitiveFn fn [form [arg0] compile-io] ;discards argument!
+  (^FnPrimitiveFn fn [form [arg0] x-env compile-io] ;discards argument!
    (wrong/check-argc 1 form)
    (conv/expr-default (x/type arg0))))
 
 ;;; ------------------------------------------------------------------------
 
 (defn binary-cmp ^FnPrimitiveFn [^int cmp-opcd]
-  (^FnPrimitiveFn fn [form [arg0 arg1] compile-io]
+  (^FnPrimitiveFn fn [form [arg0 arg1] x-env compile-io]
    (when form
      (wrong/check-argc 2 form))         ;unless called by nary-cmp
    (branch/xcmp cmp-opcd arg0 arg1)))
@@ -1567,7 +1599,7 @@
     (x/wrong-type "expect reference expression" from)))
 
 (defn binary-cmp-ref ^FnPrimitiveFn [^int cmp-opcd]
-  (^FnPrimitiveFn fn [form [arg0 arg1] compile-io]
+  (^FnPrimitiveFn fn [form [arg0 arg1] x-env compile-io]
    (wrong/check-argc 2 form)
    (xf/acmp (ensure-reference arg0) (ensure-reference arg1) cmp-opcd)))
 
@@ -1586,17 +1618,18 @@
           (recur (conj bexprs b) (conj brefs bref) argr))))))
 
 (defn nary-cmp ^FnPrimitiveFn [^FnPrimitiveFn binary-pfn]
-  (^FnPrimitiveFn fn [form args compile-io]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
    (wrong/check-argc-min 1 form)
    (case (bounded-count 3 args)
      1 (xf/prog2-expr (nth args 0) x/expr-true)
-     2 (.assemble binary-pfn form args compile-io)
+     2 (.assemble binary-pfn form args x-env compile-io)
      ;; Compute all arguments beforehand, otherwise the short circuit
      ;; logic of `if` may skip their exceptions.  Expand as primitive
      ;; instead of macro, because a macro would depend on gensym.
      (let [[bexprs brefs] (as-anonymous-bindings args)
            res (reduce (fn [cont [ref1 ref2]]
-                         (let [test (.assemble binary-pfn nil [ref1 ref2] compile-io)]
+                         (let [test (.assemble binary-pfn nil [ref1 ref2]
+                                               x-env compile-io)]
                            (branch/if-expr test cont x/expr-false)))
                        x/expr-true
                        (reverse (partition 2 1 brefs)))]
@@ -1608,7 +1641,7 @@
 ;;; (hash 0.0) map to zero.  This means that `=` can be lowered to
 ;;; `==` for floating point types as well.
 (def equiv
-  (^FnPrimitiveFn fn [form [arg0 arg1] compile-io]
+  (^FnPrimitiveFn fn [form [arg0 arg1] x-env compile-io]
    (letfn [(equiv-if-identical? ^boolean [^Expr x]
              (let [tp (x/type x)]
                (or (jb/same-class? Class tp)
@@ -1627,7 +1660,7 @@
        (xf/acmp arg0 arg1 cf/eq)
         
        :else
-       (x/invoke-xref jb/boolean [arg0 arg1] rt/mhd-equiv)))))
+       (x/invoke-xref x-env jb/boolean [arg0 arg1] rt/mhd-equiv)))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -1637,12 +1670,12 @@
     (x/wrong-type "expect array expression" x)))
 
 (def alength-form
-  (^FnPrimitiveFn fn [form args compile-io]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
    (wrong/check-argc 1 form)
    (x/array-length (ensure-array (nth args 0)))))
 
 (def array-copy-of-form
-  (^FnPrimitiveFn fn [form args compile-io]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
    (wrong/check-argc 1 form)
    (let [a (ensure-array (nth args 0))
          atp (x/type a)
@@ -1650,23 +1683,23 @@
                                     (doto (new Class* 2)
                                       (aset 0 atp)
                                       (aset 1 jb/int)))
-         x (resolve/invoke-static java.util.Arrays (first ms)
+         x (resolve/invoke-static x-env java.util.Arrays (first ms)
                                   [a (x/array-length (x/dup atp))])]
      (assert (= (count ms) 1))
      (xf/coerce x atp))))
 
 (def xaload-form
-  (^FnPrimitiveFn fn [form args compile-io]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
    (wrong/check-argc 2 form)
    (let [a (ensure-array (nth args 0))
          i (ensure-int (nth args 1))
          ccl (.componentType (x/type a))
          opc (cf/bc2opc Opcode/IALOAD (cf/opcode-delta ccl))]
-     (x/insn* ccl [a i]
+     (x/insn* x-env ccl [a i]
               (java.lang.classfile.instruction.ArrayLoadInstruction/of opc)))))
 
 (def xastore-form
-  (^FnPrimitiveFn fn [form args compile-io]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
    ;; Unlike the xASTORE bytecode, this primitive returns the stored
    ;; value.  If passed to `as-statement`, the final "DUP*" argument
    ;; can be dropped in favour of doing the matching "POP*".
@@ -1676,7 +1709,7 @@
          ccl (.componentType (x/type a))
          v (conv/consume (nth args 2) ccl "array component")
          opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ccl))]
-     (x/insn* ccl [a i v (x/dup-x2 ccl)]
+     (x/insn* x-env ccl [a i v (x/dup-x2 ccl)]
               (java.lang.classfile.instruction.ArrayStoreInstruction/of opc)))))
 
 ;;; ------------------------------------------------------------------------

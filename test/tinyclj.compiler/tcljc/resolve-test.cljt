@@ -34,15 +34,15 @@
 
   (defn inv-constr [^Class owner & ^Class* atypes]
     (->> (constructors owner atypes)
-         (map #(invoke-constr owner % []))
+         (map #(invoke-constr x/x-env-no-ln owner % []))
          (inv)))
   (defn inv-static [^Class owner ^String nm & ^Class* atypes]
     (->> (static-methods owner nm atypes)
-         (map #(invoke-static owner % []))
+         (map #(invoke-static x/x-env-no-ln owner % []))
          (inv)))
   (defn inv-virtual [^Class owner ^String nm & ^Class* atypes]
     (->> (virtual-methods owner nm atypes)
-         (map #(invoke-virtual owner % []))
+         (map #(invoke-virtual x/x-env-no-ln owner % []))
          (inv))))
 
 (defn acl [& ^Class* atypes]
@@ -60,7 +60,7 @@
 (deftest static-field-test
   (letfn [(ld-static [^Class owner ^String nm & ^Class* atypes]
             (->> (static-fields owner nm atypes)
-                 (map #(load-static owner % []))
+                 (map #(load-static x/x-env-no-ln owner % []))
                  (inv)))]
     (is (= '[(INVOKE-XREF STATIC_GETTER "Math" "PI" "D" :owner-is-class)]
            (ld-static java.lang.Math "PI")))))
@@ -110,7 +110,7 @@
 (deftest virtual-field-test
   (letfn [(ld-virtual [^Class owner ^String nm & ^Class* atypes]
             (->> (virtual-fields owner nm atypes)
-                 (map #(load-virtual owner % []))
+                 (map #(load-virtual x/x-env-no-ln owner % []))
                  (inv)))]
     (is (= '[(INVOKE-XREF GETTER "Point" "x" "I" :owner-is-class)]
            (ld-virtual java.awt.Point "x")))))

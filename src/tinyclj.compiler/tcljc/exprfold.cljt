@@ -32,12 +32,14 @@
               #_i2s 147 (object (int (.shortValue arg0)))))]
     (let [c (when-some [c0 (.const-value arg0)]
               (conv-1 (.bytecode opc) c0))]
-      (if (x/const? arg0)
-        (Const. cfg/no-line-number type [] c)   ;e.g. (float 1.0) is the same as 1.0f
+      (if (x/const? arg0)        ;e.g. (float 1.0) is the same as 1.0f
+        (Const. cfg/no-line-number type [] c)
         (Insn. cfg/no-line-number type [arg0] c
                (java.lang.classfile.instruction.ConvertInstruction/of opc))))))
 
-(defn arith-2 ^Expr [^Class type ^Expr arg0 ^Expr arg1 ^Opcode opc]
+;;; Note: XDIV and XREM can cause an division by zero exception, so
+;;; x-env should provide a line number.
+(defn arith-2 ^Expr [^long x-env ^Class type ^Expr arg0 ^Expr arg1 ^Opcode opc]
   (letfn [(arith-int-2 ^int [^int bytecode ^Number arg0 ^Number arg1]
             (let [a0 (.intValue arg0), a1 (.intValue arg1)]
               (case bytecode
@@ -84,9 +86,9 @@
              (zero? (.doubleValue ^Number (.const-value arg0))) ;and zero
              (cf/between ClassFile/ISUB opc ClassFile/IMUL)) ;and XSUB opcode
       (let [opc-neg (cf/bc2opc opc 16)] ;recover XNEG from XSUB
-        (Insn. cfg/no-line-number type [arg1] (arith-const)
+        (Insn. (x/x-ln x-env) type [arg1] (arith-const)
                (java.lang.classfile.instruction.OperatorInstruction/of opc-neg)))
-      (Insn. cfg/no-line-number type [arg0 arg1] (arith-const)
+      (Insn. (x/x-ln x-env) type [arg0 arg1] (arith-const)
              (java.lang.classfile.instruction.OperatorInstruction/of opc)))))
 
 (defn bits-2 ^Expr [^Class type ^Expr arg0 ^Expr arg1 ^Opcode opc]
@@ -130,7 +132,8 @@
                                    #_ge 3 (>= n0 n1)
                                    #_gt 4 (> n0 n1)
                                    #_le 5 (<= n0 n1))))))]
-    (Branch. cfg/no-line-number jb/boolean [arg0 arg1] c Opcode/IF_ICMPEQ cmp-opcd)))
+    (Branch. (x/line-number arg0) jb/boolean [arg0 arg1] c
+             Opcode/IF_ICMPEQ cmp-opcd)))
 
 (defn acmp ^Branch [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
   (let [c (when-some [c0 (rt/null-value-pred (.const-value arg0))]
@@ -138,7 +141,8 @@
               (let [c0 ^boolean c0, c1 ^boolean c1]
                 (when (or c0 c1) ;both non-null means "don't know"
                   (rt/boolean-desc (not= (= cmp-opcd cf/ne) (and c0 c1)))))))]
-    (Branch. cfg/no-line-number jb/boolean [arg0 arg1] c Opcode/IF_ACMPEQ cmp-opcd)))
+    (Branch. cfg/no-line-number jb/boolean [arg0 arg1] c
+             Opcode/IF_ACMPEQ cmp-opcd)))
 
 (defn xcmp-signum ^Expr [^Expr arg0 ^Expr arg1 ^Opcode opc]
   (let [signum #(object (Integer/signum ^int %))
@@ -166,7 +170,8 @@
 
 (defn pop ^Expr [^Expr arg]        ;returns `arg` if it is a statement
   (letfn [(pop* ^Expr [^Expr arg]
-            (Insn. cfg/no-line-number jb/void [arg] (x/empty-when (.safe-to-discard? arg))
+            (Insn. cfg/no-line-number jb/void [arg]
+                   (x/empty-when (.safe-to-discard? arg))
                    (-> (cf/by-slot-size (x/type arg) Opcode/POP Opcode/POP2)
                        (java.lang.classfile.instruction.StackInstruction/of))))
           (undup ^Expr [^Expr x]
@@ -189,7 +194,8 @@
 (defn primitive-unbox-expr ^Expr [^Class to-tp ^Expr arg]
   (let [box-tp (rt/logical->box to-tp)
         typed-x (checkcast arg box-tp)]
-    (x/invoke-xref to-tp [typed-x] (rt/logical->accessor-mhd to-tp))))
+    (x/invoke-xref (x/line-number arg) to-tp [typed-x]
+                   (rt/logical->accessor-mhd to-tp))))
 
 (defn- coerce* ^Expr [^Expr x ^Class to-tp]
   ;; pre: `x` returns and is not branching
