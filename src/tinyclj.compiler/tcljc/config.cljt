@@ -100,6 +100,15 @@
     nm
     (str nm (.repeat "*" array-rank))))
 
+(defn array-dims ^int [^Class tp]
+  (loop [n 0, tp tp]
+    (if (.isArray tp)
+      (recur (inc n) (.componentType tp))
+      n)))
+
+(defn type-symbol ^clojure.lang.Symbol [^Class tp]
+  (symbol nil (array-suffix (.getName tp) (array-dims tp))))
+
 ;;; ------------------------------------------------------------------------
 
 (def source-suffix ".cljt")

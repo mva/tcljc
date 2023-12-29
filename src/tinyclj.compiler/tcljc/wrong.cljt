@@ -69,7 +69,7 @@
 (defn str* ^String [x]
   (cond
     (nil? x) "nil"
-    (class? x) (.getName ^Class x)
+    (class? x) (str (cfg/type-symbol x))
     (string? x) (pr-str x)
     :else (str x)))
 

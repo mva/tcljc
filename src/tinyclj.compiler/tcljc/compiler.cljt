@@ -1073,10 +1073,6 @@
                    (expr-form form))
                (expr-form form))
              (conv/consume jb/Class "type expression")))
-       (array-dims ^int [^int n ^Class cl]
-         (if (.isArray cl)
-           (recur (inc n) (.componentType cl))
-           n))
        (new-form ^Expr [[_ cl-arg & args :as form]]
          (wrong/check-argc-min 1 form)
          (let [cn-expr (class-const-or-expr cl-arg)
@@ -1088,7 +1084,7 @@
              
              (jb/array? tp)
              (let [lengthv (mapv ensure-int args)
-                   an (array-dims 0 tp)]
+                   an (cfg/array-dims tp)]
                (if (<= 1 (count lengthv) an)
                  (x/new-array tp lengthv)
                  (wrong/other (str (if (= an 1)
