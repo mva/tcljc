@@ -1516,8 +1516,7 @@
 (defn local-ref
   (^ValueRef [^int level ^Symbol simple-nm ^Class tp ^int kind]
    (local-ref level simple-nm tp kind (expr-provided tp)))
-  (^ValueRef [^int level ^Symbol simple-nm ^Class tp ^int kind
-              ^Expr init-x]
+  (^ValueRef [^int level ^Symbol simple-nm ^Class tp ^int kind ^Expr init-x]
    (let [f 0
          let? (= kind b-let)
          c (when let? (.const-value init-x))]

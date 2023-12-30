@@ -193,8 +193,7 @@
                 
                         :else nil)))))
         (wrong-assign ^void [^Expr from ^Class to-tp ^String to-description]
-          (x/wrong-type (str "cannot assign to " (wrong/q to-tp)
-                             " " to-description)
+          (x/wrong-type (str "cannot assign to " (wrong/q to-tp) to-description)
                         from))]
   
   ;; Transform `x` into a type that can be represented as a non-void
@@ -217,8 +216,11 @@
     (if (jb/polymorphic? to-tp)
       (consume-poly x)
       (or (adapt-for-assign x to-tp)
-          (wrong-assign x to-tp (str " of " (wrong/q-symbol to-form))))))
+          (wrong-assign x to-tp (when (some? to-form)
+                                  (str " of " (wrong/q-symbol to-form)))))))
   (defn consume-for ^Expr [^Expr x ^BindingRef bref]
+    ;; FIXME... `x/form` is nil for imported parameters because
+    ;; reflection does not offer this information
     (consume x (x/type bref) (x/form bref)))
 
   ;; Special case of `consume` which passes on an expression `x` if
