@@ -465,7 +465,7 @@
 (defn throw? ^boolean [^Expr x]
   (and (insn? x) (identical? Opcode/ATHROW (-> ^Insn x .instr .opcode))))
 
-;;; JVM's "checkcast" and "instanceof".
+;;; JVM's "checkcast" and "instanceof".  See fn `checkcast` below.
 (defn type-check ^Insn [^Expr arg ^Opcode opcode ^Class check-tp]
   (let [cd (rt/describe-class check-tp)
         instr (java.lang.classfile.instruction.TypeCheckInstruction/of opcode cd)
@@ -595,6 +595,15 @@
 
 (defn identity-using-line-number ^Expr [^Expr arg ^Expr x]
   (Progn. (line-number x) (type arg) [arg] (.const-value arg) adpt-identity))
+
+(defn checkcast ^Expr [^Expr x ^Class to-tp]
+  (let [from-tp (type x)]
+    (cond
+      (jb/same-class? to-tp from-tp) x
+      (.isAssignableFrom to-tp from-tp) (identity to-tp x)
+      (identity? x) (recur (first-arg x) to-tp)
+      :else (type-check x Opcode/CHECKCAST to-tp))))
+
 
 ;;; Lexically scoped block: the lifetime of locals created within the
 ;;; block ends with the end of the block.  It contains a non-empty

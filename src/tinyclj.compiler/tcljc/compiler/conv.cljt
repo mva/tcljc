@@ -12,8 +12,8 @@
    [tcljc.runtime :as rt]
    [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
-   [tcljc.compiler.resolve :as resolve]
-   [tcljc.exprfold :as xf])
+   [tcljc.exprfold :as xf]
+   [tcljc.compiler.type :as tp])
   (:import
    (tcljc.expr Expr Progn BindingRef IAdaptResult)
    (clojure.lang IPersistentVector)
@@ -34,75 +34,16 @@
 
 ;;; ------------------------------------------------------------------------
 
-;;; All `to-xxx` type conversion functions assume that their argument
-;;; is numeric (which includes char, and excludes boolean), but *not*
-;;; of the desired type.  The exception is `to-int`, which is
-;;; idempotent for int values and also accepts a boolean argument.
-
-(defn- to-int ^Expr [^Expr arg]         ;idempotent if `arg` is int
-  (condp jb/same-class? (x/type arg)
-    Integer/TYPE arg
-    Long/TYPE (xf/conv jb/int arg Opcode/L2I)
-    Float/TYPE (xf/conv jb/int arg Opcode/F2I)
-    Double/TYPE (xf/conv jb/int arg Opcode/D2I)
-    Boolean/TYPE (x/invoke-xref (x/x-env-of arg) jb/int [arg]
-                                (.const-value arg) rt/mhd-boolean-to-zero-one
-                                false)
-    #_else (x/identity jb/int arg)))
-
-(defn to-long ^Expr [^Expr arg]
-  (condp jb/same-class? (x/type arg)
-    Integer/TYPE (xf/conv jb/long arg Opcode/I2L)
-    Float/TYPE (xf/conv jb/long arg Opcode/F2L)
-    Double/TYPE (xf/conv jb/long arg Opcode/D2L)
-    (recur (to-int arg))))
-(defn to-float ^Expr [^Expr arg]
-  (condp jb/same-class? (x/type arg)
-    Integer/TYPE (xf/conv jb/float arg Opcode/I2F)
-    Long/TYPE (xf/conv jb/float arg Opcode/L2F)
-    Double/TYPE (xf/conv jb/float arg Opcode/D2F)
-    (recur (to-int arg))))
-(defn to-double ^Expr [^Expr arg]
-  (condp jb/same-class? (x/type arg)
-    Integer/TYPE (xf/conv jb/double arg Opcode/I2D)
-    Long/TYPE (xf/conv jb/double arg Opcode/L2D)
-    Float/TYPE (xf/conv jb/double arg Opcode/F2D)
-    (recur (to-int arg))))
-
-(defn- to-byte ^Expr [^Expr arg]
-  (xf/conv jb/byte (to-int arg) Opcode/I2B))
-(defn- to-short ^Expr [^Expr arg]
-  (xf/conv jb/short (to-int arg) Opcode/I2S))
-(defn- to-char ^Expr [^Expr arg]
-  (xf/conv jb/char (to-int arg) Opcode/I2C))
-
 (defn upper-numeric-tp ^Class [^Expr arg0 ^Expr arg1]
-  (if (resolve/numeric-assignable-to? (x/type arg1) (x/type arg0))
+  (if (tp/numeric-assignable-to? (x/type arg1) (x/type arg0))
     (x/type arg0)
     (x/type arg1)))
 
-(def ^:private ^Object* aopcd-conv-to
-  (into-array Object [to-int to-long to-float to-double
-                      nil to-byte to-char to-short]))
-
-(defn lookup-conv-to-fn* [^Class to-cl]
-  (aget aopcd-conv-to (cf/opcode-delta to-cl)))
-
-(defn conv-to ^Expr [^Class to-cl conv-to-fn ^Expr arg]
-  (cond
-    (x/type? to-cl arg) arg
-    (x/numeric? arg) (conv-to-fn arg)
-    
-    ;; accept type conversion like (int <boolean>) to better support
-    ;; certain patterns of branchless code
-    (or (x/character? arg) (x/boolean? arg))
-    (conv-to-fn arg)
-    
-    :else (x/wrong-type (str "cannot convert to " (type-str to-cl)) arg)))
-
 (defn widen-from ^Expr [^Class to-cl ^Expr from]
   ;; pre: `from` is assignable to `to`
-  (conv-to to-cl (lookup-conv-to-fn* to-cl) from))
+  (if (x/type? to-cl from)
+    from
+    (.adapt (.primitive-to (tp/of-primitive to-cl)) from)))
 
 (defn computational-int? ^boolean [^Expr x]
   (let [cl (x/type x)]
@@ -130,16 +71,8 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn primitive-conv-from-object ^Expr [^Class to-tp ^Expr arg]
-  (if (x/type? (rt/logical->box to-tp) arg)
-    (xf/primitive-unbox-expr to-tp arg)
-    (x/invoke-xref (x/x-env-of arg) to-tp [arg]
-                   (rt/logical->conv-object-mhd to-tp))))
-
 (defn box-expr ^Expr [^Expr prim-expr] ;pre: `prim-expr` is of primitive type
-  (let [from-tp (x/type prim-expr)]
-    (x/invoke-xref (x/x-env-of prim-expr) (rt/logical->box from-tp) [prim-expr]
-                   (rt/logical->box-factory from-tp))))
+  (.adapt (.box-of (tp/of-primitive (x/type prim-expr))) prim-expr))
 
 (defn box-any-expr ^Expr [^Expr x]
   (cond
@@ -166,14 +99,14 @@
       from
 
       (or (jb/jvm-assignable-to? from-tp to-tp)
-          (rt/unboxing-assignable-to? from-tp to-tp)
+          (tp/unboxing-assignable-to? from-tp to-tp)
           (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
       (xf/coerce from to-tp)            ;widen
 
       (jb/statement? to-tp)
       (xf/coerce-to-statm from)
 
-      (resolve/numeric-assignable-to? from-tp to-tp)
+      (tp/numeric-assignable-to? from-tp to-tp)
       (widen-from to-tp from)
       
       :else nil)))
@@ -238,7 +171,7 @@
 ;; Return `to` if `from` can be widened to `to`, and nil otherwise.
 (defn- path-adaptable ^Expr [^Expr to ^Expr from]
   (when (or (not (x/pushes-result? from))
-            (resolve/numeric-assignable-to? (x/type from) (x/type to))
+            (tp/numeric-assignable-to? (x/type from) (x/type to))
             (and (x/pushes-nil-object? from) (x/reference? to)))
     to))
 

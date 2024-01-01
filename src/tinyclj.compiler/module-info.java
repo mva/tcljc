@@ -10,6 +10,7 @@
   exports tcljc.compiler.resolve;
   exports tcljc.compiler.sigclass;
   exports tcljc.compiler.sigfn;
+  exports tcljc.compiler.type;
   exports tcljc.config;
   exports tcljc.context;
   exports tcljc.emitter;

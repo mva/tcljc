@@ -11,31 +11,14 @@
    [tcljc.classfile :as cf]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
-   [tcljc.expr :as x])
+   [tcljc.expr :as x]
+   [tcljc.compiler.type :as tp])
   (:import
    (tcljc.expr Expr IAdaptResult Insn Const Progn Block Setter BindingRef
                LoopBody Branch SplitJoin Switch TryCatchFinally)
    (clojure.lang IPersistentVector)
    (java.lang.classfile ClassFile Opcode))
   (:refer-clojure :exclude [pop]))
-
-(defn conv ^Expr [^Class type ^Expr arg0 ^Opcode opc]
-  (letfn [(conv-1 ^Object [^int bytecode ^Number arg0]
-            (case bytecode
-              (#_l2i 136 #_f2i 139 #_d2i 142) (object (.intValue arg0))
-              (#_i2l 133 #_f2l 140 #_d2l 143) (object (.longValue arg0))
-              (#_i2f 134 #_l2f 137 #_d2f 144) (object (.floatValue arg0))
-              (#_i2d 135 #_l2d 138 #_f2d 141) (object (.doubleValue arg0))
-
-              #_i2b 145 (object (int (.byteValue arg0)))
-              #_i2c 146 (object (int (char (.intValue arg0))))
-              #_i2s 147 (object (int (.shortValue arg0)))))]
-    (let [c (when-some [c0 (.const-value arg0)]
-              (conv-1 (.bytecode opc) c0))]
-      (if (x/const? arg0)        ;e.g. (float 1.0) is the same as 1.0f
-        (Const. cfg/no-line-number type [] c)
-        (Insn. cfg/no-line-number type [arg0] c
-               (java.lang.classfile.instruction.ConvertInstruction/of opc))))))
 
 ;;; Note: XDIV and XREM can cause an division by zero exception, so
 ;;; x-env should provide a line number.
@@ -183,20 +166,6 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn checkcast ^Expr [^Expr x ^Class to-tp]
-  (let [from-tp (x/type x)]
-    (cond
-      (jb/same-class? to-tp from-tp) x
-      (.isAssignableFrom to-tp from-tp) (x/identity to-tp x)
-      (x/identity? x) (recur (x/first-arg x) to-tp)
-      :else (x/type-check x Opcode/CHECKCAST to-tp))))
-
-(defn primitive-unbox-expr ^Expr [^Class to-tp ^Expr arg]
-  (let [box-tp (rt/logical->box to-tp)
-        typed-x (checkcast arg box-tp)]
-    (x/invoke-xref (x/line-number arg) to-tp [typed-x]
-                   (rt/logical->accessor-mhd to-tp))))
-
 (defn- coerce* ^Expr [^Expr x ^Class to-tp]
   ;; pre: `x` returns and is not branching
   (cond
@@ -204,11 +173,11 @@
     (jb/statement? to-tp) (pop x)
 
     ;; note: attempt to unbox nil will fail at runtime
-    (rt/unboxing-assignable-to? (x/type x) to-tp)
-    (primitive-unbox-expr to-tp x)
+    (tp/unboxing-assignable-to? (x/type x) to-tp)
+    (tp/unbox-any-reference to-tp x)
 
     (x/expr-nil-object? x) (x/const to-tp nil)
-    :else (checkcast x to-tp)))
+    :else (x/checkcast x to-tp)))
 
 (deftype AdaptCoerce [^Class to-tp]
   IAdaptResult

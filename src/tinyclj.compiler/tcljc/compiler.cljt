@@ -21,6 +21,7 @@
    [tcljc.exprfold :as xf]
    [tcljc.compiler.sigfn :as sig]
    [tcljc.compiler.sigclass :as sigclass]
+   [tcljc.compiler.type :as tp]
    [tcljc.compiler.conv :as conv]
    [tcljc.compiler.resolve :as resolve]
    [tcljc.compiler.branch :as branch]
@@ -80,7 +81,7 @@
 
 
 (defn ensure-int ^Expr [^Expr from]
-  (if (resolve/numeric-assignable-to? (x/type from) jb/int)
+  (if (tp/numeric-assignable-to? (x/type from) jb/int)
     (conv/widen-from jb/int from)
     (x/wrong-type "expect int expression" from)))
 
@@ -886,7 +887,7 @@
              (settable-var? v-expr)
              (let [v-expr (x/var-ref (var-type (.ctx env)) ^BindingRef v-expr)]
                (-> (x/invoke-xref x-env jb/Object [v-expr x-expr] rt/mhd-Var-set)
-                   (xf/checkcast tp)))
+                   (x/checkcast tp)))
              
              :else
              (wrong/other (str "not a settable variable: " (wrong/q v))))))
@@ -1382,7 +1383,7 @@
                  
                  (jb/primitive? tag)
                  (if (x/reference? x)
-                   (xf/primitive-unbox-expr tag x)
+                   (tp/unbox-any-reference tag x)
                    (x/wrong-type (str "cannot cast to " (wrong/q tag)) x))
 
                  (x/primitive? x)
@@ -1411,13 +1412,12 @@
 ;;; ------------------------------------------------------------------------
 
 (defn primitive-conv-to ^FnPrimitiveFn [^Class to-tp]
-  (let [conv-to-fn (conv/lookup-conv-to-fn* to-tp)]
+  (let [tp (tp/of-primitive to-tp)]
     (^FnPrimitiveFn fn [form argv x-env compile-io]
      (wrong/check-argc 1 form)
      (let [arg ^Expr (nth argv 0)]
-       (if (x/reference? arg)
-         (conv/primitive-conv-from-object to-tp arg)
-         (conv/conv-to to-tp conv-to-fn arg))))))
+       (.adapt (if (x/reference? arg) (.reference-to tp) (.primitive-to tp))
+               arg)))))
 
 (def identity-primitive
   (^FnPrimitiveFn fn [form argv x-env compile-io]
@@ -1523,13 +1523,15 @@
      ;; range for long, and only falls back to the ceil/floor variant
      ;; if out of range)
      (condp x/type? x
-       jb/float (-> (conv/to-long x) (conv/to-float))
-       jb/double (-> (conv/to-long x) (conv/to-double))
+       jb/float
+       (->> x (.adapt (.primitive-to tp/long)) (.adapt (.primitive-to tp/float)))
+       jb/double
+       (->> x (.adapt (.primitive-to tp/long)) (.adapt (.primitive-to tp/double)))
        #_else x))))
 
 (defn- ensure-float ^Expr [^Expr from] ;returns float or double expression
   (if (x/numeric? from)
-    (if (resolve/numeric-assignable-to? (x/type from) jb/float)
+    (if (tp/numeric-assignable-to? (x/type from) jb/float)
       (conv/widen-from jb/float from)
       from)                             ;from is double
     (x/wrong-type "expect float or double expression" from)))
@@ -1545,7 +1547,7 @@
                  (conv/widen-from to-tp arg1) (typed-opcode int-opc to-tp)))))
 
 (defn- ensure-integral ^Expr [^Expr from]
-  (if (resolve/numeric-assignable-to? (x/type from) jb/long)
+  (if (tp/numeric-assignable-to? (x/type from) jb/long)
     (conv/ensure-numeric from)
     (x/wrong-type "expect integral expression" from)))
 

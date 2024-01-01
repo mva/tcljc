@@ -9,7 +9,8 @@
   (:require
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
-   [tcljc.expr :as x])
+   [tcljc.expr :as x]
+   [tcljc.compiler.type :as tp])
   (:import
    (tcljc.expr Expr InvokeXref)
    (clojure.lang IPersistentVector)
@@ -17,29 +18,13 @@
    (java.lang.reflect Executable Field Method Constructor Modifier)
    (java.util Arrays)))
 
-(letfn [(numeric-order ^int [^Class tp] ;note: `char` is not numeric in Clojure
-          ;; double=6 > float > long > int > short > byte=0
-          (condp identical? tp
-            Integer/TYPE 3
-            Long/TYPE 4
-            Float/TYPE 5
-            Double/TYPE 6
-            Byte/TYPE 0 
-            Short/TYPE 2))]
-  (defn numeric-assignable-to? ^boolean [^Class from-tp ^Class to-tp]
-    (if (jb/numeric? to-tp)
-      (if (jb/numeric? from-tp)
-        (>= (numeric-order to-tp) (numeric-order from-tp))
-        (rt/unboxing-assignable-to? from-tp to-tp))
-      false)))
-
 (defn- assignable-to? ^boolean [^Class from-tp ^Class to-tp]
   (cond
     (identical? to-tp from-tp)
     true
 
     (or (jb/primitive? to-tp) (jb/primitive? from-tp))
-    (numeric-assignable-to? from-tp to-tp)
+    (tp/numeric-assignable-to? from-tp to-tp)
 
     (and (jb/reference? to-tp) (jb/object? from-tp))
     true

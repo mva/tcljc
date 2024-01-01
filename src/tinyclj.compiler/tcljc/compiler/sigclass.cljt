@@ -15,6 +15,7 @@
    [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
    [tcljc.context :as ctx]
+   [tcljc.compiler.type :as tp]
    [tcljc.compiler.resolve :as resolve]
    [tcljc.compiler.sigfn :as sig]
    [tinyclj.string :as str])
@@ -262,9 +263,9 @@
           (let [tpd (.tpd fdef)]
             (cond
               (.isPrimitive tpd)
-              ;; low-level variant of conv/primitive-unbox-expr:
-              (-> (.checkcast xb (rt/cd-of (rt/logical->box tpd)))
-                  (cf/invoke (rt/logical->accessor-mhd tpd)))
+              (let [tp (tp/of-primitive-descriptor tpd)]
+                (-> (.checkcast xb (rt/cd-of (.class-wrapper tp)))
+                    (cf/invoke (.unboxing-mhd tp))))
 
               (.equals rt/object tpd) xb ;omit CHECKCAST
 

@@ -126,16 +126,6 @@
 (def ^:private short ConstantDescs/CD_short)
 (def void ConstantDescs/CD_void)
 
-(def ^:private Integer ConstantDescs/CD_Integer)
-(def ^:private Long ConstantDescs/CD_Long)
-(def ^:private Float ConstantDescs/CD_Float)
-(def ^:private Double ConstantDescs/CD_Double)
-(def ^:private Boolean ConstantDescs/CD_Boolean)
-(def ^:private Character ConstantDescs/CD_Character)
-(def ^:private Byte ConstantDescs/CD_Byte)
-(def ^:private Short ConstantDescs/CD_Short)
-(def ^:private Void ConstantDescs/CD_Void)
-
 (def object ConstantDescs/CD_Object)
 (def ^:private objects (.arrayType object))
 
@@ -272,91 +262,10 @@
 
 ;;; type conversion:
 (def mhd-truthy-reference (mhd-static [RT "truthyReference"] boolean [Object]))
-(def mhd-boolean-to-zero-one (mhd-static [RT "booleanToZeroOne"] int [boolean]))
 (def mhd-Objects-toString
   (mhd-static [(ClassDesc/of "java.util.Objects") "toString"]
               String [Object String]))
 
-
-(defn- aidx-primitive ^int [^TypeDescriptor$OfField tpd]
-  (case (.charAt (.descriptorString tpd) 0)
-    \I 0                                ;int
-    \J 1                                ;long
-    \F 2                                ;float
-    \D 3                                ;double
-    \Z 4                                ;boolean
-    \C 5                                ;char
-    \B 6                                ;byte
-    \S 7))                              ;short
-
-;;; boxed type of given primitive:
-(def ^:private box-types                ;types produced by the reader
-  (doto (new Object* 8)
-    (aset 0 java.lang.Integer)
-    (aset 1 java.lang.Long)
-    (aset 2 java.lang.Float)
-    (aset 3 java.lang.Double)
-    (aset 4 java.lang.Boolean)
-    (aset 5 java.lang.Character)
-    (aset 6 java.lang.Byte)
-    (aset 7 java.lang.Short)))
-
-(defn logical->box ^Class [^TypeDescriptor$OfField tpd]
-  ;; pre: `tp` is a non-void primitive type
-  (aget box-types (aidx-primitive tpd)))
-
-(defn unboxing-assignable-to? ^boolean [^Class from-tp ^Class to-tp]
-  (and (jb/primitive? to-tp)
-       (not (jb/statement? to-tp))
-       (jb/jvm-castable-to? from-tp (logical->box to-tp))))
-
-;;; converting object to primitive value (currently "checked" variant):
-(def ^:private primitive-conv-method
-  (doto (new DirectMethodHandleDesc* 8)
-    (aset 0 (mhd-static [ClojureRT "intCast"] int [object]))
-    (aset 1 (mhd-static [ClojureRT "longCast"] long [object]))
-    (aset 2 (mhd-static [ClojureRT "floatCast"] float [object]))
-    (aset 3 (mhd-static [ClojureRT "doubleCast"] double [object]))
-    (aset 4 (mhd-static [ClojureRT "booleanCast"] boolean [object]))
-    (aset 5 (mhd-static [ClojureRT "charCast"] char [object]))
-    (aset 6 (mhd-static [ClojureRT "byteCast"] byte [object]))
-    (aset 7 (mhd-static [ClojureRT "shortCast"] short [object]))))
-
-(defn logical->conv-object-mhd ^DirectMethodHandleDesc [^Class tp]
-  ;; pre: `tp` is a non-void primitive type
-  (aget primitive-conv-method (aidx-primitive tp)))
-
-;;; boxing:
-(def ^:private box-factory
-  (doto (new DirectMethodHandleDesc* 8)
-    (aset 0 (mhd-static [Integer "valueOf"] Integer [int]))
-    (aset 1 (mhd-static [Long "valueOf"] Long [long]))
-    (aset 2 (mhd-static [Float "valueOf"] Float [float]))
-    (aset 3 (mhd-static [Double "valueOf"] Double [double]))
-    (aset 4 (mhd-static [Boolean "valueOf"] Boolean [boolean]))
-    (aset 5 (mhd-static [Character "valueOf"] Character [char]))
-    (aset 6 (mhd-static [Byte "valueOf"] Byte [byte]))
-    (aset 7 (mhd-static [Short "valueOf"] Short [short]))))
-
-(defn logical->box-factory ^DirectMethodHandleDesc [^Class tp]
-  ;; pre: `tp` is a non-void primitive type
-  (aget box-factory (aidx-primitive tp)))
-
-;;; unboxing:
-(def ^:private primitive-accessor
-  (doto (new DirectMethodHandleDesc* 8)
-    (aset 0 (mhd-virtual [Integer "intValue"] int []))
-    (aset 1 (mhd-virtual [Long "longValue"] long []))
-    (aset 2 (mhd-virtual [Float "floatValue"] float []))
-    (aset 3 (mhd-virtual [Double "doubleValue"] double []))
-    (aset 4 (mhd-virtual [Boolean "booleanValue"] boolean []))
-    (aset 5 (mhd-virtual [Character "charValue"] char []))
-    (aset 6 (mhd-virtual [Byte "byteValue"] byte []))
-    (aset 7 (mhd-virtual [Short "shortValue"] short []))))
-
-(defn logical->accessor-mhd ^DirectMethodHandleDesc [^TypeDescriptor$OfField tpd]
-  ;; pre: `tpd` is a non-void primitive type
-  (aget primitive-accessor (aidx-primitive tpd)))
 
 ;;; polymorphic MethodHandle invokes:
 (def mhd-MethodHandle-invoke (mhd-virtual [MethodHandle "invoke"]

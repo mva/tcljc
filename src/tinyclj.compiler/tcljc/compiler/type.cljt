@@ -1,0 +1,246 @@
+;; Copyright (c) Michael van Acken. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https://www.eclipse.org/legal/epl-v20.html)
+;; which can be found in the file epl-v20.html at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+(ns tcljc.compiler.type
+  (:require
+   [tcljc.config :as cfg]
+   [tcljc.javabase :as jb]
+   [tcljc.runtime :as rt]
+   [tcljc.expr :as x])
+  (:import
+   (tcljc.expr Expr Const Insn)
+   (java.lang.classfile Opcode)
+   (java.lang.constant ConstantDescs DirectMethodHandleDesc)
+   (java.lang.invoke TypeDescriptor$OfField))
+  (:refer-clojure :exclude [int long boolean short byte char float double]))
+
+(definterface TypeConversion
+  (adapt ^Expr [^Expr arg]))
+
+(deftype Wrapper [^Class class-primitive
+                  ^Class class-wrapper
+                  ^int numeric-order
+                  ^DirectMethodHandleDesc unboxing-mhd
+                  ^TypeConversion primitive-to
+                  ^TypeConversion unbox-to
+                  ^TypeConversion box-of
+                  ^TypeConversion reference-to]
+  #_java.lang.Record) ;FIXME... turn this into record one self hosting
+
+;;; ------------------------------------------------------------------------
+
+(defn- conv ^Expr [^Class type ^Expr arg ^Opcode opc]
+  (letfn [(conv-1 ^Object [^int bytecode ^Number arg]
+            (case bytecode
+              (#_l2i 136 #_f2i 139 #_d2i 142) (object (.intValue arg))
+              (#_i2l 133 #_f2l 140 #_d2l 143) (object (.longValue arg))
+              (#_i2f 134 #_l2f 137 #_d2f 144) (object (.floatValue arg))
+              (#_i2d 135 #_l2d 138 #_f2d 141) (object (.doubleValue arg))
+
+              #_i2b 145 (object (tinyclj.core/int (.byteValue arg)))
+              #_i2c 146 (object (tinyclj.core/int (tinyclj.core/char (.intValue arg))))
+              #_i2s 147 (object (tinyclj.core/int (.shortValue arg)))))]
+    (let [c (when-some [c0 (.const-value arg)]
+              (conv-1 (.bytecode opc) c0))]
+      (if (x/const? arg)         ;e.g. (float 1.0) is the same as 1.0f
+        (Const. cfg/no-line-number type [] c)
+        (Insn. cfg/no-line-number type [arg] c
+               (java.lang.classfile.instruction.ConvertInstruction/of opc))))))
+
+;;; Convert any primitive value to int.  This includes void, boolean,
+;;; and char.  Idempotent if argument is already of type int.
+(def ^:private mhd-boolean-to-zero-one
+  (rt/mhd-static [rt/RT "booleanToZeroOne"]
+                 ConstantDescs/CD_int [ConstantDescs/CD_boolean]))
+(def ^:private primitive-to-int
+  (^TypeConversion fn [arg]
+   (condp jb/same-class? (x/type arg)
+     Integer/TYPE arg
+     Long/TYPE (conv jb/int arg Opcode/L2I)
+     Float/TYPE (conv jb/int arg Opcode/F2I)
+     Double/TYPE (conv jb/int arg Opcode/D2I)
+     Void/TYPE x/expr-zero-int
+     Boolean/TYPE (x/invoke-xref x/x-env-no-ln jb/int [arg] (.const-value arg)
+                                 mhd-boolean-to-zero-one false)
+     #_else (x/identity jb/int arg))))  ;all computational int types
+
+;;; ------------------------------------------------------------------------
+
+(letfn [(to-upper ^TypeConversion [^TypeConversion tc]
+          (^TypeConversion fn [arg]
+           (or (.adapt tc arg)
+               (.adapt tc (.adapt primitive-to-int arg)))))
+        (to-lower ^TypeConversion [^Class to-tp ^Opcode opc]
+          (^TypeConversion fn [arg]
+           (if (x/type? to-tp arg)
+             arg
+             (conv to-tp (.adapt primitive-to-int arg) opc))))
+        
+        (wrapper ^Wrapper [^Class class-primitive
+                           ^Class class-wrapper
+                           ^int numeric-order
+                           ^TypeConversion primitive-to
+                           ^DirectMethodHandleDesc unboxing-mhd
+                           ^DirectMethodHandleDesc boxing-mhd
+                           ^DirectMethodHandleDesc converting-mhd]
+          (Wrapper. class-primitive class-wrapper numeric-order
+                    unboxing-mhd primitive-to
+                    (^TypeConversion fn [arg]
+                     (x/invoke-xref (x/x-env-of arg) class-primitive [arg]
+                                    unboxing-mhd))
+                    (^TypeConversion fn [arg]
+                     (x/invoke-xref (x/x-env-of arg) class-wrapper [arg]
+                                    boxing-mhd))
+                    (^TypeConversion fn [arg]
+                     (x/invoke-xref (x/x-env-of arg) class-primitive [arg]
+                                    (if (x/type? class-wrapper arg)
+                                      unboxing-mhd
+                                      converting-mhd)))))]
+  (def int
+    (wrapper Integer/TYPE Integer 3
+             primitive-to-int
+             (rt/mhd-virtual [ConstantDescs/CD_Integer "intValue"]
+                             ConstantDescs/CD_int [])
+             (rt/mhd-static [ConstantDescs/CD_Integer "valueOf"]
+                            ConstantDescs/CD_Integer [ConstantDescs/CD_int])
+             (rt/mhd-static [rt/ClojureRT "intCast"] ConstantDescs/CD_int
+                            [ConstantDescs/CD_Object])))
+  (def long
+    (wrapper Long/TYPE Long 4
+             (to-upper (^TypeConversion fn [arg]
+                        (condp jb/same-class? (x/type arg)
+                          Integer/TYPE (conv jb/long arg Opcode/I2L)
+                          Long/TYPE arg
+                          Float/TYPE (conv jb/long arg Opcode/F2L)
+                          Double/TYPE (conv jb/long arg Opcode/D2L)
+                          #_else nil)))
+             (rt/mhd-virtual [ConstantDescs/CD_Long "longValue"]
+                             ConstantDescs/CD_long [])
+             (rt/mhd-static [ConstantDescs/CD_Long "valueOf"]
+                            ConstantDescs/CD_Long [ConstantDescs/CD_long])
+             (rt/mhd-static [rt/ClojureRT "longCast"] ConstantDescs/CD_long
+                            [ConstantDescs/CD_Object])))
+  (def boolean
+    (wrapper Boolean/TYPE Boolean -1
+             nil
+             (rt/mhd-virtual [ConstantDescs/CD_Boolean "booleanValue"]
+                             ConstantDescs/CD_boolean [])
+             (rt/mhd-static [ConstantDescs/CD_Boolean "valueOf"]
+                            ConstantDescs/CD_Boolean [ConstantDescs/CD_boolean])
+             (rt/mhd-static [rt/ClojureRT "booleanCast"] ConstantDescs/CD_boolean
+                            [ConstantDescs/CD_Object])))
+  (def short
+    (wrapper Short/TYPE Short 2
+             (to-lower jb/short Opcode/I2S)
+             (rt/mhd-virtual [ConstantDescs/CD_Short "shortValue"]
+                             ConstantDescs/CD_short [])
+             (rt/mhd-static [ConstantDescs/CD_Short "valueOf"]
+                            ConstantDescs/CD_Short [ConstantDescs/CD_short])
+             (rt/mhd-static [rt/ClojureRT "shortCast"] ConstantDescs/CD_short
+                            [ConstantDescs/CD_Object])))
+  (def byte
+    (wrapper Byte/TYPE Byte 0
+             (to-lower jb/byte Opcode/I2B)
+             (rt/mhd-virtual [ConstantDescs/CD_Byte "byteValue"]
+                             ConstantDescs/CD_byte [])
+             (rt/mhd-static [ConstantDescs/CD_Byte "valueOf"]
+                            ConstantDescs/CD_Byte [ConstantDescs/CD_byte])
+             (rt/mhd-static [rt/ClojureRT "byteCast"] ConstantDescs/CD_byte
+                            [ConstantDescs/CD_Object])))
+  (def char
+    (wrapper Character/TYPE Character -1 ;not numeric in Clojure
+             (to-lower jb/char Opcode/I2C)
+             (rt/mhd-virtual [ConstantDescs/CD_Character "charValue"]
+                             ConstantDescs/CD_char [])
+             (rt/mhd-static [ConstantDescs/CD_Character "valueOf"]
+                            ConstantDescs/CD_Character [ConstantDescs/CD_char])
+             (rt/mhd-static [rt/ClojureRT "charCast"] ConstantDescs/CD_char
+                            [ConstantDescs/CD_Object])))
+  (def float
+    (wrapper Float/TYPE Float 5
+             (to-upper (^TypeConversion fn [arg]
+                        (condp jb/same-class? (x/type arg)
+                          Integer/TYPE (conv jb/float arg Opcode/I2F)
+                          Long/TYPE (conv jb/float arg Opcode/L2F)
+                          Float/TYPE arg
+                          Double/TYPE (conv jb/float arg Opcode/D2F)
+                          #_else nil)))
+             (rt/mhd-virtual [ConstantDescs/CD_Float "floatValue"]
+                             ConstantDescs/CD_float [])
+             (rt/mhd-static [ConstantDescs/CD_Float "valueOf"]
+                            ConstantDescs/CD_Float [ConstantDescs/CD_float])
+             (rt/mhd-static [rt/ClojureRT "floatCast"] ConstantDescs/CD_float
+                            [ConstantDescs/CD_Object])))
+  (def double
+    (wrapper Double/TYPE Double 6
+             (to-upper (^TypeConversion fn [arg]
+                        (condp jb/same-class? (x/type arg)
+                          Integer/TYPE (conv jb/double arg Opcode/I2D)
+                          Long/TYPE (conv jb/double arg Opcode/L2D)
+                          Float/TYPE (conv jb/double arg Opcode/F2D)
+                          Double/TYPE arg
+                          #_else nil)))
+             (rt/mhd-virtual [ConstantDescs/CD_Double "doubleValue"]
+                             ConstantDescs/CD_double [])
+             (rt/mhd-static [ConstantDescs/CD_Double "valueOf"]
+                            ConstantDescs/CD_Double [ConstantDescs/CD_double])
+             (rt/mhd-static [rt/ClojureRT "doubleCast"] ConstantDescs/CD_double
+                            [ConstantDescs/CD_Object])))
+  (def void
+    (wrapper Void/TYPE Void -1
+             nil
+             nil
+             nil
+             nil)))
+
+(defn of-primitive ^Wrapper [^Class cl]
+  (condp identical? cl 
+    Integer/TYPE int
+    Long/TYPE long
+    Boolean/TYPE boolean
+    Short/TYPE short
+    Byte/TYPE byte
+    Character/TYPE char
+    Float/TYPE float
+    Double/TYPE double
+    Void/TYPE void))
+
+(defn of-primitive-descriptor ^Wrapper [^TypeDescriptor$OfField tpd]
+  (case (.charAt (.descriptorString tpd) 0)
+    \I int
+    \J long
+    \Z boolean
+    \S short
+    \B byte
+    \C char
+    \F float
+    \D double
+    \V void))
+
+(defn unbox-any-reference ^Expr [^Class to-tp ^Expr arg]
+  (let [tp (of-primitive to-tp)]
+    (.adapt (.unbox-to tp) (x/checkcast arg (.class-wrapper tp)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- numeric-wrapper ^Wrapper [^Class cl]
+  (when (.isPrimitive cl)
+    (let [tp (of-primitive cl)]
+      (when-not (neg? (.numeric-order tp))
+        tp))))
+
+(defn unboxing-assignable-to? ^boolean [^Class from-tp ^Class to-tp]
+  (and (jb/primitive? to-tp)
+       (not (jb/statement? to-tp))
+       (jb/jvm-castable-to? from-tp (.class-wrapper (of-primitive to-tp)))))
+
+(defn numeric-assignable-to? ^boolean [^Class from-tp ^Class to-tp]
+  (if-some [to (numeric-wrapper to-tp)]
+    (if-some [from (numeric-wrapper from-tp)]
+      (>= (.numeric-order to) (.numeric-order from))
+      (unboxing-assignable-to? from-tp to-tp))
+    false))
