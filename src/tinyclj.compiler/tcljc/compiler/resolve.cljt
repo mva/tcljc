@@ -10,7 +10,7 @@
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
    [tcljc.expr :as x]
-   [tcljc.compiler.type :as tp])
+   [tcljc.type :as tp])
   (:import
    (tcljc.expr Expr InvokeXref)
    (clojure.lang IPersistentVector)

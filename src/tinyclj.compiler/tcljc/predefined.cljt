@@ -13,12 +13,174 @@
    [tcljc.runtime :as rt]
    [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
+   [tcljc.exprfold :as xf]
+   [tcljc.type :as tp]
+   [tcljc.compiler.adapt :as adapt]
+   [tcljc.compiler.conv :as conv]
    [tcljc.compiler :as compiler])
   (:import
    (tcljc.expr Expr BindingRef FnPrimitiveFn FnMacroFn)
    (clojure.lang Symbol)
    (java.lang.classfile Opcode)
+   (java.lang.constant MethodHandleDesc)
    (java.util HashMap)))
+
+(defn- type-conversion-to ^FnPrimitiveFn [^tcljc.type.Wrapper tp]
+  (^FnPrimitiveFn fn [form argv x-env compile-io]
+   (let [arg (adapt/arg form argv adapt/any-to-identity)]
+     (.adapt (if (x/primitive? arg) (.primitive-to tp) (.reference-to tp))
+             arg))))
+
+(def ^:private identity-primitive
+  (^FnPrimitiveFn fn [form argv x-env compile-io]
+   (x/identity (adapt/arg form argv adapt/any-to-identity))))
+
+(def ^:private not-primitive
+  (^FnPrimitiveFn fn [form argv x-env compile-io]
+   (-> (adapt/arg form argv adapt/to-clojure-logical)
+       (xf/icmp x/expr-false cf/eq))))
+
+(def ^:private concat-primitive
+  (^FnPrimitiveFn fn [form argv x-env compile-io]
+   (xf/string-concat x-env argv)))
+
+
+(defn- arith-2 ^FnPrimitiveFn [^int spec ^Opcode int-opc]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   (let [args (adapt/numeric-2-args spec form args)]
+     (xf/arith-2 x-env (aget args 0) (aget args 1) int-opc))))
+
+(defn- bits-2 ^FnPrimitiveFn [^Opcode int-opc]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   (let [args (adapt/numeric-2-args adapt/numeric-to-integral form args)]
+     (xf/bits-2 (aget args 0) (aget args 1) int-opc))))
+
+(defn- shift-2 ^FnPrimitiveFn [^Opcode int-opc]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   (wrong/check-argc 2 form)
+   (let [arg0 (adapt/checked adapt/numeric-to-integral (nth args 0))
+         arg1 (adapt/checked adapt/numeric-to-int (nth args 1))]
+     (xf/bits-2 arg0 arg1 int-opc))))
+
+(def ^:private arith-2-xdiv-int
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   (let [args (adapt/numeric-2-args adapt/numeric-to-computational form args)
+         x (xf/arith-2 x-env (aget args 0) (aget args 1) Opcode/IDIV)]
+     ;; FIXME... this does not work if the result is out of range of
+     ;; long; maybe better: truncate with something along the line of
+     ;; `(if (neg? x) (Math/ceil x) (Math/floor x))` (or put this into
+     ;; a static method that first checks if the division result is in
+     ;; range for long, and only falls back to the ceil/floor variant
+     ;; if out of range)
+     (condp x/type? x
+       jb/float
+       (->> x (.adapt (.primitive-to tp/long)) (.adapt (.primitive-to tp/float)))
+       jb/double
+       (->> x (.adapt (.primitive-to tp/long)) (.adapt (.primitive-to tp/double)))
+       #_else x))))
+
+(defn- nary-numeric ^FnPrimitiveFn [^int min-argc ^Expr id ^FnPrimitiveFn pfn]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   (wrong/check-argc-min min-argc form)
+   (case (bounded-count 3 args)
+     0 id
+     1 (.assemble pfn nil (list id (first args)) x-env compile-io)
+     2 (.assemble pfn form args x-env compile-io)
+     (reduce #(.assemble pfn nil (list %1 %2) x-env compile-io)
+             (first args) (rest args)))))
+
+(def ^:private xdefault
+  (^FnPrimitiveFn fn [form [arg0] x-env compile-io] ;discards argument!
+   (wrong/check-argc 1 form)
+   (tp/default-value-of (x/type arg0))))
+
+
+(defn- binary-cmp ^FnPrimitiveFn [^int cmp-opcd]
+  (^FnPrimitiveFn fn [form [arg0 arg1] x-env compile-io]
+   (let [args (adapt/numeric-2 adapt/numeric-to-computational arg0 arg1)]
+     (xf/xcmp cmp-opcd (aget args 0) (aget args 1)))))
+
+(defn- binary-cmp-ref ^FnPrimitiveFn [^int cmp-opcd]
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   (let [args (adapt/reference-2-args form args)]
+     (xf/acmp (aget args 0) (aget args 1) cmp-opcd))))
+
+;;; Note: Clojure's equiv does not follow Java's equals with regard to
+;;; e.g. negative zero -- (= -0.0 0.0) is true like Util/equiv, at
+;;; least with Clojure 1.11.1.  To match this, both (hash -0.0) and
+;;; (hash 0.0) map to zero.  This means that `=` can be lowered to
+;;; `==` for floating point types as well.
+(def ^:private equiv
+  (^FnPrimitiveFn fn [form [arg0 arg1] x-env compile-io]
+   (letfn [(equiv-if-identical? ^boolean [^Expr x]
+             (let [tp (x/type x)]
+               (or (jb/same-class? Class tp)
+                   (.isAssignableFrom java.lang.Enum tp)
+                   (jb/same-classname? rt/clnm-keyword tp))))]
+     (wrong/check-argc 2 form)
+     (cond
+       (and (tp/computational-int? arg0)
+            (x/same-type? arg0 arg1)) ;includes boolean/boolean & char/char
+       (xf/icmp arg0 arg1 cf/eq)
+        
+       (or (x/primitive? arg0) (x/primitive? arg1))
+       (let [args (adapt/numeric-2 adapt/numeric-to-computational arg0 arg1)]
+         (xf/xcmp cf/eq (aget args 0) (aget args 1)))
+
+       (or (equiv-if-identical? arg0) (equiv-if-identical? arg1))
+       (xf/acmp arg0 arg1 cf/eq)
+        
+       :else
+       (x/invoke-xref x-env jb/boolean [arg0 arg1] rt/mhd-equiv)))))
+
+
+(def ^:private alength-form
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   (let [args (adapt/args form args adapt/array-to-identity)]
+     (x/array-length (aget args 0)))))
+
+(def ^:private array-copy-of-form
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   (let [args (adapt/args form args adapt/array-to-identity)
+         a (aget args 0)
+         atp (x/type a)
+         generic-atp (if (jb/reference? (.getComponentType atp))
+                       jb/ObjectArray
+                       atp)
+         m (.getMethod java.util.Arrays "copyOf" generic-atp jb/int)
+         mtd (rt/mtd-of (.getReturnType m) (.getParameterTypes m))
+         mhd (MethodHandleDesc/of rt/mhk-static
+                                  (rt/describe-class java.util.Arrays)
+                                  (.getName m) (.descriptorString mtd))]
+     (-> (x/invoke-xref x-env (.getReturnType m)
+                        [a (x/array-length (x/dup atp))] nil mhd false)
+         (x/checkcast atp)))))
+
+(def ^:private xaload-form
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   (let [args (adapt/args form args adapt/array-to-identity
+                          adapt/numeric-to-int)
+         a (aget args 0), i (aget args 1)
+         ccl (.componentType (x/type a))
+         opc (cf/bc2opc Opcode/IALOAD (cf/opcode-delta ccl))]
+     (x/insn* x-env ccl [a i]
+              (java.lang.classfile.instruction.ArrayLoadInstruction/of opc)))))
+
+(def ^:private xastore-form
+  (^FnPrimitiveFn fn [form args x-env compile-io]
+   ;; Unlike the xASTORE bytecode, this primitive returns the stored
+   ;; value.  If passed to `pop`, then the final "DUP*" argument can
+   ;; be dropped in favour of doing the matching "POP*".
+   (let [args (adapt/args form args adapt/array-to-identity
+                          adapt/numeric-to-int adapt/any-to-identity)
+         a (aget args 0), i (aget args 1)
+         ccl (.componentType (x/type a))
+         v (conv/consume (nth args 2) ccl "array component")
+         opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ccl))]
+     (x/insn* x-env ccl [a i v (x/dup-x2 ccl)]
+              (java.lang.classfile.instruction.ArrayStoreInstruction/of opc)))))
+
+;;; ------------------------------------------------------------------------
 
 (defn- globals-ns-primitive []
   (letfn [(put-prim [m ^Symbol nm ^FnPrimitiveFn pfn]
@@ -31,7 +193,7 @@
             m)
           (put-nary [m ^Symbol nm ^FnPrimitiveFn pfn ^Expr id ^int min-argc]
             (let [nm* (symbol nil (str (name nm) "-nary"))
-                  pfn* (compiler/nary-numeric min-argc id pfn)]
+                  pfn* (nary-numeric min-argc id pfn)]
               (-> (put-prim m nm pfn)
                   (put-prim nm* pfn*))))
           (put-nary-cmp [m ^Symbol nm ^FnPrimitiveFn pfn]
@@ -41,57 +203,60 @@
     (-> (HashMap.)
 
         ;; primitive conversion functions
-        (put-prim 'object compiler/object-primitive)
-        (put-prim 'boolean compiler/boolean-primitive)
-        (put-prim 'byte (compiler/primitive-conv-to jb/byte))
-        (put-prim 'short (compiler/primitive-conv-to jb/short))
-        (put-prim 'char (compiler/primitive-conv-to jb/char))
-        (put-prim 'int (compiler/primitive-conv-to jb/int))
-        (put-prim 'float (compiler/primitive-conv-to jb/float))
-        (put-prim 'long (compiler/primitive-conv-to jb/long))
-        (put-prim 'double (compiler/primitive-conv-to jb/double))
+        (put-prim 'object (type-conversion-to tp/any-reference))
+        (put-prim 'boolean (type-conversion-to tp/logical))
+        (put-prim 'byte (type-conversion-to tp/byte))
+        (put-prim 'short (type-conversion-to tp/short))
+        (put-prim 'char (type-conversion-to tp/char))
+        (put-prim 'int (type-conversion-to tp/int))
+        (put-prim 'float (type-conversion-to tp/float))
+        (put-prim 'long (type-conversion-to tp/long))
+        (put-prim 'double (type-conversion-to tp/double))
         
         ;; arithmetics
-        (put-nary 'xadd (compiler/arith-2 Opcode/IADD) x/expr-zero-int 0)
-        (put-nary 'xsub (compiler/arith-2 Opcode/ISUB) x/expr-zero-int 1)
-        (put-nary 'xmul (compiler/arith-2 Opcode/IMUL) x/expr-one-int 0)
-        (put-nary 'xdiv-float (compiler/arith-2-float Opcode/IDIV)
+        (put-nary 'xadd (arith-2 adapt/numeric-to-computational Opcode/IADD)
+                  x/expr-zero-int 0)
+        (put-nary 'xsub (arith-2 adapt/numeric-to-computational Opcode/ISUB)
+                  x/expr-zero-int 1)
+        (put-nary 'xmul (arith-2 adapt/numeric-to-computational Opcode/IMUL)
+                  x/expr-one-int 0)
+        (put-nary 'xdiv-float (arith-2 adapt/numeric-to-floating-point Opcode/IDIV)
                   x/expr-one-int 1)
-        (put-prim 'xdiv-int compiler/arith-2-xdiv-int)
-        (put-prim 'xrem (compiler/arith-2 Opcode/IREM))
+        (put-prim 'xdiv-int arith-2-xdiv-int)
+        (put-prim 'xrem (arith-2 adapt/numeric-to-computational Opcode/IREM))
         
         ;; bitset operations
-        (put-prim 'xdefault compiler/xdefault)
-        (put-prim 'xand (compiler/bits-2 Opcode/IAND))
-        (put-prim 'xor (compiler/bits-2 Opcode/IOR))
-        (put-prim 'xxor (compiler/bits-2 Opcode/IXOR))
-        (put-prim 'xshl (compiler/shift-2 Opcode/ISHL))
-        (put-prim 'xshr (compiler/shift-2 Opcode/ISHR))
-        (put-prim 'xushr (compiler/shift-2 Opcode/IUSHR))
+        (put-prim 'xdefault xdefault)
+        (put-prim 'xand (bits-2 Opcode/IAND))
+        (put-prim 'xor (bits-2 Opcode/IOR))
+        (put-prim 'xxor (bits-2 Opcode/IXOR))
+        (put-prim 'xshl (shift-2 Opcode/ISHL))
+        (put-prim 'xshr (shift-2 Opcode/ISHR))
+        (put-prim 'xushr (shift-2 Opcode/IUSHR))
         
         ;; comparisons -- also provide nary variants as primitives,
         ;; because the macro equivalents are somewhat cumbersome do
         ;; implement early in tinyclj.core
-        (put-nary-cmp 'equiv compiler/equiv)
-        (put-nary-cmp 'eq (compiler/binary-cmp cf/eq))
-        (put-nary-cmp 'lt (compiler/binary-cmp cf/lt))
-        (put-nary-cmp 'ge (compiler/binary-cmp cf/ge))
-        (put-nary-cmp 'gt (compiler/binary-cmp cf/gt))
-        (put-nary-cmp 'le (compiler/binary-cmp cf/le))
-        (put-prim 'acmpeq (compiler/binary-cmp-ref cf/eq))
-        (put-prim 'acmpne (compiler/binary-cmp-ref cf/ne))
+        (put-nary-cmp 'equiv equiv)
+        (put-nary-cmp 'eq (binary-cmp cf/eq))
+        (put-nary-cmp 'lt (binary-cmp cf/lt))
+        (put-nary-cmp 'ge (binary-cmp cf/ge))
+        (put-nary-cmp 'gt (binary-cmp cf/gt))
+        (put-nary-cmp 'le (binary-cmp cf/le))
+        (put-prim 'acmpeq (binary-cmp-ref cf/eq))
+        (put-prim 'acmpne (binary-cmp-ref cf/ne))
 
         ;; arrays
-        (put-prim 'alength compiler/alength-form)
-        (put-prim 'xaload compiler/xaload-form)
-        (put-prim 'xastore compiler/xastore-form)
-        (put-prim 'array-copy-of compiler/array-copy-of-form)
+        (put-prim 'alength alength-form)
+        (put-prim 'xaload xaload-form)
+        (put-prim 'xastore xastore-form)
+        (put-prim 'array-copy-of array-copy-of-form)
 
         ;; misc
         (put-prim 'list compiler/list-primitive)
-        (put-prim 'not compiler/not-primitive)
-        (put-prim 'str compiler/concat-primitive)
-        (put-prim 'identity compiler/identity-primitive)
+        (put-prim 'not not-primitive)
+        (put-prim 'str concat-primitive)
+        (put-prim 'identity identity-primitive)
         (put-macro 'macroexpand-1 compiler/macroexpand-1-form)
         (put-macro 'macroexpand compiler/macroexpand-form)
         (put-macro 'read-string compiler/read-string-form))))

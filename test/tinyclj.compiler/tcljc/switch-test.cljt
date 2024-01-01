@@ -678,7 +678,7 @@
            (ASTORE_1) ["LOCAL 1: Object or$1$"]
 
            (ALOAD_1)
-           (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+           (INVOKESTATIC RT "booleanCast" "(Ljava/lang/Object;)Z")
            (IFEQ L:0)
            (ALOAD_1)
            (CHECKCAST Keyword)
@@ -687,7 +687,7 @@
            (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["error-handler"]])
            (LDC [:bsm-quote "map" "Lclojure/lang/IPersistentMap;" []])
            (INVOKEDYNAMIC "_" "(Lclojure/lang/Keyword;Lclojure/lang/IPersistentMap;)Ljava/lang/Object;" :bsm-invoke-fn [])
-           (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+           (INVOKESTATIC RT "booleanCast" "(Ljava/lang/Object;)Z")
            (IFEQ L:1)
            (LDC [:bsm-quote "keyword" "Lclojure/lang/Keyword;" ["continue"]])
            (GOTO L:2)

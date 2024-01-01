@@ -5,12 +5,11 @@
   
   exports tcljc.classfile;
   exports tcljc.compiler;
-  exports tcljc.compiler.branch;
+  exports tcljc.compiler.adapt;
   exports tcljc.compiler.conv;
   exports tcljc.compiler.resolve;
   exports tcljc.compiler.sigclass;
   exports tcljc.compiler.sigfn;
-  exports tcljc.compiler.type;
   exports tcljc.config;
   exports tcljc.context;
   exports tcljc.emitter;
@@ -41,6 +40,7 @@
   exports tcljc.reader;
   exports tcljc.runtime;
   exports tcljc.synquote;
+  exports tcljc.type;
   exports tcljc.util;
   exports tcljc.wrong;
 }

@@ -14,6 +14,7 @@
    [tcljc.runtime :as rt]
    [tcljc.expr :as x]
    [tcljc.exprfold :as xf]
+   [tcljc.type :as tp]
    [tcljc.context :as ctx]
    [tcljc.emitter.exprcode :as xc])
   (:import
@@ -349,7 +350,7 @@
             (let [argv (x/argv x), guardv (.guardv x)]
               (case (count guardv)
                 0                    ;switch expression + default path
-                (expr-insns xb es (xf/prog2-expr (nth argv 0) (nth argv 1)))
+                (expr-insns xb es (tp/prog2-expr (nth argv 0) (nth argv 1)))
                 
                 1 ;switch expression + single guard value + default path
                 (let [case-value (object (.gint ^Guard (nth guardv 0)))

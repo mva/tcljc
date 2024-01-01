@@ -5,14 +5,14 @@
 ;; By using this software in any fashion, you are agreeing to be bound by
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
-(ns tcljc.exprfold                    ;constant folding Expr factories
-  (:require
+(ns tcljc.exprfold         ;constant folding Expr factories
+  (:require                ;note: must not require tcljc.type
    [tcljc.config :as cfg]
    [tcljc.classfile :as cf]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
    [tcljc.expr :as x]
-   [tcljc.compiler.type :as tp])
+   [tinyclj.string :as str])
   (:import
    (tcljc.expr Expr IAdaptResult Insn Const Progn Block Setter BindingRef
                LoopBody Branch SplitJoin Switch TryCatchFinally)
@@ -20,9 +20,52 @@
    (java.lang.classfile ClassFile Opcode))
   (:refer-clojure :exclude [pop]))
 
+(defn typed-opcode
+  (^int [^Class tp]
+   (condp jb/same-class? tp
+     jb/int 0                           ;iadd
+     jb/long 1                          ;ladd
+     jb/float 2                         ;fadd
+     jb/double 3))                      ;dadd
+  (^Opcode [^Opcode base-opcode ^Class tp]
+   (cf/bc2opc base-opcode (typed-opcode tp))))
+
+(defn pop ^Expr [^Expr arg]        ;returns `arg` if it is a statement
+  (letfn [(pop* ^Expr [^Expr arg]
+            (Insn. cfg/no-line-number jb/void [arg]
+                   (x/empty-when (.safe-to-discard? arg))
+                   (-> (cf/by-slot-size (x/type arg) Opcode/POP Opcode/POP2)
+                       (java.lang.classfile.instruction.StackInstruction/of))))
+          (undup ^Expr [^Expr x]
+            (x/with-code x jb/void (tinyclj.core/pop (x/argv x))))]
+    (cond
+      (x/statement? arg) arg
+      (x/dup? (peek (x/argv arg))) (undup arg) 
+      :else (pop* arg))))
+
+(defn conv ^Expr [^Class type ^Expr arg ^Opcode opc]
+  (letfn [(conv-1 ^Object [^int bytecode ^Number arg]
+            (case bytecode
+              (#_l2i 136 #_f2i 139 #_d2i 142) (object (.intValue arg))
+              (#_i2l 133 #_f2l 140 #_d2l 143) (object (.longValue arg))
+              (#_i2f 134 #_l2f 137 #_d2f 144) (object (.floatValue arg))
+              (#_i2d 135 #_l2d 138 #_f2d 141) (object (.doubleValue arg))
+
+              #_i2b 145 (object (int (.byteValue arg)))
+              #_i2c 146 (object (int (char (.intValue arg))))
+              #_i2s 147 (object (int (.shortValue arg)))))]
+    (let [c (when-some [c0 (.const-value arg)]
+              (conv-1 (.bytecode opc) c0))]
+      (if (x/const? arg)         ;e.g. (float 1.0) is the same as 1.0f
+        (Const. cfg/no-line-number type [] c)
+        (Insn. cfg/no-line-number type [arg] c
+               (java.lang.classfile.instruction.ConvertInstruction/of opc))))))
+
+
 ;;; Note: XDIV and XREM can cause an division by zero exception, so
 ;;; x-env should provide a line number.
-(defn arith-2 ^Expr [^long x-env ^Class type ^Expr arg0 ^Expr arg1 ^Opcode opc]
+(defn- arith-2* ^Expr [^long x-env ^Class type ^Expr arg0 ^Expr arg1
+                       ^Opcode opc]
   (letfn [(arith-int-2 ^int [^int bytecode ^Number arg0 ^Number arg1]
             (let [a0 (.intValue arg0), a1 (.intValue arg1)]
               (case bytecode
@@ -74,7 +117,11 @@
       (Insn. (x/x-ln x-env) type [arg0 arg1] (arith-const)
              (java.lang.classfile.instruction.OperatorInstruction/of opc)))))
 
-(defn bits-2 ^Expr [^Class type ^Expr arg0 ^Expr arg1 ^Opcode opc]
+(defn arith-2 ^Expr [^long x-env ^Expr arg0 ^Expr arg1 ^Opcode base-opc]
+  (let [result-tp (x/type arg0)]
+    (arith-2* x-env result-tp arg0 arg1 (typed-opcode base-opc result-tp))))
+
+(defn- bits-2* ^Expr [^Class type ^Expr arg0 ^Expr arg1 ^Opcode opc]
   (letfn [(bits-int-2 ^int [^int bytecode ^Number arg0 ^Number arg1]
             (let [a0 (.intValue arg0), a1 (.intValue arg1)]
               (case bytecode
@@ -104,6 +151,19 @@
     (Insn. cfg/no-line-number type [arg0 arg1] (bits-const)
            (java.lang.classfile.instruction.OperatorInstruction/of opc))))
 
+(defn bits-2 ^Expr [^Expr arg0 ^Expr arg1 ^Opcode base-opc]
+  (let [result-tp (x/type arg0)]
+    (bits-2* result-tp arg0 arg1 (typed-opcode base-opc result-tp))))
+
+(defn acmp ^Branch [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
+  (let [c (when-some [c0 (rt/null-value-pred (.const-value arg0))]
+            (when-some [c1 (rt/null-value-pred (.const-value arg1))]
+              (let [c0 ^boolean c0, c1 ^boolean c1]
+                (when (or c0 c1)     ;both non-null means "don't know"
+                  (rt/boolean-desc (not= (= cmp-opcd cf/ne) (and c0 c1)))))))]
+    (Branch. cfg/no-line-number jb/boolean [arg0 arg1] c
+             Opcode/IF_ACMPEQ cmp-opcd)))
+
 (defn icmp ^Branch [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
   (let [c (when-some [c0 (.const-value arg0)]
             (when-some [c1 (.const-value arg1)]
@@ -118,16 +178,7 @@
     (Branch. (x/line-number arg0) jb/boolean [arg0 arg1] c
              Opcode/IF_ICMPEQ cmp-opcd)))
 
-(defn acmp ^Branch [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
-  (let [c (when-some [c0 (rt/null-value-pred (.const-value arg0))]
-            (when-some [c1 (rt/null-value-pred (.const-value arg1))]
-              (let [c0 ^boolean c0, c1 ^boolean c1]
-                (when (or c0 c1) ;both non-null means "don't know"
-                  (rt/boolean-desc (not= (= cmp-opcd cf/ne) (and c0 c1)))))))]
-    (Branch. cfg/no-line-number jb/boolean [arg0 arg1] c
-             Opcode/IF_ACMPEQ cmp-opcd)))
-
-(defn xcmp-signum ^Expr [^Expr arg0 ^Expr arg1 ^Opcode opc]
+(defn- xcmp-signum ^Expr [^Expr arg0 ^Expr arg1 ^Opcode opc]
   (let [signum #(object (Integer/signum ^int %))
         c (when-some [c0 (.const-value arg0)]
             (when-some [c1 (.const-value arg1)]
@@ -151,68 +202,57 @@
     (Insn. cfg/no-line-number jb/int [arg0 arg1] c
            (java.lang.classfile.instruction.OperatorInstruction/of opc))))
 
-(defn pop ^Expr [^Expr arg]        ;returns `arg` if it is a statement
-  (letfn [(pop* ^Expr [^Expr arg]
-            (Insn. cfg/no-line-number jb/void [arg]
-                   (x/empty-when (.safe-to-discard? arg))
-                   (-> (cf/by-slot-size (x/type arg) Opcode/POP Opcode/POP2)
-                       (java.lang.classfile.instruction.StackInstruction/of))))
-          (undup ^Expr [^Expr x]
-            (x/with-code x jb/void (tinyclj.core/pop (x/argv x))))]
-    (cond
-      (x/statement? arg) arg
-      (x/dup? (peek (x/argv arg))) (undup arg) 
-      :else (pop* arg))))
+(defn xcmp ^Expr [^int cmp-opcd ^Expr arg0 ^Expr arg1]
+  (let [tp0 (x/type arg0)]
+    (if (jb/same-class? jb/int tp0)
+      (icmp arg0 arg1 cmp-opcd)
+      (letfn [(nan-opcode ^Opcode [^Opcode g ^Opcode l]
+                (case cmp-opcd (#_lt 2 #_le 5) g #_else l))]
+        (-> (xcmp-signum arg0 arg1
+                         (condp jb/same-class? tp0
+                           Double/TYPE (nan-opcode Opcode/DCMPG Opcode/DCMPL)
+                           Float/TYPE (nan-opcode Opcode/FCMPG Opcode/FCMPL)
+                           #_else Opcode/LCMP))
+            (icmp x/expr-zero-int cmp-opcd))))))
 
-;;; ------------------------------------------------------------------------
+(def ^:private dyn-mark "\u0001")
+(def ^:private const-mark "\u0002")
+(def ^:private re-marks #"[\u0001\u0002]") ;note: hash of Pattern is not stable
+(defn string-concat [^long x-env argv]     ;aka `str`
+  (loop [rparts nil, dyn-args nil, const-args nil, i 0]
+    (if (= i (count argv))
+      (let [rstr (str/join "" (reverse rparts))
+            recipe (x/const jb/String rstr)]
+        (cond
+          (and (nil? const-args) (nil? dyn-args))
+          recipe
+          
+          (and (= rstr dyn-mark) (x/reference? (first dyn-args)))
+          (first dyn-args)       ;output of mhd-Objects-toString call
+          
+          (= rstr const-mark)
+          (first const-args)
 
-(defn- coerce* ^Expr [^Expr x ^Class to-tp]
-  ;; pre: `x` returns and is not branching
-  (cond
-    (x/type? to-tp x) x
-    (jb/statement? to-tp) (pop x)
-
-    ;; note: attempt to unbox nil will fail at runtime
-    (tp/unboxing-assignable-to? (x/type x) to-tp)
-    (tp/unbox-any-reference to-tp x)
-
-    (x/expr-nil-object? x) (x/const to-tp nil)
-    :else (x/checkcast x to-tp)))
-
-(deftype AdaptCoerce [^Class to-tp]
-  IAdaptResult
-  (apply-to-instr [_ x]
-    (coerce* x to-tp))
-  (after [this before]
-    (if (and (jb/statement? to-tp) (.safe-instructions? before))
-      this
-      (x/adpt-comp this before)))
-  (safe-instructions? [_]
-    (or (jb/statement? to-tp) (jb/object? to-tp)))
-  (toString [_]
-    (str "coerce-" (.getName to-tp))))
-
-(defn coerce ^Expr [^Expr x ^Class to-tp]
-  (if (x/adapting? x)
-    (x/with-adapt-paths x to-tp (AdaptCoerce. to-tp))
-    (coerce* x to-tp)))
-
-;;; FIXME... does this change with Valhalla?
-(defn coerce-vararg ^Expr [^Expr x ^Class to-tp]
-  (if (and (not (jb/polymorphic? to-tp)) (jb/reference? to-tp)
-           (x/reference? x))
-    (coerce x to-tp)
-    x))
-
-(defn coerce-to-statm ^Expr [^Expr x]
-  (coerce x jb/void))
-
-;;; ------------------------------------------------------------------------
-
-(defn progn-expr ^Expr [^IPersistentVector statmv ^Expr expr]
-  (if (zero? (count statmv))
-    expr
-    (x/progn* (conj (mapv coerce-to-statm statmv) expr))))
-
-(defn prog2-expr ^Expr [^Expr statm ^Expr expr]
-  (x/progn* [(coerce-to-statm statm) expr]))
+          :else
+          (x/invoke-dynamic x-env jb/String (vec (reverse dyn-args))
+                            rt/bsm-concat
+                            (into [recipe] (reverse const-args)))))
+      
+      (let [x (nth argv i)]
+        (if (x/const-value? x)
+          (let [c (x/recover-primitive-const x)
+                s (if (seq? c)
+                    (str (list* c))    ;wrap LazySeq
+                    (str c))
+                x-str (x/const String s)]
+            (if (re-find re-marks s)
+              (recur (cons const-mark rparts) dyn-args (cons x-str const-args)
+                     (inc i))
+              (recur (cons s rparts) dyn-args const-args (inc i))))
+          (let [x-non-nil (if (x/reference? x)
+                            (x/invoke-xref x-env jb/String
+                                           [x x/expr-empty-string]
+                                           rt/mhd-Objects-toString)
+                            x)]
+            (recur (cons dyn-mark rparts) (cons x-non-nil dyn-args) const-args
+                   (inc i))))))))

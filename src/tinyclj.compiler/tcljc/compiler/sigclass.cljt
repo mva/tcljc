@@ -14,8 +14,8 @@
    [tcljc.runtime :as rt]
    [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
+   [tcljc.type :as tp]
    [tcljc.context :as ctx]
-   [tcljc.compiler.type :as tp]
    [tcljc.compiler.resolve :as resolve]
    [tcljc.compiler.sigfn :as sig]
    [tinyclj.string :as str])

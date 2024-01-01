@@ -19,14 +19,6 @@ import clojure.lang.ISeq;
 import clojure.lang.Cons;
 
 public final class RT {
-  public static boolean truthyReference (Object x) {
-    if (x instanceof Boolean) {
-      return ((Boolean)x).booleanValue();
-    } else {
-      return (x != null);
-    }
-  }
-
   public static int booleanToZeroOne (boolean x) {
     return x ? 1 : 0;
   }

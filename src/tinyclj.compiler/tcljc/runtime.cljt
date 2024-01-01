@@ -261,7 +261,6 @@
 (def mhd-AFn (mhd-constr [AFn] [map]))
 
 ;;; type conversion:
-(def mhd-truthy-reference (mhd-static [RT "truthyReference"] boolean [Object]))
 (def mhd-Objects-toString
   (mhd-static [(ClassDesc/of "java.util.Objects") "toString"]
               String [Object String]))

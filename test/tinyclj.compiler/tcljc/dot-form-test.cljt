@@ -199,7 +199,7 @@
   (is (= '[["LOCAL 0: MethodHandle mh"]
            (ALOAD_0)
            (INVOKEVIRTUAL MethodHandle "invoke" "()Ljava/lang/Object;")
-           (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+           (INVOKESTATIC RT "booleanCast" "(Ljava/lang/Object;)Z")
            (IRETURN)]
          (asm-expr [^java.lang.invoke.MethodHandle mh]
                    (boolean (.invoke mh)))))

@@ -7,18 +7,14 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.compiler.conv
   (:require
-   [tcljc.classfile :as cf]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
    [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
    [tcljc.exprfold :as xf]
-   [tcljc.compiler.type :as tp])
+   [tcljc.type :as tp])
   (:import
-   (tcljc.expr Expr Progn BindingRef IAdaptResult)
-   (clojure.lang IPersistentVector)
-   (java.lang.classfile Opcode)
-   (java.lang.reflect Executable)))
+   (tcljc.expr Expr BindingRef IAdaptResult)))
 
 (def ^:private show-class-loader false)
 
@@ -34,80 +30,23 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn upper-numeric-tp ^Class [^Expr arg0 ^Expr arg1]
-  (if (tp/numeric-assignable-to? (x/type arg1) (x/type arg0))
-    (x/type arg0)
-    (x/type arg1)))
-
-(defn widen-from ^Expr [^Class to-cl ^Expr from]
-  ;; pre: `from` is assignable to `to`
-  (if (x/type? to-cl from)
-    from
-    (.adapt (.primitive-to (tp/of-primitive to-cl)) from)))
-
-(defn computational-int? ^boolean [^Expr x]
-  (let [cl (x/type x)]
-    (and (.isPrimitive cl)
-         (case (.charAt (.descriptorString cl) 0)
-           (\B \C \I \S \Z) true
-           #_else false))))
-
-(defn numeric-assignable-to-int? ^boolean [^Expr x]
-  (let [cl (x/type x)]
-    (and (.isPrimitive cl)
-         (case (.charAt (.descriptorString cl) 0)
-           (\B \I \S) true
-           #_else false))))
-
-(defn- to-computational-type ^Expr [^Expr from]
-  (if (numeric-assignable-to-int? from)
-    (widen-from jb/int from)
-    from))
-
-(defn ensure-numeric ^Expr [^Expr from]
-  (if (x/numeric? from)
-    (to-computational-type from)
-    (x/wrong-type "expect numeric expression" from)))
-
-;;; ------------------------------------------------------------------------
-
-(defn box-expr ^Expr [^Expr prim-expr] ;pre: `prim-expr` is of primitive type
-  (.adapt (.box-of (tp/of-primitive (x/type prim-expr))) prim-expr))
-
-(defn box-any-expr ^Expr [^Expr x]
-  (cond
-    (x/statement? x) x/expr-nil-object
-    (x/reference? x) (x/identity x)
-    :else (box-expr x)))
-
-(defn expr-default ^Expr [^Class tp]
-  (cond (jb/numeric? tp) (widen-from tp x/expr-zero-byte)
-        (jb/same-class? jb/boolean tp) x/expr-false
-        (jb/same-class? jb/char tp) x/expr-zero-char
-        (jb/statement? tp) x/expr-empty
-        ;; anything else that produces a value is currently a
-        ;; reference type
-        :else (x/const tp nil)))
-
-;;; ------------------------------------------------------------------------
-
 (defn- jvm-adapt-to ^Expr [^Class to-tp ^Expr from] ;returns nil on failure
   (let [from-tp (x/type from)]
     (cond
-      (or (x/type? to-tp from)      ;cheapest: type of `from` is `to-tp`
+      (or (x/type? to-tp from)    ;cheapest: type of `from` is `to-tp`
           (jb/polymorphic? to-tp))
       from
 
       (or (jb/jvm-assignable-to? from-tp to-tp)
           (tp/unboxing-assignable-to? from-tp to-tp)
           (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
-      (xf/coerce from to-tp)            ;widen
+      (tp/coerce from to-tp)            ;widen
 
       (jb/statement? to-tp)
-      (xf/coerce-to-statm from)
+      (tp/coerce-to-statm from)
 
       (tp/numeric-assignable-to? from-tp to-tp)
-      (widen-from to-tp from)
+      (.adapt (.primitive-to (tp/of-primitive to-tp)) from)
       
       :else nil)))
 
@@ -117,14 +56,14 @@
             (or (jvm-adapt-to to-tp from)
 
                 (when (x/statement? from)
-                  (xf/prog2-expr from (expr-default to-tp)))
+                  (tp/prog2-expr from (tp/default-value-of to-tp)))
         
                 (when (jb/reference? to-tp)
                   (cond (jb/jvm-assignable-to? to-cl from-cl)
-                        (xf/coerce from to-tp) ;narrow
+                        (tp/coerce from to-tp) ;narrow
 
                         (jb/same-class? Void/TYPE from-cl)
-                        (xf/prog2-expr from (x/const to-tp nil))
+                        (tp/prog2-expr from (x/const to-tp nil))
                 
                         :else nil)))))
         (wrong-assign ^void [^Expr from ^Class to-tp ^String to-description]
@@ -139,7 +78,7 @@
   (defn consume-poly ^Expr [^Expr x]
     (let [x-tp (x/type x)]
       (if (jb/statement? x-tp)
-        (xf/prog2-expr x x/expr-nil-object)
+        (tp/prog2-expr x x/expr-nil-object)
         x)))
 
   ;; Transform `x` into a type that is assignment compatible to type
@@ -192,10 +131,11 @@
   (or (jvm-adapt-to to-tp from)
       (cond ;non-Java type conversions are possible for paths!
         (x/statement? from) ;case "no return" is handled by jvm-adapt-to
-        (xf/prog2-expr from (expr-default to-tp))
+        (tp/prog2-expr from (tp/default-value-of to-tp))
         
         (and (jb/same-class? jb/int to-tp) (x/character? from))
-        (widen-from jb/int from) ;rejected by language, but ok for emitted code
+        ;; rejected by language, but ok for emitted code
+        (.adapt (.primitive-to tp/int) from)
         
         :else
         (throw (IllegalStateException. (str "to " to-tp " <- from "

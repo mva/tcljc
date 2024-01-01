@@ -794,7 +794,7 @@
              (ASTORE_0)
              ["LOCAL 0: Object temp"]
              (ALOAD_0)
-             (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+             (INVOKESTATIC RT "booleanCast" "(Ljava/lang/Object;)Z")
              (IFEQ L:0)
              (GETSTATIC . "b" "Lclojure/lang/Var;")
              (INVOKEVIRTUAL Var "deref" "()Ljava/lang/Object;")
@@ -802,7 +802,7 @@
              [L:0]
              (ALOAD_0)
              [L:1]
-             (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+             (INVOKESTATIC RT "booleanCast" "(Ljava/lang/Object;)Z")
              (IRETURN)]
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")

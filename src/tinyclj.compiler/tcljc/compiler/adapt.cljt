@@ -1,0 +1,104 @@
+;; Copyright (c) Michael van Acken. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https://www.eclipse.org/legal/epl-v20.html)
+;; which can be found in the file epl-v20.html at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+(ns tcljc.compiler.adapt
+  (:require
+   [tcljc.wrong :as wrong]
+   [tcljc.javabase :as jb]
+   [tcljc.expr :as x]
+   [tcljc.type :as tp])
+  (:import
+   (tcljc.expr Expr)
+   (clojure.lang IPersistentVector)))
+
+(def to-clojure-logical 0)
+(def numeric-to-computational 1)
+(def numeric-to-int 2)
+(def numeric-to-floating-point 3)
+(def numeric-to-integral 4)
+(def any-to-identity 5)                ;passes on argument unchanged
+(def reference-to-identity 6)          ;rejects non-reference argument
+(def array-to-identity 7)              ;rejects non-array argument
+
+(defn checked [^int spec ^Expr arg]
+  (case spec
+    #_to-clojure-logical 0
+    (tp/logical-value-of arg)
+
+    #_numeric-to-computational 1
+    (if-some [tp (tp/numeric-or-nil arg)]
+      (tp/computational-of tp arg)
+      (x/wrong-type "expect numeric expression" arg))
+
+    #_numeric-to-int 2
+    (let [tp (tp/numeric-or-nil arg)]
+      (if (and (some? tp) (tp/widens-to-int? tp))
+        (tp/computational-of tp arg)
+        (x/wrong-type "expect int expression" arg)))
+    
+    #_numeric-to-floating-point 3
+    (if-some [tp (tp/numeric-or-nil arg)]
+      (tp/floating-point-of tp arg)
+      (x/wrong-type "expect float or double expression" arg))
+
+    #_numeric-to-integral 4
+    (let [tp (tp/numeric-or-nil arg)]
+      (if (and (some? tp) (tp/widens-to-long? tp))
+        (tp/computational-of tp arg)    ;convert to to int or long
+        (x/wrong-type "expect integral expression" arg)))
+
+    #_any-to-identity 5
+    arg
+
+    #_reference-to-identity 6
+    (if (x/reference? arg)
+      arg
+      (x/wrong-type "expect reference expression" arg))
+
+    #_reference-to-identity 7
+    (if (x/array? arg)
+      arg
+      (x/wrong-type "expect array expression" arg))))
+
+(defn args ^Expr* [form ^IPersistentVector argv & ^int* specs]
+  (let [n (alength specs)
+        a (new Expr* n)]
+    (wrong/check-argc n form)
+    (dotimes [i n]
+      (aset a i (checked (aget specs i) (nth argv i))))
+    a))
+
+(defn arg ^Expr [form ^IPersistentVector argv ^int spec]
+  (wrong/check-argc 1 form)
+  (checked spec (nth argv 0)))
+
+(letfn [(widen-other-arg! ^Expr* [^Expr* args] ;pre: both `args` are numeric
+          (let [arg0 (aget args 0), tp0 (x/type arg0)
+                arg1 (aget args 1), tp1 (x/type arg1)]
+            (when-not (jb/same-class? tp0 tp1)
+              (let [w0 (tp/of-primitive (x/type arg0))
+                    w1 (tp/of-primitive (x/type arg1))]
+                (if (tp/widens-to? w0 w1)
+                  (aset args 0 (.adapt (.primitive-to w1) arg0))
+                  (aset args 1 (.adapt (.primitive-to w0) arg1)))))
+            args))]
+
+  (defn numeric-2 ^Expr* [^int spec ^Expr arg0 ^Expr arg1] ;pre: numeric `spec`
+    (let [a (new Expr* 2)]
+      (aset a 0 (checked spec arg0))
+      (aset a 1 (checked spec arg1))
+      (widen-other-arg! a)))
+  (defn numeric-2-args ^Expr* [^int spec form args]
+    (when (some? form)
+      (wrong/check-argc 2 form))        ;unless called by nary-numeric
+    (numeric-2 spec (first args) (second args)))
+  
+  (defn reference-2-args ^Expr* [form args]
+    (let [a (new Expr* 2)]
+      (aset a 0 (checked reference-to-identity (first args)))
+      (aset a 1 (checked reference-to-identity (second args)))
+      a)))

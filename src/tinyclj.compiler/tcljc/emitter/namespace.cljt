@@ -15,6 +15,7 @@
    [tcljc.context :as ctx]
    [tcljc.expr :as x]
    [tcljc.exprfold :as xf]
+   [tcljc.type :as tp]
    [tcljc.compiler :as compiler]
    [tcljc.io :as io]
    [tinyclj.string :as str])
@@ -191,7 +192,7 @@
             (.send-to-emit (-> nmsp .primary-nmsp-io .compile-io)
                            io/msg-emit-tlf
                            (-> (reduce conj-force-clinit [] apublics)
-                               (xf/progn-expr x/expr-empty)))
+                               (tp/progn-expr x/expr-empty)))
             (with-requires nmsp req-strs)))
         (top-level-list-form ^Namespace [^Namespace nmsp ^NmspIO file-nmsp-io
                                          ^ISeq form]

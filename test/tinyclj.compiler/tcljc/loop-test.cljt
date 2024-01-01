@@ -376,10 +376,10 @@
              ["LOCAL 0: Object m"]
              [L:0]
              (ALOAD_0)
-             (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+             (INVOKESTATIC RT "booleanCast" "(Ljava/lang/Object;)Z")
              (IFEQ L:2)
              (ALOAD_0)
-             (INVOKESTATIC RT "truthyReference" "(Ljava/lang/Object;)Z")
+             (INVOKESTATIC RT "booleanCast" "(Ljava/lang/Object;)Z")
              (IFEQ L:1)
              (GOTO L:0)
              [L:1]
