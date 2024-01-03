@@ -19,10 +19,6 @@ import clojure.lang.ISeq;
 import clojure.lang.Cons;
 
 public final class RT {
-  public static int booleanToZeroOne (boolean x) {
-    return x ? 1 : 0;
-  }
-
   private static final Integer DEFAULT_CLAUSE_CODE = -1;
   public static int caseClauseCode(clojure.lang.IPersistentMap m, Object select) {
     return ((Integer)m.valAt(select, DEFAULT_CLAUSE_CODE)).intValue();

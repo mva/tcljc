@@ -706,7 +706,7 @@
                                               (wrong/q x))))
                           (conj seen x))
                         #{}))
-           (if (tp/computational-int? test) ;switch over int
+           (if (.computational-int? (tp/of-expr test)) ;switch over int
              (x/switch to-tp test dflt-path (mapv x/with-guard-int-value guardv)
                        (conv/adpt-for-path to-tp))
              ;; else: hashmap lookup followed by switch over encoder index
@@ -1387,7 +1387,7 @@
                  
                  (jb/primitive? tag)
                  (if (x/reference? x)
-                   (tp/unbox-any-reference tag x)
+                   (tp/unbox-to tag x)
                    (x/wrong-type (str "cannot cast to " (wrong/q tag)) x))
 
                  (x/primitive? x)

@@ -24,7 +24,7 @@
     true
 
     (or (jb/primitive? to-tp) (jb/primitive? from-tp))
-    (tp/numeric-assignable-to? from-tp to-tp)
+    (tp/adaptable-to? from-tp to-tp)
 
     (and (jb/reference? to-tp) (jb/object? from-tp))
     true

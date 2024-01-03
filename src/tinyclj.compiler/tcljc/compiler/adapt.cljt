@@ -30,24 +30,26 @@
     (tp/logical-value-of arg)
 
     #_numeric-to-computational 1
-    (if-some [tp (tp/numeric-or-nil arg)]
-      (tp/computational-of tp arg)
-      (x/wrong-type "expect numeric expression" arg))
+    (let [tp (tp/of-expr arg)]
+      (if (tp/numeric? tp)
+        (tp/computational-of tp arg)
+        (x/wrong-type "expect numeric expression" arg)))
 
     #_numeric-to-int 2
-    (let [tp (tp/numeric-or-nil arg)]
-      (if (and (some? tp) (tp/widens-to-int? tp))
+    (let [tp (tp/of-expr arg)]
+      (if (tp/widens-to-int? tp)
         (tp/computational-of tp arg)
         (x/wrong-type "expect int expression" arg)))
     
     #_numeric-to-floating-point 3
-    (if-some [tp (tp/numeric-or-nil arg)]
-      (tp/floating-point-of tp arg)
-      (x/wrong-type "expect float or double expression" arg))
-
+    (let [tp (tp/of-expr arg)]
+      (if (tp/numeric? tp)
+        (tp/floating-point-of tp arg)
+        (x/wrong-type "expect float or double expression" arg)))
+    
     #_numeric-to-integral 4
-    (let [tp (tp/numeric-or-nil arg)]
-      (if (and (some? tp) (tp/widens-to-long? tp))
+    (let [tp (tp/of-expr arg)]
+      (if (tp/widens-to-long? tp)
         (tp/computational-of tp arg)    ;convert to to int or long
         (x/wrong-type "expect integral expression" arg)))
 
@@ -80,9 +82,9 @@
           (let [arg0 (aget args 0), tp0 (x/type arg0)
                 arg1 (aget args 1), tp1 (x/type arg1)]
             (when-not (jb/same-class? tp0 tp1)
-              (let [w0 (tp/of-primitive (x/type arg0))
-                    w1 (tp/of-primitive (x/type arg1))]
-                (if (tp/widens-to? w0 w1)
+              (let [w0 (tp/of-expr arg0)
+                    w1 (tp/of-expr arg1)]
+                (if (tp/widens-to-numeric? w0 w1)
                   (aset args 0 (.adapt (.primitive-to w1) arg0))
                   (aset args 1 (.adapt (.primitive-to w0) arg1)))))
             args))]

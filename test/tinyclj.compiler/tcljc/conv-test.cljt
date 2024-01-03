@@ -438,7 +438,7 @@
   ;; test conversion opcode
   (is (= '[["LOCAL 0: boolean x"]
            (ILOAD_0)
-           (INVOKESTATIC RT "booleanToZeroOne" "(Z)I")
+           #_(INVOKESTATIC RT "booleanToZeroOne" "(Z)I")
            (IRETURN)]
          (asm-expr [^boolean x] (identity (int x)))))
   ;; test result type of expression
@@ -453,7 +453,7 @@
 (deftest boolean-to-byte-conversion-test
   (is (= '[["LOCAL 0: boolean x"]
            (ILOAD_0)
-           (INVOKESTATIC RT "booleanToZeroOne" "(Z)I")
+           #_(INVOKESTATIC RT "booleanToZeroOne" "(Z)I")
            (I2B)
            (IRETURN)]
          (asm-expr [^boolean x] (byte x))))
@@ -463,7 +463,7 @@
 (deftest boolean-to-double-conversion-test
   (is (= '[["LOCAL 0: boolean x"]
            (ILOAD_0)
-           (INVOKESTATIC RT "booleanToZeroOne" "(Z)I")
+           #_(INVOKESTATIC RT "booleanToZeroOne" "(Z)I")
            (I2D)
            (DRETURN)]
          (asm-expr [^boolean x] (double x))))

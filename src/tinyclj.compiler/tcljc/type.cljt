@@ -35,11 +35,17 @@
                   ^TypeConversion reference-to]
   #_java.lang.Record) ;FIXME... turn this into record once self hosting
 
+(defn numeric? ^boolean [^Wrapper tp] (>= (.numeric-order tp) 0))
+(defn widens-to-int? ^boolean [^Wrapper tp] (>= (.numeric-order tp) 3))
+(defn widens-to-long? ^boolean [^Wrapper tp] (>= (.numeric-order tp) 2))
+
+;;; True if `from-tp` widens to numeric type `to-tp`.
+(defn widens-to-numeric? ^boolean [^Wrapper from-tp ^Wrapper to-tp]
+  (>= (.numeric-order from-tp) (.numeric-order to-tp) 0))
+
+
 ;;; Convert any primitive value to int.  This includes void, boolean,
 ;;; and char.  Idempotent if argument is already of type int.
-(def ^:private mhd-boolean-to-zero-one
-  (rt/mhd-static [rt/RT "booleanToZeroOne"]
-                 ConstantDescs/CD_int [ConstantDescs/CD_boolean]))
 (def ^:private primitive-to-int
   (^TypeConversion fn [arg]
    (condp jb/same-class? (x/type arg)
@@ -48,8 +54,6 @@
      Float/TYPE (xf/conv jb/int arg Opcode/F2I)
      Double/TYPE (xf/conv jb/int arg Opcode/D2I)
      Void/TYPE x/expr-zero-int
-     Boolean/TYPE (x/invoke-xref x/x-env-no-ln jb/int [arg] (.const-value arg)
-                                 mhd-boolean-to-zero-one false)
      #_else (x/identity jb/int arg))))  ;all computational int types
 
 (letfn [(to-upper ^TypeConversion [^TypeConversion tc]
@@ -96,7 +100,7 @@
              (rt/mhd-static [rt/ClojureRT "intCast"] ConstantDescs/CD_int
                             [ConstantDescs/CD_Object])))
   (def long
-    (wrapper Long/TYPE Long 4 false
+    (wrapper Long/TYPE Long 2 false
              (to-upper (^TypeConversion fn [arg]
                         (condp jb/same-class? (x/type arg)
                           Integer/TYPE (xf/conv jb/long arg Opcode/I2L)
@@ -120,7 +124,7 @@
              (rt/mhd-static [rt/ClojureRT "booleanCast"] ConstantDescs/CD_boolean
                             [ConstantDescs/CD_Object])))
   (def short
-    (wrapper Short/TYPE Short 2 true
+    (wrapper Short/TYPE Short 4 true
              (to-lower jb/short Opcode/I2S)
              (rt/mhd-virtual [ConstantDescs/CD_Short "shortValue"]
                              ConstantDescs/CD_short [])
@@ -129,7 +133,7 @@
              (rt/mhd-static [rt/ClojureRT "shortCast"] ConstantDescs/CD_short
                             [ConstantDescs/CD_Object])))
   (def byte
-    (wrapper Byte/TYPE Byte 0 true
+    (wrapper Byte/TYPE Byte 5 true
              (to-lower jb/byte Opcode/I2B)
              (rt/mhd-virtual [ConstantDescs/CD_Byte "byteValue"]
                              ConstantDescs/CD_byte [])
@@ -147,7 +151,7 @@
              (rt/mhd-static [rt/ClojureRT "charCast"] ConstantDescs/CD_char
                             [ConstantDescs/CD_Object])))
   (def float
-    (wrapper Float/TYPE Float 5 false
+    (wrapper Float/TYPE Float 1 false
              (to-upper (^TypeConversion fn [arg]
                         (condp jb/same-class? (x/type arg)
                           Integer/TYPE (xf/conv jb/float arg Opcode/I2F)
@@ -162,7 +166,7 @@
              (rt/mhd-static [rt/ClojureRT "floatCast"] ConstantDescs/CD_float
                             [ConstantDescs/CD_Object])))
   (def double
-    (wrapper Double/TYPE Double 6 false
+    (wrapper Double/TYPE Double 0 false
              (to-upper (^TypeConversion fn [arg]
                         (condp jb/same-class? (x/type arg)
                           Integer/TYPE (xf/conv jb/double arg Opcode/I2D)
@@ -179,8 +183,8 @@
   (def void
     (let [discard-result (^TypeConversion fn [arg] (pop arg))]
       (Wrapper. Void/TYPE Void x/expr-empty -1 false nil
-                discard-result            ;primitive-to
-                nil                       ;unbox-to
+                discard-result          ;primitive-to
+                nil                     ;unbox-to
                 (^TypeConversion fn [arg] x/expr-nil-object) ;box-of
                 discard-result)))       ;reference-to
   
@@ -206,65 +210,72 @@
                  ;; any reference that is a non-Boolean subtype of Object:
                  (xf/acmp arg x/expr-nil-object cf/ne))))))
 
-(defn of-primitive ^Wrapper [^Class cl]
-  (condp identical? cl 
-    Integer/TYPE int
-    Long/TYPE long
-    Boolean/TYPE boolean
-    Short/TYPE short
-    Byte/TYPE byte
-    Character/TYPE char
-    Float/TYPE float
-    Double/TYPE double
-    Void/TYPE void))
+(letfn [(of* ^Wrapper [^Class cl ^Wrapper of-reference]
+          (if (.isPrimitive cl)
+            (condp identical? cl 
+              Integer/TYPE int
+              Long/TYPE long
+              Boolean/TYPE boolean
+              Short/TYPE short
+              Byte/TYPE byte
+              Character/TYPE char
+              Float/TYPE float
+              Double/TYPE double
+              Void/TYPE void)
+            of-reference))]
 
-(defn of-primitive-descriptor ^Wrapper [^TypeDescriptor$OfField tpd]
-  (case (.charAt (.descriptorString tpd) 0)
-    \I int
-    \J long
-    \Z boolean
-    \S short
-    \B byte
-    \C char
-    \F float
-    \D double
-    \V void))
+  (def generic-reference
+    (Wrapper. Object nil x/expr-nil-object -1 false nil
+              (^TypeConversion fn [arg] ;primitive-to
+               (.adapt (.box-of (of* (x/type arg) nil)) arg))
+              nil                              ;unbox-to
+              nil                              ;box-of
+              (^TypeConversion fn [arg] arg))) ;reference-to
 
+  (defn of ^Wrapper [^Class cl]
+    (of* cl generic-reference))
+  (defn of-expr ^Wrapper [^Expr x]
+    (of* (x/type x) generic-reference))
+  
+  (defn of-descriptor ^Wrapper [^TypeDescriptor$OfField tpd]
+    (case (.charAt (.descriptorString tpd) 0)
+      \L generic-reference
+      \I int
+      \J long
+      \Z boolean
+      \S short
+      \B byte
+      \C char
+      \F float
+      \D double
+      \V void))
+  
+  (defn primitive? ^boolean [^Wrapper tp]
+    (not (identical? generic-reference tp)))
+  
+  (defn unbox-to ^Expr [^Class to-tp ^Expr arg] ;pre: `to-tp` is primitive
+    (let [tp (of* to-tp nil)]
+      (.adapt (.unbox-to tp) (x/checkcast arg (.class-wrapper tp)))))
 
-(def any-reference
-  (Wrapper. Object nil x/expr-nil-object -1 false nil
-            (^TypeConversion fn [arg]   ;primitive-to
-             (.adapt (.box-of (of-primitive (x/type arg))) arg))
-            nil                              ;unbox-to
-            nil                              ;box-of
-            (^TypeConversion fn [arg] arg)))   ;reference-to
-
-(defn unbox-any-reference ^Expr [^Class to-tp ^Expr arg]
-  (let [tp (of-primitive to-tp)]
-    (.adapt (.unbox-to tp) (x/checkcast arg (.class-wrapper tp)))))
-
-(defn default-value-of ^Expr [^Class tp]
-  (if (jb/reference? tp)
-    (x/const tp nil)
-    (.default-value (of-primitive tp))))
+  (defn default-value-of ^Expr [^Class tp]
+    (if (jb/reference? tp)
+      (x/const tp nil)
+      (.default-value (of* tp nil)))))
 
 ;;; ------------------------------------------------------------------------
 
-(defn- numeric? ^boolean [^Wrapper tp] (>= (.numeric-order tp) 0))
-(defn- below-int? ^boolean [^Wrapper tp] (< (.numeric-order tp) 3))
-(defn widens-to-int? ^boolean [^Wrapper tp] (<= (.numeric-order tp) 3))
-(defn widens-to-long? ^boolean [^Wrapper tp] (<= (.numeric-order tp) 4))
-#_(defn widens-to-float? ^boolean [^Wrapper tp] (<= (.numeric-order tp) 5))
-
-(defn computational-of ^Expr [^Wrapper tp ^Expr arg]
-  (if (below-int? tp)              ;below int or not numerical at all?
-    (.adapt (.primitive-to int) arg)
-    arg))                               ;int, long, float, or double
+(defn computational-of
+  (^Expr [^Expr arg]
+   (computational-of (of-expr arg) arg))
+  (^Expr [^Wrapper tp ^Expr arg]
+   (if (and (.computational-int? tp) (not (identical? int tp)))
+     (.adapt (.primitive-to int) arg)
+     arg)))                    ;int, long, float, double, or non-numeric
 
 (defn floating-point-of ^Expr [^Wrapper tp ^Expr arg]
-  (if (widens-to-long? tp)       ;below float or not numerical at all?
+  (if (widens-to-long? tp)
     (.adapt (.primitive-to float) arg)
-    arg))                               ;one of float or double
+    arg))                               ;float, double, or non-numeric
 
 (defn logical-value-of ^Expr [^Expr arg] ;takes primitive or reference value
   (.adapt (if (x/primitive? arg)
@@ -274,38 +285,21 @@
 
 (defn reference-of [^Expr arg]
   (if (x/primitive? arg)
-    (.adapt (.box-of (of-primitive (x/type arg))) arg)
+    (.adapt (.box-of (of-expr arg)) arg)
     (x/identity arg)))
 
-
-(defn- numeric-or-nil* ^Wrapper [^Class tp]
-  (when (.isPrimitive tp)
-    (let [tp (of-primitive tp)]
-      (when (numeric? tp) tp))))
-(defn numeric-or-nil ^Wrapper [^Expr arg]
-  (numeric-or-nil* (x/type arg)))
-
-(defn computational-int? ^boolean [^Expr arg]
-  (let [tp (x/type arg)]
-    (when (.isPrimitive tp)
-      (.computational-int? (of-primitive tp)))))
 
 (defn unboxing-assignable-to? ^boolean [^Class from-tp ^Class to-tp]
   (and (jb/primitive? to-tp)
        (not (jb/statement? to-tp))
-       (jb/jvm-castable-to? from-tp (.class-wrapper (of-primitive to-tp)))))
+       (jb/jvm-castable-to? from-tp (.class-wrapper (of to-tp)))))
 
-(defn widens-to? ^boolean [^Wrapper from-tp ^Wrapper to-tp]
-  (assert (numeric? from-tp))
-  (assert (numeric? to-tp))
-  (<= (.numeric-order from-tp) (.numeric-order to-tp)))
-
-(defn numeric-assignable-to? ^boolean [^Class from-tp ^Class to-tp]
-  (if-some [to (numeric-or-nil* to-tp)]
-    (if-some [from (numeric-or-nil* from-tp)]
-      (widens-to? from to)
-      (unboxing-assignable-to? from-tp to-tp))
-    false))
+;;; `from-tp` can be changed to `to-tp`, either by numerical widening
+;;; or by unboxing.
+(defn adaptable-to? ^boolean [^Class from-tp ^Class to-tp]
+  (let [to (of to-tp)]
+    (or (widens-to-numeric? (of from-tp) to)
+        (unboxing-assignable-to? from-tp to-tp))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -317,7 +311,7 @@
 
     ;; note: attempt to unbox nil will fail at runtime
     (unboxing-assignable-to? (x/type x) to-tp)
-    (unbox-any-reference to-tp x)
+    (unbox-to to-tp x)
 
     (x/expr-nil-object? x) (x/const to-tp nil)
     :else (x/checkcast x to-tp)))

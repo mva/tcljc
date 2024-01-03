@@ -202,7 +202,8 @@
     (Insn. cfg/no-line-number jb/int [arg0 arg1] c
            (java.lang.classfile.instruction.OperatorInstruction/of opc))))
 
-(defn xcmp ^Expr [^int cmp-opcd ^Expr arg0 ^Expr arg1]
+(defn xcmp ^Expr [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
+  ;; pre: `arg0` and `arg1` are of computational type
   (let [tp0 (x/type arg0)]
     (if (jb/same-class? jb/int tp0)
       (icmp arg0 arg1 cmp-opcd)

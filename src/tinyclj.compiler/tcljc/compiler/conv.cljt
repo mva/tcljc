@@ -33,7 +33,7 @@
 (defn- jvm-adapt-to ^Expr [^Class to-tp ^Expr from] ;returns nil on failure
   (let [from-tp (x/type from)]
     (cond
-      (or (x/type? to-tp from)    ;cheapest: type of `from` is `to-tp`
+      (or (jb/same-class? to-tp from-tp) ;cheapest: type of `from` is `to-tp`
           (jb/polymorphic? to-tp))
       from
 
@@ -45,10 +45,10 @@
       (jb/statement? to-tp)
       (tp/coerce-to-statm from)
 
-      (tp/numeric-assignable-to? from-tp to-tp)
-      (.adapt (.primitive-to (tp/of-primitive to-tp)) from)
-      
-      :else nil)))
+      :else
+      (let [to (tp/of to-tp)]
+        (when (tp/widens-to-numeric? (tp/of from-tp) to)
+          (.adapt (.primitive-to to) from))))))
 
 (letfn [(adapt-for-assign ^Expr [^Expr from ^Class to-tp]
           (let [from-cl (x/type from)
@@ -110,7 +110,7 @@
 ;; Return `to` if `from` can be widened to `to`, and nil otherwise.
 (defn- path-adaptable ^Expr [^Expr to ^Expr from]
   (when (or (not (x/pushes-result? from))
-            (tp/numeric-assignable-to? (x/type from) (x/type to))
+            (tp/adaptable-to? (x/type from) (x/type to))
             (and (x/pushes-nil-object? from) (x/reference? to)))
     to))
 

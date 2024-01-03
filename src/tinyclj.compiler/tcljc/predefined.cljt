@@ -98,7 +98,7 @@
 (defn- binary-cmp ^FnPrimitiveFn [^int cmp-opcd]
   (^FnPrimitiveFn fn [form [arg0 arg1] x-env compile-io]
    (let [args (adapt/numeric-2 adapt/numeric-to-computational arg0 arg1)]
-     (xf/xcmp cmp-opcd (aget args 0) (aget args 1)))))
+     (xf/xcmp (aget args 0) (aget args 1) cmp-opcd))))
 
 (defn- binary-cmp-ref ^FnPrimitiveFn [^int cmp-opcd]
   (^FnPrimitiveFn fn [form args x-env compile-io]
@@ -118,20 +118,21 @@
                    (.isAssignableFrom java.lang.Enum tp)
                    (jb/same-classname? rt/clnm-keyword tp))))]
      (wrong/check-argc 2 form)
-     (cond
-       (and (tp/computational-int? arg0)
-            (x/same-type? arg0 arg1)) ;includes boolean/boolean & char/char
-       (xf/icmp arg0 arg1 cf/eq)
-        
-       (or (x/primitive? arg0) (x/primitive? arg1))
-       (let [args (adapt/numeric-2 adapt/numeric-to-computational arg0 arg1)]
-         (xf/xcmp cf/eq (aget args 0) (aget args 1)))
+     (let [tp0 (tp/of-expr arg0), tp1 (tp/of-expr arg1)]
+       (cond
+         (and (.computational-int? tp0) (x/same-type? arg0 arg1))
+         ;; includes boolean/boolean & char/char
+         (xf/icmp arg0 arg1 cf/eq)
+         
+         (or (tp/primitive? tp0) (tp/primitive? tp1))
+         (let [args (adapt/numeric-2 adapt/numeric-to-computational arg0 arg1)]
+           (xf/xcmp (aget args 0) (aget args 1) cf/eq))
 
-       (or (equiv-if-identical? arg0) (equiv-if-identical? arg1))
-       (xf/acmp arg0 arg1 cf/eq)
-        
-       :else
-       (x/invoke-xref x-env jb/boolean [arg0 arg1] rt/mhd-equiv)))))
+         (or (equiv-if-identical? arg0) (equiv-if-identical? arg1))
+         (xf/acmp arg0 arg1 cf/eq)
+         
+         :else
+         (x/invoke-xref x-env jb/boolean [arg0 arg1] rt/mhd-equiv))))))
 
 
 (def ^:private alength-form
@@ -203,7 +204,7 @@
     (-> (HashMap.)
 
         ;; primitive conversion functions
-        (put-prim 'object (type-conversion-to tp/any-reference))
+        (put-prim 'object (type-conversion-to tp/generic-reference))
         (put-prim 'boolean (type-conversion-to tp/logical))
         (put-prim 'byte (type-conversion-to tp/byte))
         (put-prim 'short (type-conversion-to tp/short))

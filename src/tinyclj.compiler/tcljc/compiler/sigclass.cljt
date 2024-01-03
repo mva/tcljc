@@ -263,7 +263,7 @@
           (let [tpd (.tpd fdef)]
             (cond
               (.isPrimitive tpd)
-              (let [tp (tp/of-primitive-descriptor tpd)]
+              (let [tp (tp/of-descriptor tpd)]
                 (-> (.checkcast xb (rt/cd-of (.class-wrapper tp)))
                     (cf/invoke (.unboxing-mhd tp))))
 
