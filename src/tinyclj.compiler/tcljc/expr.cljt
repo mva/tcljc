@@ -255,9 +255,16 @@
                 ^:pass-to-super-constructor ^Object const-value]
   Expr)
 
-(defn const ^Const [^Class type ^Object value]
+(def expr-nil-object (Const. cfg/no-line-number jb/Object [] jb/jvm-null))
+(defn const-value-nil? ^boolean [^Expr x]
+  (identical? jb/jvm-null (.const-value x)))
+
+(defn const ^Const [^Class tp ^Object value]
   ;; assume that constants never need an error line number
-  (Const. cfg/no-line-number type [] (jb/computational-const value)))
+  (let [c (jb/computational-const value)]
+    (if (and (identical? jb/jvm-null c) (jb/object? tp))
+      expr-nil-object
+      (Const. cfg/no-line-number tp [] c))))
 
 (defn const? ^boolean [^Expr x]
   (instance? Const x))
@@ -280,6 +287,10 @@
       (when-not (identical? jb/jvm-null c)
         c))))
 
+(def expr-empty-string (const jb/String ""))
+(def expr-zero-int (const jb/int jb/jvm-int-zero))
+(def expr-one-int (const jb/int jb/jvm-int-one))
+
 (def expr-true (const jb/boolean jb/jvm-int-one))
 (def expr-false (const jb/boolean jb/jvm-int-zero))
 (defn expr-boolean ^Expr [^boolean b]
@@ -288,18 +299,6 @@
   (.equals jb/jvm-int-one (.const-value x)))
 (defn const-value-false? ^boolean [^Expr x]
   (.equals jb/jvm-int-zero (.const-value x)))
-
-(def expr-empty-string (const jb/String ""))
-(def expr-nil-object (const jb/Object nil))
-(defn const-value-nil? ^boolean [^Expr x]
-  (and (identical? jb/jvm-null (.const-value x))))
-(defn expr-nil-object? ^boolean [^Expr x] ;see also `pushes-nil-object?`
-  (and (const-value-nil? x) (jb/object? (type x))))
-
-(def expr-zero-int (const jb/int jb/jvm-int-zero))
-(def expr-one-int (const jb/int jb/jvm-int-one))
-(def expr-zero-byte (const jb/byte jb/jvm-int-zero))
-(def expr-zero-char (const jb/char jb/jvm-int-zero))
 
 
 ;;; Returns the class instance if `x` is a class name.  `x` can be
@@ -461,7 +460,7 @@
 (defn throw? ^boolean [^Expr x]
   (and (insn? x) (identical? Opcode/ATHROW (-> ^Insn x .instr .opcode))))
 
-;;; JVM's "checkcast" and "instanceof".  See fn `checkcast` below.
+;;; JVM's "checkcast" and "instanceof".  See `tcljc.exprfold/checkcast`
 (defn type-check ^Insn [^Expr arg ^Opcode opcode ^Class check-tp]
   (let [cd (rt/describe-class check-tp)
         instr (java.lang.classfile.instruction.TypeCheckInstruction/of opcode cd)
@@ -591,14 +590,6 @@
 
 (defn identity-using-line-number ^Expr [^Expr arg ^Expr x]
   (Progn. (line-number x) (type arg) [arg] (.const-value arg) adpt-identity))
-
-(defn checkcast ^Expr [^Expr x ^Class to-tp]
-  (let [from-tp (type x)]
-    (cond
-      (jb/same-class? to-tp from-tp) x
-      (.isAssignableFrom to-tp from-tp) (identity to-tp x)
-      (identity? x) (recur (first-arg x) to-tp)
-      :else (type-check x Opcode/CHECKCAST to-tp))))
 
 
 ;;; Lexically scoped block: the lifetime of locals created within the

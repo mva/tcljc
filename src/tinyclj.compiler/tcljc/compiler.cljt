@@ -891,7 +891,7 @@
              (settable-var? v-expr)
              (let [v-expr (x/var-ref (var-type (.ctx env)) ^BindingRef v-expr)]
                (-> (x/invoke-xref x-env jb/Object [v-expr x-expr] rt/mhd-Var-set)
-                   (x/checkcast tp)))
+                   (xf/checkcast tp)))
              
              :else
              (wrong/other (str "not a settable variable: " (wrong/q v))))))

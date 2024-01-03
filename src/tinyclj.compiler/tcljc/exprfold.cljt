@@ -18,7 +18,7 @@
                LoopBody Branch SplitJoin Switch TryCatchFinally)
    (clojure.lang IPersistentVector)
    (java.lang.classfile ClassFile Opcode))
-  (:refer-clojure :exclude [pop]))
+  (:refer-clojure :exclude [pop type]))
 
 (defn typed-opcode
   (^int [^Class tp]
@@ -42,6 +42,15 @@
       (x/void? arg) arg
       (x/dup? (peek (x/argv arg))) (undup arg) 
       :else (pop* arg))))
+
+(defn checkcast ^Expr [^Expr x ^Class to-tp]
+  (let [from-tp (x/type x)]
+    (cond
+      (jb/same-class? to-tp from-tp) x
+      (identical? x/expr-nil-object x) (x/const to-tp nil)
+      (.isAssignableFrom to-tp from-tp) (x/identity to-tp x)
+      (x/identity? x) (recur (x/first-arg x) to-tp)
+      :else (x/type-check x Opcode/CHECKCAST to-tp))))
 
 (defn conv ^Expr [^Class type ^Expr arg ^Opcode opc]
   (letfn [(conv-1 ^Object [^int bytecode ^Number arg]

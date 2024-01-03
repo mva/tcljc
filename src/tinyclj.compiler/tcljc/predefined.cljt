@@ -155,7 +155,7 @@
                                   (.getName m) (.descriptorString mtd))]
      (-> (x/invoke-xref x-env (.getReturnType m)
                         [a (x/array-length (x/dup atp))] nil mhd false)
-         (x/checkcast atp)))))
+         (xf/checkcast atp)))))
 
 (def ^:private xaload-form
   (^FnPrimitiveFn fn [form args x-env compile-io]

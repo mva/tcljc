@@ -77,7 +77,7 @@
           (Wrapper. class-primitive class-wrapper
                     (if (jb/same-class? jb/boolean class-primitive)
                       x/expr-false
-                      (.adapt primitive-to x/expr-zero-byte))
+                      (.adapt primitive-to x/expr-zero-int))
                     numeric-order computational-int? unboxing-mhd primitive-to
                     (^TypeConversion fn [arg]
                      (x/invoke-xref (x/x-env-of arg) class-primitive [arg]
@@ -254,7 +254,7 @@
     (not (identical? generic-reference tp)))
   
   (defn unbox-to ^Expr [^Wrapper tp ^Expr arg]
-    (.adapt (.unbox-to tp) (x/checkcast arg (.class-wrapper tp))))
+    (.adapt (.unbox-to tp) (xf/checkcast arg (.class-wrapper tp))))
 
   (defn default-value-of ^Expr [^Class tp]
     (if (jb/reference? tp)
@@ -301,13 +301,10 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn- coerce* ^Expr [^Expr x ^Class to-tp]
-  ;; pre: `x` returns and is not branching
-  (cond
-    (x/type? to-tp x) x
-    (jb/void? to-tp) (xf/pop x)
-    (x/expr-nil-object? x) (x/const to-tp nil)
-    :else (x/checkcast x to-tp)))
+(defn- coerce* ^Expr [^Expr x ^Class to-tp] ;pre: `x` is not branching
+  (if (jb/void? to-tp)
+    (xf/pop x)
+    (xf/checkcast x to-tp)))
 
 (deftype AdaptCoerce [^Class to-tp]
   IAdaptPath
