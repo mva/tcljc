@@ -182,7 +182,7 @@
                             [ConstantDescs/CD_Object])))
   (def void
     (let [discard-result (^TypeConversion fn [arg] (pop arg))]
-      (Wrapper. Void/TYPE Void x/expr-empty -1 false nil
+      (Wrapper. Void/TYPE nil x/expr-empty -1 false nil ;no class-wrapper Void
                 discard-result          ;primitive-to
                 nil                     ;unbox-to
                 (^TypeConversion fn [arg] x/expr-nil-object) ;box-of
@@ -253,9 +253,8 @@
   (defn primitive? ^boolean [^Wrapper tp]
     (not (identical? generic-reference tp)))
   
-  (defn unbox-to ^Expr [^Class to-tp ^Expr arg] ;pre: `to-tp` is primitive
-    (let [tp (of* to-tp nil)]
-      (.adapt (.unbox-to tp) (x/checkcast arg (.class-wrapper tp)))))
+  (defn unbox-to ^Expr [^Wrapper tp ^Expr arg]
+    (.adapt (.unbox-to tp) (x/checkcast arg (.class-wrapper tp))))
 
   (defn default-value-of ^Expr [^Class tp]
     (if (jb/reference? tp)
@@ -289,15 +288,16 @@
     (x/identity arg)))
 
 
-(defn unboxes-to? ^boolean [^Class from-tp ^Class to-tp]
-  (and (jb/primitive-operand? to-tp)
-       (jb/jvm-castable-to? from-tp (.class-wrapper (of to-tp)))))
+(defn unboxes-to? ^boolean [^Class from-tp ^Wrapper to]
+  (and (some? (.class-wrapper to))
+       (jb/jvm-castable-to? from-tp (.class-wrapper to))))
 
 ;;; `from-tp` can be changed to `to-tp`, either by numerical widening
 ;;; or by unboxing.
 (defn adaptable-to? ^boolean [^Class from-tp ^Class to-tp]
-  (or (widens-to-numeric? (of from-tp) (of to-tp))
-      (unboxes-to? from-tp to-tp)))
+  (let [to (of to-tp)]
+    (or (widens-to-numeric? (of from-tp) to)
+        (unboxes-to? from-tp to))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -308,8 +308,8 @@
     (jb/void? to-tp) (xf/pop x)
 
     ;; note: attempt to unbox nil will fail at runtime
-    (unboxes-to? (x/type x) to-tp)
-    (unbox-to to-tp x)
+    (unboxes-to? (x/type x) (of to-tp))
+    (unbox-to (of to-tp) x)
 
     (x/expr-nil-object? x) (x/const to-tp nil)
     :else (x/checkcast x to-tp)))

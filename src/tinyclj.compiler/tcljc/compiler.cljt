@@ -1387,7 +1387,7 @@
                  
                  (jb/primitive? tag)
                  (if (x/reference? x)
-                   (tp/unbox-to tag x)
+                   (tp/unbox-to (tp/of tag) x)
                    (x/wrong-type (str "cannot cast to " (wrong/q tag)) x))
 
                  (x/primitive? x)

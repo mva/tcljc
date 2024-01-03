@@ -38,7 +38,7 @@
       from
 
       (or (jb/jvm-assignable-to? from-tp to-tp)
-          (tp/unboxes-to? from-tp to-tp)
+          (tp/unboxes-to? from-tp (tp/of to-tp))
           (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
       (tp/coerce from to-tp)            ;widen
 
