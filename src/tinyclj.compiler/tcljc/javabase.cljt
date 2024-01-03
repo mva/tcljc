@@ -7,17 +7,14 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.javabase     ;supporting code for stuff from java.base & JVM
   (:require
-   [tcljc.config :as config])
+   [tcljc.config :as cfg])
   (:import
    (clojure.lang Symbol)
-   (java.lang.classfile Opcode)
-   (java.lang.invoke MethodHandle)
-   (java.lang.constant ClassDesc DirectMethodHandleDesc$Kind
-                       ConstantDesc ConstantDescs))
+   (java.lang.invoke MethodHandle))
   (:refer-clojure
    :exclude [int long float double boolean char byte short void]))
 
-;;; primitive operand types
+;;; primitive types
 (def void Void/TYPE)
 (def int Integer/TYPE)
 (def long Long/TYPE)
@@ -40,17 +37,11 @@
 ;; for `no-return`.
 (defn primitive? ^boolean [^Class tp]
   (.isPrimitive tp))
+(defn primitive-operand? ^boolean [^Class tp]
+  (and (.isPrimitive tp) (not (identical? void tp))))
 
-(defn statement? ^boolean [^Class tp]
+(defn void? ^boolean [^Class tp]
   (same-class? void tp))
-
-(defn numeric? ^boolean [^Class tp]
-  (and (.isPrimitive tp)
-       ;; FIXME... once inline classes are available, replace this
-       ;; with something like (.isAssignableFrom Number tp)
-       (not (same-class? boolean tp))
-       (not (same-class? void tp))
-       (not (same-class? char tp))))    ;not numeric in Clojure
 
 (defn character? ^boolean [^Class tp]
   (same-class? char tp))
@@ -78,7 +69,7 @@
 
 ;;; ------------------------------------------------------------------------
 
-(def jvm-null ConstantDescs/NULL)
+(def jvm-null java.lang.constant.ConstantDescs/NULL)
 (def jvm-int-zero (Integer/valueOf 0))
 (def jvm-int-one (Integer/valueOf 1))
 (def jvm-float-one (Float/valueOf 1))
@@ -129,12 +120,6 @@
   (identical? cl-polymorphic-type cl))
 
 
-;;; Returns true if the instruction either pushes a result onto the
-;;; operand stack, or leaves the result of its last argument on the
-;;; stack.
-(defn pushes-result? ^boolean [^Class tp]
-  (not (statement? tp)))
-
 (defn throwable? ^boolean [^Class tp]   ;Throwable or subclass of it
   (.isAssignableFrom Throwable tp))
 
@@ -149,7 +134,7 @@
     ;; by default, import certain java.lang.* classes using their
     ;; short name; references using the long name are resolved on
     ;; demand and refer to the same JVM-level class instance
-    (doseq [^Class cl config/java-lang-classes]
+    (doseq [^Class cl cfg/java-lang-classes]
       (.put m (import-symbol-short cl) cl))
     
     ;; pseudo-import of primitive types types by their lower-case Java

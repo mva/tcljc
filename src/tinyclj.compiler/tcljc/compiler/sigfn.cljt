@@ -39,7 +39,7 @@
 (defn- tag-of* ^Class [tag ^boolean void? ^Class no-hint ^Ctx ctx]
   (if (some? tag)
     (if-some [tp (ctx/get-type tag ctx)]
-      (if (and (jb/statement? tp) (not void?))
+      (if (and (jb/void? tp) (not void?))
         (wrong/syntax "`void` tag not applicable in this context")
         tp)
       (wrong-class tag))

@@ -13,7 +13,7 @@
    [tcljc.expr :as x]
    [tcljc.exprfold :as xf])
   (:import
-   (tcljc.expr Expr IAdaptResult)
+   (tcljc.expr Expr IAdaptPath)
    (clojure.lang IPersistentVector)
    (java.lang.classfile Opcode)
    (java.lang.constant ConstantDescs DirectMethodHandleDesc)
@@ -289,17 +289,15 @@
     (x/identity arg)))
 
 
-(defn unboxing-assignable-to? ^boolean [^Class from-tp ^Class to-tp]
-  (and (jb/primitive? to-tp)
-       (not (jb/statement? to-tp))
+(defn unboxes-to? ^boolean [^Class from-tp ^Class to-tp]
+  (and (jb/primitive-operand? to-tp)
        (jb/jvm-castable-to? from-tp (.class-wrapper (of to-tp)))))
 
 ;;; `from-tp` can be changed to `to-tp`, either by numerical widening
 ;;; or by unboxing.
 (defn adaptable-to? ^boolean [^Class from-tp ^Class to-tp]
-  (let [to (of to-tp)]
-    (or (widens-to-numeric? (of from-tp) to)
-        (unboxing-assignable-to? from-tp to-tp))))
+  (or (widens-to-numeric? (of from-tp) (of to-tp))
+      (unboxes-to? from-tp to-tp)))
 
 ;;; ------------------------------------------------------------------------
 
@@ -307,25 +305,25 @@
   ;; pre: `x` returns and is not branching
   (cond
     (x/type? to-tp x) x
-    (jb/statement? to-tp) (xf/pop x)
+    (jb/void? to-tp) (xf/pop x)
 
     ;; note: attempt to unbox nil will fail at runtime
-    (unboxing-assignable-to? (x/type x) to-tp)
+    (unboxes-to? (x/type x) to-tp)
     (unbox-to to-tp x)
 
     (x/expr-nil-object? x) (x/const to-tp nil)
     :else (x/checkcast x to-tp)))
 
 (deftype AdaptCoerce [^Class to-tp]
-  IAdaptResult
+  IAdaptPath
   (apply-to-instr [_ x]
     (coerce* x to-tp))
   (after [this before]
-    (if (and (jb/statement? to-tp) (.safe-instructions? before))
+    (if (and (jb/void? to-tp) (.safe-instructions? before))
       this
       (x/adpt-comp this before)))
   (safe-instructions? [_]
-    (or (jb/statement? to-tp) (jb/object? to-tp)))
+    (or (jb/void? to-tp) (jb/object? to-tp)))
   (toString [_]
     (str "coerce-" (.getName to-tp))))
 
@@ -333,6 +331,8 @@
   (if (x/adapting? x)
     (x/with-adapt-paths x to-tp (AdaptCoerce. to-tp))
     (coerce* x to-tp)))
+(defn coerce-to-void ^Expr [^Expr x]
+  (coerce x jb/void))
 
 ;;; FIXME... does this change with Valhalla?
 (defn coerce-vararg ^Expr [^Expr x ^Class to-tp]
@@ -341,14 +341,10 @@
     (coerce x to-tp)
     x))
 
-(defn coerce-to-statm ^Expr [^Expr x]
-  (coerce x jb/void))
-
 
 (defn progn-expr ^Expr [^IPersistentVector statmv ^Expr expr]
   (if (zero? (count statmv))
     expr
-    (x/progn* (conj (mapv coerce-to-statm statmv) expr))))
-
+    (x/progn* (conj (mapv coerce-to-void statmv) expr))))
 (defn prog2-expr ^Expr [^Expr statm ^Expr expr]
-  (x/progn* [(coerce-to-statm statm) expr]))
+  (x/progn* [(coerce-to-void statm) expr]))

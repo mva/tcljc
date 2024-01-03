@@ -130,18 +130,14 @@
 
 (defn primitive? ^boolean [^Expr x]
   (jb/primitive? (type x)))
-(defn numeric? ^boolean [^Expr x]
-  (jb/numeric? (type x)))
 (defn character? ^boolean [^Expr x]
   (jb/character? (type x)))
 (defn boolean? ^boolean [^Expr x]
   (type? jb/boolean x))
 (defn reference? ^boolean [^Expr x]
   (jb/reference? (type x)))
-(defn statement? ^boolean [^Expr x]
-  (jb/statement? (type x)))
-(defn pushes-result? ^boolean [^Expr x]
-  (jb/pushes-result? (type x)))
+(defn void? ^boolean [^Expr x]
+  (jb/void? (type x)))
 (defn array? ^boolean [^Expr x]
   (jb/array? (type x)))
 
@@ -180,13 +176,13 @@
 ;;; part of `tcljc.exprcode/trace-flow`.  Method `apply-to-instr`
 ;;; takes an opaque returning expression, that is it should not
 ;;; navigate into the expression's structure.  The result is again
-;;; treated as opaque, but is can be non-returning.
-(definterface IAdaptResult
+;;; treated as opaque, but it can be non-returning.
+(definterface IAdaptPath
   (apply-to-instr ^Expr [^Expr x])
-  (after ^IAdaptResult [^IAdaptResult before])
+  (after ^IAdaptPath [^IAdaptPath before])
   (safe-instructions? ^boolean []))     ;emitted code never throws
 (def adpt-identity
-  (reify IAdaptResult
+  (reify IAdaptPath
     (apply-to-instr [_ x]
       x)
     (after [_ before]
@@ -196,8 +192,8 @@
     (toString [_]
       "identity")))
 
-(deftype AdaptComposition [^IAdaptResult adpt-after ^IAdaptResult adpt-before]
-  IAdaptResult
+(deftype AdaptComposition [^IAdaptPath adpt-after ^IAdaptPath adpt-before]
+  IAdaptPath
   (apply-to-instr [_ x]
     (let [x (.apply-to-instr adpt-before x)]
       (if (returns? x)
@@ -212,8 +208,8 @@
     (and (.safe-instructions? adpt-before) (.safe-instructions? adpt-after)))
   (toString [_]
     (str adpt-after " ∘ " adpt-before)))
-(defn adpt-comp ^IAdaptResult [^IAdaptResult adpt-after
-                               ^IAdaptResult adpt-before]
+(defn adpt-comp ^IAdaptPath [^IAdaptPath adpt-after
+                               ^IAdaptPath adpt-before]
   (if (identical? adpt-identity adpt-before)
     adpt-after
     (AdaptComposition. adpt-after adpt-before)))
@@ -234,11 +230,11 @@
 ;;; representation, plus adaption information that bridges the gap to
 ;;; the code representation during `tcljc.exprcode/trace-flow`.
 (definterface IAdapting
-  (with-adapt-paths ^Expr [^Class tp ^IAdaptResult then-adpt-paths]))
+  (with-adapt-paths ^Expr [^Class tp ^IAdaptPath then-adpt-paths]))
 (defn adapting? ^boolean [^Expr x]
   (or (instance? INonStrictEvaluation x)                   ;branching
       (and (instance? IAdapting x) (pos? (arg-count x))))) ;sequential
-(defn with-adapt-paths ^Expr [^Expr x ^Class tp ^IAdaptResult then-adpt-paths]
+(defn with-adapt-paths ^Expr [^Expr x ^Class tp ^IAdaptPath then-adpt-paths]
   (if (type? tp x)
     x
     (.with-adapt-paths ^IAdapting x tp then-adpt-paths)))
@@ -536,7 +532,7 @@
   (when cond const-value-void))
 
 (defn- const-value-progn ^Object [^IPersistentVector argv]
-  #_(assert (every? statement? (tinyclj.core/pop argv)))
+  #_(assert (every? void? (tinyclj.core/pop argv)))
   (loop [acc const-value-void, i (dec (count argv))]
     (if (neg? i)
       acc
@@ -555,7 +551,7 @@
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
                 ^:pass-to-super-constructor ^Object const-value
-                ^IAdaptResult adpt-paths] ;nil if less than two arguments
+                ^IAdaptPath adpt-paths] ;nil if less than two arguments
   Expr
   (with-code [this tp argv]
     (Progn. (line-number this) tp argv (const-value-progn argv) nil))
@@ -613,7 +609,7 @@
                 ^:pass-to-super-constructor ^Class type
                 ^:pass-to-super-constructor ^IPersistentVector argv
                 ^:pass-to-super-constructor ^Object const-value
-                ^IAdaptResult adpt-paths]
+                ^IAdaptPath adpt-paths]
   Expr
   (with-code [this tp argv]
     (Block. (line-number this) tp argv (.const-value this) nil))
@@ -681,7 +677,7 @@
                     ^:pass-to-super-constructor ^Class type
                     ^:pass-to-super-constructor ^IPersistentVector argv
                     ^:pass-to-super-constructor ^Object const-value
-                    ^IAdaptResult adpt-paths]
+                    ^IAdaptPath adpt-paths]
   Expr
   (with-code [this tp argv]
     (SplitJoin. (line-number this) tp argv (.const-value this) nil))
@@ -703,7 +699,7 @@
                [branch-to-true expr-true expr-false]
                (.const-value branch-to-true) adpt-identity))
   (^Expr [^Branch branch-to-true ^Class tp ^Expr if-true ^Expr if-false
-          ^IAdaptResult adpt-paths]
+          ^IAdaptPath adpt-paths]
    (let [c (cond (const-value-true? branch-to-true) (.const-value if-true)
                  (const-value-false? branch-to-true) (.const-value if-false)
                  :else nil)]
@@ -746,7 +742,7 @@
                  ^:pass-to-super-constructor ^IPersistentVector argv
                  ^:pass-to-super-constructor ^Object const-value
                  ^IPersistentVector guardv
-                 ^IAdaptResult adpt-paths]
+                 ^IAdaptPath adpt-paths]
   Expr
   (with-code [this tp argv]
     (Switch. (line-number this) tp argv (.const-value this) guardv nil))
@@ -757,7 +753,7 @@
              guardv (.after then-adpt-paths adpt-paths))))
 
 (defn switch ^Switch [^Class tp ^Expr test ^Expr dflt-path
-                      ^IPersistentVector guardv ^IAdaptResult adpt-paths]
+                      ^IPersistentVector guardv ^IAdaptPath adpt-paths]
   (let [argv (-> [test] (into (guard-paths guardv)) (conj dflt-path))]
     (Switch. (line-number test) tp argv nil guardv adpt-paths)))
 
@@ -779,7 +775,7 @@
      ^:pass-to-super-constructor ^IPersistentVector argv
      ^:pass-to-super-constructor ^Object const-value
      handlerv
-     ^IAdaptResult adpt-paths]
+     ^IAdaptPath adpt-paths]
   Expr
   (with-code [this tp argv]
     (TryCatchFinally. (line-number this) tp argv (.const-value this) handlerv nil))
@@ -790,7 +786,7 @@
                       handlerv (.after then-adpt-paths adpt-paths))))
 
 (defn try-catch-finally ^TryCatchFinally [^Class tp ^Expr body handlers
-                                          ^Expr finally ^IAdaptResult adpt-paths]
+                                          ^Expr finally ^IAdaptPath adpt-paths]
   (let [argv (-> [body]
                  (into (map #(.initial-body ^TryHandler %)) handlers)
                  (conj finally))]
@@ -804,7 +800,7 @@
                    ^:pass-to-super-constructor ^Class type
                    ^:pass-to-super-constructor ^IPersistentVector argv
                    ^:pass-to-super-constructor ^Object const-value
-                   ^IAdaptResult adpt-paths]
+                   ^IAdaptPath adpt-paths]
   Expr
   (with-code [this tp argv]
     (LoopBody. (line-number this) tp argv (.const-value this) nil))

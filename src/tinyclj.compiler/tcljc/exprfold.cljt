@@ -14,7 +14,7 @@
    [tcljc.expr :as x]
    [tinyclj.string :as str])
   (:import
-   (tcljc.expr Expr IAdaptResult Insn Const Progn Block Setter BindingRef
+   (tcljc.expr Expr Insn Const Progn Block Setter BindingRef
                LoopBody Branch SplitJoin Switch TryCatchFinally)
    (clojure.lang IPersistentVector)
    (java.lang.classfile ClassFile Opcode))
@@ -39,7 +39,7 @@
           (undup ^Expr [^Expr x]
             (x/with-code x jb/void (tinyclj.core/pop (x/argv x))))]
     (cond
-      (x/statement? arg) arg
+      (x/void? arg) arg
       (x/dup? (peek (x/argv arg))) (undup arg) 
       :else (pop* arg))))
 

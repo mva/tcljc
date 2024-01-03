@@ -14,7 +14,7 @@
    [tcljc.exprfold :as xf]
    [tcljc.type :as tp])
   (:import
-   (tcljc.expr Expr BindingRef IAdaptResult)))
+   (tcljc.expr Expr BindingRef IAdaptPath)))
 
 (def ^:private show-class-loader false)
 
@@ -38,12 +38,12 @@
       from
 
       (or (jb/jvm-assignable-to? from-tp to-tp)
-          (tp/unboxing-assignable-to? from-tp to-tp)
+          (tp/unboxes-to? from-tp to-tp)
           (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
       (tp/coerce from to-tp)            ;widen
 
-      (jb/statement? to-tp)
-      (tp/coerce-to-statm from)
+      (jb/void? to-tp)
+      (tp/coerce-to-void from)
 
       :else
       (let [to (tp/of to-tp)]
@@ -55,7 +55,7 @@
                 to-cl to-tp]
             (or (jvm-adapt-to to-tp from)
 
-                (when (x/statement? from)
+                (when (x/void? from)
                   (tp/prog2-expr from (tp/default-value-of to-tp)))
         
                 (when (jb/reference? to-tp)
@@ -77,7 +77,7 @@
   ;; pre: `x` is a runtime value & not polymorphic.
   (defn consume-poly ^Expr [^Expr x]
     (let [x-tp (x/type x)]
-      (if (jb/statement? x-tp)
+      (if (jb/void? x-tp)
         (tp/prog2-expr x x/expr-nil-object)
         x)))
 
@@ -109,7 +109,7 @@
 
 ;; Return `to` if `from` can be widened to `to`, and nil otherwise.
 (defn- path-adaptable ^Expr [^Expr to ^Expr from]
-  (when (or (not (x/pushes-result? from))
+  (when (or (x/void? from)
             (tp/adaptable-to? (x/type from) (x/type to))
             (and (x/pushes-nil-object? from) (x/reference? to)))
     to))
@@ -130,7 +130,7 @@
 (defn- adapt-for-path ^Expr [^Expr from ^Class to-tp]
   (or (jvm-adapt-to to-tp from)
       (cond ;non-Java type conversions are possible for paths!
-        (x/statement? from) ;case "no return" is handled by jvm-adapt-to
+        (x/void? from)
         (tp/prog2-expr from (tp/default-value-of to-tp))
         
         (and (jb/same-class? jb/int to-tp) (x/character? from))
@@ -142,7 +142,7 @@
                                             (x/type from)))))))
 
 (deftype AdaptForPath [^Class to-tp]
-  IAdaptResult
+  IAdaptPath
   (apply-to-instr [_ x]
     (adapt-for-path x to-tp))
   (after [this before]

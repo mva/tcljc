@@ -12,13 +12,13 @@
    [tcljc.expr :as x])
   (:import
    (tcljc.expr Expr Insn Const Progn Block Branch SplitJoin Switch
-               LoopBody Recur TryCatchFinally Setter IAdaptResult IAdapting)
+               LoopBody Recur TryCatchFinally Setter IAdaptPath IAdapting)
    (clojure.lang Symbol IPersistentVector)
    (java.lang.classfile TypeKind))
   (:refer-clojure :exclude [type]))
 
-(defn trace-flow ^Expr [^Expr x ^IAdaptResult adpt-res]
-  (letfn [(trace-sequential ^Expr [^Expr x ^IAdaptResult adpt-res]
+(defn trace-flow ^Expr [^Expr x ^IAdaptPath adpt-res]
+  (letfn [(trace-sequential ^Expr [^Expr x ^IAdaptPath adpt-res]
             ;; pre: (pos? (x/arg-count x))
             (let [argv (x/argv x)
                   a (new Expr* (count argv))
@@ -36,7 +36,7 @@
                     (let [arg' (aset a i (trace-flow arg adpt-last))
                           tp (if (x/returns? arg') (x/type x) x/no-return)]
                       (x/with-code x tp (vec a))))))))
-          (trace-instruction ^Expr [^Expr x ^IAdaptResult adpt-res]
+          (trace-instruction ^Expr [^Expr x ^IAdaptPath adpt-res]
             (let [argv (x/argv x)
                   a (new Expr* (count argv))
                   n (alength a)]
@@ -54,7 +54,7 @@
                     (.apply-to-instr adpt-res x)
                     :else
                     (.apply-to-instr adpt-res (x/with-code x (vec a))))))))
-          (trace-paths ^Expr* [^Expr x ^int dstart ^int dend ^IAdaptResult adpt-res]
+          (trace-paths ^Expr* [^Expr x ^int dstart ^int dend ^IAdaptPath adpt-res]
             (let [argv (x/argv x)
                   a (new Expr* (count argv))
                   end (+ (alength a) dend)]
@@ -150,7 +150,7 @@
       (trace-branching x))))
 
 (def ^:private adpt-return-from-method  ;terminating adapter
-  (reify IAdaptResult
+  (reify IAdaptPath
     (apply-to-instr [_ x]
       (x/insn* (x/x-env-of x) x/no-return [x]
                (-> (TypeKind/from (x/type x))

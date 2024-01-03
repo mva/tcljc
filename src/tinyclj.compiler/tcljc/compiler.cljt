@@ -1068,7 +1068,7 @@
                finally-statm (-> (tail-forms env (-> (with-expr x-env)
                                                      (x/with-line-number f))
                                              (rest f))
-                                 (tp/coerce-to-statm))]
+                                 (tp/coerce-to-void))]
            (let [all-paths (cons body-expr (map second ecs))
                  to-tp (x/type (conv/path-join all-paths))]
              (x/try-catch-finally to-tp body-expr
@@ -1383,7 +1383,7 @@
                (cond
                  (x/type? tag x) x
                  
-                 (jb/statement? tag) (tp/coerce-to-statm x)
+                 (jb/void? tag) (tp/coerce-to-void x)
                  
                  (jb/primitive? tag)
                  (if (x/reference? x)
