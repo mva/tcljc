@@ -39,7 +39,7 @@
 
       (or (jb/jvm-assignable-to? from-tp to-tp)
           (jb/void? to-tp)
-          (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
+          (and (jb/reference? to-tp) (x/pushes-nil-object? from)))
       (tp/coerce from to-tp)
 
       :else (let [to (tp/of to-tp)]
@@ -52,25 +52,20 @@
           
                 :else nil)))))
 
-(letfn [(adapt-for-assign ^Expr [^Expr from ^Class to-tp]
-          (let [from-cl (x/type from)
-                to-cl to-tp]
+(letfn [(checked-assign ^Expr [^Expr from ^Class to-tp dest-descr]
+          (let [from-tp (x/type from)]
             (or (jvm-adapt-to to-tp from)
 
-                (when (x/void? from)
+                (when (jb/void? from-tp)
                   (tp/prog2-expr from (tp/default-value-of to-tp)))
         
-                (when (jb/reference? to-tp)
-                  (cond (jb/jvm-assignable-to? to-cl from-cl)
-                        (tp/coerce from to-tp) ;narrow
+                (when (jb/jvm-assignable-to? to-tp from-tp)
+                  (tp/coerce from to-tp))
 
-                        (jb/same-class? Void/TYPE from-cl)
-                        (tp/prog2-expr from (x/const to-tp nil))
-                
-                        :else nil)))))
-        (wrong-assign ^void [^Expr from ^Class to-tp ^String to-description]
-          (x/wrong-type (str "cannot assign to " (wrong/q to-tp) to-description)
-                        from))]
+                (x/wrong-type (str "cannot assign to " (wrong/q to-tp)
+                                   (when (some? dest-descr)
+                                     (str " of " (wrong/q-symbol dest-descr))))
+                              from))))]
   
   ;; Transform `x` into a type that can be represented as a non-void
   ;; type descriptor.  In particular, void is turned into an expression that
@@ -88,12 +83,10 @@
   ;; to `consume-poly`.
   ;; 
   ;; pre: `x` is a runtime value & not polymorphic.
-  (defn consume ^Expr [^Expr x ^Class to-tp to-form]
+  (defn consume ^Expr [^Expr x ^Class to-tp dest-descr]
     (if (jb/polymorphic? to-tp)
       (consume-poly x)
-      (or (adapt-for-assign x to-tp)
-          (wrong-assign x to-tp (when (some? to-form)
-                                  (str " of " (wrong/q-symbol to-form)))))))
+      (checked-assign x to-tp dest-descr)))
   (defn consume-for ^Expr [^Expr x ^BindingRef bref]
     ;; FIXME... `simple-nm` is nil for imported parameters because
     ;; reflection does not offer this information
@@ -104,49 +97,47 @@
   (defn consume-body ^Expr [^Expr x ^Class to-tp ^String to-result]
     (if (jb/polymorphic? to-tp)
       x
-      (or (adapt-for-assign x to-tp)
-          (wrong-assign x to-tp (str " of " to-result))))))
+      (checked-assign x to-tp to-result))))
 
 ;;; ------------------------------------------------------------------------
-
-;; Return `to` if `from` can be widened to `to`, and nil otherwise.
-(defn- path-adaptable ^Expr [^Expr to ^Expr from]
-  (when (or (x/void? from)
-            (tp/adaptable-to? (x/type from) (x/type to))
-            (and (x/pushes-nil-object? from) (x/reference? to)))
-    to))
 
 (def ^:private expr-some-object (x/const jb/Object "expr-some-object"))
 (defn path-join
   (^Expr [xs]
    (reduce path-join (first xs) (rest xs)))
   (^Expr [^Expr x0 ^Expr x1]
-   (or (when (x/same-type? x0 x1)
-         x0)
-       (path-adaptable x0 x1)
-       (path-adaptable x1 x0)
-       (when (and (x/reference? x0) (x/reference? x1))
-         expr-some-object)         ;must differ from x/expr-nil-object
-       (wrong/other (str "incompatible path types " (wrong/str* (x/type x0))
-                         " and " (wrong/str* (x/type x1)))))))
-(defn- adapt-for-path ^Expr [^Expr from ^Class to-tp]
-  (or (jvm-adapt-to to-tp from)
-      (cond ;non-Java type conversions are possible for paths!
-        (x/void? from)
-        (tp/prog2-expr from (tp/default-value-of to-tp))
-        
-        (and (jb/same-class? jb/int to-tp) (x/character? from))
-        ;; rejected by language, but ok for emitted code
-        (.adapt (.primitive-to tp/int) from)
-        
-        :else
-        (throw (IllegalStateException. (str "to " to-tp " <- from "
-                                            (x/type from)))))))
+   (letfn [(path-adaptable ^Expr [^Expr to ^Expr from]
+             ;; Return `to` if `from` can be adapted to `to`, and nil
+             ;; otherwise.
+             (let [to-tp (x/type to), from-tp (x/type from)]
+               (when (or (jb/void? from-tp)
+                         (tp/adaptable-to? from-tp to-tp)
+                         (and (jb/reference? to-tp)
+                              (x/pushes-nil-object? from)))
+                 to)))]
+     (or (when (x/same-type? x0 x1) x0)
+         (path-adaptable x0 x1)
+         (path-adaptable x1 x0)
+         (when (and (x/reference? x0) (x/reference? x1))
+           expr-some-object)       ;must differ from x/expr-nil-object
+         (wrong/other (str "incompatible path types " (wrong/str* (x/type x0))
+                           " and " (wrong/str* (x/type x1))))))))
 
 (deftype AdaptForPath [^Class to-tp]
   IAdaptPath
   (apply-to-instr [_ x]
-    (adapt-for-path x to-tp))
+    (or (jvm-adapt-to to-tp x)
+        (cond       ;non-Java type conversions are possible for paths!
+          (x/void? x)
+          (tp/prog2-expr x (tp/default-value-of to-tp))
+        
+          (and (jb/same-class? jb/int to-tp) (x/character? x))
+          ;; rejected by language, but ok for emitted code
+          (.adapt (.primitive-to tp/int) x)
+        
+          :else
+          (throw (IllegalStateException.
+                  (str "to " to-tp " <- x " (x/type x)))))))
   (after [this before]
     (if (and (instance? AdaptForPath before)
              (.isAssignableFrom to-tp (.to-tp ^AdaptForPath before)))

@@ -293,7 +293,7 @@
        (jb/jvm-castable-to? from-tp (.class-wrapper to))))
 
 ;;; `from-tp` can be changed to `to-tp`, either by numerical widening
-;;; or by unboxing.
+;;; or by unboxing.  Returns false if `from-tp` or `to-tp` is void.
 (defn adaptable-to? ^boolean [^Class from-tp ^Class to-tp]
   (let [to (of to-tp)]
     (or (widens-to-numeric? (of from-tp) to)
