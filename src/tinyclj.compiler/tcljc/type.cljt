@@ -306,11 +306,6 @@
   (cond
     (x/type? to-tp x) x
     (jb/void? to-tp) (xf/pop x)
-
-    ;; note: attempt to unbox nil will fail at runtime
-    (unboxes-to? (x/type x) (of to-tp))
-    (unbox-to (of to-tp) x)
-
     (x/expr-nil-object? x) (x/const to-tp nil)
     :else (x/checkcast x to-tp)))
 

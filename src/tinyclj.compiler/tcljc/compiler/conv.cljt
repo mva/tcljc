@@ -33,22 +33,24 @@
 (defn- jvm-adapt-to ^Expr [^Class to-tp ^Expr from] ;returns nil on failure
   (let [from-tp (x/type from)]
     (cond
-      (or (jb/same-class? to-tp from-tp) ;cheapest: type of `from` is `to-tp`
-          (jb/polymorphic? to-tp))
+      (or (jb/same-class? to-tp from-tp) (jb/polymorphic? to-tp))
+      ;; cheapest: `from` matches `to-tp` and can be used as is
       from
 
       (or (jb/jvm-assignable-to? from-tp to-tp)
-          (tp/unboxes-to? from-tp (tp/of to-tp))
+          (jb/void? to-tp)
           (and (x/pushes-nil-object? from) (jb/reference? to-tp)))
-      (tp/coerce from to-tp)            ;widen
+      (tp/coerce from to-tp)
 
-      (jb/void? to-tp)
-      (tp/coerce-to-void from)
+      :else (let [to (tp/of to-tp)]
+              (cond
+                (tp/widens-to-numeric? (tp/of from-tp) to)
+                (.adapt (.primitive-to to) from)
 
-      :else
-      (let [to (tp/of to-tp)]
-        (when (tp/widens-to-numeric? (tp/of from-tp) to)
-          (.adapt (.primitive-to to) from))))))
+                (tp/unboxes-to? from-tp to)
+                (tp/unbox-to to from)
+          
+                :else nil)))))
 
 (letfn [(adapt-for-assign ^Expr [^Expr from ^Class to-tp]
           (let [from-cl (x/type from)
