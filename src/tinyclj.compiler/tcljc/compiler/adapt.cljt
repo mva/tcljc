@@ -78,29 +78,29 @@
   (wrong/check-argc 1 form)
   (checked spec (nth argv 0)))
 
-(letfn [(widen-other-arg! ^Expr* [^Expr* args] ;pre: both `args` are numeric
-          (let [arg0 (aget args 0), tp0 (x/type arg0)
-                arg1 (aget args 1), tp1 (x/type arg1)]
-            (when-not (jb/same-class? tp0 tp1)
-              (let [w0 (tp/of-expr arg0)
-                    w1 (tp/of-expr arg1)]
-                (if (tp/widens-to-numeric? w0 w1)
-                  (aset args 0 (.adapt (.primitive-to w1) arg0))
-                  (aset args 1 (.adapt (.primitive-to w0) arg1)))))
-            args))]
+(defn numeric-2 ^Expr* [^int spec ^Expr arg0 ^Expr arg1] ;pre: numeric `spec`
+  (let [arg0' (checked spec arg0)
+        res (new Expr* 2)]
+    (if (x/same-type? arg0' arg1) ;fast path: second argument matches first
+      (doto res
+        (aset 0 arg0')
+        (aset 1 arg1))
+      (let [arg1' (checked spec arg1)
+            w0 (tp/of-expr arg0'), w1 (tp/of-expr arg1')]
+        (if (tp/widens-to-numeric? w0 w1)
+          (doto res
+            (aset 0 (.adapt (.primitive-to w1) arg0'))
+            (aset 1 arg1'))
+          (doto res
+            (aset 0 arg0')
+            (aset 1 (.adapt (.primitive-to w0) arg1'))))))))
+(defn numeric-2-args ^Expr* [^int spec form args]
+  (when (some? form)
+    (wrong/check-argc 2 form))        ;unless called by nary-numeric
+  (numeric-2 spec (first args) (second args)))
 
-  (defn numeric-2 ^Expr* [^int spec ^Expr arg0 ^Expr arg1] ;pre: numeric `spec`
-    (let [a (new Expr* 2)]
-      (aset a 0 (checked spec arg0))
-      (aset a 1 (checked spec arg1))
-      (widen-other-arg! a)))
-  (defn numeric-2-args ^Expr* [^int spec form args]
-    (when (some? form)
-      (wrong/check-argc 2 form))        ;unless called by nary-numeric
-    (numeric-2 spec (first args) (second args)))
-  
-  (defn reference-2-args ^Expr* [form args]
-    (let [a (new Expr* 2)]
-      (aset a 0 (checked reference-to-identity (first args)))
-      (aset a 1 (checked reference-to-identity (second args)))
-      a)))
+(defn reference-2-args ^Expr* [form args]
+  (let [a (new Expr* 2)]
+    (aset a 0 (checked reference-to-identity (first args)))
+    (aset a 1 (checked reference-to-identity (second args)))
+    a))
