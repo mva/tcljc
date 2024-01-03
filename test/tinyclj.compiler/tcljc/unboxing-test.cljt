@@ -9,7 +9,7 @@
   (:require [tcljc.bootstrap :refer [asm-expr]]
             [tinyclj.alpha.ptest :refer :all]))
 
-(deftest assign-reference-to-primtive-type
+(deftest assign-reference-to-primitive-type
   (is (= '[["LOCAL 0: Object x"]
            (ALOAD_0)
            (CHECKCAST Integer)
@@ -95,3 +95,107 @@
            (LRETURN)]
          ;; note: only method signature "(JJ)J" is compatible
          (asm-expr ^long [^Object x ^Long y] (Math/floorMod x y)))))
+
+;; with all paths boxed, unboxing should happen outside the
+;; conditional expression
+(deftest unboxing-of-reference-paths
+  (is (= '[["LOCAL 0: boolean test?"]
+           ["LOCAL 1: Integer a"]
+           ["LOCAL 2: Integer b"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (ALOAD_1)
+           (GOTO L:1)
+           [L:0]
+           (ALOAD_2)
+           [L:1]
+           (INVOKEVIRTUAL Integer "intValue" "()I")
+           (IRETURN)]
+         (asm-expr ^int [^boolean test? ^Integer a ^Integer b]
+                   (if test? a b))))
+  (is (= '[["LOCAL 0: boolean test?"]
+           ["LOCAL 1: Object a"]
+           ["LOCAL 2: Object b"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (ALOAD_1)
+           (GOTO L:1)
+           [L:0]
+           (ALOAD_2)
+           [L:1]
+           (CHECKCAST Integer)
+           (INVOKEVIRTUAL Integer "intValue" "()I")
+           (IRETURN)]
+         (asm-expr ^int [^boolean test? ^Object a ^Object b]
+                   (if test? a b)))))
+
+;; Order of paths should not matter: int/Integer and Integer/int
+;; should produce equivalent code.  The int should be returned
+;; unchanged, and the Integer should be unboxed.
+(deftest unboxing-of-mixed-paths
+  (is (= '[["LOCAL 0: boolean test?"]
+           ["LOCAL 1: int a"]
+           ["LOCAL 2: Integer b"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (ILOAD_1)
+           (IRETURN)
+           [L:0]
+           (ALOAD_2)
+           (INVOKEVIRTUAL Integer "intValue" "()I")
+           (IRETURN)]
+         (asm-expr ^int [^boolean test? ^int a ^Integer b]
+                   (if test? a b))))
+  (is (= '[["LOCAL 0: boolean test?"]
+           ["LOCAL 1: int a"]
+           ["LOCAL 2: Object b"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (ILOAD_1)
+           (IRETURN)
+           [L:0]
+           (ALOAD_2)
+           (CHECKCAST Integer)
+           (INVOKEVIRTUAL Integer "intValue" "()I")
+           (IRETURN)]
+         (asm-expr ^int [^boolean test? ^int a ^Object b]
+                   (if test? a b))))
+  
+  (is (= '[["LOCAL 0: boolean test?"]
+           ["LOCAL 1: Integer a"]
+           ["LOCAL 2: int b"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (ALOAD_1)
+           (INVOKEVIRTUAL Integer "intValue" "()I")
+           (IRETURN)
+           [L:0]
+           (ILOAD_2)
+           (IRETURN)]
+         (asm-expr ^int [^boolean test? ^Integer a ^int b]
+                   (if test? a b))))
+  (is (= '[["LOCAL 0: boolean test?"]
+           ["LOCAL 1: Object a"]
+           ["LOCAL 2: int b"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (ALOAD_1)
+           (CHECKCAST Integer)
+           (INVOKEVIRTUAL Integer "intValue" "()I")
+           (IRETURN)
+           [L:0]
+           (ILOAD_2)
+           (IRETURN)]
+         (asm-expr ^int [^boolean test? ^Object a ^int b]
+                   (if test? a b)))))
+
+;;; Mixed paths are assigned the primitive type, because Integer (or
+;;; Object in general) is assignment compatible to `int`.  But this is
+;;; (right now) incompatible with the function's result type Object.
+(deftest mixed-paths-passed-to-Object
+  #_(is (= '[]
+           (asm-expr ^Object [^boolean test? ^int a ^Integer b]
+                     (if test? a b))))
+  #_(is (= '[]
+           (asm-expr ^Object [^boolean test? ^int a ^Object b]
+                     (if test? a b)))))
