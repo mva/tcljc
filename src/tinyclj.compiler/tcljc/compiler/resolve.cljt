@@ -55,16 +55,16 @@
                 (and (.isVarArgs e) (>= arg-count (dec n))))))]
 
   (defn method-exact ^Method [^boolean static? ^Class owner ^String nm
-                              ^Class* atypes]
+                              ^Class* ltypes]
     (letfn [(match-static ^Method [^Method m]
               (when (= (Modifier/isStatic (.getModifiers m)) static?)
                 m))]
       (try
-        (match-static (.getMethod owner nm atypes))
+        (match-static (.getMethod owner nm ltypes))
         (catch NoSuchMethodException _
           (when (jb/interface? owner)
             (try ;if owner is an interface, then try again with Object
-              (match-static (.getMethod Object nm atypes))
+              (match-static (.getMethod Object nm ltypes))
               (catch NoSuchMethodException _
                 nil)))))))
   
@@ -76,10 +76,10 @@
                    (not (.isBridge m))))
             (.getMethods owner)))
 
-  (defn constructor-exact ^Constructor [^Class owner ^Class* atypes]
+  (defn constructor-exact ^Constructor [^Class owner ^Class* ltypes]
     ;; returns nil if there is no exact match
     (try
-      (.getConstructor owner atypes)
+      (.getConstructor owner ltypes)
       (catch NoSuchMethodException _
         nil)))
   
@@ -92,67 +92,56 @@
 (letfn [(settable? ^boolean [^Field f]  ;pre: `f` is public
           (not (Modifier/isFinal (.getModifiers f))))]
 
-  (defn load-static ^Expr [^long x-env ^Class owner ^Field f
-                           ^IPersistentVector argv]
-    (let [mhd (MethodHandleDesc/ofField rt/mhk-static-getter
+  (defn load-field ^Expr [^boolean static? ^long x-env ^Class owner ^Field f
+                          ^IPersistentVector argv]
+    (let [mhd (MethodHandleDesc/ofField (if static?
+                                          rt/mhk-static-getter
+                                          rt/mhk-getter)
                                         (rt/describe-class owner) (.getName f)
                                         (rt/cd-of (.getType f)))]
-      (x/invoke-xref x-env (.getType f) argv nil mhd (settable? f))))
-  (defn static-field ^Field [^Class owner ^String nm ^Class* atypes]
-    (when (zero? (alength atypes))
-      (field-with true owner nm)))
-
-  (defn load-virtual ^Expr [^long x-env ^Class owner ^Field f
-                            ^IPersistentVector argv]
-    (let [mhd (MethodHandleDesc/ofField rt/mhk-getter
-                                        (rt/describe-class owner) (.getName f)
-                                        (rt/cd-of (.getType f)))]
-      (x/invoke-xref x-env (.getType f) argv nil mhd (settable? f))))
-  (defn virtual-field ^Field [^Class owner ^String nm ^Class* atypes]
-    (when (zero? (alength atypes))
-      (field-with false owner nm))))
+      (x/invoke-xref x-env (.getType f) argv nil mhd (settable? f)))))
 
 ;;; Problem: class MethodHandle.PolymorphicSignature is not public
 (def ^:private ann-polymorphic-signature
   (Class/forName "java.lang.invoke.MethodHandle$PolymorphicSignature"
                  false (ClassLoader/getPlatformClassLoader)))
 
-(letfn [(compatible-prefix? ^boolean [^Class* atypes
+(letfn [(compatible-prefix? ^boolean [^Class* ltypes
                                       ^Class* ptypes
                                       ^int pdelta-end]
           (loop [i (+ (alength ptypes) pdelta-end)]
             (cond
               (neg? i) true
-              (assignable-to? (aget atypes i) (aget ptypes i)) (recur (dec i))
+              (assignable-to? (aget ltypes i) (aget ptypes i)) (recur (dec i))
               :else false)))
-        (compatible-suffix? ^boolean [^Class* atypes
+        (compatible-suffix? ^boolean [^Class* ltypes
                                       ^Class ptype ^int start]
           (or (jb/object? ptype) ;FIXME... drop special case after Valhalla?
-              (loop [i (dec (alength atypes))]
+              (loop [i (dec (alength ltypes))]
                 (cond
                   (< i start) true
                   ;; FIXME... does this require special handling of
                   ;; primitives once the special case Object is gone?
-                  (.isAssignableFrom ptype (aget atypes i)) (recur (dec i))
+                  (.isAssignableFrom ptype (aget ltypes i)) (recur (dec i))
                   :else false))))
         
-        (compatible-fix-args? ^boolean [^Class* atypes
+        (compatible-fix-args? ^boolean [^Class* ltypes
                                         ^Class* ptypes]
-          (and (= (alength atypes) (alength ptypes))
-               (compatible-prefix? atypes ptypes -1)))
-        (compatible-var-args? ^boolean [^Class* atypes
+          (and (= (alength ltypes) (alength ptypes))
+               (compatible-prefix? ltypes ptypes -1)))
+        (compatible-var-args? ^boolean [^Class* ltypes
                                         ^Class* ptypes]
-          (and (>= (alength atypes) (dec (alength ptypes)))
-               (compatible-prefix? atypes ptypes -2)
+          (and (>= (alength ltypes) (dec (alength ptypes)))
+               (compatible-prefix? ltypes ptypes -2)
                (let [va-tp (aget ptypes (dec (alength ptypes)))]
-                 (compatible-suffix? atypes (.getComponentType va-tp)
+                 (compatible-suffix? ltypes (.getComponentType va-tp)
                                      (dec (alength ptypes))))))
-        (compatible-var-array? ^boolean [^Class* atypes
+        (compatible-var-array? ^boolean [^Class* ltypes
                                          ^Class* ptypes]
-          (and (= (alength atypes) (alength ptypes))
+          (and (= (alength ltypes) (alength ptypes))
                (.isAssignableFrom (aget ptypes (dec (alength ptypes)))
-                                  (aget atypes (dec (alength atypes))))
-               (compatible-prefix? atypes ptypes -2)))
+                                  (aget ltypes (dec (alength ltypes))))
+               (compatible-prefix? ltypes ptypes -2)))
 
         (signature-polymorphic* ^boolean [^Method m] ;pre: m.isVarArgs()
           (.isAnnotationPresent m ann-polymorphic-signature))]
@@ -160,13 +149,13 @@
   (defn signature-polymorphic? ^boolean [^Executable e] ;pre: e.isVarArgs()
     (and (instance? Method e) (signature-polymorphic* ^Method e)))
   
-  (defn- compatible-args? ^boolean [^Class* atypes ^Executable e]
+  (defn- compatible-args? ^boolean [^Class* ltypes ^Executable e]
     (let [ptypes (.getParameterTypes e)]
       (if (.isVarArgs e)
-        (or (compatible-var-args? atypes ptypes)
-            (compatible-var-array? atypes ptypes)
+        (or (compatible-var-args? ltypes ptypes)
+            (compatible-var-array? ltypes ptypes)
             (signature-polymorphic? ^Method e))
-        (compatible-fix-args? atypes ptypes))))
+        (compatible-fix-args? ltypes ptypes))))
   
   (defn- filter-dominators [es]
     (letfn [(dominates-all? ^boolean [^Executable e]
@@ -207,76 +196,48 @@
                         (constr-descriptor c))
       (invoke-constr* x-env owner c argv)))
 
-  (defn- mhk-static ^DirectMethodHandleDesc$Kind [^Class owner]
-    (if (.isInterface owner)
-      rt/mhk-interface-static
-      rt/mhk-static))
-  (defn- invoke-static* ^Expr [^long x-env ^Class owner ^Method m
+  (defn- owner-mhk ^DirectMethodHandleDesc$Kind [^boolean static? ^Class owner]
+    (if static?
+      (if (.isInterface owner) rt/mhk-interface-static rt/mhk-static)
+      (if (.isInterface owner) rt/mhk-interface-virtual rt/mhk-virtual)))
+  (defn- owner-cd ^ClassDesc [^Class owner]
+    (if (jb/array? owner) rt/object (rt/describe-class owner)))
+  (defn- invoke-method* ^Expr [^boolean static? ^long x-env ^Class owner ^Method m
                                ^IPersistentVector argv]
-    (let [mhd (MethodHandleDesc/of (mhk-static owner) (rt/describe-class owner)
+    (let [mhd (MethodHandleDesc/of (owner-mhk static? owner) (owner-cd owner)
                                    (.getName m) (method-descriptor m))]
       (x/invoke-xref x-env (.getReturnType m) argv nil mhd false)))
-  (defn- invoke-static ^Expr [^long x-env ^Class owner ^Method m
+  (defn- invoke-method ^Expr [^boolean static? ^long x-env ^Class owner ^Method m
                               ^IPersistentVector argv]
     (cond
       (signature-polymorphic? m)
-      (x/invoke-poly x-env jb/cl-polymorphic-type argv nil (mhk-static owner)
-                     (rt/describe-class owner) (.getName m)
-                     (.isInterface owner))
+      (x/invoke-poly x-env jb/cl-polymorphic-type argv nil (owner-mhk static? owner)
+                     (owner-cd owner) (.getName m) (.isInterface owner))
 
       (invoke-via-method-handle? m argv)
-      (x/mh-invoke-xref x-env (.getReturnType m) argv nil (mhk-static owner)
-                        (rt/describe-class owner) (.getName m)
-                        (method-descriptor m))
+      (x/mh-invoke-xref x-env (.getReturnType m) argv nil (owner-mhk static? owner)
+                        (owner-cd owner) (.getName m) (method-descriptor m))
 
       :else
-      (invoke-static* x-env owner m argv)))
-
-  (defn- mhk-virtual ^DirectMethodHandleDesc$Kind [^Class owner]
-    (if (.isInterface owner)
-      rt/mhk-interface-virtual
-      rt/mhk-virtual))
-  (defn- owner-cd-virtual ^ClassDesc [^Class owner]
-    (if (jb/array? owner)
-      rt/object
-      (rt/describe-class owner)))
-  (defn- invoke-virtual* ^Expr [^long x-env ^Class owner ^Method m
-                                ^IPersistentVector argv]
-    (let [mhd (MethodHandleDesc/of (mhk-virtual owner) (owner-cd-virtual owner)
-                                   (.getName m) (method-descriptor m))]
-      (x/invoke-xref x-env (.getReturnType m) argv nil mhd false)))
-  (defn- invoke-virtual ^Expr [^long x-env ^Class owner ^Method m
-                               ^IPersistentVector argv]
-    (cond
-      (signature-polymorphic? m)
-      (x/invoke-poly x-env jb/cl-polymorphic-type argv nil (mhk-virtual owner)
-                     (owner-cd-virtual owner) (.getName m) (.isInterface owner))
-
-      (invoke-via-method-handle? m argv)
-      (x/mh-invoke-xref x-env (.getReturnType m) argv nil (mhk-virtual owner)
-                        (owner-cd-virtual owner) (.getName m)
-                        (method-descriptor m))
-
-      :else
-      (invoke-virtual* x-env owner m argv))))
+      (invoke-method* static? x-env owner m argv))))
 
 ;;; ------------------------------------------------------------------------
 
-(defn- argument-types ^Class* [^IPersistentVector argv]
-  (let [a (new Class* (count argv))]
+(defn lookup-types ^Class* [^IPersistentVector argv ^int offset]
+  (let [a (new Class* (- (count argv) offset))]
     (dotimes [i (alength a)]
-      (aset a i (x/type (nth argv i))))
+      (aset a i (x/type (nth argv (+ i offset)))))
     a))
 
 (defn- pick-member [members]
   (when (nil? (next members))
     (first members)))
 (defn- wrong-member [members ^String member-label ^Class owner ^String nm
-                     ^Class* atypes]
+                     ^Class* ltypes]
   (letfn [(invoke-ex-data []
             {:invoke/name nm
              :invoke/owner owner
-             :invoke/arg-types atypes})]
+             :invoke/arg-types ltypes})]
     (if-some [ms (seq members)]
       (-> (str "multiple " member-label "s matching ")
           (wrong/unresolved-interop nm owner (invoke-ex-data)))
@@ -324,79 +285,54 @@
                           (conv/consume (nth argv i) (aget ptypes i) "parameter")))
               (inc i))))))
 
-(defn invoke-as-static ^Expr [^long x-env ^Class owner ^String nm
-                              ^IPersistentVector argv]
-  (let [atypes (argument-types argv)
-        fields-only? (.startsWith nm "-")
+(defn invoke-as-member ^Expr [^long x-env ^Class owner ^String nm
+                              ^IPersistentVector argv ^Class* ltypes]
+  (let [fields-only? (.startsWith nm "-")
         nm (cond-> nm fields-only? (.substring 1))
-        argv-prefix []
+        ;; `ltypes` of virtual methods and fields omits argv[0]
+        static? (= (alength ltypes) (count argv))
         wrong (fn [ms]
-                (wrong-member ms (cond fields-only? "static field"
-                                       (pos? (alength atypes)) "static method"
-                                       :else "static member")
-                              owner nm atypes))
+                (wrong-member ms
+                              (str (if static? "static" "virtual")
+                                   (cond fields-only? " field"
+                                         (pos? (alength ltypes)) " method"
+                                         :else " member"))
+                              owner nm ltypes))
         load-field (fn []
-                     (if-some [f (static-field owner nm atypes)]
-                       (load-static x-env owner f argv-prefix)
+                     (if-some [f (when (zero? (alength ltypes))
+                                   (field-with static? owner nm))]
+                       (load-field static? x-env owner f argv)
                        (wrong ())))]
     (if fields-only?
       (load-field)
-      (if-some [m (method-exact true owner nm atypes)]
-        (invoke-static* x-env owner m argv)
-        (if-some [ms (seq (->> (methods-with true owner nm (alength atypes))
-                               (filter #(compatible-args? atypes %))
-                               (filter-dominators)))]
-          (if-some [m ^Method (pick-member ms)]
-            (->> (consume-args argv-prefix argv m)
-                 (invoke-static x-env owner m))
-            (wrong ms))
-          (load-field))))))
-
-(defn invoke-as-virtual ^Expr [^long x-env ^Expr inst ^String nm
-                               ^IPersistentVector argv]
-  (let [atypes (argument-types argv)
-        fields-only? (.startsWith nm "-")
-        nm (cond-> nm fields-only? (.substring 1))
-        owner (x/type inst)
-        argv-prefix [inst]
-        wrong (fn [ms]
-                (wrong-member ms (cond fields-only? "virtual field"
-                                       (pos? (alength atypes)) "virtual method"
-                                       :else "virtual member")
-                              owner nm atypes))
-        load-field (fn []
-                     (if-some [f (virtual-field owner nm atypes)]
-                       (load-virtual x-env owner f argv-prefix)
-                       (wrong ())))]
-    (if fields-only?
-      (load-field)
-      (if-some [m (method-exact false owner nm atypes)]
-        (invoke-virtual* x-env owner m (into argv-prefix argv))
-        ;; `atypes` does not include receiver, but the receiver is
+      (if-some [m (method-exact static? owner nm ltypes)]
+        (invoke-method* static? x-env owner m argv)
+        ;; `ltypes` does not include receiver, but the receiver is
         ;; counted as an implicit invocation argument
-        (if-some [ms (seq (->> (methods-with false owner nm
-                                             (inc (alength atypes)))
-                               (filter #(compatible-args? atypes %))
+        (if-some [ms (seq (->> (methods-with static? owner nm (count argv))
+                               (filter #(compatible-args? ltypes %))
                                (filter-dominators)))]
           (if-some [m ^Method (pick-member ms)]
-            (->> (consume-args argv-prefix argv m)
-                 (invoke-virtual x-env owner m))
+            (->> (if static?
+                   (consume-args [] argv m)
+                   (consume-args (subvec argv 0 1) (subvec argv 1) m))
+                 (invoke-method static? x-env owner m))
             (wrong ms))
           (load-field))))))
 
 (defn invoke-as-constructor ^Expr [^long x-env ^Class owner
                                    ^IPersistentVector argv]
   (let [nm ConstantDescs/INIT_NAME
-        atypes (argument-types argv)]
-    (if-some [c (constructor-exact owner atypes)]
+        ltypes (lookup-types argv 0)]
+    (if-some [c (constructor-exact owner ltypes)]
       (invoke-constr* x-env owner c argv)
-      (let [cs (->> (constructors-with owner (alength atypes))
-                    (filter #(compatible-args? atypes %))
+      (let [cs (->> (constructors-with owner (alength ltypes))
+                    (filter #(compatible-args? ltypes %))
                     (filter-dominators))]
         (if-some [c ^Constructor (pick-member cs)]
           (->> (consume-args [] argv c)
                (invoke-constr x-env owner c))
-          (wrong-member cs "constructor" owner nm atypes))))))
+          (wrong-member cs "constructor" owner nm ltypes))))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -457,9 +393,9 @@
   ;; If `return-type` is not cl-polymorphic-type, then it must match
   ;; the the return type of the method.
   (defn itf-method-exact ^Method [^Class owner ^String nm ^Class return-type
-                                  ^Class* atypes]
-    (when-some [^Method m (or (method-exact false owner nm atypes)
-                              (method-exact-pp owner nm atypes))]
+                                  ^Class* ltypes]
+    (when-some [^Method m (or (method-exact false owner nm ltypes)
+                              (method-exact-pp owner nm ltypes))]
       (when (or (jb/polymorphic? return-type)
                 (jb/same-class? (.getReturnType m) return-type))
         m))))

@@ -467,15 +467,16 @@
          (-> (compile-form env (with-expr x-env) form)
              (x/ensure-runtime-value)
              (conv/consume-poly)))
+       (expr-forms* ^IPersistentVector [^IPersistentVector acc s]
+         (if (nil? s)
+           acc
+           (recur (conj acc (expr-form (first s))) (next s))))
        (expr-forms ^IPersistentVector [forms] ;returns vector of Expr
          ;; Not a mapv to keep stacktrace shallow & avoid closures.
          ;; Calls tend to short seqs.  Example element counts from
          ;; tcljc itself: 0 at ~14%, 1 at ~42%, 2 at ~28%, 3 at ~9%.
          (if-some [s (seq forms)]
-           (loop [acc (vector (expr-form (first s))), s (next s)]
-             (if (nil? s)
-               acc
-               (recur (conj acc (expr-form (first s))) (next s))))
+           (expr-forms* (vector (expr-form (first s))) (next s))
            []))
 
        (tail-form ^Expr [form]
@@ -765,10 +766,13 @@
            (add-imports import-map (.ctx env))))
        
        (dot-form* ^Expr [^long x-env ^Expr cl-or-inst ^String nm arg-forms]
-         (let [argv (expr-forms arg-forms)]
-           (if-some [owner (x/classname-type cl-or-inst)]
-             (resolve/invoke-as-static x-env owner nm argv)
-             (resolve/invoke-as-virtual x-env cl-or-inst nm argv))))
+         (if-some [owner (x/classname-type cl-or-inst)]
+           (let [argv (expr-forms arg-forms)
+                 ltypes (resolve/lookup-types argv 0)]
+             (resolve/invoke-as-member x-env owner nm argv ltypes))
+           (let [argv (expr-forms* [cl-or-inst] arg-forms)
+                 ltypes (resolve/lookup-types argv 1)]
+             (resolve/invoke-as-member x-env (x/type cl-or-inst) nm argv ltypes))))
        (dot-form ^Expr [[_ owner member-or-list & xr :as form]]
          (wrong/check-argc-min 2 form)
          (let [cl-or-inst (expr-form owner)]
@@ -1117,7 +1121,7 @@
        (resolve-static-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
          (let [ns-part (namespace sym)]
            (if-some [tp (ctx/get-type (symbol nil ns-part) (.ctx env))]
-             (resolve/invoke-as-static x-env tp (name sym) [])
+             (resolve/invoke-as-member x-env tp (name sym) [] (new Class* 0))
              (wrong-unresolved-nmsp ns-part sym))))
        (compile-atom ^Expr [form]
          (if (instance? IMeta form)
@@ -1222,8 +1226,10 @@
                                        (list '. form member))
                                      inst formr)))
                (do (wrong/check-argc-min 1 form)
-                   (resolve/invoke-as-virtual x-env (expr-form inst)
-                                              (subs nm 1) (expr-forms formr))))
+                   (let [argv (expr-forms (rest form))
+                         ltypes (resolve/lookup-types argv 1)]
+                     (resolve/invoke-as-member x-env (x/type (nth argv 0))
+                                               (subs nm 1) argv ltypes))))
              
              (and (nil? (namespace x)) (ends-with-dot? nm))
              (new-form (list* 'new (symbol nil (subs nm 0 (dec (count nm))))
