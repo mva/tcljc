@@ -35,14 +35,6 @@
     :else (.isAssignableFrom to-tp from-tp)))
 
 
-(defn- field-with ^Field [^boolean static? ^Class owner ^String nm]
-  (try
-    (let [f (.getField owner nm)]
-      (when (= (Modifier/isStatic (.getModifiers f)) static?)
-        f))
-    (catch NoSuchFieldException _
-      nil)))
-
 (defn- invocation-parameter-count ^int [^Executable e]
   (cond-> (.getParameterCount e)
     (and (instance? Method e)           ;exclude Constructor
@@ -88,18 +80,6 @@
               (parameter-count-match? arg-count c))
             (.getConstructors owner))))
 
-
-(letfn [(settable? ^boolean [^Field f]  ;pre: `f` is public
-          (not (Modifier/isFinal (.getModifiers f))))]
-
-  (defn load-field ^Expr [^boolean static? ^long x-env ^Class owner ^Field f
-                          ^IPersistentVector argv]
-    (let [mhd (MethodHandleDesc/ofField (if static?
-                                          rt/mhk-static-getter
-                                          rt/mhk-getter)
-                                        (rt/describe-class owner) (.getName f)
-                                        (rt/cd-of (.getType f)))]
-      (x/invoke-xref x-env (.getType f) argv nil mhd (settable? f)))))
 
 ;;; Problem: class MethodHandle.PolymorphicSignature is not public
 (def ^:private ann-polymorphic-signature
@@ -299,10 +279,19 @@
                                          :else " member"))
                               owner nm ltypes))
         load-field (fn []
-                     (if-some [f (when (zero? (alength ltypes))
-                                   (field-with static? owner nm))]
-                       (load-field static? x-env owner f argv)
-                       (wrong ())))]
+                     (try
+                       (let [f (.getField owner nm)]
+                         (if (and (= (Modifier/isStatic (.getModifiers f)) static?)
+                                  (zero? (alength ltypes)))
+                           (let [mhd (MethodHandleDesc/ofField
+                                      (if static? rt/mhk-static-getter rt/mhk-getter)
+                                      (rt/describe-class owner) (.getName f)
+                                      (rt/cd-of (.getType f)))
+                                 settable? (not (Modifier/isFinal (.getModifiers f)))]
+                             (x/invoke-xref x-env (.getType f) argv nil mhd settable?))
+                           (wrong ())))
+                       (catch NoSuchFieldException _
+                         (wrong ()))))]
     (if fields-only?
       (load-field)
       (if-some [m (method-exact static? owner nm ltypes)]
