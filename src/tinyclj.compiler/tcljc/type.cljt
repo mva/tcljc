@@ -23,6 +23,8 @@
 (definterface TypeConversion
   (adapt ^Expr [^Expr arg]))
 
+(def tc-identity (^TypeConversion fn [arg] arg))
+
 (deftype Wrapper [^Class class-primitive
                   ^Class class-wrapper
                   ^Expr default-value
@@ -232,7 +234,7 @@
                (.adapt (.box-of (of* (x/type arg) nil)) arg))
               nil                              ;unbox-to
               nil                              ;box-of
-              (^TypeConversion fn [arg] arg))) ;reference-to
+              tc-identity))                    ;reference-to
 
   (defn of ^Wrapper [^Class cl]
     (of* cl generic-reference))
