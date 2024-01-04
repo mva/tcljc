@@ -29,8 +29,9 @@
    (java.util.concurrent Future))
   (:refer-clojure :exclude [type identity pop]))
 
-(let [flag-inline-tcf 32
-      flag-recur 33
+(let [flag-inline-tcf 32 ;compiler can inline try/catch/finally statement?
+      flag-recur 33      ;compiler can recur from this position?
+      flag-nil-object 34 ;leaves expr-nil-object on operand stack?
       mask-flags (bit-shift-left (dec (bit-shift-left 1l 32)) 32)]
   (defn flags-line-number ^long [form]
     (long (cfg/line-number form)))
@@ -45,6 +46,8 @@
     (bit-test flags flag-inline-tcf))
   (defn x-recur? ^boolean [^long flags]
     (bit-test flags flag-recur))
+  (defn- x-nil-object? ^boolean [^long flags]
+    (bit-test flags flag-nil-object))
   
   (defn with-line-number* ^long [^long flags ^int ln]
     (-> flags (bit-and mask-flags) (bit-or ln)))
@@ -57,7 +60,10 @@
   (defn with-recur ^long [^long flags]
     (bit-set flags flag-recur))
   (defn without-recur ^long [^long flags]
-    (bit-clear flags flag-recur)))
+    (bit-clear flags flag-recur))
+
+  (defn with-nil-object ^long [^long flags]
+    (bit-set flags flag-nil-object)))
 
 (definterface __IExpr             ;template for the abstract base type
   (safe-to-discard? ^boolean [])
@@ -121,6 +127,8 @@
 (defn flags-of ^long [^Expr x]          ;pre: `x` is not nil
   (.flags x))
 (def flags-no-ln (long cfg/no-line-number))
+(defn pushes-nil-object? ^boolean [^Expr x]
+  (x-nil-object? (flags-of x)))
 
 (defn same-type? ^boolean [^Expr a ^Expr b]
   (jb/same-class? (.type a) (.type b)))
@@ -254,7 +262,7 @@
                 ^:pass-to-super-constructor ^Object const-value]
   Expr)
 
-(def expr-nil-object (Const. flags-no-ln jb/Object [] jb/jvm-null))
+(def expr-nil-object (Const. (with-nil-object flags-no-ln) jb/Object [] jb/jvm-null))
 (defn const-value-nil? ^boolean [^Expr x]
   (identical? jb/jvm-null (.const-value x)))
 
@@ -574,9 +582,10 @@
   (case (count argv)
     0 expr-empty
     1 (nth argv 0)      ;different from the `identity` operation below
-    #_else (Progn. (flags-of ^Expr (first argv))
-                   (type (peek argv)) argv (const-value-progn argv)
-                   adpt-identity)))
+    #_else (let [lst (peek argv)]
+             ;; note: propagates `flag-nil-object` of tail expression
+             (Progn. (flags-of lst) (type lst) argv (const-value-progn argv)
+                     adpt-identity))))
 
 (defn identity
   (^Expr [^Expr arg]
@@ -614,17 +623,10 @@
 
 (defn block ^Expr [bexprs ^Expr body]
   (if (some? (seq bexprs))
+    ;; note: propagates `flag-nil-object` of body
     (Block. (flags-of body) (type body) (conj (vec bexprs) body)
             nil adpt-identity)
     body))
-
-(letfn [(sequential? ^boolean [^Expr x] ;does not include empty-expr
-          (and (or (progn? x) (block? x)) (pos? (arg-count x))))]
-  (defn pushes-nil-object? ^boolean [^Expr x]
-    (and (jb/object? (type x))
-         (cond (const-value-nil? x) true
-               (sequential? x) (recur (peek (argv x)))
-               :else false))))
 
 ;;; ------------------------------------------------------------------------
 

@@ -47,7 +47,7 @@
   (let [from-tp (x/type x)]
     (cond
       (jb/same-class? to-tp from-tp) x
-      (identical? x/expr-nil-object x) (x/const to-tp nil)
+      (x/const-value-nil? x) (x/const to-tp nil)
       (.isAssignableFrom to-tp from-tp) (x/identity to-tp x)
       (x/identity? x) (recur (x/first-arg x) to-tp)
       :else (x/type-check x Opcode/CHECKCAST to-tp))))
