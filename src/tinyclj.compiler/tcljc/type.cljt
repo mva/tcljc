@@ -33,16 +33,7 @@
                   ^TypeConversion unbox-to
                   ^TypeConversion box-of
                   ^TypeConversion reference-to]
-  #_java.lang.Record) ;FIXME... turn this into record once self hosting
-
-(defn numeric? ^boolean [^Wrapper tp] (>= (.numeric-order tp) 0))
-(defn widens-to-int? ^boolean [^Wrapper tp] (>= (.numeric-order tp) 3))
-(defn widens-to-long? ^boolean [^Wrapper tp] (>= (.numeric-order tp) 2))
-
-;;; True if `from-tp` widens to numeric type `to-tp`.
-(defn widens-to-numeric? ^boolean [^Wrapper from-tp ^Wrapper to-tp]
-  (>= (.numeric-order from-tp) (.numeric-order to-tp) 0))
-
+  java.lang.Record)
 
 ;;; Convert any primitive value to int.  This includes void, boolean,
 ;;; and char.  Idempotent if argument is already of type int.
@@ -209,6 +200,17 @@
                  (.adapt (.reference-to boolean) arg)
                  ;; any reference that is a non-Boolean subtype of Object:
                  (xf/acmp arg x/expr-nil-object cf/ne))))))
+
+;;; True if `from-tp` widens to numeric type `to-tp`.
+(defn widens-to-numeric? ^boolean [^Wrapper from-tp ^Wrapper to-tp]
+  (>= (.numeric-order from-tp) (.numeric-order to-tp) (.numeric-order double)))
+
+(defn numeric? ^boolean [^Wrapper tp]
+  (>= (.numeric-order tp) (.numeric-order double)))
+(defn widens-to-int? ^boolean [^Wrapper tp]
+  (>= (.numeric-order tp) (.numeric-order int)))
+(defn widens-to-long? ^boolean [^Wrapper tp]
+  (>= (.numeric-order tp) (.numeric-order long)))
 
 (letfn [(of* ^Wrapper [^Class cl ^Wrapper of-reference]
           (if (.isPrimitive cl)
