@@ -9,8 +9,10 @@
   (:require
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
+   [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
-   [tcljc.type :as tp])
+   [tcljc.type :as tp]
+   [tcljc.compiler.conv :as conv])
   (:import
    (tcljc.expr Expr InvokeXref)
    (clojure.lang IPersistentVector)
@@ -256,6 +258,115 @@
         (->> (methods-with false owner nm (inc (alength atypes)))
              (filter #(compatible-args? atypes %))
              (filter-dominators)))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- argument-types ^Class* [^IPersistentVector argv]
+  (let [a (new Class* (count argv))]
+    (dotimes [i (alength a)]
+      (aset a i (x/type (nth argv i))))
+    a))
+
+(defn- pick-member [members ^String member-label ^Class owner ^String nm
+                    ^Class* atypes]
+  (letfn [(invoke-ex-data []
+            {:invoke/name nm
+             :invoke/owner owner
+             :invoke/arg-types atypes})]
+    (if-some [ms (seq members)]
+      (if (nil? (next ms))
+        (first ms)
+        (-> (str "multiple " member-label "s matching ")
+            (wrong/unresolved-interop nm owner (invoke-ex-data))))
+      (-> (str "no " member-label " matching ")
+          (wrong/unresolved-interop nm owner (invoke-ex-data))))))
+
+;;; Returns component type of the varargs parameter, or nil if no
+;;; arguments are collected into an array.  If `e` is polymorphic,
+;;; result is always `cl-polymorphic-type`.
+(defn- collecting-vararg-type ^Class [^Executable e ^IPersistentVector argv]
+  (when (.isVarArgs e)
+    (if (signature-polymorphic? e)
+      jb/cl-polymorphic-type
+      (let [n (.getParameterCount e)
+            va-param-tp (aget (.getParameterTypes e) (dec n))]
+        (if (and (= n (count argv))
+                 (.isAssignableFrom va-param-tp (x/type (peek argv))))
+          nil                           ;array already provided
+          (.componentType va-param-tp))))))
+
+(defn- consume-args
+  (^IPersistentVector [^IPersistentVector acc
+                       ^IPersistentVector argv
+                       ^Executable e]
+   (let [ptypes (.getParameterTypes e)]
+     (if-some [vararg-tp (collecting-vararg-type e argv)]
+       ;; For a polymorphic method, skip adapting of arguments
+       ;; starting with the position of the vararg parameter.  For a
+       ;; varargs method, only adapt reference arguments passed to the
+       ;; vararg parameter.  FIXME... After Valhalla, revise this to
+       ;; check type of vararg arguments as well?
+       (consume-args acc argv ptypes (dec (alength ptypes)) vararg-tp)
+       (consume-args acc argv ptypes Integer/MAX_VALUE jb/Object))))
+  (^IPersistentVector [^IPersistentVector acc
+                       ^IPersistentVector argv
+                       ^Class* ptypes
+                       ^int vararg-start ^Class vararg-tp]
+   (loop [acc acc, i 0]
+     (if (= i (count argv))
+       acc
+       (recur (conj acc (if (>= i vararg-start)
+                          (-> (conv/consume-poly (nth argv i))
+                              (tp/coerce-vararg vararg-tp))
+                          (conv/consume (nth argv i) (aget ptypes i) "parameter")))
+              (inc i))))))
+
+(defn invoke-as-static ^Expr [^long x-env ^Class owner ^String nm
+                              ^IPersistentVector argv]
+  (let [atypes (argument-types argv)
+        fields-only? (.startsWith nm "-")
+        nm (cond-> nm fields-only? (.substring 1))
+        member-label (cond fields-only? "static field"
+                           (pos? (alength atypes)) "static method"
+                           :else "static member")
+        argv-prefix []]
+    (if-some [ms (when-not fields-only?
+                   (seq (static-methods owner nm atypes)))]
+      (let [m ^Method (pick-member ms member-label owner nm atypes)]
+        (->> (consume-args argv-prefix argv m)
+             (invoke-static x-env owner m)))
+      (let [fs (static-fields owner nm atypes)
+            f ^Field (pick-member fs member-label owner nm atypes)]
+        (load-static x-env owner f argv-prefix)))))
+
+(defn invoke-as-virtual ^Expr [^long x-env ^Expr inst ^String nm
+                               ^IPersistentVector argv]
+  (let [atypes (argument-types argv)
+        fields-only? (.startsWith nm "-")
+        nm (cond-> nm fields-only? (.substring 1))
+        owner (x/type inst)
+        member-label (cond fields-only? "virtual field"
+                           (pos? (alength atypes)) "virtual method"
+                           :else "virtual member")
+        argv-prefix [inst]]
+    (if-some [ms (when-not fields-only?
+                   (seq (virtual-methods owner nm atypes)))]
+      (let [m ^Method (pick-member ms member-label owner nm atypes)]
+        (->> (consume-args argv-prefix argv m)
+             (invoke-virtual x-env owner m)))
+      (let [fs (virtual-fields owner nm atypes)
+            f ^Field (pick-member fs member-label owner nm atypes)]
+        (load-virtual x-env owner f argv-prefix)))))
+
+(defn invoke-as-constructor ^Expr [^long x-env ^Class owner
+                                   ^IPersistentVector argv]
+  (let [nm ConstantDescs/INIT_NAME
+        member-label "constructor"
+        atypes (argument-types argv)
+        c (-> (constructors owner atypes)
+              ^Constructor (pick-member member-label owner nm atypes))
+        argv (consume-args [] argv c)]
+    (invoke-constr x-env owner c argv)))
 
 ;;; ------------------------------------------------------------------------
 

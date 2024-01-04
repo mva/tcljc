@@ -337,46 +337,6 @@
                     (member-def-fresh nm redef?)))
                 (member-def-noinit nm))))))))
 
-;;; Returns component type of the varargs parameter, or nil if no
-;;; arguments are collected into an array.  If `e` is polymorphic,
-;;; result is always `cl-polymorphic-type`.
-(defn- collecting-vararg-type ^Class [^Executable e ^IPersistentVector argv]
-  (when (.isVarArgs e)
-    (if (resolve/signature-polymorphic? e)
-      jb/cl-polymorphic-type
-      (let [n (.getParameterCount e)
-            va-param-tp (aget (.getParameterTypes e) (dec n))]
-        (if (and (= n (count argv))
-                 (.isAssignableFrom va-param-tp (x/type (peek argv))))
-          nil                           ;array already provided
-          (.componentType va-param-tp))))))
-
-(defn- consume-args
-  (^IPersistentVector [^IPersistentVector acc
-                       ^IPersistentVector argv
-                       ^Executable e]
-   (let [ptypes (.getParameterTypes e)]
-     (if-some [vararg-tp (collecting-vararg-type e argv)]
-       ;; For a polymorphic method, skip adapting of arguments
-       ;; starting with the position of the vararg parameter.  For a
-       ;; varargs method, only adapt reference arguments passed to the
-       ;; vararg parameter.  FIXME... After Valhalla, revise this to
-       ;; check type of vararg arguments as well?
-       (consume-args acc argv ptypes (dec (alength ptypes)) vararg-tp)
-       (consume-args acc argv ptypes Integer/MAX_VALUE jb/Object))))
-  (^IPersistentVector [^IPersistentVector acc
-                       ^IPersistentVector argv
-                       ^Class* ptypes
-                       ^int vararg-start ^Class vararg-tp]
-   (loop [acc acc, i 0]
-     (if (= i (count argv))
-       acc
-       (recur (conj acc (if (>= i vararg-start)
-                          (-> (conv/consume-poly (nth argv i))
-                              (tp/coerce-vararg vararg-tp))
-                          (conv/consume (nth argv i) (aget ptypes i) "parameter")))
-              (inc i))))))
-
 ;;; ------------------------------------------------------------------------
 
 (deftype Env
@@ -803,64 +763,12 @@
        (import*-form ^Expr [form] ;returns the value of the last class
          (let [import-map (grammar/parse-import-specs (rest form))]
            (add-imports import-map (.ctx env))))
-
-       (argument-types ^Class* [^IPersistentVector xv]
-         (let [a (new Class* (count xv))]
-           (dotimes [i (alength a)]
-             (aset a i (x/type (nth xv i))))
-           a))
-       (pick-member [members ^String member-label ^Class owner ^String nm
-                     ^Class* atypes]
-         (letfn [(invoke-ex-data []
-                   {:invoke/name nm
-                    :invoke/owner owner
-                    :invoke/arg-types atypes})]
-           (if-some [ms (seq members)]
-             (if (nil? (next ms))
-               (first ms)
-               (-> (str "multiple " member-label "s matching ")
-                   (wrong/unresolved-interop nm owner (invoke-ex-data))))
-             (-> (str "no " member-label " matching ")
-                 (wrong/unresolved-interop nm owner (invoke-ex-data))))))
-       (dot-form-static ^Expr [^long x-env ^Class owner ^String nm arg-forms]
-         (let [argv (expr-forms arg-forms)
-               atypes (argument-types argv)
-               fields-only? (.startsWith nm "-")
-               nm (cond-> nm fields-only? (.substring 1))
-               member-label (cond fields-only? "static field"
-                                  (pos? (alength atypes)) "static method"
-                                  :else "static member")
-               argv-prefix []]
-           (if-some [ms (when-not fields-only?
-                          (seq (resolve/static-methods owner nm atypes)))]
-             (let [m ^Method (pick-member ms member-label owner nm atypes)]
-               (->> (consume-args argv-prefix argv m)
-                    (resolve/invoke-static x-env owner m)))
-             (let [fs (resolve/static-fields owner nm atypes)
-                   f ^Field (pick-member fs member-label owner nm atypes)]
-               (resolve/load-static x-env owner f argv-prefix)))))
-       (dot-form-virtual ^Expr [^long x-env ^Expr inst ^String nm arg-forms]
-         (let [argv (expr-forms arg-forms)
-               atypes (argument-types argv)
-               fields-only? (.startsWith nm "-")
-               nm (cond-> nm fields-only? (.substring 1))
-               owner (x/type inst)
-               member-label (cond fields-only? "virtual field"
-                                  (pos? (alength atypes)) "virtual method"
-                                  :else "virtual member")
-               argv-prefix [inst]]
-           (if-some [ms (when-not fields-only?
-                          (seq (resolve/virtual-methods owner nm atypes)))]
-             (let [m ^Method (pick-member ms member-label owner nm atypes)]
-               (->> (consume-args argv-prefix argv m)
-                    (resolve/invoke-virtual x-env owner m)))
-             (let [fs (resolve/virtual-fields owner nm atypes)
-                   f ^Field (pick-member fs member-label owner nm atypes)]
-               (resolve/load-virtual x-env owner f argv-prefix)))))
+       
        (dot-form* ^Expr [^long x-env ^Expr cl-or-inst ^String nm arg-forms]
-         (if-some [owner (x/classname-type cl-or-inst)]
-           (dot-form-static x-env owner nm arg-forms)
-           (dot-form-virtual x-env cl-or-inst nm arg-forms)))
+         (let [argv (expr-forms arg-forms)]
+           (if-some [owner (x/classname-type cl-or-inst)]
+             (resolve/invoke-as-static x-env owner nm argv)
+             (resolve/invoke-as-virtual x-env cl-or-inst nm argv))))
        (dot-form ^Expr [[_ owner member-or-list & xr :as form]]
          (wrong/check-argc-min 2 form)
          (let [cl-or-inst (expr-form owner)]
@@ -1109,30 +1017,23 @@
        (new-form ^Expr [[_ cl-arg & args :as form]]
          (wrong/check-argc-min 1 form)
          (let [cn-expr (class-const-or-expr cl-arg)
-               args (expr-forms args)
+               argv (expr-forms args)
                tp (x/classname-type cn-expr)]
            (cond
              (nil? tp)                  ;implied by `cn-expr` of nil
              (wrong/syntax "classname must be symbol or string" cl-arg)
              
              (jb/array? tp)
-             (let [lengthv (mapv #(adapt/checked adapt/numeric-to-int %) args)
+             (let [lengthv (mapv #(adapt/checked adapt/numeric-to-int %) argv)
                    an (cfg/array-dims tp)]
                (if (<= 1 (count lengthv) an)
                  (x/new-array x-env tp lengthv)
                  (wrong/other (str (if (= an 1)
                                      "expect one dimension length"
                                      (str "expect 1 to " an " dimension lengths"))
-                                   (wrong/got-int (count args))))))
+                                   (wrong/got-int (count argv))))))
              :else
-             (let [owner tp
-                   nm ConstantDescs/INIT_NAME
-                   member-label "constructor"
-                   atypes (argument-types args)
-                   c (-> (resolve/constructors owner atypes)
-                         ^Constructor (pick-member member-label owner nm atypes))
-                   argv (consume-args [] args c)]
-               (resolve/invoke-constr x-env owner c argv)))))
+             (resolve/invoke-as-constructor x-env tp argv))))
        
        (instanceof*-form ^Expr [[_ cl-arg arg :as form]]
          (wrong/check-argc 2 form)
@@ -1216,7 +1117,7 @@
        (resolve-static-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
          (let [ns-part (namespace sym)]
            (if-some [tp (ctx/get-type (symbol nil ns-part) (.ctx env))]
-             (dot-form-static x-env tp (name sym) ())
+             (resolve/invoke-as-static x-env tp (name sym) [])
              (wrong-unresolved-nmsp ns-part sym))))
        (compile-atom ^Expr [form]
          (if (instance? IMeta form)
@@ -1321,7 +1222,8 @@
                                        (list '. form member))
                                      inst formr)))
                (do (wrong/check-argc-min 1 form)
-                   (dot-form-virtual x-env (expr-form inst) (subs nm 1) formr)))
+                   (resolve/invoke-as-virtual x-env (expr-form inst)
+                                              (subs nm 1) (expr-forms formr))))
              
              (and (nil? (namespace x)) (ends-with-dot? nm))
              (new-form (list* 'new (symbol nil (subs nm 0 (dec (count nm))))
