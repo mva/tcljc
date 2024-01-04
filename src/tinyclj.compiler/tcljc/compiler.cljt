@@ -154,7 +154,7 @@
     (if (and (x/const-value? x) (x/const-value? m))
       (x/const tp (with-meta (x/recover-primitive-const x)
                     (x/recover-primitive-const m)))
-      (x/invoke-xref x/x-env-no-ln tp [x m] nil rt/mhd-with-meta false))))
+      (x/invoke-xref x/flags-no-ln tp [x m] nil rt/mhd-with-meta false))))
 
 (defn- coll-literal ^Expr [^Class tp elems ^DirectMethodHandleDesc mhd]
   (if (every? x/const-value? elems)
@@ -165,7 +165,7 @@
                     rt/mhd-set (set cs)
                     rt/mhd-list (or (list* cs) ())
                     (throw (IllegalArgumentException.)))))
-    (x/mh-invoke-inexact x/x-env-no-ln tp
+    (x/mh-invoke-inexact x/flags-no-ln tp
                          (->> (map #(tp/coerce-vararg % jb/Object) elems)
                               (cons (x/const jb/MethodHandle mhd))) nil)))
 
@@ -192,15 +192,15 @@
               (let [ldc-ns (x/const jb/String (ctx/this-ns ctx))
                     ldc-nm (x/const jb/String nm-str)]
                 (if (some? init-expr)
-                  (x/invoke-xref x/x-env-no-ln tp-Var [ldc-ns ldc-nm init-expr]
+                  (x/invoke-xref x/flags-no-ln tp-Var [ldc-ns ldc-nm init-expr]
                                  rt/mhd-var-3)
-                  (x/invoke-xref x/x-env-no-ln tp-Var [ldc-ns ldc-nm]
+                  (x/invoke-xref x/flags-no-ln tp-Var [ldc-ns ldc-nm]
                                  rt/mhd-var-2))))
             (set-meta ^Expr [^Expr clj-var ^Expr meta]
-              (x/invoke-xref x/x-env-no-ln tp-Var [clj-var meta]
+              (x/invoke-xref x/flags-no-ln tp-Var [clj-var meta]
                              rt/mhd-Var-setMeta))
             (set-dynamic ^Expr [^Expr clj-var]
-              (x/invoke-xref  x/x-env-no-ln tp-Var [clj-var]
+              (x/invoke-xref  x/flags-no-ln tp-Var [clj-var]
                               rt/mhd-Var-setDynamic))]
       (cond-> (create-var nm-str init-x)
         (some? meta-x) (set-meta meta-x)
@@ -289,7 +289,7 @@
             (let [x (conv/consume-for v bref)
                   tp-Var (var-type ctx)
                   load-var (x/var-ref tp-Var bref)]
-              (x/invoke-xref x/x-env-no-ln jb/void [load-var v]
+              (x/invoke-xref x/flags-no-ln jb/void [load-var v]
                              rt/mhd-Var-bindRoot)))
           (var-def-fresh ^Binding [nm form] ;new Clojure var
             (when (x/meta-flag? nm :macro)
@@ -541,7 +541,7 @@
        
        (compile-body ^Expr [^Env env ^Arity at ^int body-idx]
          (-> (with-recur-fn env (mk-recur-fn (.paramv at)))
-             (tail-forms (x/x-env-body (.aform at))
+             (tail-forms (x/flags-body (.aform at))
                          (nthrest (.aform at) body-idx))
              (conv/consume-body (.rtype at) (if (some? (.method-name at))
                                               "method result"
@@ -754,8 +754,7 @@
            (ensure-distinct-fn-names fnv)
            (into [] (map destructure-to-fn*) fnv)))
        (invoke-patch-fn ^Expr [^Binding b]
-         (FnPatch. (x/x-ln x-env) jb/void [] nil ^FnForm (x/first-arg b)
-                   (.bref b)))
+         (FnPatch. x-env jb/void [] nil ^FnForm (x/first-arg b) (.bref b)))
        (letfn*-form [[_ fnv & body :as form]]
          (let [fn-formv (mapv (fn ^FnForm [form]
                                 (let [level (level-fn-form env)
@@ -1406,7 +1405,7 @@
 
 (defn top-level-form ^void [form ^Ctx ctx]
   (let [env (Env. x/lvl-environment nil {} nil ctx nil)
-        x (-> (compile-form* env (x/x-env-top-level-form form) form)
+        x (-> (compile-form* env (x/flags-top-level-form form) form)
               (x/ensure-runtime-outcome)
               (conv/consume jb/void "top-level form"))]
     (.send-to-emit (.compile-io ctx) io/msg-emit-tlf x)

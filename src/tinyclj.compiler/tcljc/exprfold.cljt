@@ -32,7 +32,7 @@
 
 (defn pop ^Expr [^Expr arg]        ;returns `arg` if it is a statement
   (letfn [(pop* ^Expr [^Expr arg]
-            (Insn. cfg/no-line-number jb/void [arg]
+            (Insn. x/flags-no-ln jb/void [arg]
                    (x/empty-when (.safe-to-discard? arg))
                    (-> (cf/by-slot-size (x/type arg) Opcode/POP Opcode/POP2)
                        (java.lang.classfile.instruction.StackInstruction/of))))
@@ -66,14 +66,14 @@
     (let [c (when-some [c0 (.const-value arg)]
               (conv-1 (.bytecode opc) c0))]
       (if (x/const? arg)         ;e.g. (float 1.0) is the same as 1.0f
-        (Const. cfg/no-line-number type [] c)
-        (Insn. cfg/no-line-number type [arg] c
+        (Const. x/flags-no-ln type [] c)
+        (Insn. x/flags-no-ln type [arg] c
                (java.lang.classfile.instruction.ConvertInstruction/of opc))))))
 
 
 ;;; Note: XDIV and XREM can cause an division by zero exception, so
-;;; x-env should provide a line number.
-(defn- arith-2* ^Expr [^long x-env ^Class type ^Expr arg0 ^Expr arg1
+;;; flags should provide a line number.
+(defn- arith-2* ^Expr [^long flags ^Class type ^Expr arg0 ^Expr arg1
                        ^Opcode opc]
   (letfn [(arith-int-2 ^int [^int bytecode ^Number arg0 ^Number arg1]
             (let [a0 (.intValue arg0), a1 (.intValue arg1)]
@@ -121,14 +121,14 @@
              (zero? (.doubleValue ^Number (.const-value arg0))) ;and zero
              (cf/between ClassFile/ISUB opc ClassFile/IMUL)) ;and XSUB opcode
       (let [opc-neg (cf/bc2opc opc 16)] ;recover XNEG from XSUB
-        (Insn. (x/x-ln x-env) type [arg1] (arith-const)
+        (Insn. flags type [arg1] (arith-const)
                (java.lang.classfile.instruction.OperatorInstruction/of opc-neg)))
-      (Insn. (x/x-ln x-env) type [arg0 arg1] (arith-const)
+      (Insn. flags type [arg0 arg1] (arith-const)
              (java.lang.classfile.instruction.OperatorInstruction/of opc)))))
 
-(defn arith-2 ^Expr [^long x-env ^Expr arg0 ^Expr arg1 ^Opcode base-opc]
+(defn arith-2 ^Expr [^long flags ^Expr arg0 ^Expr arg1 ^Opcode base-opc]
   (let [result-tp (x/type arg0)]
-    (arith-2* x-env result-tp arg0 arg1 (typed-opcode base-opc result-tp))))
+    (arith-2* flags result-tp arg0 arg1 (typed-opcode base-opc result-tp))))
 
 (defn- bits-2* ^Expr [^Class type ^Expr arg0 ^Expr arg1 ^Opcode opc]
   (letfn [(bits-int-2 ^int [^int bytecode ^Number arg0 ^Number arg1]
@@ -157,7 +157,7 @@
                     #_int 0 (object (bits-int-2 bytecode c0 c1))
                     #_long 1 (object (bits-long-2 bytecode c0 c1)))))))]
     
-    (Insn. cfg/no-line-number type [arg0 arg1] (bits-const)
+    (Insn. x/flags-no-ln type [arg0 arg1] (bits-const)
            (java.lang.classfile.instruction.OperatorInstruction/of opc))))
 
 (defn bits-2 ^Expr [^Expr arg0 ^Expr arg1 ^Opcode base-opc]
@@ -170,7 +170,7 @@
               (let [c0 ^boolean c0, c1 ^boolean c1]
                 (when (or c0 c1)     ;both non-null means "don't know"
                   (rt/boolean-desc (not= (= cmp-opcd cf/ne) (and c0 c1)))))))]
-    (Branch. cfg/no-line-number jb/boolean [arg0 arg1] c
+    (Branch. x/flags-no-ln jb/boolean [arg0 arg1] c
              Opcode/IF_ACMPEQ cmp-opcd)))
 
 (defn icmp ^Branch [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
@@ -208,7 +208,7 @@
                 (let [n0 ^double c0, n1 ^double c1]
                   (when-not (or (Double/isNaN n0) (Double/isNaN n1))
                     (signum (if (== n0 n1) 0 (Double/compare n0 n1))))))))]
-    (Insn. cfg/no-line-number jb/int [arg0 arg1] c
+    (Insn. x/flags-no-ln jb/int [arg0 arg1] c
            (java.lang.classfile.instruction.OperatorInstruction/of opc))))
 
 (defn xcmp ^Expr [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
@@ -228,7 +228,7 @@
 (def ^:private dyn-mark "\u0001")
 (def ^:private const-mark "\u0002")
 (def ^:private re-marks #"[\u0001\u0002]") ;note: hash of Pattern is not stable
-(defn string-concat [^long x-env argv]     ;aka `str`
+(defn string-concat [^long flags argv]     ;aka `str`
   (loop [rparts nil, dyn-args nil, const-args nil, i 0]
     (if (= i (count argv))
       (let [rstr (str/join "" (reverse rparts))
@@ -244,7 +244,7 @@
           (first const-args)
 
           :else
-          (x/invoke-dynamic x-env jb/String (vec (reverse dyn-args))
+          (x/invoke-dynamic flags jb/String (vec (reverse dyn-args))
                             rt/bsm-concat
                             (into [recipe] (reverse const-args)))))
       
@@ -260,7 +260,7 @@
                      (inc i))
               (recur (cons s rparts) dyn-args const-args (inc i))))
           (let [x-non-nil (if (x/reference? x)
-                            (x/invoke-xref x-env jb/String
+                            (x/invoke-xref flags jb/String
                                            [x x/expr-empty-string]
                                            rt/mhd-Objects-toString)
                             x)]

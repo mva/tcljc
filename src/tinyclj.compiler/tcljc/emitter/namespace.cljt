@@ -250,7 +250,7 @@
                     
                     (seq? form)
                     (recur
-                     (let [x-env x/x-env-no-ln]
+                     (let [x-env x/flags-no-ln]
                        (compiler/with-error-context [x-env form]
                          (top-level-list-form nmsp file-nmsp-io form))))
                     

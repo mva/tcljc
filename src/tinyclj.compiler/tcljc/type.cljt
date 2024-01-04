@@ -71,13 +71,13 @@
                       (.adapt primitive-to x/expr-zero-int))
                     numeric-order computational-int? unboxing-mhd primitive-to
                     (^TypeConversion fn [arg]
-                     (x/invoke-xref (x/x-env-of arg) class-primitive [arg]
+                     (x/invoke-xref (x/flags-of arg) class-primitive [arg]
                                     unboxing-mhd))
                     (^TypeConversion fn [arg]
-                     (x/invoke-xref (x/x-env-of arg) class-wrapper [arg]
+                     (x/invoke-xref (x/flags-of arg) class-wrapper [arg]
                                     boxing-mhd))
                     (^TypeConversion fn [arg]
-                     (x/invoke-xref (x/x-env-of arg) class-primitive [arg]
+                     (x/invoke-xref (x/flags-of arg) class-primitive [arg]
                                     (if (x/type? class-wrapper arg)
                                       unboxing-mhd
                                       converting-mhd)))))]
