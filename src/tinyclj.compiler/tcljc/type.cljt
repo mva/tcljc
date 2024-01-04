@@ -304,9 +304,10 @@
 ;;; ------------------------------------------------------------------------
 
 (defn- coerce* ^Expr [^Expr x ^Class to-tp] ;pre: `x` is not branching
-  (if (jb/void? to-tp)
-    (xf/pop x)
-    (xf/checkcast x to-tp)))
+  (cond
+    (jb/void? to-tp) (xf/pop x)
+    (x/void? x) (x/progn* [x (default-value-of to-tp)])
+    :else (xf/checkcast x to-tp)))
 
 (deftype AdaptCoerce [^Class to-tp]
   IAdaptPath

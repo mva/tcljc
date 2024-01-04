@@ -1383,12 +1383,11 @@
                (cond
                  (x/type? tag x) x
                  
-                 (jb/void? tag) (tp/coerce-to-void x)
-                 
                  (jb/primitive? tag)
-                 (if (x/reference? x)
-                   (tp/unbox-to (tp/of tag) x)
-                   (x/wrong-type (str "cannot cast to " (wrong/q tag)) x))
+                 (cond
+                   (jb/void? tag) (tp/coerce-to-void x)
+                   (x/reference? x) (tp/unbox-to (tp/of tag) x)
+                   :else (x/wrong-type (str "cannot cast to " (wrong/q tag)) x))
 
                  (x/primitive? x)
                  (x/wrong-type (str "cannot cast to " (wrong/q tag)) x)
