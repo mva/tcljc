@@ -21,6 +21,8 @@
    (java.lang.reflect Executable Field Method Constructor Modifier)
    (java.util Arrays)))
 
+(deftype Alignment [^Executable exec])
+
 (defn- assignable-to? ^boolean [^Class from-tp ^Class to-tp]
   (cond
     (identical? to-tp from-tp)
@@ -33,52 +35,6 @@
     true
     
     :else (.isAssignableFrom to-tp from-tp)))
-
-
-(defn- invocation-parameter-count ^int [^Executable e]
-  (cond-> (.getParameterCount e)
-    (and (instance? Method e)           ;exclude Constructor
-         (not (Modifier/isStatic (.getModifiers e))))
-    (inc)))                      ;receiver is passed as extra argument
-
-(letfn [(parameter-count-match? ^boolean [^int arg-count ^Executable e]
-          (let [n (invocation-parameter-count e)]
-            (or (= n arg-count)
-                (and (.isVarArgs e) (>= arg-count (dec n))))))]
-
-  (defn method-exact ^Method [^boolean static? ^Class owner ^String nm
-                              ^Class* atypes]
-    (letfn [(match-static ^Method [^Method m]
-              (when (= (Modifier/isStatic (.getModifiers m)) static?)
-                m))]
-      (try
-        (match-static (.getMethod owner nm atypes))
-        (catch NoSuchMethodException _
-          (when (jb/interface? owner)
-            (try ;if owner is an interface, then try again with Object
-              (match-static (.getMethod Object nm atypes))
-              (catch NoSuchMethodException _
-                nil)))))))
-  
-  (defn methods-with [^boolean static? ^Class owner ^String nm ^int arg-count]
-    (filter (fn ^boolean [^Method m]
-              (and (= nm (.getName m))
-                   (= (Modifier/isStatic (.getModifiers m)) static?)
-                   (parameter-count-match? arg-count m)
-                   (not (.isBridge m))))
-            (.getMethods owner)))
-
-  (defn constructor-exact ^Constructor [^Class owner ^Class* atypes]
-    ;; returns nil if there is no exact match
-    (try
-      (.getConstructor owner atypes)
-      (catch NoSuchMethodException _
-        nil)))
-  
-  (defn constructors-with [^Class owner ^int arg-count]
-    (filter (fn ^boolean [^Constructor c]
-              (parameter-count-match? arg-count c))
-            (.getConstructors owner))))
 
 
 ;;; Problem: class MethodHandle.PolymorphicSignature is not public
@@ -129,44 +85,105 @@
   (defn signature-polymorphic? ^boolean [^Executable e] ;pre: e.isVarArgs()
     (and (instance? Method e) (signature-polymorphic* ^Method e)))
   
-  (defn- compatible-args? ^boolean [^Class* atypes ^Executable e]
-    (let [ptypes (.getParameterTypes e)]
-      (if (.isVarArgs e)
-        (or (compatible-var-args? atypes ptypes)
-            (compatible-var-array? atypes ptypes)
-            (signature-polymorphic? ^Method e))
-        (compatible-fix-args? atypes ptypes))))
+  (defn- alignment [^Class* atypes ^Executable e]
+    (when (let [ptypes (.getParameterTypes e)]
+            (if (.isVarArgs e)
+              (or (compatible-var-args? atypes ptypes)
+                  (compatible-var-array? atypes ptypes)
+                  (signature-polymorphic? ^Method e))
+              (compatible-fix-args? atypes ptypes)))
+      (Alignment. e)))
+  (defn- conj-alignment [acc ^Class* atypes ^Executable e]
+    (let [align (alignment atypes e)]
+      (cond-> acc (some? align) (conj align))))
   
   (defn- filter-dominators [es]
     (letfn [(dominates-all? ^boolean [^Executable e]
-              (every? #(compatible-args? (.getParameterTypes e) %) es))
-            (filter-dominators* [es]
-              (if (next es)
-                (filter dominates-all? es)
-                es))]
-      (or (seq (filter-dominators* es)) es))))
+              (every? #(alignment (.getParameterTypes e) %) es))]
+      (if (next es) ;nothing to do if there are less than two elements
+        (filter dominates-all? es)
+        es)))
+  (defn- dominating-alignments [aligns]
+    (letfn [(dominates-all? ^boolean [^Alignment align]
+              (let [ptypes (-> align .exec (.getParameterTypes))]
+                (every? #(alignment ptypes (.exec ^Alignment %)) aligns)))]
+      (if (next aligns) ;nothing to do if there are less than two elements
+        (filter dominates-all? aligns)
+        aligns))))
 
-(defn- invoke-via-method-handle? ^boolean [^Executable e
-                                             ^IPersistentVector argv]
-          (and (.isVarArgs e)
-               (or (not= (invocation-parameter-count e) (count argv))
-                   (let [ptypes (.getParameterTypes e)
-                         ptype (aget ptypes (dec (alength ptypes)))
-                         atype (x/type (peek argv))]
-                     (not (.isAssignableFrom ptype atype))))))
+(defn- invoke-via-method-handle? ^boolean [^Executable e ^Class* atypes]
+  (and (.isVarArgs e)
+       (or (not= (.getParameterCount e) (alength atypes))
+           (let [ptypes (.getParameterTypes e)
+                 ptype (aget ptypes (dec (alength ptypes)))
+                 atype (aget atypes (dec (alength atypes)))]
+             (not (.isAssignableFrom ptype atype))))))
 
 ;;; ------------------------------------------------------------------------
 
-(defn- pick-member [members]
-  (when (nil? (next members))
-    (first members)))
-(defn- wrong-member [members ^String member-label ^Class owner ^String nm
+(letfn [(parameter-count-match? ^boolean [^Class* atypes ^Executable e]
+          (let [n (.getParameterCount e)]
+            (or (= n (alength atypes))
+                (and (.isVarArgs e) (>= (alength atypes) (dec n))))))]
+
+  (defn- method-exact ^Method [^boolean static? ^Class owner ^String nm
+                               ^Class* atypes]
+    (letfn [(match-static ^Method [^Method m]
+              (when (= (Modifier/isStatic (.getModifiers m)) static?)
+                m))]
+      (try
+        (match-static (.getMethod owner nm atypes))
+        (catch NoSuchMethodException _
+          (when (jb/interface? owner)
+            (try ;if owner is an interface, then try again with Object
+              (match-static (.getMethod Object nm atypes))
+              (catch NoSuchMethodException _
+                nil)))))))
+  
+  (defn- methods-with [^boolean static? ^Class owner ^String nm ^Class* atypes]
+    (let [ms (.getMethods owner)]
+      (loop [acc (), i (dec (alength ms))]
+        (if (neg? i)
+          acc
+          (let [m (aget ms i)]
+            (recur (cond-> acc
+                     (and (= nm (.getName m))
+                          (= (Modifier/isStatic (.getModifiers m)) static?)
+                          (parameter-count-match? atypes m)
+                          (not (.isBridge m)))
+                     (conj-alignment atypes m))
+                   (dec i)))))))
+
+  (defn- constructor-exact ^Constructor [^Class owner ^Class* atypes]
+    ;; returns nil if there is no exact match
+    (try
+      (.getConstructor owner atypes)
+      (catch NoSuchMethodException _
+        nil)))
+  
+  (defn- constructors-with [^Class owner ^Class* atypes]
+    (let [cs (.getConstructors owner)]
+      (loop [acc (), i (dec (alength cs))]
+        (if (neg? i)
+          acc
+          (let [c (aget cs i)]
+            (recur (cond-> acc
+                     (parameter-count-match? atypes c)
+                     (conj-alignment atypes c))
+                   (dec i))))))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- pick-member [[^Alignment align & alignr]]
+  (when (and (some? align) (nil? alignr))
+    (.exec align)))
+(defn- wrong-member [aligns ^String member-label ^Class owner ^String nm
                      ^Class* atypes]
   (letfn [(invoke-ex-data []
             {:invoke/name nm
              :invoke/owner owner
              :invoke/arg-types atypes})]
-    (if-some [ms (seq members)]
+    (if-some [as (seq aligns)]
       (-> (str "multiple " member-label "s matching ")
           (wrong/unresolved-interop nm owner (invoke-ex-data)))
       (-> (str "no " member-label " matching ")
@@ -233,13 +250,13 @@
             (x/invoke-xref x-env (.getReturnType m) argv nil mhd false)))
         (invoke-method ^Expr [^long x-env ^DirectMethodHandleDesc$Kind k
                               ^ClassDesc owner ^Method m
-                              ^IPersistentVector argv]
+                              ^Class* atypes ^IPersistentVector argv]
           (cond
             (signature-polymorphic? m)
             (x/invoke-poly x-env jb/cl-polymorphic-type argv nil k
                            owner (.getName m) (.isInterface k))
 
-            (invoke-via-method-handle? m argv)
+            (invoke-via-method-handle? m atypes)
             (x/mh-invoke-xref x-env (.getReturnType m) argv nil k
                               owner (.getName m) (method-descriptor m))
 
@@ -257,8 +274,8 @@
                                          (constr-descriptor c))]
             (x/invoke-xref x-env owner argv nil mhd false)))
         (invoke-constr ^Expr [^long x-env ^Class owner ^Constructor c
-                              ^IPersistentVector argv]
-          (if (invoke-via-method-handle? c argv)
+                              ^Class* atypes ^IPersistentVector argv]
+          (if (invoke-via-method-handle? c atypes)
             (x/mh-invoke-xref x-env owner argv nil rt/mhk-constructor
                               (rt/describe-class owner) ConstantDescs/INIT_NAME
                               (constr-descriptor c))
@@ -302,14 +319,13 @@
             (invoke-method* x-env k owner-cd m argv)
             ;; `atypes` does not include receiver, but the receiver is
             ;; counted as an implicit invocation argument
-            (if-some [ms (seq (->> (methods-with static? owner nm (count argv))
-                                   (filter #(compatible-args? atypes %))
-                                   (filter-dominators)))]
+            (if-some [ms (seq (->> (methods-with static? owner nm atypes)
+                                   (dominating-alignments)))]
               (if-some [m ^Method (pick-member ms)]
                 (->> (if static?
                        (consume-args [] argv m)
                        (consume-args (subvec argv 0 1) (subvec argv 1) m))
-                     (invoke-method x-env k owner-cd m))
+                     (invoke-method x-env k owner-cd m atypes))
                 (wrong ms))
               (load-field)))))))
 
@@ -319,12 +335,11 @@
           atypes (argument-types argv true)]
       (if-some [c (constructor-exact owner atypes)]
         (invoke-constr* x-env owner c argv)
-        (let [cs (->> (constructors-with owner (alength atypes))
-                      (filter #(compatible-args? atypes %))
-                      (filter-dominators))]
+        (let [cs (->> (constructors-with owner atypes)
+                      (dominating-alignments))]
           (if-some [c ^Constructor (pick-member cs)]
             (->> (consume-args [] argv c)
-                 (invoke-constr x-env owner c))
+                 (invoke-constr x-env owner c atypes))
             (wrong-member cs "constructor" owner nm atypes)))))))
 
 ;;; ------------------------------------------------------------------------
