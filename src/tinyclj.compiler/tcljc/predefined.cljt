@@ -22,7 +22,7 @@
    (tcljc.expr Expr BindingRef FnPrimitiveFn FnMacroFn)
    (clojure.lang Symbol)
    (java.lang.classfile Opcode)
-   (java.lang.constant MethodHandleDesc)
+   (java.lang.constant MethodTypeDesc MethodHandleDesc)
    (java.util HashMap)))
 
 (defn- type-conversion-to ^FnPrimitiveFn [^tcljc.type.Wrapper tp]
@@ -142,18 +142,17 @@
 
 (def ^:private array-copy-of-form
   (^FnPrimitiveFn fn [form args x-env compile-io]
-   (let [args (adapt/args form args adapt/array-to-identity)
-         a (aget args 0)
+   (let [a (adapt/arg form args adapt/array-to-identity)
          atp (x/type a)
-         generic-atp (if (jb/reference? (.getComponentType atp))
-                       jb/ObjectArray
-                       atp)
-         m (.getMethod java.util.Arrays "copyOf" generic-atp jb/int)
-         mtd (rt/mtd-of (.getReturnType m) (.getParameterTypes m))
-         mhd (MethodHandleDesc/of rt/mhk-static
-                                  (rt/describe-class java.util.Arrays)
-                                  (.getName m) (.descriptorString mtd))]
-     (-> (x/invoke-xref x-env (.getReturnType m)
+         param-tp (if (jb/reference? (.getComponentType atp))
+                    jb/ObjectArray
+                    atp)
+         param-cd (rt/describe-class param-tp)
+         mtd (MethodTypeDesc/of param-cd param-cd rt/int)
+         mhd (MethodHandleDesc/ofMethod rt/mhk-static
+                                        (rt/describe-class java.util.Arrays)
+                                        "copyOf" mtd)]
+     (-> (x/invoke-xref x-env param-tp
                         [a (x/array-length (x/dup atp))] nil mhd false)
          (xf/checkcast atp)))))
 

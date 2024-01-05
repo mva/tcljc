@@ -467,7 +467,7 @@
          (-> (compile-form env (with-expr x-env) form)
              (x/ensure-runtime-value)
              (conv/consume-poly)))
-       (expr-forms* ^IPersistentVector [^IPersistentVector acc s]
+       (expr-forms* ^IPersistentVector [^IPersistentVector acc ^ISeq s]
          (if (nil? s)
            acc
            (recur (conj acc (expr-form (first s))) (next s))))
@@ -767,12 +767,10 @@
        
        (dot-form* ^Expr [^long x-env ^Expr cl-or-inst ^String nm arg-forms]
          (if-some [owner (x/classname-type cl-or-inst)]
-           (let [argv (expr-forms arg-forms)
-                 ltypes (resolve/lookup-types argv 0)]
-             (resolve/invoke-as-member x-env owner nm argv ltypes))
-           (let [argv (expr-forms* [cl-or-inst] arg-forms)
-                 ltypes (resolve/lookup-types argv 1)]
-             (resolve/invoke-as-member x-env (x/type cl-or-inst) nm argv ltypes))))
+           (let [argv (expr-forms arg-forms)]
+             (resolve/invoke-as-member x-env owner nm argv true))
+           (let [argv (expr-forms* [cl-or-inst] arg-forms)]
+             (resolve/invoke-as-member x-env (x/type cl-or-inst) nm argv false))))
        (dot-form ^Expr [[_ owner member-or-list & xr :as form]]
          (wrong/check-argc-min 2 form)
          (let [cl-or-inst (expr-form owner)]
@@ -1121,7 +1119,7 @@
        (resolve-static-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
          (let [ns-part (namespace sym)]
            (if-some [tp (ctx/get-type (symbol nil ns-part) (.ctx env))]
-             (resolve/invoke-as-member x-env tp (name sym) [] (new Class* 0))
+             (resolve/invoke-as-member x-env tp (name sym) [] true)
              (wrong-unresolved-nmsp ns-part sym))))
        (compile-atom ^Expr [form]
          (if (instance? IMeta form)
@@ -1226,10 +1224,9 @@
                                        (list '. form member))
                                      inst formr)))
                (do (wrong/check-argc-min 1 form)
-                   (let [argv (expr-forms (rest form))
-                         ltypes (resolve/lookup-types argv 1)]
+                   (let [argv (expr-forms (rest form))]
                      (resolve/invoke-as-member x-env (x/type (nth argv 0))
-                                               (subs nm 1) argv ltypes))))
+                                               (subs nm 1) argv false))))
              
              (and (nil? (namespace x)) (ends-with-dot? nm))
              (new-form (list* 'new (symbol nil (subs nm 0 (dec (count nm))))
