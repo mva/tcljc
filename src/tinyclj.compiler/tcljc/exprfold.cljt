@@ -164,14 +164,25 @@
   (let [result-tp (x/type arg0)]
     (bits-2* result-tp arg0 arg1 (typed-opcode base-opc result-tp))))
 
-(defn acmp ^Branch [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
-  (let [c (when-some [c0 (rt/null-value-pred (.const-value arg0))]
-            (when-some [c1 (rt/null-value-pred (.const-value arg1))]
-              (let [c0 ^boolean c0, c1 ^boolean c1]
-                (when (or c0 c1)     ;both non-null means "don't know"
-                  (rt/boolean-desc (not= (= cmp-opcd cf/ne) (and c0 c1)))))))]
-    (Branch. x/flags-no-ln jb/boolean [arg0 arg1] c
-             Opcode/IF_ACMPEQ cmp-opcd)))
+(letfn [(null-value-pred ^Boolean [^Expr x]
+          ;; This function assumes that any `const-value` is produced
+          ;; by compiler code, and that all non-NULL values (including
+          ;; DynamicConstantDesc) always describe some literal and
+          ;; known to be non-null value.
+          (let [c (.const-value x)]
+            (cond
+              (nil? c) nil                            ;may be null
+              (identical? jb/jvm-null c) Boolean/TRUE ;is always null
+              :else Boolean/FALSE)))]                 ;is never null
+  
+  (defn acmp ^Branch [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
+    (let [c (when-some [c0 (null-value-pred arg0)]
+              (when-some [c1 (null-value-pred arg1)]
+                (let [c0 ^boolean c0, c1 ^boolean c1]
+                  (when (or c0 c1)   ;both non-null means "don't know"
+                    (rt/boolean-desc (not= (= cmp-opcd cf/ne) (and c0 c1)))))))]
+      (Branch. x/flags-no-ln jb/boolean [arg0 arg1] c
+               Opcode/IF_ACMPEQ cmp-opcd))))
 
 (defn icmp ^Branch [^Expr arg0 ^Expr arg1 ^int cmp-opcd]
   (let [c (when-some [c0 (.const-value arg0)]

@@ -39,12 +39,12 @@
 (def mhk-interface-static DirectMethodHandleDesc$Kind/INTERFACE_STATIC) ;6
 (def mhk-interface-special DirectMethodHandleDesc$Kind/INTERFACE_SPECIAL) ;7
 
-(def dcd-default-name ConstantDescs/DEFAULT_NAME)
+(defn method-kind ^DirectMethodHandleDesc$Kind [^Class owner ^boolean static?]
+  (if (.isInterface owner)
+    (if static? mhk-interface-static mhk-interface-virtual)
+    (if static? mhk-static mhk-virtual)))
 
-(defn unreflect ^MethodHandle [^MethodHandles$Lookup lookup x]
-  (cond (instance? Method x) (.unreflect lookup x)
-        (instance? Constructor x) (.unreflectConstructor lookup x)
-        :else (.unreflectGetter lookup x)))
+(def dcd-default-name ConstantDescs/DEFAULT_NAME)
 
 (defn describe-constable ^ConstantDesc [^Constable x]
   (if (nil? x)
@@ -52,17 +52,6 @@
     (.get (.describeConstable x))))
 (defn describe-class ^ClassDesc [^Class tp]
   ^ClassDesc (.get (.describeConstable tp)))
-
-
-(defn null-value-pred ^Boolean [const-value]
-  ;; This function assumes that any `const-value` is produced by
-  ;; compiler code, and that all non-NULL values (including
-  ;; DynamicConstantDesc) always describe some literal and known to be
-  ;; non-null value.
-  (cond
-    (nil? const-value) nil                            ;may be null
-    (identical? jb/jvm-null const-value) Boolean/TRUE ;is always null
-    :else Boolean/FALSE))                             ;is never null
 
 
 ;;; Return the class descriptor to which classes, field types,
