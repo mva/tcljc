@@ -212,7 +212,10 @@
     (publics/extract rt-lookup this known-ns capstone))
 
   (recv-from-compile [this]
-    (.take compile-to-emit-q))
+    (.take compile-to-emit-q)
+    #_ (or (.poll compile-to-emit-q 1 java.util.concurrent.TimeUnit/SECONDS)
+           (throw (java.util.concurrent.TimeoutException.
+                   "compilation thread silently died?"))))
   
   (fork-worker [_ fork-work? f]
     (.fork-task nmsp-task-scope fork-work? f))
