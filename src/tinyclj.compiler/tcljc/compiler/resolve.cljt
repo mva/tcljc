@@ -7,34 +7,65 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.compiler.resolve
   (:require
+   [tcljc.classfile :as cf]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
    [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
-   [tcljc.type :as tp]
-   [tcljc.compiler.conv :as conv])
+   [tcljc.type :as tp])
   (:import
    (tcljc.expr Expr InvokeXref)
+   (tcljc.type TypeConversion)
    (clojure.lang IPersistentVector)
+   (java.lang.classfile Opcode)
    (java.lang.constant MethodHandleDesc ConstantDescs
                        ClassDesc DirectMethodHandleDesc$Kind)
    (java.lang.reflect Executable Field Method Constructor Modifier)
    (java.util Arrays)))
 
-(deftype Alignment [^Executable exec])
-
-(defn- assignable-to? ^boolean [^Class from-tp ^Class to-tp]
+;;; Supply type conversion from argument/source type `atype` to
+;;; parameter/sink type `ptype`.  Result is nil if no such conversion
+;;; is possible.  The conversion may not produce a value of the exact
+;;; type `ptype`, but the value's type will be assignment compatible
+;;; to `ptype` as far as the JVM is concerned.  That is, it is always
+;;; possible to introduce an `x/identity` expression that reinterprets
+;;; the converted value as `ptype`.
+(defn argument-conversion ^TypeConversion [^Class atype ^Class ptype]
+  ;; pre: (not (jb/polymorphic? ptype))
   (cond
-    (identical? to-tp from-tp)
-    true
+    (jb/jvm-assignable-to? atype ptype) ;Java rule, subsumes identical
+    tp/tc-identity
 
-    (or (jb/primitive? to-tp) (jb/primitive? from-tp))
-    (tp/adaptable-to? from-tp to-tp)
+    (jb/void? atype)
+    (tp/coercing ptype)
 
-    (and (jb/reference? to-tp) (jb/object? from-tp))
-    true
+    ;; from here on holds: argument is not void
     
-    :else (.isAssignableFrom to-tp from-tp)))
+    (jb/reference? ptype)
+    (if (jb/reference? atype)
+      (when (jb/jvm-assignable-to? ptype atype) ;Clojure rule
+        (tp/coercing ptype))
+
+      ;; else: argument is primitive but not void
+      (let [atp (tp/of atype)]
+        (when (jb/jvm-assignable-to? (.class-wrapper atp) ptype)
+          (.box-of atp))))
+
+    (jb/void? ptype)
+    (throw (IllegalStateException.))
+
+    ;; from here on holds: parameter is primitive but not void
+            
+    (jb/reference? atype)
+    (let [ptp (tp/of ptype)]
+      (when (tp/unboxes-to? atype ptp)
+        (^TypeConversion fn [arg]
+         (tp/checkcast-and-unbox-to ptp arg))))
+
+    :else                          ;argument is primitive but not void
+    (let [ptp (tp/of ptype)]
+      (when (tp/widens-to-numeric? (tp/of atype) ptp)
+        (.primitive-to ptp)))))
 
 
 ;;; Problem: class MethodHandle.PolymorphicSignature is not public
@@ -42,141 +73,183 @@
   (Class/forName "java.lang.invoke.MethodHandle$PolymorphicSignature"
                  false (ClassLoader/getPlatformClassLoader)))
 
-(letfn [(compatible-prefix? ^boolean [^Class* atypes
-                                      ^Class* ptypes
-                                      ^int pdelta-end]
-          (loop [i (+ (alength ptypes) pdelta-end)]
-            (cond
-              (neg? i) true
-              (assignable-to? (aget atypes i) (aget ptypes i)) (recur (dec i))
-              :else false)))
-        (compatible-suffix? ^boolean [^Class* atypes
-                                      ^Class ptype ^int start]
-          (or (jb/object? ptype) ;FIXME... drop special case after Valhalla?
-              (loop [i (dec (alength atypes))]
-                (cond
-                  (< i start) true
-                  ;; FIXME... does this require special handling of
-                  ;; primitives once the special case Object is gone?
-                  (.isAssignableFrom ptype (aget atypes i)) (recur (dec i))
-                  :else false))))
-        
-        (compatible-fix-args? ^boolean [^Class* atypes
-                                        ^Class* ptypes]
-          (and (= (alength atypes) (alength ptypes))
-               (compatible-prefix? atypes ptypes -1)))
-        (compatible-var-args? ^boolean [^Class* atypes
-                                        ^Class* ptypes]
-          (and (>= (alength atypes) (dec (alength ptypes)))
-               (compatible-prefix? atypes ptypes -2)
-               (let [va-tp (aget ptypes (dec (alength ptypes)))]
-                 (compatible-suffix? atypes (.getComponentType va-tp)
-                                     (dec (alength ptypes))))))
-        (compatible-var-array? ^boolean [^Class* atypes
-                                         ^Class* ptypes]
-          (and (= (alength atypes) (alength ptypes))
-               (.isAssignableFrom (aget ptypes (dec (alength ptypes)))
-                                  (aget atypes (dec (alength atypes))))
-               (compatible-prefix? atypes ptypes -2)))
+(deftype Alignment [^Executable exec
+                    ^TypeConversion* fixargs
+                    ^TypeConversion* varargs
+                    ^Class va-array-type]) ;array type, or nil if polymorphic
 
-        (signature-polymorphic* ^boolean [^Method m] ;pre: m.isVarArgs()
-          (.isAnnotationPresent m ann-polymorphic-signature))]
+(letfn [(conj-args [acc argv ^TypeConversion* fixargs]
+          (let [offset (count acc)      ;receiver or fixargs present?
+                n (alength fixargs)]
+            (loop [acc acc, i 0]
+              (if (< i n)
+                (let [arg' (.adapt (aget fixargs i) (nth argv (+ i offset)))]
+                  (recur (conj acc arg') (inc i)))
+                acc))))
+        (varargs-array ^Expr [argv ^Class va-array-type
+                              ^TypeConversion* varargs]
+          (let [ctp (.componentType va-array-type)
+                opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ctp))
+                instr (java.lang.classfile.instruction.ArrayStoreInstruction/of opc)
+                n  (alength varargs)
+                offset (- (count argv) n)]
+            (loop [^Expr acc (x/new-array x/flags-no-ln va-array-type
+                                          [(x/const jb/int (object n))])
+                   i 0]
+              (if (< i n)
+                (recur (x/insn* x/flags-no-ln va-array-type
+                                [acc (x/dup va-array-type)
+                                 (x/const jb/int (object i))
+                                 (.adapt (aget varargs i) (nth argv (+ i offset)))]
+                                instr)
+                       (inc i))
+                acc))))]
+  (defn invocation-argv [argv ^boolean static? ^Alignment align]
+    (cond-> (if static? [] [(nth argv 0)])
+      ;; fixed arguments follow receiver, if one is present
+      true
+      (conj-args argv (.fixargs align))
+
+      ;; regular varargs are wrapped in an array
+      (and (some? (.varargs align)) (some? (.va-array-type align)))
+      (conj (varargs-array argv (.va-array-type align) (.varargs align)))
+      
+      ;; polymorphic varargs are appended unchanged
+      (and (some? (.varargs align)) (nil? (.va-array-type align)))
+      (conj-args argv (.varargs align)))))
+
+(letfn [(signature-polymorphic? ^boolean [^Executable e] ;pre: e.isVarArgs()
+          (and (instance? Method e)
+               (.isAnnotationPresent ^Method e ann-polymorphic-signature)))
+        
+        (fixarg-conversions ^TypeConversion* [^Class* atypes ^int n-fixargs
+                                              ^Class* ptypes]
+          (let [atc (new TypeConversion* n-fixargs)]
+            (loop [i 0]
+              (if (< i n-fixargs)
+                (let [atype (aget atypes i), ptype (aget ptypes i)]
+                  (when-some [tc (argument-conversion atype ptype)]
+                    (aset atc i tc)
+                    (recur (inc i))))
+                atc))))
+        (polyarg-conversions ^TypeConversion* [^Class* atypes ^int n-fixargs]
+          (let [n-varargs (- (alength atypes) n-fixargs)]
+            (doto (new TypeConversion* n-varargs)
+              (java.util.Arrays/fill tp/tc-identity))))
+        (vararg-conversions ^TypeConversion* [^Class* atypes ^int n-fixargs
+                                              ^Class va-arg-type]
+          (let [n-varargs (- (alength atypes) n-fixargs)]
+            (let [atc (new TypeConversion* n-varargs)]
+              (loop [i 0]
+                (if (< i n-varargs)
+                  (let [atype (aget atypes (+ n-fixargs i))]
+                    (when-some [tc (argument-conversion atype va-arg-type)]
+                      (aset atc i tc)
+                      (recur (inc i))))
+                  atc)))))]
   
-  (defn signature-polymorphic? ^boolean [^Executable e] ;pre: e.isVarArgs()
-    (and (instance? Method e) (signature-polymorphic* ^Method e)))
-  
-  (defn- alignment [^Class* atypes ^Executable e]
-    (when (let [ptypes (.getParameterTypes e)]
-            (if (.isVarArgs e)
-              (or (compatible-var-args? atypes ptypes)
-                  (compatible-var-array? atypes ptypes)
-                  (signature-polymorphic? ^Method e))
-              (compatible-fix-args? atypes ptypes)))
-      (Alignment. e)))
-  (defn- conj-alignment [acc ^Class* atypes ^Executable e]
-    (let [align (alignment atypes e)]
-      (cond-> acc (some? align) (conj align))))
+  (defn- alignment ^Alignment [^Class* atypes ^Executable e]
+    ;; pre: (parameter-count-match? atypes e)
+    (let [ptypes (.getParameterTypes e)
+          varargs? (and (.isVarArgs e)
+                        (not (and (= (alength atypes) (alength ptypes))
+                                  (jb/jvm-assignable-to?
+                                   (aget atypes (dec (alength atypes)))
+                                   (aget ptypes (dec (alength ptypes)))))))
+          n-fixargs (cond-> (alength ptypes)
+                      varargs? (dec))]
+      (when-some [fixargs (fixarg-conversions atypes n-fixargs ptypes)]
+        (if varargs?
+          (let [array-tp (aget ptypes (dec (alength ptypes)))
+                arg-tp (.getComponentType array-tp)]
+            (if (signature-polymorphic? e)
+              (Alignment. e fixargs (polyarg-conversions atypes n-fixargs) nil)
+              (when-some [varargs (vararg-conversions atypes n-fixargs arg-tp)]
+                (Alignment. e fixargs varargs array-tp))))
+          (Alignment. e fixargs nil nil))))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- conj-alignment [acc ^Class* atypes ^Executable e]
+  (let [align (alignment atypes e)]
+    (cond-> acc (some? align) (conj align))))
+
+(defn parameter-count-match? ^boolean [^Class* atypes ^Executable e]
+  (let [n (.getParameterCount e)]
+    (or (= n (alength atypes))
+        (and (.isVarArgs e) (>= (alength atypes) (dec n))))))
+
+(letfn [(compatible-args? ^boolean [^Class* atypes ^Executable e]
+          (and (parameter-count-match? atypes e)
+               (some? (alignment atypes e))))]
   
   (defn- filter-dominators [es]
     (letfn [(dominates-all? ^boolean [^Executable e]
-              (every? #(alignment (.getParameterTypes e) %) es))]
+              (every? #(compatible-args? (.getParameterTypes e) %) es))]
       (if (next es) ;nothing to do if there are less than two elements
-        (filter dominates-all? es)
+        (or (seq (filter dominates-all? es)) es)
         es)))
   (defn- dominating-alignments [aligns]
     (letfn [(dominates-all? ^boolean [^Alignment align]
               (let [ptypes (-> align .exec (.getParameterTypes))]
-                (every? #(alignment ptypes (.exec ^Alignment %)) aligns)))]
+                (every? #(compatible-args? ptypes (.exec ^Alignment %)) aligns)))]
       (if (next aligns) ;nothing to do if there are less than two elements
-        (filter dominates-all? aligns)
+        (or (seq (filter dominates-all? aligns)) aligns)
         aligns))))
 
-(defn- invoke-via-method-handle? ^boolean [^Executable e ^Class* atypes]
-  (and (.isVarArgs e)
-       (or (not= (.getParameterCount e) (alength atypes))
-           (let [ptypes (.getParameterTypes e)
-                 ptype (aget ptypes (dec (alength ptypes)))
-                 atype (aget atypes (dec (alength atypes)))]
-             (not (.isAssignableFrom ptype atype))))))
-
 ;;; ------------------------------------------------------------------------
 
-(letfn [(parameter-count-match? ^boolean [^Class* atypes ^Executable e]
-          (let [n (.getParameterCount e)]
-            (or (= n (alength atypes))
-                (and (.isVarArgs e) (>= (alength atypes) (dec n))))))]
-
-  (defn- method-exact ^Method [^boolean static? ^Class owner ^String nm
-                               ^Class* atypes]
-    (letfn [(match-static ^Method [^Method m]
-              (when (= (Modifier/isStatic (.getModifiers m)) static?)
-                m))]
-      (try
-        (match-static (.getMethod owner nm atypes))
-        (catch NoSuchMethodException _
-          (when (jb/interface? owner)
-            (try ;if owner is an interface, then try again with Object
-              (match-static (.getMethod Object nm atypes))
-              (catch NoSuchMethodException _
-                nil)))))))
-  
-  (defn- methods-with [^boolean static? ^Class owner ^String nm ^Class* atypes]
-    (let [ms (.getMethods owner)]
-      (loop [acc (), i (dec (alength ms))]
-        (if (neg? i)
-          acc
-          (let [m (aget ms i)]
-            (recur (cond-> acc
-                     (and (= nm (.getName m))
-                          (= (Modifier/isStatic (.getModifiers m)) static?)
-                          (parameter-count-match? atypes m)
-                          (not (.isBridge m)))
-                     (conj-alignment atypes m))
-                   (dec i)))))))
-
-  (defn- constructor-exact ^Constructor [^Class owner ^Class* atypes]
-    ;; returns nil if there is no exact match
+(defn- method-exact ^Method [^boolean static? ^Class owner ^String nm
+                             ^Class* atypes]
+  (letfn [(match-static ^Method [^Method m]
+            (when (= (Modifier/isStatic (.getModifiers m)) static?)
+              m))]
     (try
-      (.getConstructor owner atypes)
+      (match-static (.getMethod owner nm atypes))
       (catch NoSuchMethodException _
-        nil)))
-  
-  (defn- constructors-with [^Class owner ^Class* atypes]
-    (let [cs (.getConstructors owner)]
-      (loop [acc (), i (dec (alength cs))]
-        (if (neg? i)
-          acc
-          (let [c (aget cs i)]
-            (recur (cond-> acc
-                     (parameter-count-match? atypes c)
-                     (conj-alignment atypes c))
-                   (dec i))))))))
+        (when (jb/interface? owner)
+          (try ;if owner is an interface, then try again with Object
+            (match-static (.getMethod Object nm atypes))
+            (catch NoSuchMethodException _
+              nil)))))))
+
+(defn- methods-with [^boolean static? ^Class owner ^String nm ^Class* atypes]
+  (let [ms (.getMethods owner)]
+    (loop [acc (), i (dec (alength ms))]
+      (if (neg? i)
+        acc
+        (let [m (aget ms i)]
+          (recur (cond-> acc
+                   (and (= nm (.getName m))
+                        (= (Modifier/isStatic (.getModifiers m)) static?)
+                        (parameter-count-match? atypes m)
+                        (not (.isBridge m)))
+                   (conj-alignment atypes m))
+                 (dec i)))))))
+
+(defn- constructor-exact ^Constructor [^Class owner ^Class* atypes]
+  ;; returns nil if there is no exact match
+  (try
+    (.getConstructor owner atypes)
+    (catch NoSuchMethodException _
+      nil)))
+
+(defn- constructors-with [^Class owner ^Class* atypes]
+  (let [cs (.getConstructors owner)]
+    (loop [acc (), i (dec (alength cs))]
+      (if (neg? i)
+        acc
+        (let [c (aget cs i)]
+          (recur (cond-> acc
+                   (parameter-count-match? atypes c)
+                   (conj-alignment atypes c))
+                 (dec i)))))))
 
 ;;; ------------------------------------------------------------------------
 
-(defn- pick-member [[^Alignment align & alignr]]
+(defn- pick-alignment ^Alignment [[^Alignment align & alignr]]
   (when (and (some? align) (nil? alignr))
-    (.exec align)))
+    align))
 (defn- wrong-member [aligns ^String member-label ^Class owner ^String nm
                      ^Class* atypes]
   (letfn [(invoke-ex-data []
@@ -189,47 +262,6 @@
       (-> (str "no " member-label " matching ")
           (wrong/unresolved-interop nm owner (invoke-ex-data))))))
 
-
-;;; Returns component type of the varargs parameter, or nil if no
-;;; arguments are collected into an array.  If `e` is polymorphic,
-;;; result is always `cl-polymorphic-type`.
-(defn- collecting-vararg-type ^Class [^Executable e ^IPersistentVector argv]
-  (when (.isVarArgs e)
-    (if (signature-polymorphic? e)
-      jb/cl-polymorphic-type
-      (let [n (.getParameterCount e)
-            va-param-tp (aget (.getParameterTypes e) (dec n))]
-        (if (and (= n (count argv))
-                 (.isAssignableFrom va-param-tp (x/type (peek argv))))
-          nil                           ;array already provided
-          (.componentType va-param-tp))))))
-
-(defn- consume-args
-  (^IPersistentVector [^IPersistentVector acc
-                       ^IPersistentVector argv
-                       ^Executable e]
-   (let [ptypes (.getParameterTypes e)]
-     (if-some [vararg-tp (collecting-vararg-type e argv)]
-       ;; For a polymorphic method, skip adapting of arguments
-       ;; starting with the position of the vararg parameter.  For a
-       ;; varargs method, only adapt reference arguments passed to the
-       ;; vararg parameter.  FIXME... After Valhalla, revise this to
-       ;; check type of vararg arguments as well?
-       (consume-args acc argv ptypes (dec (alength ptypes)) vararg-tp)
-       (consume-args acc argv ptypes Integer/MAX_VALUE jb/Object))))
-  (^IPersistentVector [^IPersistentVector acc
-                       ^IPersistentVector argv
-                       ^Class* ptypes
-                       ^int vararg-start ^Class vararg-tp]
-   (loop [acc acc, i 0]
-     (if (= i (count argv))
-       acc
-       (recur (conj acc (if (>= i vararg-start)
-                          (-> (conv/consume-poly (nth argv i))
-                              (tp/coerce-vararg vararg-tp))
-                          (conv/consume (nth argv i) (aget ptypes i) "parameter")))
-              (inc i))))))
-
 (letfn [(argument-types ^Class* [^IPersistentVector argv ^boolean static?]
           (let [offset (if static? 0 1)
                 a (new Class* (- (count argv) offset))]
@@ -239,46 +271,35 @@
         (settable? ^boolean [^Field f]
           (not (Modifier/isFinal (.getModifiers f))))
 
-        (method-descriptor ^String [^Method m]
-          (-> (rt/mtd-of (.getReturnType m) (.getParameterTypes m))
-              (.descriptorString)))
         (invoke-method* ^Expr [^long x-env ^DirectMethodHandleDesc$Kind k
                                ^ClassDesc owner ^Method m
                                ^IPersistentVector argv]
-          (let [mhd (MethodHandleDesc/of k owner (.getName m)
-                                         (method-descriptor m))]
+          (let [desc (-> (rt/mtd-of (.getReturnType m) (.getParameterTypes m))
+                         (.descriptorString))
+                mhd (MethodHandleDesc/of k owner (.getName m) desc)]
             (x/invoke-xref x-env (.getReturnType m) argv nil mhd false)))
         (invoke-method ^Expr [^long x-env ^DirectMethodHandleDesc$Kind k
-                              ^ClassDesc owner ^Method m
-                              ^Class* atypes ^IPersistentVector argv]
-          (cond
-            (signature-polymorphic? m)
-            (x/invoke-poly x-env jb/cl-polymorphic-type argv nil k
-                           owner (.getName m) (.isInterface k))
+                              ^ClassDesc owner ^boolean static?
+                              ^Alignment align ^IPersistentVector argv]
+          (let [m ^Method (.exec align)
+                argv (invocation-argv argv static? align)]
+            (if (and (some? (.varargs align)) (nil? (.va-array-type align)))
+              (x/invoke-poly x-env jb/cl-polymorphic-type argv nil k
+                             owner (.getName m) (.isInterface k))
+              (invoke-method* x-env k owner m argv))))
 
-            (invoke-via-method-handle? m atypes)
-            (x/mh-invoke-xref x-env (.getReturnType m) argv nil k
-                              owner (.getName m) (method-descriptor m))
-
-            :else
-            (invoke-method* x-env k owner m argv)))
-
-        (constr-descriptor ^String [^Constructor c]
-          (-> (rt/mtd-of rt/void (.getParameterTypes c))
-              (.descriptorString)))
         (invoke-constr* ^Expr [^long x-env ^Class owner ^Constructor c
                                ^IPersistentVector argv]
-          (let [mhd (MethodHandleDesc/of rt/mhk-constructor
+          (let [desc (-> (rt/mtd-of rt/void (.getParameterTypes c))
+                         (.descriptorString))
+                mhd (MethodHandleDesc/of rt/mhk-constructor
                                          (rt/describe-class owner)
-                                         ConstantDescs/INIT_NAME
-                                         (constr-descriptor c))]
+                                         ConstantDescs/INIT_NAME desc)]
             (x/invoke-xref x-env owner argv nil mhd false)))
-        (invoke-constr ^Expr [^long x-env ^Class owner ^Constructor c
-                              ^Class* atypes ^IPersistentVector argv]
-          (if (invoke-via-method-handle? c atypes)
-            (x/mh-invoke-xref x-env owner argv nil rt/mhk-constructor
-                              (rt/describe-class owner) ConstantDescs/INIT_NAME
-                              (constr-descriptor c))
+        (invoke-constr ^Expr [^long x-env ^Class owner
+                              ^Alignment align ^IPersistentVector argv]
+          (let [c ^Constructor (.exec align)
+                argv (invocation-argv argv true align)]
             (invoke-constr* x-env owner c argv)))]
   
   (defn invoke-as-member ^Expr [^long x-env ^Class owner ^String nm
@@ -312,7 +333,7 @@
                       (wrong ())))
                   (catch NoSuchFieldException _
                     (wrong ()))))]
-        
+
         (if fields-only?
           (load-field)
           (if-some [m (method-exact static? owner nm atypes)]
@@ -321,11 +342,8 @@
             ;; counted as an implicit invocation argument
             (if-some [ms (seq (->> (methods-with static? owner nm atypes)
                                    (dominating-alignments)))]
-              (if-some [m ^Method (pick-member ms)]
-                (->> (if static?
-                       (consume-args [] argv m)
-                       (consume-args (subvec argv 0 1) (subvec argv 1) m))
-                     (invoke-method x-env k owner-cd m atypes))
+              (if-some [align (pick-alignment ms)]
+                (invoke-method x-env k owner-cd static? align argv)
                 (wrong ms))
               (load-field)))))))
 
@@ -337,9 +355,8 @@
         (invoke-constr* x-env owner c argv)
         (let [cs (->> (constructors-with owner atypes)
                       (dominating-alignments))]
-          (if-some [c ^Constructor (pick-member cs)]
-            (->> (consume-args [] argv c)
-                 (invoke-constr x-env owner c atypes))
+          (if-some [align (pick-alignment cs)]
+            (invoke-constr x-env owner align argv)
             (wrong-member cs "constructor" owner nm atypes)))))))
 
 ;;; ------------------------------------------------------------------------

@@ -77,9 +77,7 @@
                         (inv-static java.lang.Math "log" jb/boolean)))
   (is (thrown-with-msg? ExceptionInfo #"no static method matching"
                         (inv-static java.lang.Math "log" jb/char)))
-  (is (thrown-with-msg? ExceptionInfo #"no static method matching"
-                        (inv-static java.lang.Math "log" jb/void)))
-
+  
   ;; Math/max has four paired overloads
   (is (= '(INVOKE-XREF STATIC "Math" "max" "(II)I" :owner-is-class)
          (inv-static java.lang.Math "max" jb/int jb/int)))
@@ -90,8 +88,11 @@
   (is (= '(INVOKE-XREF STATIC "Math" "max" "(DD)D" :owner-is-class)
          (inv-static java.lang.Math "max" jb/double jb/double)))
 
-  ;; varargs call is currently an inexact invoke via MethodHandle
-  (is (= '(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)
+  ;; varargs call with box of primitive int passed via the `args`
+  ;; array of type `Object...`
+  (is (= '(INVOKE-XREF STATIC "String" "format"
+                       "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;"
+                       :owner-is-class)
          (inv-static String "format" String jb/int))))
 
 
@@ -112,24 +113,43 @@
                        "()Ljava/lang/String;" :owner-is-class)
          (inv-virtual Class "getName")))
 
-  ;; varargs call is currently an inexact invoke via MethodHandle
-  (is (= '(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)
+  ;; varargs call: no `parameterTypes` and three `parameterTypes`
+  (is (= '(INVOKE-XREF VIRTUAL "Class" "getMethod"
+                       "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;"
+                       :owner-is-class)
          (inv-virtual Class "getMethod" String)))
-  (is (= '(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)
+  (is (= '(INVOKE-XREF VIRTUAL "Class" "getConstructor"
+                       "([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;"
+                       :owner-is-class)
          (inv-virtual Class "getConstructor" Class Class Class)))
 
-  ;; this should not match the varargs array overload, i.e. there is
-  ;; no implicit Object to ClassDesc cast for vararg elements
+  ;; `withInterfaceSymbols` with an `Object` argument is ambiguous in
+  ;; Clojure (but not in Java!), and resolved to a single method with
+  ;; `List`, `ClassDesc`, or an empty argument list
+  (is (thrown-with-msg? ExceptionInfo #"multiple virtual methods match"
+                        (inv-virtual java.lang.classfile.ClassBuilder
+                                     "withInterfaceSymbols" Object)))
   (is (= '(INVOKE-XREF INTERFACE_VIRTUAL "ClassBuilder" "withInterfaceSymbols"
                        "(Ljava/util/List;)Ljava/lang/classfile/ClassBuilder;"
                        :owner-is-itf)
          (inv-virtual java.lang.classfile.ClassBuilder "withInterfaceSymbols"
-                      Object))))
+                      java.util.List)))
+  (is (= '(INVOKE-XREF INTERFACE_VIRTUAL "ClassBuilder" "withInterfaceSymbols"
+                       "([Ljava/lang/constant/ClassDesc;)Ljava/lang/classfile/ClassBuilder;"
+                       :owner-is-itf)
+         (inv-virtual java.lang.classfile.ClassBuilder "withInterfaceSymbols"
+                      java.lang.constant.ClassDesc)))
+  (is (= '(INVOKE-XREF INTERFACE_VIRTUAL "ClassBuilder" "withInterfaceSymbols"
+                       "([Ljava/lang/constant/ClassDesc;)Ljava/lang/classfile/ClassBuilder;"
+                       :owner-is-itf)
+         (inv-virtual java.lang.classfile.ClassBuilder "withInterfaceSymbols"))))
 
 (deftest interface-varargs-clash-test
   ;; this should resolve to the varargs method
   ;; static MethodTypeDesc of(ClassDesc returnDesc, ClassDesc... paramDescs)
-  (is (= '(INVOKE-POLY VIRTUAL "MethodHandle" "invoke" :owner-is-class)
+  (is (= '(INVOKE-XREF INTERFACE_STATIC "MethodTypeDesc" "of"
+                       "(Ljava/lang/constant/ClassDesc;[Ljava/lang/constant/ClassDesc;)Ljava/lang/constant/MethodTypeDesc;"
+                       :owner-is-itf)
          (inv-static java.lang.constant.MethodTypeDesc "of"
                      java.lang.constant.ClassDesc
                      java.lang.constant.ClassDesc)))
@@ -143,3 +163,31 @@
          (inv-static java.lang.constant.MethodTypeDesc "of"
                      java.lang.constant.ClassDesc
                      java.util.List))))
+
+(deftest compatible-args-test
+  ;; the "dominate" checks must establish any precondition required by
+  ;; `alignment` before calling it
+  (is (= '(INVOKE-XREF INTERFACE_STATIC "Set" "of"
+                       "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Set;"
+                       :owner-is-itf)
+         (inv-static java.util.Set "of"
+                     java.nio.file.attribute.PosixFilePermission
+                     java.nio.file.attribute.PosixFilePermission
+                     java.nio.file.attribute.PosixFilePermission))))
+
+(deftest one-arg-vs-one-plus-varargs-test
+  (is (= '(INVOKE-XREF INTERFACE_VIRTUAL "Path" "resolve"
+                       "(Ljava/lang/String;)Ljava/nio/file/Path;"
+                       :owner-is-itf)
+         (inv-virtual java.nio.file.Path "resolve" String)))
+  (is (= '(INVOKE-XREF INTERFACE_VIRTUAL "Path" "resolve"
+                       "(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;"
+                       :owner-is-itf)
+         (inv-virtual java.nio.file.Path "resolve" String String))))
+
+(deftest void-argument-test
+  (is (= '(INVOKE-XREF STATIC "Math" "log" "(D)D" :owner-is-class)
+         (inv-static java.lang.Math "log" jb/void)))
+  (is (= '(INVOKE-XREF STATIC "Objects" "toString"
+                       "(Ljava/lang/Object;)Ljava/lang/String;" :owner-is-class)
+         (inv-static java.util.Objects "toString" jb/void))))

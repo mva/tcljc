@@ -1290,7 +1290,7 @@
                  (jb/primitive? tag)
                  (cond
                    (jb/void? tag) (tp/coerce-to-void x)
-                   (x/reference? x) (tp/unbox-to (tp/of tag) x)
+                   (x/reference? x) (tp/checkcast-and-unbox-to (tp/of tag) x)
                    :else (x/wrong-type (str "cannot cast to " (wrong/q tag)) x))
 
                  (x/primitive? x)

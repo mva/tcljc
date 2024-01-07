@@ -48,7 +48,7 @@
                 (.adapt (.primitive-to to) from)
 
                 (tp/unboxes-to? from-tp to)
-                (tp/unbox-to to from)
+                (tp/checkcast-and-unbox-to to from)
           
                 :else nil)))))
 

@@ -399,7 +399,7 @@
 ;;; skeletal deftype* class to the emitter.
 (deftype ClassDef [^ClassDesc this-class
                    ^int flags
-                   itfs                 ;seq of ClassDesc
+                   ^java.util.List itfs              ;seq of ClassDesc
                    ^DirectMethodHandleDesc super-mhd ;nil if interface
                    ^IPersistentVector fieldv ;vector of FieldDef
                    ^IPersistentVector cb-handlerv]) ;vector to force eager

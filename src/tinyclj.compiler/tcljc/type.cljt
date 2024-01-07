@@ -32,7 +32,7 @@
                   ^boolean computational-int?
                   ^DirectMethodHandleDesc unboxing-mhd
                   ^TypeConversion primitive-to
-                  ^TypeConversion unbox-to
+                  ^TypeConversion unbox-exact-to
                   ^TypeConversion box-of
                   ^TypeConversion reference-to]
   java.lang.Record)
@@ -194,7 +194,7 @@
                  jb/boolean arg ;identity if `arg` is primitive boolean
                  jb/void x/expr-false   ;void is false
                  #_else x/expr-true)) ;all other primitive types are true
-              (.unbox-to boolean)
+              (.unbox-exact-to boolean)
               (.box-of boolean)
               (^TypeConversion fn [arg]
                (if (and (not (x/const-value? arg))
@@ -257,8 +257,8 @@
   (defn primitive? ^boolean [^Wrapper tp]
     (not (identical? generic-reference tp)))
   
-  (defn unbox-to ^Expr [^Wrapper tp ^Expr arg]
-    (.adapt (.unbox-to tp) (xf/checkcast arg (.class-wrapper tp))))
+  (defn checkcast-and-unbox-to ^Expr [^Wrapper tp ^Expr arg]
+    (.adapt (.unbox-exact-to tp) (xf/checkcast arg (.class-wrapper tp))))
 
   (defn default-value-of ^Expr [^Class tp]
     (if (jb/reference? tp)
@@ -330,6 +330,9 @@
     (coerce* x to-tp)))
 (defn coerce-to-void ^Expr [^Expr x]
   (coerce x jb/void))
+(defn coercing ^TypeConversion [^Class to-tp]
+  (^TypeConversion fn [arg]
+   (coerce arg to-tp)))
 
 ;;; FIXME... does this change with Valhalla?
 (defn coerce-vararg ^Expr [^Expr x ^Class to-tp]

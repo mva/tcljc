@@ -1009,26 +1009,38 @@
                  (def x [(void-fn "foo")])]))))
 
 (deftest varargs-static-vs-virtual
-  (is (= '[(LDC [STATIC String "format"
-                 "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;"])
-           (LDC "%3.1f %3.1f")
+  (is (= '[(LDC "%3.1f %3.1f")
+           (ICONST_2)
+           (ANEWARRAY "Object[]")
+           (DUP)
+           (ICONST_0)
            (DCONST_1)
            (INVOKESTATIC Double "valueOf" "(D)Ljava/lang/Double;")
+           (AASTORE)
+           (DUP)
+           (ICONST_1)
            (LDC2_W 2.0)
            (INVOKESTATIC Double "valueOf" "(D)Ljava/lang/Double;")
-           (INVOKEVIRTUAL MethodHandle "invoke"
-                          "(Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/String;")
+           (AASTORE)
+           (INVOKESTATIC String "format"
+                         "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;")
            (ARETURN)]
-         (asm-expr (String/format "%3.1f %3.1f" (object 1.0) (object 2.0)))))
-  (is (= '[(LDC [VIRTUAL String "formatted"
-                 "([Ljava/lang/Object;)Ljava/lang/String;"])
-           (LDC "%3.1f %3.1f")
+         (asm-expr (String/format "%3.1f %3.1f" 1.0 2.0))))
+  (is (= '[(LDC "%3.1f %3.1f")
+           (ICONST_2)
+           (ANEWARRAY "Object[]")
+           (DUP)
+           (ICONST_0)
            (DCONST_1)
            (INVOKESTATIC Double "valueOf" "(D)Ljava/lang/Double;")
+           (AASTORE)
+           (DUP)
+           (ICONST_1)
            (LDC2_W 2.0)
            (INVOKESTATIC Double "valueOf" "(D)Ljava/lang/Double;")
-           (INVOKEVIRTUAL MethodHandle "invoke"
-                          "(Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/String;")
+           (AASTORE)
+           (INVOKEVIRTUAL String "formatted"
+                          "([Ljava/lang/Object;)Ljava/lang/String;")
            (ARETURN)]
       (asm-expr (.formatted "%3.1f %3.1f" (object 1.0) (object 2.0))))))
 

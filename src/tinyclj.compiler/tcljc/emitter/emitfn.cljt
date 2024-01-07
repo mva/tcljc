@@ -454,9 +454,9 @@
                   (.areturn)))]
     (.withMethodBody cb rt/name-meta-method mtd flags xbh)))
 
-(defn mk-emit-reify ^IEmitPlan [^ClassDesc this-class itfs ^String this-mnm
-                                ^DirectMethodHandleDesc super-mhd
-                                ^FnSpec fspec]
+(defn mk-emit-reify ^IEmitPlan [^ClassDesc this-class ^java.util.List itfs
+                                ^String this-mnm
+                                ^DirectMethodHandleDesc super-mhd ^FnSpec fspec]
   (reify IEmitPlan
     (fn-value-const [_]
       nil)
