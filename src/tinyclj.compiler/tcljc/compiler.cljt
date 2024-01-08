@@ -464,8 +464,7 @@
        
        (expr-form ^Expr [form]    ;pre: `form` is not in tail position
          (-> (compile-form env (with-expr x-env) form)
-             (x/ensure-runtime-value)
-             (conv/consume-poly)))
+             (x/ensure-runtime-value)))
        (expr-forms* ^IPersistentVector [^IPersistentVector acc ^ISeq s]
          (if (nil? s)
            acc
@@ -503,9 +502,10 @@
          (-> (with-recur-fn env (mk-recur-fn (.paramv at)))
              (tail-forms (x/flags-body (.aform at))
                          (nthrest (.aform at) body-idx))
-             (conv/consume-body (.rtype at) (if (some? (.method-name at))
-                                              "method result"
-                                              "arity result"))
+             (cond-> (not (jb/polymorphic? (.rtype at)))
+               (conv/consume (.rtype at) (if (some? (.method-name at))
+                                           "method result"
+                                           "arity result")))
              (x/loop-body)))
        (auto-rtype? ^boolean [^Arity at]
          (jb/polymorphic? (.rtype at)))
@@ -1094,7 +1094,7 @@
              (call-fn-def fn-form op+argv)
              (do (check-callable op-x (.ctx env))
                  (x/invoke-fn x-env jb/cl-polymorphic-type
-                              (-> (mapv conv/consume-poly op+argv)
+                              (-> (mapv conv/consume-for-descriptor op+argv)
                                   (x/fix-vararg-array)))))))
        
        (compile-meta ^Expr [m]
@@ -1111,7 +1111,8 @@
                            m))))
        (collection-form ^Expr [^Symbol tp-clnm elems ^DirectMethodHandleDesc mhd]
          (coll-literal (ctx/get-type tp-clnm (.ctx env))
-                       (map conv/consume-poly (expr-forms elems)) mhd))
+                       (map conv/consume-for-descriptor (expr-forms elems))
+                       mhd))
        (resolve-static-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
          (let [ns-part (namespace sym)]
            (if-some [tp (ctx/get-type (symbol nil ns-part) (.ctx env))]

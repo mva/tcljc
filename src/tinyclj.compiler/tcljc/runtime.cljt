@@ -253,12 +253,6 @@
               String [Object String]))
 
 
-;;; polymorphic MethodHandle invokes:
-(def mhd-MethodHandle-invoke (mhd-virtual [MethodHandle "invoke"]
-                                          Object [ObjectArray]))
-(def mhd-MethodHandle-invokeExact (mhd-virtual [MethodHandle "invokeExact"]
-                                               Object [ObjectArray]))
-
 ;;; capstone and segment class initialization:
 (def mhd-RT-ensureInitialized (mhd-static [RT "ensureInitialized"]
                                           void [Class]))

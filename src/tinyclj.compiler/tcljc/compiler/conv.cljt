@@ -16,20 +16,6 @@
   (:import
    (tcljc.expr Expr BindingRef IAdaptPath)))
 
-(def ^:private show-class-loader false)
-
-(letfn [(class-loader-suffix [tp]
-          (when show-class-loader
-            (if (class? tp)
-              (if-some [ld (.getClassLoader ^Class tp)]
-                (or (.getName ld) "not-named")
-                nil #_"bootstrap")
-              "class-desc")))]
-  (defn type-str ^String [clx]
-    (str (.displayName (rt/cd-of clx)) (class-loader-suffix clx))))
-
-;;; ------------------------------------------------------------------------
-
 ;; pre: (not (or (jb/polymorphic? ptype) (jb/void? ptype)))
 (defn consume-argument ^Expr [^Expr x ^Class ptype dest-descr]
   (if-some [tc (tp/argument-conversion (x/type x) ptype)]
@@ -40,24 +26,26 @@
                   x)))
 
 ;; Transform `x` into a type that can be represented as a non-void
-;; type descriptor.  In particular, void is turned into an expression that
-;; pushes a nil operand of type Object.
+;; type descriptor.  Type `void` is turned into an expression that
+;; pushes a nil operand of type Object, and all other expressions are
+;; passed unchanged.
 ;; 
 ;; pre: `x` is a runtime value & not polymorphic.
-(defn consume-poly ^Expr [^Expr x]
+(defn consume-for-descriptor ^Expr [^Expr x]
   (let [x-tp (x/type x)]
     (if (jb/void? x-tp)
       (tp/prog2-expr x x/expr-nil-object)
       x)))
 
 ;; Transform `x` into a value whose type is `to-tp`.  If `to-tp` is
-;; jb/polymorphic?, this function delegates to `consume-poly`.
+;; jb/polymorphic?, this function delegates to
+;; `consume-for-descriptor`.
 ;; 
 ;; pre: `x` is a runtime value & not polymorphic.
 (defn consume ^Expr [^Expr x ^Class to-tp dest-descr]
   (cond
     (jb/void? to-tp) (tp/coerce-to-void x)
-    (jb/polymorphic? to-tp) (consume-poly x)
+    (jb/polymorphic? to-tp) (consume-for-descriptor x)
     :else (let [x' (consume-argument x to-tp dest-descr)]
             (if (x/type? to-tp x')
               x'
@@ -66,13 +54,6 @@
   ;; FIXME... `simple-nm` is nil for imported parameters because
   ;; reflection does not offer this information
   (consume x (x/type bref) (.simple-nm bref)))
-
-;; Special case of `consume` which passes on an expression `x` if
-;; `to-tp` is polymorphic.
-(defn consume-body ^Expr [^Expr x ^Class to-tp ^String to-result]
-  (if (jb/polymorphic? to-tp)
-    x
-    (consume x to-tp to-result)))
 
 ;;; ------------------------------------------------------------------------
 
