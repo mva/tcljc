@@ -334,12 +334,18 @@
 (deftest dot-vector-passed-to-list
   (is (= '[["LOCAL 0: MethodHandle mh"]
            ["LOCAL 1: Object x"]
-           (LDC [STATIC Literal "vector"
-                 "([Ljava/lang/Object;)Lclojure/lang/IPersistentVector;"])
+           (ICONST_2)
+           (ANEWARRAY "Object[]")
+           (DUP)
+           (ICONST_0)
            (ACONST_NULL)
+           (AASTORE)
+           (DUP)
+           (ICONST_1)
            (ALOAD_1)
-           (INVOKEVIRTUAL MethodHandle "invoke"
-                          "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
+           (AASTORE)
+           (INVOKESTATIC Literal "vector"
+                         "([Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
            (ASTORE_2)
            ["LOCAL 2: IPersistentVector args"]
            (ALOAD_0)
@@ -358,12 +364,18 @@
            (ANEWARRAY "Object[]")
            (DUP)
            (ICONST_0)
-           (LDC [STATIC Literal "vector"
-                 "([Ljava/lang/Object;)Lclojure/lang/IPersistentVector;"])
+           (ICONST_2)
+           (ANEWARRAY "Object[]")
+           (DUP)
+           (ICONST_0)
            (ACONST_NULL)
+           (AASTORE)
+           (DUP)
+           (ICONST_1)
            (ALOAD_1)
-           (INVOKEVIRTUAL MethodHandle "invoke"
-                          "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
+           (AASTORE)
+           (INVOKESTATIC Literal "vector"
+                         "([Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
            (AASTORE)
            (INVOKEVIRTUAL MethodHandle "invokeWithArguments"
                           "([Ljava/lang/Object;)Ljava/lang/Object;")

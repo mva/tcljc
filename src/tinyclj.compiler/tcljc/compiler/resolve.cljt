@@ -78,6 +78,31 @@
                     ^TypeConversion* varargs
                     ^Class va-array-type]) ;array type, or nil if polymorphic
 
+(defn- argument-types ^Class* [^IPersistentVector argv ^int start]
+  (let [a (new Class* (- (count argv) start))]
+    (dotimes [i (alength a)]
+      (aset a i (x/type (nth argv (+ i start)))))
+    a))
+
+(defn- varargs-array ^Expr [argv ^Class va-array-type
+                            ^TypeConversion* varargs]
+  (let [ctp (.componentType va-array-type)
+        opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ctp))
+        instr (java.lang.classfile.instruction.ArrayStoreInstruction/of opc)
+        n  (alength varargs)
+        offset (- (count argv) n)]
+    (loop [^Expr acc (x/new-array x/flags-no-ln va-array-type
+                                  [(x/const jb/int (object n))])
+           i 0]
+      (if (< i n)
+        (recur (x/insn* x/flags-no-ln va-array-type
+                        [acc (x/dup va-array-type)
+                         (x/const jb/int (object i))
+                         (.adapt (aget varargs i) (nth argv (+ i offset)))]
+                        instr)
+               (inc i))
+        acc))))
+
 (letfn [(conj-args [acc argv ^TypeConversion* fixargs]
           (let [offset (count acc)      ;receiver or fixargs present?
                 n (alength fixargs)]
@@ -85,25 +110,8 @@
               (if (< i n)
                 (let [arg' (.adapt (aget fixargs i) (nth argv (+ i offset)))]
                   (recur (conj acc arg') (inc i)))
-                acc))))
-        (varargs-array ^Expr [argv ^Class va-array-type
-                              ^TypeConversion* varargs]
-          (let [ctp (.componentType va-array-type)
-                opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ctp))
-                instr (java.lang.classfile.instruction.ArrayStoreInstruction/of opc)
-                n  (alength varargs)
-                offset (- (count argv) n)]
-            (loop [^Expr acc (x/new-array x/flags-no-ln va-array-type
-                                          [(x/const jb/int (object n))])
-                   i 0]
-              (if (< i n)
-                (recur (x/insn* x/flags-no-ln va-array-type
-                                [acc (x/dup va-array-type)
-                                 (x/const jb/int (object i))
-                                 (.adapt (aget varargs i) (nth argv (+ i offset)))]
-                                instr)
-                       (inc i))
                 acc))))]
+  
   (defn invocation-argv [argv ^boolean static? ^Alignment align]
     (cond-> (if static? [] [(nth argv 0)])
       ;; fixed arguments follow receiver, if one is present
@@ -166,7 +174,12 @@
               (Alignment. e fixargs (polyarg-conversions atypes n-fixargs) nil)
               (when-some [varargs (vararg-conversions atypes n-fixargs arg-tp)]
                 (Alignment. e fixargs varargs array-tp))))
-          (Alignment. e fixargs nil nil))))))
+          (Alignment. e fixargs nil nil)))))
+
+  (defn as-generic-vararg-array ^Expr [^IPersistentVector argv]
+    (let [atypes (argument-types argv 0)
+          atc (vararg-conversions atypes 0 jb/Object)]
+      (varargs-array argv jb/ObjectArray atc))))
 
 ;;; ------------------------------------------------------------------------
 
@@ -262,13 +275,7 @@
       (-> (str "no " member-label " matching ")
           (wrong/unresolved-interop nm owner (invoke-ex-data))))))
 
-(letfn [(argument-types ^Class* [^IPersistentVector argv ^boolean static?]
-          (let [offset (if static? 0 1)
-                a (new Class* (- (count argv) offset))]
-            (dotimes [i (alength a)]
-              (aset a i (x/type (nth argv (+ i offset)))))
-            a))
-        (settable? ^boolean [^Field f]
+(letfn [(settable? ^boolean [^Field f]
           (not (Modifier/isFinal (.getModifiers f))))
 
         (invoke-method* ^Expr [^long x-env ^DirectMethodHandleDesc$Kind k
@@ -305,7 +312,7 @@
   (defn invoke-as-member ^Expr [^long x-env ^Class owner ^String nm
                                 ^IPersistentVector argv ^boolean static?]
     ;; note: `atypes` of virtual methods and fields omits argv[0]
-    (let [atypes (argument-types argv static?)
+    (let [atypes (argument-types argv (if static? 0 1))
           fields-only? (.startsWith nm "-")
           nm (cond-> nm fields-only? (.substring 1))
           owner-cd (if (jb/array? owner) rt/object (rt/describe-class owner))
@@ -350,7 +357,7 @@
   (defn invoke-as-constructor ^Expr [^long x-env ^Class owner
                                      ^IPersistentVector argv]
     (let [nm ConstantDescs/INIT_NAME
-          atypes (argument-types argv true)]
+          atypes (argument-types argv 0)]
       (if-some [c (constructor-exact owner atypes)]
         (invoke-constr* x-env owner c argv)
         (let [cs (->> (constructors-with owner atypes)

@@ -224,12 +224,18 @@
   ;; component type of the collecting array
   (is (= '[["LOCAL 0: String foo"]
            ["LOCAL 1: String bar"]
-           (LDC [STATIC Literal "set"
-                 "([Ljava/lang/Object;)Lclojure/lang/IPersistentSet;"])
+           (ICONST_2)
+           (ANEWARRAY "Object[]")
+           (DUP)
+           (ICONST_0)
            (ALOAD_1)
+           (AASTORE)
+           (DUP)
+           (ICONST_1)
            (ALOAD_0)
-           (INVOKEVIRTUAL MethodHandle "invoke"
-                          "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/IPersistentSet;")
+           (AASTORE)
+           (INVOKESTATIC Literal "set"
+                         "([Ljava/lang/Object;)Lclojure/lang/IPersistentSet;")
            (ARETURN)]
          (asm-expr [^String foo ^String bar]
                    #{foo bar}))))

@@ -165,9 +165,8 @@
                     rt/mhd-set (set cs)
                     rt/mhd-list (or (list* cs) ())
                     (throw (IllegalArgumentException.)))))
-    (x/mh-invoke-inexact x/flags-no-ln tp
-                         (->> (map #(tp/coerce-vararg % jb/Object) elems)
-                              (cons (x/const jb/MethodHandle mhd))) nil)))
+    (let [argv [(resolve/as-generic-vararg-array (vec elems))]]
+      (x/invoke-xref x/flags-no-ln tp argv mhd))))
 
 (defn- compile-quote ^Expr [form ^Ctx ctx]
   (if (instance? IMeta form)

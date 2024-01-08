@@ -9,8 +9,7 @@
   (:require
    [tcljc.config :as cfg])
   (:import
-   (clojure.lang Symbol)
-   (java.lang.invoke MethodHandle))
+   (clojure.lang Symbol))
   (:refer-clojure
    :exclude [int long float double boolean char byte short void]))
 
@@ -83,8 +82,6 @@
 (def Class java.lang.Class)
 (def Pattern java.util.regex.Pattern)
 (def Exception java.lang.Exception)
-(def MethodHandle MethodHandle)
-(def MethodHandleArray (.arrayType MethodHandle))
 
 (defn object? ^boolean [^Class tp]      ;exact match
   (same-class? Object tp))

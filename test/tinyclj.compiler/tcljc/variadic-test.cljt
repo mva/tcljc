@@ -991,12 +991,16 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
 
-             (LDC [STATIC Literal "vector"
-                   "([Ljava/lang/Object;)Lclojure/lang/IPersistentVector;"])
+             (ICONST_1)
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
              (LDC "foo")
              (INVOKESTATIC . "void-fn~1" "(Ljava/lang/String;)V")
              (ACONST_NULL)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
+             (AASTORE)
+             (INVOKESTATIC Literal "vector"
+                           "([Ljava/lang/Object;)Lclojure/lang/IPersistentVector;")
              (PUTSTATIC . "x" "Lclojure/lang/IPersistentVector;")
              
              (RETURN)]]

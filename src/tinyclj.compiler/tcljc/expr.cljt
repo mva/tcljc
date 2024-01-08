@@ -408,19 +408,6 @@
 (defn invoke-poly? ^boolean [^Expr x]
   (instance? InvokePoly x))
 
-(defn mh-invoke-inexact ^InvokePoly [^long flags ^Class tp mh+argv ^Object const-value]
-  (invoke-poly flags tp (vec mh+argv) const-value rt/mhk-virtual
-               rt/MethodHandle "invoke" false))
-
-(defn mh-invoke-xref ^InvokePoly [^long flags ^Class tp ^IPersistentVector argv
-                                  ^Object const-value
-                                  ^DirectMethodHandleDesc$Kind kind
-                                  ^ClassDesc owner ^String method-name
-                                  ^String lookup-descriptor]
-  (let [mhd (MethodHandleDesc/of kind owner method-name lookup-descriptor)
-        mh-x (const jb/MethodHandle mhd)]
-    (mh-invoke-inexact flags tp (cons mh-x argv) const-value)))
-
 ;;; ------------------------------------------------------------------------
 
 (deftype Insn [^:pass-to-super-constructor ^long flags
