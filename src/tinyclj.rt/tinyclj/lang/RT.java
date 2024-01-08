@@ -30,10 +30,6 @@ public final class RT {
   }
 
 
-  public static MethodHandle[] methodHandleArray (MethodHandle... mhs) {
-    return mhs;
-  }
-
   public static MethodHandle[] methodHandleArray (MethodHandle mh) {
     return new MethodHandle[] {mh};
   }

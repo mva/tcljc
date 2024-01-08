@@ -235,8 +235,6 @@
                                         Exception [Object]))
 (def mhd-methodHandleArray1 (mhd-static [RT "methodHandleArray"]
                                         MethodHandleArray [MethodHandle]))
-(def mhd-methodHandleArray* (mhd-static [RT "methodHandleArray"]
-                                        MethodHandleArray [MethodHandleArray]))
 (def mhd-array-to-iseq (mhd-static [ArraySeq "create"] ArraySeq [ObjectArray]))
 
 ;;; records:
