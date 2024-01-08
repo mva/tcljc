@@ -23,51 +23,6 @@
    (java.lang.reflect Executable Field Method Constructor Modifier)
    (java.util Arrays)))
 
-;;; Supply type conversion from argument/source type `atype` to
-;;; parameter/sink type `ptype`.  Result is nil if no such conversion
-;;; is possible.  The conversion may not produce a value of the exact
-;;; type `ptype`, but the value's type will be assignment compatible
-;;; to `ptype` as far as the JVM is concerned.  That is, it is always
-;;; possible to introduce an `x/identity` expression that reinterprets
-;;; the converted value as `ptype`.
-(defn argument-conversion ^TypeConversion [^Class atype ^Class ptype]
-  ;; pre: (not (jb/polymorphic? ptype))
-  (cond
-    (jb/jvm-assignable-to? atype ptype) ;Java rule, subsumes identical
-    tp/tc-identity
-
-    (jb/void? atype)
-    (tp/coercing ptype)
-
-    ;; from here on holds: argument is not void
-    
-    (jb/reference? ptype)
-    (if (jb/reference? atype)
-      (when (jb/jvm-assignable-to? ptype atype) ;Clojure rule
-        (tp/coercing ptype))
-
-      ;; else: argument is primitive but not void
-      (let [atp (tp/of atype)]
-        (when (jb/jvm-assignable-to? (.class-wrapper atp) ptype)
-          (.box-of atp))))
-
-    (jb/void? ptype)
-    (throw (IllegalStateException.))
-
-    ;; from here on holds: parameter is primitive but not void
-            
-    (jb/reference? atype)
-    (let [ptp (tp/of ptype)]
-      (when (tp/unboxes-to? atype ptp)
-        (^TypeConversion fn [arg]
-         (tp/checkcast-and-unbox-to ptp arg))))
-
-    :else                          ;argument is primitive but not void
-    (let [ptp (tp/of ptype)]
-      (when (tp/widens-to-numeric? (tp/of atype) ptp)
-        (.primitive-to ptp)))))
-
-
 ;;; Problem: class MethodHandle.PolymorphicSignature is not public
 (def ^:private ann-polymorphic-signature
   (Class/forName "java.lang.invoke.MethodHandle$PolymorphicSignature"
@@ -84,24 +39,14 @@
       (aset a i (x/type (nth argv (+ i start)))))
     a))
 
-(defn- varargs-array ^Expr [argv ^Class va-array-type
-                            ^TypeConversion* varargs]
-  (let [ctp (.componentType va-array-type)
-        opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ctp))
-        instr (java.lang.classfile.instruction.ArrayStoreInstruction/of opc)
-        n  (alength varargs)
+(defn- varargs-array ^Expr [argv ^Class va-array-type ^TypeConversion* varargs]
+  (let [n (alength varargs)
         offset (- (count argv) n)]
-    (loop [^Expr acc (x/new-array x/flags-no-ln va-array-type
-                                  [(x/const jb/int (object n))])
-           i 0]
+    (loop [acc [], i 0]
       (if (< i n)
-        (recur (x/insn* x/flags-no-ln va-array-type
-                        [acc (x/dup va-array-type)
-                         (x/const jb/int (object i))
-                         (.adapt (aget varargs i) (nth argv (+ i offset)))]
-                        instr)
+        (recur (conj acc (.adapt (aget varargs i) (nth argv (+ i offset))))
                (inc i))
-        acc))))
+        (x/varargs-array acc va-array-type)))))
 
 (letfn [(conj-args [acc argv ^TypeConversion* fixargs]
           (let [offset (count acc)      ;receiver or fixargs present?
@@ -136,7 +81,7 @@
             (loop [i 0]
               (if (< i n-fixargs)
                 (let [atype (aget atypes i), ptype (aget ptypes i)]
-                  (when-some [tc (argument-conversion atype ptype)]
+                  (when-some [tc (tp/argument-conversion atype ptype)]
                     (aset atc i tc)
                     (recur (inc i))))
                 atc))))
@@ -151,7 +96,7 @@
               (loop [i 0]
                 (if (< i n-varargs)
                   (let [atype (aget atypes (+ n-fixargs i))]
-                    (when-some [tc (argument-conversion atype va-arg-type)]
+                    (when-some [tc (tp/argument-conversion atype va-arg-type)]
                       (aset atc i tc)
                       (recur (inc i))))
                   atc)))))]
@@ -176,10 +121,10 @@
                 (Alignment. e fixargs varargs array-tp))))
           (Alignment. e fixargs nil nil)))))
 
-  (defn as-generic-vararg-array ^Expr [^IPersistentVector argv]
+  (defn as-vararg-array ^Expr [^IPersistentVector argv ^Class va-array-type]
     (let [atypes (argument-types argv 0)
-          atc (vararg-conversions atypes 0 jb/Object)]
-      (varargs-array argv jb/ObjectArray atc))))
+          atc (vararg-conversions atypes 0 (.getComponentType va-array-type))]
+      (varargs-array argv va-array-type atc))))
 
 ;;; ------------------------------------------------------------------------
 

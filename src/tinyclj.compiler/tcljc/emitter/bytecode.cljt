@@ -223,24 +223,28 @@
             (line-number xb x)
             (cf/invoke xb mhd))
           (invoke-arity-va ^void [^CodeBuilder xb ^InvokeArity x ^IEmitPlan ep
-                                  ^Arity at ^DirectMethodHandleDesc mhd]
-            (.constantInstruction xb mhd)
-            (let [atypes (if (.invoke-arity-with-self? ep)
-                           (do (exprv-insns xb (x/argv x))
-                               (map x/type (x/argv x)))
-                           (let [tpv (.arity-env ep xb es at)
-                                 argv (subvec (x/argv x) 1)]
-                             (exprv-insns xb argv)
-                             (into tpv (map x/type argv))))]
+                                  ^Arity at ^DirectMethodHandleDesc mhd
+                                  ^Class va-ctp]
+            (let [va-array-type (.arrayType va-ctp)
+                  argv (if (.invoke-arity-with-self? ep)
+                         (x/argv x)
+                         (subvec (x/argv x) 1))
+                  n-fixargs (cond-> (dec (x/at-n at))
+                              (.invoke-arity-with-self? ep)
+                              (inc))]
+              (when-not (.invoke-arity-with-self? ep)
+                (.arity-env ep xb es at))
+              (exprv-insns xb (conj (subvec argv 0 n-fixargs)
+                                    (-> (subvec argv n-fixargs)
+                                        (x/varargs-array va-array-type))))
               (line-number xb x)
-              (.invokevirtual xb rt/MethodHandle "invoke"
-                              (rt/mtd-of (.rtype at) atypes))))
+              (cf/invoke xb mhd)))
           (invoke-arity ^CodeBuilder [^CodeBuilder xb ^InvokeArity x]
             (let [fnc (-> x .fn-form .!fnc)
                   ac (.arity-code fnc (.at-idx x))
                   ep (.emit-plan fnc)]
-              (if (some? (x/at-extern-vararg-type (.at ac)))
-                (invoke-arity-va xb x ep (.at ac) (.load-mh-ext ac))
+              (if-some [va-ctp (x/at-extern-vararg-type (.at ac))]
+                (invoke-arity-va xb x ep (.at ac) (.load-mh-ext ac) va-ctp)
                 (invoke-arity-fa xb x ep (.at ac) (.load-mh-ext ac)))
               xb))
 

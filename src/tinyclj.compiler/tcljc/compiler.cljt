@@ -165,7 +165,7 @@
                     rt/mhd-set (set cs)
                     rt/mhd-list (or (list* cs) ())
                     (throw (IllegalArgumentException.)))))
-    (let [argv [(resolve/as-generic-vararg-array (vec elems))]]
+    (let [argv [(resolve/as-vararg-array (vec elems) jb/ObjectArray)]]
       (x/invoke-xref x/flags-no-ln tp argv mhd))))
 
 (defn- compile-quote ^Expr [form ^Ctx ctx]
@@ -1060,10 +1060,8 @@
              (let [arg (nth op+argv i)]
                (recur
                 (if (>= i vararg-start)
-                  ;; FIXME... After Valhalla, revise this to adapt
-                  ;; vararg arguments to parameter type as well?
-                  (assoc acc (object i) (-> (conv/consume-poly arg)
-                                            (tp/coerce-vararg vararg-tp)))
+                  (assoc acc (object i)
+                         (conv/consume-argument arg vararg-tp nil))
                   (let [bref (x/at-nth-bref at (dec i)), param-tp (x/type bref)]
                     (if (or (jb/same-class? param-tp (x/type arg))
                             (and (jb/object? param-tp) (x/reference? arg)))
@@ -1083,8 +1081,7 @@
                (when (jb/compile-time-entity? rt)
                  (wrong/other "calling function arity with unknown result type"))
                (let [argv (if-some [vararg-tp (x/at-extern-vararg-type at)]
-                            (-> (adapt-args op+argv at (x/at-n at) vararg-tp)
-                                (x/fix-vararg-array at))
+                            (adapt-args op+argv at (x/at-n at) vararg-tp)
                             (adapt-args op+argv at Integer/MAX_VALUE jb/Object))]
                  (x/invoke-arity x-env rt argv fn-form (.at-idx at)))))
            (catch clojure.lang.ExceptionInfo e
@@ -1311,7 +1308,7 @@
   (let [env (Env. x/lvl-environment nil {} nil ctx nil)
         x (-> (compile-form* env (x/flags-top-level-form form) form)
               (x/ensure-runtime-outcome)
-              (conv/consume jb/void "top-level form"))]
+              (tp/coerce-to-void))]
     (.send-to-emit (.compile-io ctx) io/msg-emit-tlf x)
     (.increment-tlf-idx ctx)))
 

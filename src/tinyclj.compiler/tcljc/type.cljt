@@ -334,13 +334,6 @@
   (^TypeConversion fn [arg]
    (coerce arg to-tp)))
 
-;;; FIXME... does this change with Valhalla?
-(defn coerce-vararg ^Expr [^Expr x ^Class to-tp]
-  (if (and (not (jb/polymorphic? to-tp)) (jb/reference? to-tp)
-           (x/reference? x))
-    (coerce x to-tp)
-    x))
-
 
 (defn progn-expr ^Expr [^IPersistentVector statmv ^Expr expr]
   (if (zero? (count statmv))
@@ -348,3 +341,49 @@
     (x/progn* (conj (mapv coerce-to-void statmv) expr))))
 (defn prog2-expr ^Expr [^Expr statm ^Expr expr]
   (x/progn* [(coerce-to-void statm) expr]))
+
+;;; ------------------------------------------------------------------------
+
+;;; Supply type conversion from argument/source type `atype` to
+;;; parameter/sink type `ptype`.  Result is nil if no such conversion
+;;; is possible.  The conversion may not produce a value of the exact
+;;; type `ptype`, but the value's type will be assignment compatible
+;;; to `ptype` as far as the JVM is concerned.  That is, it is always
+;;; possible to introduce an `x/identity` expression that reinterprets
+;;; the converted value as `ptype`.
+(defn argument-conversion ^TypeConversion [^Class atype ^Class ptype]
+  ;; pre: (not (or (jb/polymorphic? ptype) (jb/void? ptype)))
+  (cond
+    (jb/jvm-assignable-to? atype ptype) ;Java rule, subsumes identical
+    tc-identity
+
+    (jb/void? atype)
+    (coercing ptype)
+
+    ;; from here on holds: argument is not void
+    
+    (jb/reference? ptype)
+    (if (jb/reference? atype)
+      (when (jb/jvm-assignable-to? ptype atype) ;Clojure rule
+        (coercing ptype))
+
+      ;; else: argument is primitive but not void
+      (let [atp (of atype)]
+        (when (jb/jvm-assignable-to? (.class-wrapper atp) ptype)
+          (.box-of atp))))
+
+    (jb/void? ptype)
+    (throw (IllegalStateException.))
+
+    ;; from here on holds: parameter is primitive but not void
+            
+    (jb/reference? atype)
+    (let [ptp (of ptype)]
+      (when (unboxes-to? atype ptp)
+        (^TypeConversion fn [arg]
+         (checkcast-and-unbox-to ptp arg))))
+
+    :else                          ;argument is primitive but not void
+    (let [ptp (of ptype)]
+      (when (widens-to-numeric? (of atype) ptp)
+        (.primitive-to ptp)))))

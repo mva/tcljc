@@ -243,12 +243,22 @@
              ["LOCAL 0: Object &form"]
              ["LOCAL 1: Object &env"]
              ["LOCAL 2: Object x"]
-             (LDC [STATIC . "list~1" "([Ljava/lang/Object;)Ljava/lang/Object;"])
+             (ICONST_3)
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
              (LDC [:bsm-quote "symbol" "Lclojure/lang/Symbol;"
                    ["tinyclj.lang.primitive" "acmpeq"]])
+             (AASTORE)
+             (DUP)
+             (ICONST_1)
              (ALOAD_2)
+             (AASTORE)
+             (DUP)
+             (ICONST_2)
              (ACONST_NULL)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
+             (AASTORE)
+             (INVOKESTATIC . "list~1" "([Ljava/lang/Object;)Ljava/lang/Object;")
              (ARETURN)]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")

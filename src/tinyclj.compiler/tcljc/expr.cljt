@@ -513,6 +513,21 @@
 (defn new-array ^NewArray [^long flags ^Class tp ^IPersistentVector argv]
   (NewArray. flags tp argv nil))
 
+(defn varargs-array ^Expr [^IPersistentVector argv ^Class va-array-type]
+  (let [ctp (.componentType va-array-type)
+        opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ctp))
+        instr (java.lang.classfile.instruction.ArrayStoreInstruction/of opc)
+        n (count argv)]
+    (loop [^Expr acc (new-array flags-no-ln va-array-type
+                                  [(const jb/int (object n))])
+           i 0]
+      (if (< i n)
+        (recur (insn* flags-no-ln va-array-type
+                        [acc (dup va-array-type) (const jb/int (object i))
+                         (nth argv i)] instr)
+               (inc i))
+        acc))))
+
 ;;; ------------------------------------------------------------------------
 
 (def const-value-void
@@ -1500,22 +1515,12 @@
 ;;; Bridge gap between Clojure variadic function and JVM vararg method
 ;;; by casting the argument that can unintentionally match the vararg
 ;;; parameter.
-(defn fix-vararg-array
-  ([op+argv]                       ;generic `MethodHandle.invoke` call
-   (let [arg (peek op+argv)]
-     (if (and (some? arg) (array? arg))
-       ;; we don't know whether the array is passed to a vararg here
-       (conj (tinyclj.core/pop op+argv) (identity jb/Object arg))
-       op+argv)))
-  ([op+argv at]                ;exact call with arity type information
-   (if (= (at-n at) (dec (count op+argv)))
-     (let [paramt (at-parameter-type at (dec (at-n at)))
-           arg (peek op+argv)]
-       (if (and (array? arg)
-                (vararg-array-compatible? paramt arg))
-         (conj (tinyclj.core/pop op+argv) (identity jb/Object arg))
-         op+argv))
-     op+argv)))
+(defn fix-vararg-array [op+argv]   ;generic `MethodHandle.invoke` call
+  (let [arg (peek op+argv)]
+    (if (and (some? arg) (array? arg))
+      ;; we don't know whether the array is passed to a vararg here
+      (conj (tinyclj.core/pop op+argv) (identity jb/Object arg))
+      op+argv)))
 
 ;;; ------------------------------------------------------------------------
 

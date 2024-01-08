@@ -52,19 +52,34 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
-             (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
-             (INVOKEVIRTUAL MethodHandle "invoke" "()Ljava/util/List;")
+             (ICONST_0)
+             (ANEWARRAY "Object[]")
+             (INVOKESTATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;")
              (PUTSTATIC . "l0" "Ljava/util/List;")
-             
-             (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
+
              (ICONST_1)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(I)Ljava/util/List;")
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
+             (ICONST_1)
+             (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+             (AASTORE)
+             (INVOKESTATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;")
              (PUTSTATIC . "l1" "Ljava/util/List;")
              
-             (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (ICONST_2)
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
+             (ICONST_1)
+             (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+             (AASTORE)
+             (DUP)
              (ICONST_1)
              (ICONST_2)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(II)Ljava/util/List;")
+             (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+             (AASTORE)
+             (INVOKESTATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;")
              (PUTSTATIC . "l2" "Ljava/util/List;")
 
              (RETURN)]]
@@ -99,26 +114,37 @@
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL VARARGS] "as-list-wrapped~1" "([Ljava/lang/Object;)Ljava/util/List;")
              ["LOCAL 0: Object[] items"]
-             (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (ICONST_1)
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
              (ALOAD_0)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Ljava/util/List;")
+             (AASTORE)
+             (INVOKESTATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;")
              (ARETURN)]
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
-             (LDC [STATIC . "as-list-wrapped~1"
-                   "([Ljava/lang/Object;)Ljava/util/List;"])
              (ICONST_1)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(I)Ljava/util/List;")
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
+             (ICONST_1)
+             (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+             (AASTORE)
+             (INVOKESTATIC . "as-list-wrapped~1" "([Ljava/lang/Object;)Ljava/util/List;")
              (PUTSTATIC . "lnested" "Ljava/util/List;")
-
-             (LDC [STATIC . "as-list-wrapped~1"
-                   "([Ljava/lang/Object;)Ljava/util/List;"])
+             
+             (ICONST_1)
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
              (ICONST_0)
              (NEWARRAY "int[]")
-             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Ljava/util/List;")
+             (AASTORE)
+             (INVOKESTATIC . "as-list-wrapped~1" "([Ljava/lang/Object;)Ljava/util/List;")
              (PUTSTATIC . "lints" "Ljava/util/List;")
              
              (RETURN)]]
@@ -404,10 +430,15 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
-             (LDC [STATIC . "apply-1~2" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/util/List;"])
              (INVOKESTATIC . "as-list" "()Ltinyclj/lang/StaticFnMh;")
              (ICONST_1)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(Ltinyclj/lang/AFnMh;I)Ljava/util/List;")
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
+             (ICONST_1)
+             (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+             (AASTORE)
+             (INVOKESTATIC . "apply-1~2" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/util/List;")
              (PUTSTATIC . "l1" "Ljava/util/List;")
              
              (RETURN)]]
@@ -462,15 +493,21 @@
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
-
-             (LDC [STATIC . "apply-1~2" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/util/List;"])
+             
              (LDC "")
              (INVOKESTATIC . "mk-as-list~1" "(Ljava/lang/String;)Ltinyclj/lang/AFnMh;")
              (ICONST_1)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(Ltinyclj/lang/AFnMh;I)Ljava/util/List;")
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
+             (ICONST_1)
+             (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+             (AASTORE)
+             (INVOKESTATIC . "apply-1~2" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/util/List;")
              (PUTSTATIC . "l1" "Ljava/util/List;")
              
              (RETURN)]]
+           
            [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
              (LDC "tinyclj.core")
@@ -738,10 +775,10 @@
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
              ["LOCAL 0: Object x"]
-             (LDC [STATIC . "f$callee-gets-iseq~1"
-                   "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"])
              (ALOAD_0)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Ljava/lang/Object;")
+             (ICONST_0)
+             (ANEWARRAY "Object[]")
+             (INVOKESTATIC . "f$callee-gets-iseq~1" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
              (ARETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "f$callee-gets-iseq~1" "(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
@@ -896,14 +933,18 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
-             (LDC [STATIC . "concat~3" "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"])
              (ICONST_0)
              (ANEWARRAY "Object[]")
              (ICONST_0)
              (ANEWARRAY "Object[]")
+             (ICONST_1)
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
              (ICONST_0)
              (ANEWARRAY "Integer[]")
-             (INVOKEVIRTUAL MethodHandle "invoke" "([Ljava/lang/Object;[Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
+             (AASTORE)
+             (INVOKESTATIC . "concat~3" "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
              (PUTSTATIC . "x" "Ljava/lang/Object;")
 
              (RETURN)]]
@@ -953,11 +994,15 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
              
-             (LDC [STATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;"])
+             (ICONST_1)
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
              (LDC "foo")
              (INVOKESTATIC . "void-fn~1" "(Ljava/lang/String;)V")
              (ACONST_NULL)
-             (INVOKEVIRTUAL MethodHandle "invoke" "(Ljava/lang/Object;)Ljava/util/List;")
+             (AASTORE)
+             (INVOKESTATIC Arrays "asList" "([Ljava/lang/Object;)Ljava/util/List;")
              (PUTSTATIC . "x" "Ljava/util/List;")
              
              (RETURN)]]
