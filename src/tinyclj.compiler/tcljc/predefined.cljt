@@ -16,7 +16,6 @@
    [tcljc.exprfold :as xf]
    [tcljc.type :as tp]
    [tcljc.compiler.adapt :as adapt]
-   [tcljc.compiler.conv :as conv]
    [tcljc.compiler :as compiler])
   (:import
    (tcljc.expr Expr BindingRef FnPrimitiveFn FnMacroFn)
@@ -175,7 +174,7 @@
                           adapt/numeric-to-int adapt/any-to-identity)
          a (aget args 0), i (aget args 1)
          ccl (.componentType (x/type a))
-         v (conv/consume (nth args 2) ccl "array component")
+         v (compiler/consume (nth args 2) ccl "array component")
          opc (cf/bc2opc Opcode/IASTORE (cf/opcode-delta ccl))]
      (x/insn* x-env ccl [a i v (x/dup-x2 ccl)]
               (java.lang.classfile.instruction.ArrayStoreInstruction/of opc)))))
