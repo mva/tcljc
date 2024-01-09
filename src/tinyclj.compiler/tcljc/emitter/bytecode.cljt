@@ -235,8 +235,8 @@
               (when-not (.invoke-arity-with-self? ep)
                 (.arity-env ep xb es at))
               (exprv-insns xb (conj (subvec argv 0 n-fixargs)
-                                    (-> (subvec argv n-fixargs)
-                                        (x/varargs-array va-array-type))))
+                                    (x/array-of (subvec argv n-fixargs)
+                                                va-array-type)))
               (line-number xb x)
               (cf/invoke xb mhd)))
           (invoke-arity ^CodeBuilder [^CodeBuilder xb ^InvokeArity x]

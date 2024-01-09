@@ -42,11 +42,11 @@
 (defn- varargs-array ^Expr [argv ^Class va-array-type ^TypeConversion* varargs]
   (let [n (alength varargs)
         offset (- (count argv) n)]
-    (loop [acc [], i 0]
+    (loop [acc (transient []), i 0]
       (if (< i n)
-        (recur (conj acc (.adapt (aget varargs i) (nth argv (+ i offset))))
+        (recur (conj! acc (.adapt (aget varargs i) (nth argv (+ i offset))))
                (inc i))
-        (x/varargs-array acc va-array-type)))))
+        (x/array-of (persistent! acc) va-array-type)))))
 
 (letfn [(conj-args [acc argv ^TypeConversion* fixargs]
           (let [offset (count acc)      ;receiver or fixargs present?
