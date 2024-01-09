@@ -10,7 +10,7 @@
    (tinyclj.alpha ptest-test ptest__align-test ptest__pp-test)
    (tcljc parser-test reader-test synquote-test grammar-test
 
-          resolve-test bootstrap-test
+          invoke-test bootstrap-test
           
           const-test conv-test dot-form-test new-test arith-test let-test
           quote-test meta-test str-test bits-test switch-test cond-test
@@ -38,7 +38,7 @@
     tcljc.synquote-test
     tcljc.grammar-test
 
-    tcljc.resolve-test
+    tcljc.invoke-test
     tcljc.bootstrap-test
     
     tcljc.const-test

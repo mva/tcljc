@@ -6,6 +6,7 @@
   exports tcljc.classfile;
   exports tcljc.compiler;
   exports tcljc.compiler.adapt;
+  exports tcljc.compiler.invoke;
   exports tcljc.compiler.resolve;
   exports tcljc.compiler.sigclass;
   exports tcljc.compiler.sigfn;

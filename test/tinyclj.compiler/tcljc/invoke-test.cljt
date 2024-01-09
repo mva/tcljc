@@ -5,9 +5,9 @@
 ;; By using this software in any fashion, you are agreeing to be bound by
 ;; the terms of this license.
 ;; You must not remove this notice, or any other, from this software.
-(ns tcljc.resolve-test
+(ns tcljc.invoke-test
   (:require [tcljc.javabase :as jb]
-            [tcljc.compiler.resolve :refer :all]
+            [tcljc.compiler.invoke :as invoke]
             [tcljc.expr :as x]
             [tinyclj.alpha.ptest :refer :all])
   (:import (tcljc.expr Expr InvokeXref InvokePoly)
@@ -35,12 +35,12 @@
             :else (throw (IllegalArgumentException. (str (class x))))))]
   
   (defn inv-constr [^Class owner & ^Class* atypes]
-    (inv1 (invoke-as-constructor x/flags-no-ln owner (fake-argv atypes))))
+    (inv1 (invoke/constructor x/flags-no-ln owner (fake-argv atypes))))
   (defn inv-static [^Class owner ^String nm & ^Class* atypes]
-    (inv1 (invoke-as-member x/flags-no-ln owner nm (fake-argv atypes) true)))
+    (inv1 (invoke/member x/flags-no-ln owner nm (fake-argv atypes) true)))
   (defn inv-virtual [^Class owner ^String nm & ^Class* atypes]
-    (inv1 (invoke-as-member x/flags-no-ln owner nm
-                            (fake-argv (cons owner atypes)) false))))
+    (inv1 (invoke/member x/flags-no-ln owner nm
+                         (fake-argv (cons owner atypes)) false))))
 
 (deftest constructor-invoke-test
   (is (= '(INVOKE-XREF CONSTRUCTOR "HashMap" "<init>" "()V" :owner-is-class)
