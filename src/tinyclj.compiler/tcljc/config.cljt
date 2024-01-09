@@ -107,7 +107,10 @@
       n)))
 
 (defn type-symbol ^clojure.lang.Symbol [^Class tp]
-  (symbol nil (array-suffix (.getName tp) (array-dims tp))))
+  (loop [n 0, tp tp]
+    (if (.isArray tp)
+      (recur (inc n) (.componentType tp))
+      (symbol nil (array-suffix (.getName tp) n)))))
 
 ;;; ------------------------------------------------------------------------
 
