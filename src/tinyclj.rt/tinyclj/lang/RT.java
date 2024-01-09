@@ -30,11 +30,6 @@ public final class RT {
   }
 
 
-  public static MethodHandle[] methodHandleArray (MethodHandle mh) {
-    return new MethodHandle[] {mh};
-  }
-
-
   // Generic apply should also work for function-like objects.
   public static Object apply(clojure.lang.IFn f, Object arglist) {
     // make sure argument is nil if `arglist` is empty

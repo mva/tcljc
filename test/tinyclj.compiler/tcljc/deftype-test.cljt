@@ -611,9 +611,12 @@
             
             [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
              #_["LOCAL 0: fn __this"]
+             (ICONST_1)
+             (ANEWARRAY "MethodHandle[]")
+             (DUP)
+             (ICONST_0)
              (LDC [VIRTUAL . "fn0" "()Ljava/lang/String;"])
-             (INVOKESTATIC RT "methodHandleArray"
-                           "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
+             (AASTORE)
              (ARETURN)]
             
             [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")

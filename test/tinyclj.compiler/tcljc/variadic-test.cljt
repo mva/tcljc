@@ -357,8 +357,12 @@
             
             [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
              #_["LOCAL 0: mk-as-list$as-list __this"]
+             (ICONST_1)
+             (ANEWARRAY "MethodHandle[]")
+             (DUP)
+             (ICONST_0)
              (LDC [VIRTUAL . "fn1" "([Ljava/lang/Object;)Ljava/util/List;"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
+             (AASTORE)
              (ARETURN)]
             
             [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
@@ -535,8 +539,12 @@
             
             [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
              #_["LOCAL 0: mk-as-list$as-list __this"]
+             (ICONST_1)
+             (ANEWARRAY "MethodHandle[]")
+             (DUP)
+             (ICONST_0)
              (LDC [VIRTUAL . "fn1" "([Ljava/lang/Object;)Ljava/util/List;"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
+             (AASTORE)
              (ARETURN)]
             
             [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/String;)V")
@@ -864,8 +872,12 @@
             
             [(METHOD [PUBLIC FINAL] "__directMethodHandles" "()[Ljava/lang/invoke/MethodHandle;")
              #_["LOCAL 0: f$callee-gets-iseq __this"]
+             (ICONST_1)
+             (ANEWARRAY "MethodHandle[]")
+             (DUP)
+             (ICONST_0)
              (LDC [VIRTUAL . "fn1" "([Ljava/lang/Object;)Ljava/lang/Object;"])
-             (INVOKESTATIC RT "methodHandleArray" "(Ljava/lang/invoke/MethodHandle;)[Ljava/lang/invoke/MethodHandle;")
+             (AASTORE)
              (ARETURN)]
             
             [(METHOD [PRIVATE] "<init>" "(Lclojure/lang/IPersistentMap;Ljava/lang/Object;)V")

@@ -233,8 +233,6 @@
 (def mhd-equiv (mhd-static [ClojureUtil "equiv"] boolean [Object Object]))
 (def mhd-no-matching-clause (mhd-static [RT "noMatchingClause"]
                                         Exception [Object]))
-(def mhd-methodHandleArray1 (mhd-static [RT "methodHandleArray"]
-                                        MethodHandleArray [MethodHandle]))
 (def mhd-array-to-iseq (mhd-static [ArraySeq "create"] ArraySeq [ObjectArray]))
 
 ;;; records:

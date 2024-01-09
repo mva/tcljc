@@ -222,18 +222,14 @@
 (defn- dmh-method ^void [^ClassBuilder cb ^ArityCode* aca]
   (let [aca (x/aca-by-n aca)
         xbh (cf/with-xbh [xb]
-              (if (= (alength aca) 1)
-                (-> (.constantInstruction xb (.load-mh-ext (aget aca 0)))
-                    (cf/invoke rt/mhd-methodHandleArray1)
-                    (.areturn))
-                (do (-> (.constantInstruction xb (object (alength aca)))
-                        (.anewarray rt/MethodHandle))
-                    (dotimes [i (alength aca)]
-                      (-> (.dup xb)
-                          (.constantInstruction (object i))
-                          (.constantInstruction (.load-mh-ext (aget aca i)))
-                          (.aastore)))
-                    (.areturn xb))))]
+              (-> (.constantInstruction xb (object (alength aca)))
+                  (.anewarray rt/MethodHandle))
+              (dotimes [i (alength aca)]
+                (-> (.dup xb)
+                    (.constantInstruction (object i))
+                    (.constantInstruction (.load-mh-ext (aget aca i)))
+                    (.aastore)))
+              (.areturn xb))]
     (.withMethodBody cb rt/name-dmh-method rt/mtd-dmh-method
                      (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_FINAL) xbh)))
 
