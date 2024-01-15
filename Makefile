@@ -124,8 +124,7 @@ $(DEST_DIR).stageDI2/DONE: $(DEST_DIR).stageDI1/DONE
 # Use bootstrapped compiler to build modules for runtime, core
 # library, and compiler.  Collect the jar files into $(DEST_DIR).mdir.
 
-BUILD_JAVAC=$(JAVAC)
-#BUILD_JAVAC=$(JAVAC) --release 17
+BUILD_JAVAC=$(JAVAC) --release 22
 BUILD_JAVA_ONCE=$(JAVA_ONCE)
 BUILD_JAR=$(JAVA_BIN)jar
 
