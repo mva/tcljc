@@ -190,12 +190,37 @@
                    (if test? a b)))))
 
 ;;; Mixed paths are assigned the primitive type, because Integer (or
-;;; Object in general) is assignment compatible to `int`.  But this is
-;;; (right now) incompatible with the function's result type Object.
+;;; Object in general) is assignment compatible to `int`.  This is
+;;; then boxed to match the function's result type Object.
 (deftest mixed-paths-passed-to-Object
-  #_(is (= '[]
-           (asm-expr ^Object [^boolean test? ^int a ^Integer b]
-                     (if test? a b))))
-  #_(is (= '[]
-           (asm-expr ^Object [^boolean test? ^int a ^Object b]
-                     (if test? a b)))))
+  (is (= '[["LOCAL 0: boolean test?"]
+           ["LOCAL 1: int a"]
+           ["LOCAL 2: Integer b"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (ILOAD_1)
+           (GOTO L:1)
+           [L:0]
+           (ALOAD_2)
+           (INVOKEVIRTUAL Integer "intValue" "()I")
+           [L:1]
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ARETURN)]
+         (asm-expr ^Object [^boolean test? ^int a ^Integer b]
+                   (if test? a b))))
+  (is (= '[["LOCAL 0: boolean test?"]
+           ["LOCAL 1: int a"]
+           ["LOCAL 2: Object b"]
+           (ILOAD_0)
+           (IFEQ L:0)
+           (ILOAD_1)
+           (GOTO L:1)
+           [L:0]
+           (ALOAD_2)
+           (CHECKCAST Integer)
+           (INVOKEVIRTUAL Integer "intValue" "()I")
+           [L:1]
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ARETURN)]
+         (asm-expr ^Object [^boolean test? ^int a ^Object b]
+                   (if test? a b)))))
