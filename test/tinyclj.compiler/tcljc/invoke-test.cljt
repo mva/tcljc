@@ -191,3 +191,17 @@
   (is (= '(INVOKE-XREF STATIC "Objects" "toString"
                        "(Ljava/lang/Object;)Ljava/lang/String;" :owner-is-class)
          (inv-static java.util.Objects "toString" jb/void))))
+
+;;; Argument nil is treated specially when looking for matching
+;;; methods.  Instead of satisfying a primitive parameter by unboxing
+;;; nil (which must fail at runtime), treat such a constellation as a
+;;; mismatch similar to incompatible types.
+(deftest nil-argument-to-primitive-parameter-test
+  ;; single candidate: argument is of type int
+  (is (thrown-with-msg? ExceptionInfo #"no static method matching"
+                        (invoke/member x/flags-no-ln java.lang.Integer "bitCount"
+                                       [x/expr-nil-object] true)))
+  ;; overloaded: argument is either int, long, float, or double
+  (is (thrown-with-msg? ExceptionInfo #"no static method matching"
+                        (invoke/member x/flags-no-ln java.lang.Math "abs"
+                                       [x/expr-nil-object] true))))
