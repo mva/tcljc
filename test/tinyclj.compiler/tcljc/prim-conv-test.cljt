@@ -1,0 +1,356 @@
+;; Copyright (c) Michael van Acken. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https:;;www.eclipse.org/legal/epl-v20.html)
+;; which can be found in the file epl-v20.html at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+(ns tcljc.prim-conv-test
+  (:require [tcljc.bootstrap :refer [asm-expr]]
+            [tinyclj.alpha.ptest :refer :all])
+  (:import (clojure.lang ExceptionInfo)))
+
+;;; baseline is the "Safety of conversions" matrix of JEP 455
+;;; https://openjdk.org/jeps/455
+;;;
+;;; For "logical" conversion see tcljc.type/logical, which implements
+;;; Clojure's rules for logically true or false expressions.
+
+(deftest from-byte-to-primitive
+  (is (= '[["LOCAL 0: byte x"] (ILOAD_0) (IRETURN)]
+         (asm-expr ^byte [^byte x] #_identity x)))
+
+  (is (= '[["LOCAL 0: byte x"] (ILOAD_0) (I2S) (IRETURN)]
+         (asm-expr ^short [^byte x] #_exact x)))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^char [^byte x] #_error x)))
+  (is (= '[["LOCAL 0: byte x"] (ILOAD_0) (I2C) (IRETURN)]
+         (asm-expr ^char [^byte x] (char #_widening+narrowing x))))
+
+  (is (= '[["LOCAL 0: byte x"] (ILOAD_0) (IRETURN)]
+         (asm-expr ^int [^byte x] #_exact x)))
+
+  (is (= '[["LOCAL 0: byte x"] (ILOAD_0) (I2L) (LRETURN)]
+         (asm-expr ^long [^byte x] #_exact x)))
+  
+  (is (= '[["LOCAL 0: byte x"] (ILOAD_0) (I2F) (FRETURN)]
+         (asm-expr ^float [^byte x] #_exact x)))
+
+  (is (= '[["LOCAL 0: byte x"] (ILOAD_0) (I2D) (DRETURN)]
+         (asm-expr ^double [^byte x] #_exact x)))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^boolean [^byte x] #_error x)))
+  (is (= '[["LOCAL 0: byte x"] (ICONST_1) (IRETURN)]
+         (asm-expr ^boolean [^byte x] (boolean #_logical x)))))
+
+(deftest from-short-to-primitive
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^byte [^short x] #_error x)))
+  (is (= '[["LOCAL 0: short x"] (ILOAD_0) (I2B) (IRETURN)]
+         (asm-expr ^byte [^short x] (byte #_narrowing x))))
+  
+  (is (= '[["LOCAL 0: short x"] (ILOAD_0) (IRETURN)]
+         (asm-expr ^short [^short x] #_identity x)))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^char [^short x] #_error x)))
+  (is (= '[["LOCAL 0: short x"] (ILOAD_0) (I2C) (IRETURN)]
+         (asm-expr ^char [^short x] (char #_narrowing x))))
+
+  (is (= '[["LOCAL 0: short x"] (ILOAD_0) (IRETURN)]
+         (asm-expr ^int [^short x] #_exact x)))
+
+  (is (= '[["LOCAL 0: short x"] (ILOAD_0) (I2L) (LRETURN)]
+         (asm-expr ^long [^short x] #_exact x)))
+  
+  (is (= '[["LOCAL 0: short x"] (ILOAD_0) (I2F) (FRETURN)]
+         (asm-expr ^float [^short x] #_exact x)))
+
+  (is (= '[["LOCAL 0: short x"] (ILOAD_0) (I2D) (DRETURN)]
+         (asm-expr ^double [^short x] #_exact x)))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^boolean [^short x] #_error x)))
+  (is (= '[["LOCAL 0: short x"] (ICONST_1) (IRETURN)]
+         (asm-expr ^boolean [^short x] (boolean #_logical x)))))
+
+(deftest from-char-to-primitive
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^byte [^char x] #_error x)))
+  (is (= '[["LOCAL 0: char x"] (ILOAD_0) (I2B) (IRETURN)]
+         (asm-expr ^byte [^char x] (byte #_narrowing x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^short [^char x] #_error x)))
+  (is (= '[["LOCAL 0: char x"] (ILOAD_0) (I2S) (IRETURN)]
+         (asm-expr ^short [^char x] (short #_narrowing x))))
+  
+  (is (= '[["LOCAL 0: char x"] (ILOAD_0) (IRETURN)]
+         (asm-expr ^char [^char x] #_identity x)))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^int [^char x] #_error x)))
+  (is (= '[["LOCAL 0: char x"] (ILOAD_0) (IRETURN)]
+         (asm-expr ^int [^char x] (int #_exact x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^long [^char x] #_error x)))
+  (is (= '[["LOCAL 0: char x"] (ILOAD_0) (I2L) (LRETURN)]
+         (asm-expr ^long [^char x] (long #_exact x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^float [^char x] #_error x)))
+  (is (= '[["LOCAL 0: char x"] (ILOAD_0) (I2F) (FRETURN)]
+         (asm-expr ^float [^char x] (float #_exact x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^double [^char x] #_error x)))
+  (is (= '[["LOCAL 0: char x"] (ILOAD_0) (I2D) (DRETURN)]
+         (asm-expr ^double [^char x] (double #_exact x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^boolean [^char x] #_error x)))
+  (is (= '[["LOCAL 0: char x"] (ICONST_1) (IRETURN)]
+         (asm-expr ^boolean [^char x] (boolean #_logical x)))))
+
+(deftest from-int-to-primitive
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^byte [^int x] #_error x)))
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (I2B) (IRETURN)]
+         (asm-expr ^byte [^int x] (byte #_narrowing x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^short [^int x] #_error x)))
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (I2S) (IRETURN)]
+         (asm-expr ^short [^int x] (short #_narrowing x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^char [^int x] #_error x)))
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (I2C) (IRETURN)]
+         (asm-expr ^char [^int x] (char #_narrowing x))))
+
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (IRETURN)]
+         (asm-expr ^int [^int x] #_identity x)))
+
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (I2L) (LRETURN)]
+         (asm-expr ^long [^int x] #_exact x)))
+  
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (I2F) (FRETURN)]
+         (asm-expr ^float [^int x] #_widening x)))
+
+  (is (= '[["LOCAL 0: int x"] (ILOAD_0) (I2D) (DRETURN)]
+         (asm-expr ^double [^int x] #_exact x)))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^boolean [^int x] #_error x)))
+  (is (= '[["LOCAL 0: int x"] (ICONST_1) (IRETURN)]
+         (asm-expr ^boolean [^int x] (boolean #_logical x)))))
+
+(deftest from-long-to-primitive
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^byte [^long x] #_error x)))
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (L2I) (I2B) (IRETURN)]
+         (asm-expr ^byte [^long x] (byte #_narrowing x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^short [^long x] #_error x)))
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (L2I) (I2S) (IRETURN)]
+         (asm-expr ^short [^long x] (short #_narrowing x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^char [^long x] #_error x)))
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (L2I) (I2C) (IRETURN)]
+         (asm-expr ^char [^long x] (char #_narrowing x))))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^int [^long x] #_error x)))
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (L2I) (IRETURN)]
+         (asm-expr ^int [^long x] (int #_narrowing x))))
+
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (LRETURN)]
+         (asm-expr ^long [^long x] #_identity x)))
+
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (L2F) (FRETURN)]
+         (asm-expr ^float [^long x] #_widening x)))
+
+  (is (= '[["LOCAL 0: long x"] (LLOAD_0) (L2D) (DRETURN)]
+         (asm-expr ^double [^long x] #_widening x)))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^boolean [^long x] #_error x)))
+  (is (= '[["LOCAL 0: long x"] (ICONST_1) (IRETURN)]
+         (asm-expr ^boolean [^long x] (boolean #_logical x)))))
+
+(deftest from-float-to-primitive
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^byte [^float x] #_error x)))
+  (is (= '[["LOCAL 0: float x"] (FLOAD_0) (F2I) (I2B) (IRETURN)]
+         (asm-expr ^byte [^float x] (byte #_narrowing x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^short [^float x] #_error x)))
+  (is (= '[["LOCAL 0: float x"] (FLOAD_0) (F2I) (I2S) (IRETURN)]
+         (asm-expr ^short [^float x] (short #_narrowing x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^char [^float x] #_error x)))
+  (is (= '[["LOCAL 0: float x"] (FLOAD_0) (F2I) (I2C) (IRETURN)]
+         (asm-expr ^char [^float x] (char #_narrowing x))))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^int [^float x] #_error x)))
+  (is (= '[["LOCAL 0: float x"] (FLOAD_0) (F2I) (IRETURN)]
+         (asm-expr ^int [^float x] (int #_narrowing x))))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^long [^float x] #_error x)))
+  (is (= '[["LOCAL 0: float x"] (FLOAD_0) (F2L) (LRETURN)]
+         (asm-expr ^long [^float x] (long #_narrowing x))))
+
+  (is (= '[["LOCAL 0: float x"] (FLOAD_0) (FRETURN)]
+         (asm-expr ^float [^float x] #_identity x)))
+
+  (is (= '[["LOCAL 0: float x"] (FLOAD_0) (F2D) (DRETURN)]
+         (asm-expr ^double [^float x] #_exact x)))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^boolean [^float x] #_error x)))
+  (is (= '[["LOCAL 0: float x"] (ICONST_1) (IRETURN)]
+         (asm-expr ^boolean [^float x] (boolean #_logical x)))))
+
+(deftest from-double-to-primitive
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^byte [^double x] #_error x)))
+  (is (= '[["LOCAL 0: double x"] (DLOAD_0) (D2I) (I2B) (IRETURN)]
+         (asm-expr ^byte [^double x] (byte #_narrowing x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^short [^double x] #_error x)))
+  (is (= '[["LOCAL 0: double x"] (DLOAD_0) (D2I) (I2S) (IRETURN)]
+         (asm-expr ^short [^double x] (short #_narrowing x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^char [^double x] #_error x)))
+  (is (= '[["LOCAL 0: double x"] (DLOAD_0) (D2I) (I2C) (IRETURN)]
+         (asm-expr ^char [^double x] (char #_narrowing x))))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^int [^double x] #_error x)))
+  (is (= '[["LOCAL 0: double x"] (DLOAD_0) (D2I) (IRETURN)]
+         (asm-expr ^int [^double x] (int #_narrowing x))))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^long [^double x] #_error x)))
+  (is (= '[["LOCAL 0: double x"] (DLOAD_0) (D2L) (LRETURN)]
+         (asm-expr ^long [^double x] (long #_narrowing x))))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^float [^double x] #_error x)))
+  (is (= '[["LOCAL 0: double x"] (DLOAD_0) (D2F) (FRETURN)]
+         (asm-expr ^float [^double x] (float #_narrowing x))))
+
+  (is (= '[["LOCAL 0: double x"] (DLOAD_0) (DRETURN)]
+         (asm-expr ^double [^double x] #_identity x)))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^boolean [^double x] #_error x)))
+  (is (= '[["LOCAL 0: double x"] (ICONST_1) (IRETURN)]
+         (asm-expr ^boolean [^double x] (boolean #_logical x)))))
+
+(deftest from-boolean-to-primitive
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^byte [^boolean x] #_error x)))
+  (is (= '[["LOCAL 0: boolean x"] (ILOAD_0) (I2B) (IRETURN)]
+         (asm-expr ^byte [^boolean x] (byte #_boolean x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^short [^boolean x] #_error x)))
+  (is (= '[["LOCAL 0: boolean x"] (ILOAD_0) (I2S) (IRETURN)]
+         (asm-expr ^short [^boolean x] (short #_boolean x))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^char [^boolean x] #_error x)))
+  (is (= '[["LOCAL 0: boolean x"] (ILOAD_0) (I2C) (IRETURN)]
+         (asm-expr ^char [^boolean x] (char #_boolean x))))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^int [^boolean x] #_error x)))
+  (is (= '[["LOCAL 0: boolean x"] (ILOAD_0) (IRETURN)]
+         (asm-expr ^int [^boolean x] (int #_boolean x))))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^long [^boolean x] #_error x)))
+  (is (= '[["LOCAL 0: boolean x"] (ILOAD_0) (I2L) (LRETURN)]
+         (asm-expr ^long [^boolean x] (long #_boolean x))))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^float [^boolean x] #_error x)))
+  (is (= '[["LOCAL 0: boolean x"] (ILOAD_0) (I2F) (FRETURN)]
+         (asm-expr ^float [^boolean x] (float #_boolean x))))
+
+  (is (thrown-with-msg? ExceptionInfo #"cannot assign to"
+                        (asm-expr ^double [^boolean x] #_error x)))
+  (is (= '[["LOCAL 0: boolean x"] (ILOAD_0) (I2D) (DRETURN)]
+         (asm-expr ^double [^boolean x] (double #_boolean x))))
+
+  (is (= '[["LOCAL 0: boolean x"] (ILOAD_0) (IRETURN)]
+         (asm-expr ^boolean [^boolean x] #_identity x))))
+
+;;; ------------------------------------------------------------------------
+
+;;; Note: `asm-expr` requires a single form for the method
+;;; body.  `(do)` produces an empty expression of type `void`.
+(deftest from-void-to-primitive
+  (is (= '[(ICONST_0) (IRETURN)]
+         (asm-expr ^byte [] (do))))
+  
+  (is (= '[(ICONST_0) (IRETURN)]
+         (asm-expr ^short [] (do))))
+  
+  (is (= '[(ICONST_0) (IRETURN)]
+         (asm-expr ^char [] (do))))
+
+  (is (= '[(ICONST_0) (IRETURN)]
+         (asm-expr ^int [] (do))))
+
+  (is (= '[(LCONST_0) (LRETURN)]
+         (asm-expr ^long [] (do))))
+  
+  (is (= '[(FCONST_0) (FRETURN)]
+         (asm-expr ^float [] (do))))
+
+  (is (= '[(DCONST_0) (DRETURN)]
+         (asm-expr ^double [] (do))))
+  
+  (is (= '[(ICONST_0) (IRETURN)]
+         (asm-expr ^boolean [] (do))))
+
+  (is (= '[(RETURN)]
+         (asm-expr ^void [] (do)))))
+
+(deftest from-primitive-to-void
+  (is (= '[["LOCAL 0: byte x"] (RETURN)]
+         (asm-expr ^void [^byte x] x)))
+  
+  (is (= '[["LOCAL 0: short x"] (RETURN)]
+         (asm-expr ^void [^short x] x)))
+  
+  (is (= '[["LOCAL 0: char x"] (RETURN)]
+         (asm-expr ^void [^char x] x)))
+
+  (is (= '[["LOCAL 0: int x"] (RETURN)]
+         (asm-expr ^void [^int x] x)))
+
+  (is (= '[["LOCAL 0: long x"] (RETURN)]
+         (asm-expr ^void [^long x] x)))
+  
+  (is (= '[["LOCAL 0: float x"] (RETURN)]
+         (asm-expr ^void [^float x] x)))
+
+  (is (= '[["LOCAL 0: double x"] (RETURN)]
+         (asm-expr ^void [^double x] x)))
+  
+  (is (= '[["LOCAL 0: boolean x"] (RETURN)]
+         (asm-expr ^void [^boolean x] x))))

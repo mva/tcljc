@@ -12,8 +12,8 @@
 
           invoke-test bootstrap-test
           
-          const-test conv-test dot-form-test new-test arith-test let-test
-          quote-test meta-test str-test bits-test switch-test cond-test
+          const-test conv-test prim-conv-test dot-form-test new-test arith-test
+          let-test quote-test meta-test str-test bits-test switch-test cond-test
           try-test array-test loop-test logic-test clone-test xcmp-test
           unboxing-test
 
@@ -43,6 +43,7 @@
     
     tcljc.const-test
     tcljc.conv-test
+    tcljc.prim-conv-test
     tcljc.dot-form-test
     tcljc.new-test
     tcljc.arith-test
