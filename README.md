@@ -37,15 +37,11 @@ own.  The list of the good, the bad, and the ugly begins like this:
   to one of the `[ILFD]ADD` instructions, depending on the types of
   its primitive arguments.
 
-* But there is no general auto-boxing and -unboxing on the language
-  level.  If needed, conversion between primitive and reference view
-  must be done manually, for example by writing `(object 123)`
-  (producing an `Integer`) or `^int foo` (taking an `Integer`).  Where
-  [MethodHandle.invoke](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/reflect/Method.html#invoke\(java.lang.Object,java.lang.Object...\))
-  comes into play, either directly or indirectly, the JVM will do the
-  required boxing and unboxing on its own.  Depending on the direction
-  Valhalla will take, the irritating primitive/reference split may
-  become smaller in the future.
+* There is only auto-boxing and -unboxing for assignment situations,
+  like passing an argument to a parameter or returning the value of a
+  function arity.  For arithmetics conversion from reference to
+  primitive view must be done manually, for example by writing `^int
+  foo` (taking an `Integer` or one of its super types).
 
 * Functions are implemented via [method
   handles](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/invoke/MethodHandle.html).
