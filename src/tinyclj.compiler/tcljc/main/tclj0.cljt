@@ -14,6 +14,7 @@
    [tcljc.reader :as rd]
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt]
+   [tcljc.expr :as x]
    [tcljc.emitter :as em]
    [tcljc.io :as io]
    [tcljc.predefined :as predefined]
@@ -103,13 +104,14 @@
                 (Msg. task x nil source-file-attribute
                       collect-macro-definitions?))
           nil)))
-  (fork-function [this f]
+  (fork-function [this x-env-ln f]
     (.fork-task fct-task-scope true
                 (^Callable fn []
                  (try
                    (.call f)
                    (catch ExceptionInfo e
-                     (throw (.assoc-source-file this e)))))))
+                     (let [e (wrong/push-line-number e (x/x-ln x-env-ln))]
+                       (throw (.assoc-source-file this e))))))))
   (assoc-source-file [_ ^ExceptionInfo e]
     (wrong/assoc-if-new e :file/resource-url rurl))
 

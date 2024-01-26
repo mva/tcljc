@@ -584,7 +584,7 @@
        
        (compile-body ^Expr [^Env env ^Arity at ^int body-idx]
          (-> (with-recur-fn env (mk-recur-fn (.paramv at)))
-             (tail-forms (x/flags-body (.aform at))
+             (tail-forms (x/flags-body x-env (.aform at))
                          (nthrest (.aform at) body-idx))
              (cond-> (not (jb/polymorphic? (.rtype at)))
                (consume (.rtype at) (if (some? (.method-name at))
@@ -618,7 +618,7 @@
                                       (x/with-rtype (x/type body)))]
                             (aset aca i (x/mk-arity-code at' this-bref body))))
                         aca))
-               body-fut (.fork-function (compile-io env) at-fn)
+               body-fut (.fork-function (compile-io env) x-env at-fn)
                fn-form (if (some auto-rtype? (.at-sigs fn-form))
                          ;; Must force future early to pick up the
                          ;; replacement type from the arity body.
@@ -1007,7 +1007,7 @@
                                                            at nil)
                                            (parse-method at etp)))))
                        aca))
-               body-fut (.fork-function (compile-io env) m-fn)]
+               body-fut (.fork-function (compile-io env) x-env m-fn)]
            (-> (x/fn-form-reify form etp m (level-fn-form env) unique-mnm
                                 (.super-mhd eph-cdef) atv)
                (x/with-body-fut body-fut))))

@@ -150,7 +150,7 @@
   ;; non-deterministic mode leads to deadlock in the emit thread.
   (send-to-emit ^Object [^int task ^Object x])
   
-  (fork-function ^Future [^Callable f])
+  (fork-function ^Future [^long x-env-ln ^Callable f])
   (assoc-source-file ^ExceptionInfo [^ExceptionInfo e])
 
   (with-source-file ^CompileIO [^URL rurl ^String source-file-attribute])

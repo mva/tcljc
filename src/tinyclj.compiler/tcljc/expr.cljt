@@ -33,10 +33,17 @@
       flag-recur 33      ;compiler can recur from this position?
       flag-nil-object 34 ;leaves expr-nil-object on operand stack?
       mask-flags (bit-shift-left (dec (bit-shift-left 1l 32)) 32)]
+  (defn with-line-number* ^long [^long flags ^int ln]
+    (cond-> flags
+      (not= ln cfg/no-line-number)
+      (-> (bit-and mask-flags) (bit-or ln))))
+  (defn with-line-number ^long [^long flags form]
+    (with-line-number* flags (cfg/line-number form)))
+  
   (defn flags-line-number ^long [form]
     (long (cfg/line-number form)))
-  (defn flags-body ^long [form]
-    (-> (flags-line-number form) (bit-set flag-inline-tcf) (bit-set flag-recur)))
+  (defn flags-body ^long [^long x-env form]
+    (-> x-env (with-line-number form) (bit-set flag-inline-tcf) (bit-set flag-recur)))
   (defn flags-top-level-form ^long [form]
     (-> (flags-line-number form) (bit-set flag-inline-tcf)))
   
@@ -48,13 +55,6 @@
     (bit-test flags flag-recur))
   (defn- x-nil-object? ^boolean [^long flags]
     (bit-test flags flag-nil-object))
-  
-  (defn with-line-number* ^long [^long flags ^int ln]
-    (cond-> flags
-      (not= ln cfg/no-line-number)
-      (-> (bit-and mask-flags) (bit-or ln))))
-  (defn with-line-number ^long [^long flags form]
-    (with-line-number* flags (cfg/line-number form)))
   
   (defn without-inline-tcf ^long [^long flags]
     (bit-clear flags flag-inline-tcf))

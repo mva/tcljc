@@ -29,7 +29,7 @@
 ;;; If an `ExceptionInfo` is decorated with a ex-cause value, then it
 ;;; is assumed that this Throwable originates outside of the control
 ;;; of the compiler (e.g. during macro expansion).
-(defn- push-line-number ^ExceptionInfo [^ExceptionInfo ex ^int ln]
+(defn push-line-number ^ExceptionInfo [^ExceptionInfo ex ^int ln]
   (cond-> ex
     (and (not= ln cfg/no-line-number)
          (not (contains? (ex-data ex) :form/line-number)))
