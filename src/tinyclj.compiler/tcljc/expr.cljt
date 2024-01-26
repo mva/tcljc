@@ -50,7 +50,9 @@
     (bit-test flags flag-nil-object))
   
   (defn with-line-number* ^long [^long flags ^int ln]
-    (-> flags (bit-and mask-flags) (bit-or ln)))
+    (cond-> flags
+      (not= ln cfg/no-line-number)
+      (-> (bit-and mask-flags) (bit-or ln))))
   (defn with-line-number ^long [^long flags form]
     (with-line-number* flags (cfg/line-number form)))
   
