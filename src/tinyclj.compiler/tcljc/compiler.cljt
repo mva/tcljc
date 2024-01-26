@@ -1346,7 +1346,8 @@
                      (and (x/bref? x) (x/b-macro? x))
                      (let [m ^MacroRef (x/root-bref x)]
                        ;; compile macro with line number of this list form
-                       (compile-form env x-env (expand-macro m form (.ctx env))))
+                       (with-error-context [x-env form]
+                         (compile-form env x-env (expand-macro m form (.ctx env)))))
                      
                      :else
                      (call-fn-expr x form))))
