@@ -33,6 +33,8 @@
       flag-recur 33      ;compiler can recur from this position?
       flag-nil-object 34 ;leaves expr-nil-object on operand stack?
       mask-flags (bit-shift-left (dec (bit-shift-left 1l 32)) 32)]
+  (defn merge-line-number ^int [^int line-number ^int ln]
+    (if (= ln cfg/no-line-number) line-number ln))
   (defn with-line-number* ^long [^long flags ^int ln]
     (cond-> flags
       (not= ln cfg/no-line-number)
@@ -1175,6 +1177,7 @@
      ^int level
      ;; See BindingRef's `level`.
      
+     ^int line-number
      ^ISeq aform
      ;; A form ([...] ...), even if the original fn* used the
      ;; abbreviated single arity variant.
@@ -1196,8 +1199,8 @@
 
 (defn with-rtype ^Arity [^Arity at ^Class rtype]
   (Arity. (.paramv at) rtype (.n at) (.varargs? at) (.variadic? at)
-          (.method at) (.method-name at) (.this-name at) (.level at) (.aform at)
-          (.!closes-over at) (.at-idx at)))
+          (.method at) (.method-name at) (.this-name at) (.level at)
+          (.line-number at) (.aform at) (.!closes-over at) (.at-idx at)))
 
 (defn at-n ^int [^Arity at]
   (.n at))
@@ -1670,8 +1673,8 @@
 (defn at-bridged-from ^Arity [^Arity at]
   (when (.variadic? at)
     (Arity. (at-extern-paramv at) (.rtype at) (.n at) true false
-            (.method at) (.method-name at) (.this-name at) (.level at) nil
-            (.!closes-over at) (.at-idx at))))
+            (.method at) (.method-name at) (.this-name at) (.level at)
+            (.line-number at) nil (.!closes-over at) (.at-idx at))))
 
 ;;; ------------------------------------------------------------------------
 

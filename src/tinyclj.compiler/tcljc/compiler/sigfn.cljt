@@ -61,13 +61,13 @@
 (defn- with-paramv
   (^Arity [^Arity tmpl paramv ^Class rtype ^Method m]
    (Arity. paramv rtype (count paramv) (.varargs? tmpl) false
-           m (.getName m) (.this-name tmpl) (.level tmpl) (.aform tmpl)
-           (.!closes-over tmpl) (.at-idx tmpl)))
+           m (.getName m) (.this-name tmpl) (.level tmpl) (.line-number tmpl)
+           (.aform tmpl) (.!closes-over tmpl) (.at-idx tmpl)))
   (^Arity [^Arity tmpl paramv ^Class rtype
            ^boolean varargs? ^boolean variadic? ^int idx]
    (Arity. paramv rtype (count paramv) varargs? variadic?
-           (.method tmpl) (.method-name tmpl) (.this-name tmpl)
-           (.level tmpl) (.aform tmpl) (.!closes-over tmpl) idx)))
+           (.method tmpl) (.method-name tmpl) (.this-name tmpl) (.level tmpl)
+           (.line-number tmpl) (.aform tmpl) (.!closes-over tmpl) idx)))
 
 (defn mk-param ^Binding [^int level ^Symbol nm ^Class tp]
   (-> (x/local-ref level nm tp x/b-parameter)
@@ -106,7 +106,7 @@
 ;;; without an explicit type tag: return type, parameter type, or
 ;;; varargs type.
 (defn- parse-arity-sigs [^int level ^Class unset-tp ^Symbol this-name aforms
-                         ^Ctx ctx]
+                         ^int form-line-number ^Ctx ctx]
   (letfn [(arity ^Arity [aform ^int at-idx]
             (if (and (seq? aform) (vector? (first aform)))
               (let [v (first aform)
@@ -114,8 +114,10 @@
                     rtype (if (= rtag 'auto-return-type)
                             jb/cl-polymorphic-type
                             (or (tag-of* rtag true unset-tp ctx) jb/Object))
+                    ln (x/merge-line-number form-line-number
+                                            (cfg/line-number aform))
                     tmpl (Arity. nil nil -1 false false nil nil this-name
-                                 level aform (util/mk-shm) at-idx)]
+                                 level ln aform (util/mk-shm) at-idx)]
                 (arity-sig tmpl unset-tp rtype (seq v) ctx))
               (wrong/syntax "expect function arity ([...] ...)")))
           (arity-seq [acc seen-ns [aform :as aforms]]
@@ -186,20 +188,22 @@
 
 ;;; `level` is the level that is assigned to names defined in this
 ;;; function.
-(defn destructure-fn*-form ^FnForm [form ^int level ^String unique-mnm ^Ctx ctx]
+(defn destructure-fn*-form ^FnForm [form ^int level ^String unique-mnm
+                                    ^long x-env ^Ctx ctx]
   (letfn [(arity-forms [xs]
             (if (vector? (first xs))
               (list (with-meta xs (meta form)))
-              (map #(cfg/with-line % form) xs)))
+              xs))
           ;; Set fn-form-*'s form early, so that its available in the
           ;; forked of thread that compiles the function body.
           (mk-fn-form-fct [^Symbol this-name aforms]
-            (let [at-sigs (parse-arity-sigs level nil this-name aforms ctx)
+            (let [at-sigs (parse-arity-sigs level nil this-name aforms
+                                            (x/x-ln x-env) ctx)
                   tp (ctx/get-type rt/clnm-abstract-fn ctx)]
               (x/fn-form-fct form tp level unique-mnm at-sigs)))
           (mk-fn-form-itf [^Class itf-tag aforms]
             (let [at-sigs (-> (parse-arity-sigs level jb/cl-polymorphic-type
-                                                nil aforms ctx)
+                                                nil aforms (x/x-ln x-env) ctx)
                               (fixup-arity-sigs-from-itf itf-tag))]
               (x/fn-form-itf form itf-tag level unique-mnm at-sigs)))]
     (let [nm (second form)]

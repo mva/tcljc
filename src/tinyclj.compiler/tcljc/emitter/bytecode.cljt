@@ -532,7 +532,7 @@
          (.deliver-load bref ld-st))
        (recur (inc i))))
    (let [es (EmitState. (.level at) (.!closes-over at) ld-this nil)]
-     (line-number* xb (cfg/line-number (.aform at)))
+     (line-number* xb (.line-number at))
      (expr-insns xb es (xc/as-returning-code body-expr)))))
 
 (defn emit-global-b ^void [^ClassBuilder cb ^ClassDesc segm-cld ^Binding b]

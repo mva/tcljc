@@ -59,7 +59,7 @@
                            virtual? (rest))
                   va? (.isVarargsCollector mh)]
               (Arity. (mapv import-parameter ptypes) (.returnType mt) pcount
-                      va? va? nil nil nil -1 nil nil i)))
+                      va? va? nil nil nil -1 cfg/no-line-number nil nil i)))
           (import-arity-code ^ArityCode [^int i ^MethodHandle mh ^Arity at]
             (let [mhd (.get (.describeConstable mh))]
               (ArityCode. at nil nil mhd nil false)))]

@@ -507,8 +507,7 @@
   ;; Note: Macro in an isolated runtime setup is much more expensive
   ;; than in the shared setup, where the compiler can call directly
   ;; into the macro function.
-  (-> (.expand (.macro-fn x) ctx form)
-      (cfg/with-line form)))
+  (.expand (.macro-fn x) ctx form))
 
 (defn- if-expr ^Expr [^Expr test ^Expr if-true ^Expr if-false]
   (let [test (tp/logical-value-of test)
@@ -783,7 +782,8 @@
                    ;; a macro; this code follows the logic of `compile-list`
                    (let [x (ensure-resolve-global op-sym (.ctx env))
                          m ^MacroRef (x/root-bref ^BindingRef x)]
-                     (expand-macro m form (.ctx env))))
+                     (-> (expand-macro m form (.ctx env))
+                         (cfg/with-line form))))
                  (expand-fn [form]
                    (let [ex (expand-once form)]
                      (if (and (seq? ex) (= (first ex) 'fn*))
@@ -806,7 +806,8 @@
                                                             (.mnm-path env) 'fn
                                                             form)]
                                   (with-error-context [x-env form]
-                                    (sig/destructure-fn*-form form level mnm (.ctx env)))))
+                                    (sig/destructure-fn*-form form level mnm
+                                                              x-env (.ctx env)))))
                               (macroexpand-fnvec fnv))
                bexprv (mapv (fn [^FnForm fn-form]
                               (value-binding fn-form x/b-let
@@ -829,7 +830,8 @@
          (let [level (level-fn-form env)
                unique-mnm (.pick-unique-mnm (compile-io env)
                                             (.mnm-path env) nil form)
-               fn-form (sig/destructure-fn*-form form level unique-mnm (.ctx env))]
+               fn-form (sig/destructure-fn*-form form level unique-mnm
+                                                 x-env (.ctx env))]
            (parse-arity-bodies fn-form env)))
        
        (quote-form ^Expr [form]
@@ -898,7 +900,7 @@
        (method-def ^MethodDef [^Env env form ^Class etp]
          (with-error-context [x-env form]
            (let [at (sigclass/method-arity-type etp form x/lvl-environment
-                                                -1 (.ctx env))
+                                                -1 x-env (.ctx env))
                  ac (parse-method env at etp)]
              (MethodDef. (.at ac) ClassFile/ACC_PUBLIC
                          (.this-bref ac) (.body-expr ac)))))
@@ -988,7 +990,7 @@
                                (let [at-idx (count acc)
                                      level (level-fn-form env)
                                      at (sigclass/method-arity-type
-                                         etp form level at-idx ctx)]
+                                         etp form level at-idx x-env ctx)]
                                  (conj acc at))))
                            [] methods)
                m (compile-meta (cfg/source-meta form))
@@ -998,8 +1000,7 @@
                ;; a method on the receiver.
                env' (with-ctx env (ctx/locked ctx))
                m-fn (^Callable fn []
-                     (let [
-                           n (count atv)
+                     (let [n (count atv)
                            aca (new ArityCode* n)]
                        (dotimes [i n]
                          (let [at ^Arity (nth atv i)]
@@ -1252,8 +1253,7 @@
        (init-value-of-def ^Expr [form]  ;nil if init is not specified
          (when-some [xs (nthnext form 2)]
            ;; accepts anything, including macros or primitive functions
-           (compile-form env (x/without-recur x-env)
-                         (-> (first xs) (cfg/with-line form)))))
+           (compile-form env (x/without-recur x-env) (first xs))))
        (compile-list-special ^Expr [^Symbol op-form form] ;nil if regular
          (when (nil? (namespace op-form))
            (case op-form

@@ -57,7 +57,7 @@
     (assert (= (count paramv) (count (.paramv at))))
     (Arity. paramv (.getReturnType m) (count paramv)
             (.isVarArgs m) false m (.getName m)
-            (.this-name at) (.level at) (.aform at)
+            (.this-name at) (.level at) (.line-number at) (.aform at)
             (.!closes-over at) (.at-idx at))))
 
 (defn- fixup-method-sig ^Arity [^Arity at ^Class etp]
@@ -86,7 +86,7 @@
                                  :invoke/arg-types atypes}))))
 
 (defn method-arity-type ^Arity [^Class etp [nm sig & body :as form]
-                                ^int level ^int at-idx ^Ctx ctx]
+                                ^int level ^int at-idx ^long x-env ^Ctx ctx]
   ;; The returned Arity omits the first parameter.  Its name is
   ;; stored in `this-name` and it is translated into the
   ;; receiver of the virtual method.
@@ -94,7 +94,7 @@
   (ensure-parameters sig true)
   (let [rtype (sig/tag-of sig true jb/cl-polymorphic-type ctx)
         tmpl (Arity. nil nil -1 false false nil (name nm) (nth sig 0)
-                     level form (util/mk-shm) at-idx)
+                     level (x/x-ln x-env) form (util/mk-shm) at-idx)
         at (sig/arity-sig tmpl jb/cl-polymorphic-type rtype (rest sig) ctx)]
     (-> (if (hinted? sig)
           (check-method-match at etp)
