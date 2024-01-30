@@ -100,6 +100,7 @@
   (numeric-2 spec (first args) (second args)))
 
 (defn reference-2-args ^Expr* [form args]
+  (wrong/check-argc 2 form)
   (let [a (new Expr* 2)]
     (aset a 0 (checked reference-to-identity (first args)))
     (aset a 1 (checked reference-to-identity (second args)))

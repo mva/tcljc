@@ -96,6 +96,8 @@
 
 (defn- binary-cmp ^FnPrimitiveFn [^int cmp-opcd]
   (^FnPrimitiveFn fn [form [arg0 arg1] x-env compile-io]
+   (when (some? form)
+     (wrong/check-argc 2 form))         ;unless called by nary-cmp
    (let [args (adapt/numeric-2 adapt/numeric-to-computational arg0 arg1)]
      (xf/xcmp (aget args 0) (aget args 1) cmp-opcd))))
 
@@ -116,7 +118,8 @@
                (or (jb/same-class? Class tp)
                    (.isAssignableFrom java.lang.Enum tp)
                    (jb/same-classname? rt/clnm-keyword tp))))]
-     (wrong/check-argc 2 form)
+     (when (some? form)
+       (wrong/check-argc 2 form))       ;unless called by nary-cmp
      (let [tp0 (tp/of-expr arg0), tp1 (tp/of-expr arg1)]
        (cond
          (and (.computational-int? tp0) (x/same-type? arg0 arg1))
