@@ -138,8 +138,14 @@
            (IRETURN)]
          (asm-expr (let* [i 123] ^int i))))
   (is-error (let* [i 123] ^long i) #"cannot cast to")
-  (is-error (let* [i 123] ^Integer i) #"cannot cast to")
-  (is-error (let* [i 123] ^Object i) #"cannot cast to"))
+  (is (= '[(BIPUSH 123)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ARETURN)]
+         (asm-expr (let* [i 123] ^Integer i))))
+  (is (= '[(BIPUSH 123)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ARETURN)]
+         (asm-expr (let* [i 123] ^Object i)))))
 
 (deftest object-conv-test
   (is (= '[["LOCAL 0: int x"]

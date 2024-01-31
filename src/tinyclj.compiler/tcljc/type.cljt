@@ -295,6 +295,8 @@
 (defn unboxes-to? ^boolean [^Class from-tp ^Wrapper to]
   (and (some? (.class-wrapper to))
        (jb/jvm-castable-to? from-tp (.class-wrapper to))))
+(defn boxes-to? ^boolean [^Wrapper from ^Class to-tp]
+  (unboxes-to? to-tp from))
 
 ;;; `from-tp` can be changed to `to-tp`, either by numerical widening
 ;;; or by unboxing.  Returns false if `from-tp` or `to-tp` is void.

@@ -1376,7 +1376,10 @@
                    :else (x/wrong-type (str "cannot cast to " (wrong/q tag)) x))
 
                  (x/primitive? x)
-                 (x/wrong-type (str "cannot cast to " (wrong/q tag)) x)
+                 (let [from (tp/of (x/type x))]
+                   (if (tp/boxes-to? from tag)
+                     (xf/checkcast (.adapt (.box-of from) x) tag)
+                     (x/wrong-type (str "cannot cast to " (wrong/q tag)) x)))
                  
                  :else (tp/coerce x tag)))
 

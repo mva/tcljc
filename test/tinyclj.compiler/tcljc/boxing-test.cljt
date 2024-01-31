@@ -1,0 +1,36 @@
+;; Copyright (c) Michael van Acken. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https:;;www.eclipse.org/legal/epl-v20.html)
+;; which can be found in the file epl-v20.html at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+(ns tcljc.boxing-test
+  (:require [tcljc.bootstrap :refer [asm-expr]]
+            [tinyclj.alpha.ptest :refer :all])
+  (:import (clojure.lang ExceptionInfo)))
+
+(deftest cast-int-to-reference
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ARETURN)]
+         (asm-expr [^int x] ^Object x)))
+  (is (= '[["LOCAL 0: int x"]
+           (ILOAD_0)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ARETURN)]
+         (asm-expr [^int x] ^Number x)))
+  (is (= '[["LOCAL 0: int x"]
+           ["LOCAL 1: char ch"]         ;to force method generation
+           (ILOAD_0)
+           (INVOKESTATIC Integer "valueOf" "(I)Ljava/lang/Integer;")
+           (ARETURN)]
+         (asm-expr [^int x ^char ch] ^Integer x))))
+
+(deftest cast-primitive-to-unmatched-reference
+  (is (thrown-with-msg? ExceptionInfo #"cannot cast to"
+                        (asm-expr [^byte x] ^Integer x)))
+  (is (thrown-with-msg? ExceptionInfo #"cannot cast to"
+                        (asm-expr [^char x] ^Integer x))))
+
