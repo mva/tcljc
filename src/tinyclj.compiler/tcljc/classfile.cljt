@@ -470,8 +470,8 @@
                     hi ^int (key (last smap))
                     start-default (.newLabel xb)]
                 (if (table-switch? lo hi (count const-map)) ;or (count lvs)?
-                  (.tableSwitchInstruction xb lo hi start-default scs)
-                  (.lookupSwitchInstruction xb start-default scs))
+                  (.tableswitch xb lo hi start-default scs)
+                  (.lookupswitch xb start-default scs))
                 (run! (fn [[l v]] (label+return xb l v)) lvs)
                 (label+return xb start-default default)))]
 

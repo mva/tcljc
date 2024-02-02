@@ -207,7 +207,7 @@
                                          (->> (map x/type (x/argv x))
                                               (rt/mtd-of (x/type x))))]
               (line-number xb x)
-              (.invokeDynamicInstruction xb (.invokeDynamicEntry cpb bsm nat))))
+              (.invokedynamic xb (.invokeDynamicEntry cpb bsm nat))))
           (invoke-poly ^CodeBuilder [^CodeBuilder xb ^InvokePoly x]
             (let [argv (x/argv x)
                   mtd (rt/mtd-of (x/type x) (map x/type (rest argv)))] ;virtual
@@ -339,8 +339,8 @@
                         end-switch (.newLabel xb)]
                     (expr-insns xb es (x/first-arg x))
                     (if (cf/table-switch? lo hi (count sc-list))
-                      (.tableSwitchInstruction xb lo hi dtarget sc-list)
-                      (.lookupSwitchInstruction xb dtarget sc-list))
+                      (.tableswitch xb lo hi dtarget sc-list)
+                      (.lookupswitch xb dtarget sc-list))
                     (dotimes [i n]
                       (let [case-x (nth argv (inc i))]
                         (.labelBinding xb (nth labelv i))
