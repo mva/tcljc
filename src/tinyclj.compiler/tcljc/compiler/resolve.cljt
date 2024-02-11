@@ -71,7 +71,8 @@
   ;; the the return type of the method.
   (defn itf-method-exact ^Method [^Class owner ^String nm ^Class return-type
                                   ^Class* atypes]
-    (when-some [^Method m (or (invoke/method-exact false owner nm atypes)
+    (when-some [^Method m (or (invoke/method-exact invoke/opts-virtual
+                                                   owner nm atypes)
                               (method-exact-pp owner nm atypes))]
       (when (or (jb/polymorphic? return-type)
                 (jb/same-class? (.getReturnType m) return-type))

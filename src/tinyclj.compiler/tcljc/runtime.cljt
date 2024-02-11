@@ -43,6 +43,8 @@
   (if (.isInterface owner)
     (if static? mhk-interface-static mhk-interface-virtual)
     (if static? mhk-static mhk-virtual)))
+(defn field-kind ^DirectMethodHandleDesc$Kind [^boolean static?]
+  (if static? mhk-static-getter mhk-getter))
 
 (def dcd-default-name ConstantDescs/DEFAULT_NAME)
 

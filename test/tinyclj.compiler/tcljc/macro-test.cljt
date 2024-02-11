@@ -344,3 +344,14 @@
            (ARETURN)]
          (asm-expr (read-string "`foo")))))
 
+
+;; Clojure stopped expanding (Classname/method ...) to dot form
+;; starting with 1.12.0-alpha6 (CLJ-2806).  tcljc used the same
+;; translation strategy internally without going through the regular
+;; macro expansion path.
+(deftest macroexpand-classname-method-test
+  (is (= '[(LDC [:bsm-quote "list" "Lclojure/lang/IPersistentList;"
+                 [[:bsm-quote "symbol" "Lclojure/lang/Symbol;" ["Integer" "signum"]]
+                  123]])
+           (ARETURN)]
+         (asm-expr (macroexpand-1 '(Integer/signum 123))))))

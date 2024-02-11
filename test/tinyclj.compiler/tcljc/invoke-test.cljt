@@ -9,6 +9,7 @@
   (:require [tcljc.javabase :as jb]
             [tcljc.compiler.invoke :as invoke]
             [tcljc.expr :as x]
+            [tcljc.bootstrap :refer [asm-expr]]
             [tinyclj.alpha.ptest :refer :all])
   (:import (tcljc.expr Expr InvokeXref InvokePoly)
            (clojure.lang ExceptionInfo)
@@ -37,10 +38,11 @@
   (defn inv-constr [^Class owner & ^Class* atypes]
     (inv1 (invoke/constructor x/flags-no-ln owner (fake-argv atypes))))
   (defn inv-static [^Class owner ^String nm & ^Class* atypes]
-    (inv1 (invoke/member x/flags-no-ln owner nm (fake-argv atypes) true)))
+    (inv1 (invoke/member x/flags-no-ln owner nm
+                         (fake-argv atypes) invoke/opts-static)))
   (defn inv-virtual [^Class owner ^String nm & ^Class* atypes]
     (inv1 (invoke/member x/flags-no-ln owner nm
-                         (fake-argv (cons owner atypes)) false))))
+                         (fake-argv (cons owner atypes)) invoke/opts-virtual))))
 
 (deftest constructor-invoke-test
   (is (= '(INVOKE-XREF CONSTRUCTOR "HashMap" "<init>" "()V" :owner-is-class)
@@ -200,8 +202,20 @@
   ;; single candidate: argument is of type int
   (is (thrown-with-msg? ExceptionInfo #"no static method matching"
                         (invoke/member x/flags-no-ln java.lang.Integer "bitCount"
-                                       [x/expr-nil-object] true)))
+                                       [x/expr-nil-object] invoke/opts-static)))
   ;; overloaded: argument is either int, long, float, or double
   (is (thrown-with-msg? ExceptionInfo #"no static method matching"
                         (invoke/member x/flags-no-ln java.lang.Math "abs"
-                                       [x/expr-nil-object] true))))
+                                       [x/expr-nil-object] invoke/opts-static))))
+
+;;; Clojure 1.12.0-alpha6 has this to say: "Note: Static fields are
+;;; values and should be referenced without parens unless they are
+;;; intended as function calls, e.g (System/out) should be
+;;; System/out. Future Clojure releases will treat the field’s value
+;;; as something invokable and invoke it."
+;;;
+;;; Dot form translation is unchanged, but the interpretation of
+;;; `Classname/member` is adjusted accordingly.
+(deftest invoke-static-field-test
+  (is (thrown-with-msg? ExceptionInfo #"no static method matching"
+                        (asm-expr (System/out)))))
