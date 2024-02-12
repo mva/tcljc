@@ -11,38 +11,15 @@
    [tcljc.runtime :as rt]
    [tcljc.wrong :as wrong]
    [tcljc.expr :as x]
-   [tcljc.type :as tp])
+   [tcljc.type :as tp]
+   [tcljc.compiler.resolve :as resolve])
   (:import
    (tcljc.expr Expr)
    (tcljc.type TypeConversion)
    (clojure.lang IPersistentVector)
    (java.lang.constant MethodHandleDesc ConstantDescs
                        ClassDesc DirectMethodHandleDesc$Kind)
-   (java.lang.reflect Executable Field Method Constructor Member Modifier)))
-
-(def ^:private flag-resolve-static 0)
-(def ^:private flag-resolve-virtual 1)
-(def ^:private flag-resolve-field 2)
-(def ^:private flag-resolve-method 3)
-
-(def opts-virtual (bit-set 0 flag-resolve-virtual))
-(def opts-static (bit-set 0 flag-resolve-static))
-
-(let [mask-resolve-field (bit-set 0 flag-resolve-field)
-      mask-resolve-method (bit-set 0 flag-resolve-method)
-      mask-resolve-member (bit-or mask-resolve-field mask-resolve-method)]
-  (defn- fields-only? ^boolean [^int opts]
-    (= mask-resolve-field (bit-and mask-resolve-member opts)))
-  (defn- methods-only? ^boolean [^int opts]
-    (= mask-resolve-method (bit-and mask-resolve-member opts)))
-  (defn- modifiers-match? ^boolean [^int opts ^Member m]
-    (if (Modifier/isStatic (.getModifiers m))
-      (bit-test opts flag-resolve-static)
-      (bit-test opts flag-resolve-virtual))))
-
-(defn- first-argument-index ^int [^int opts] ;skips receiver
-  (if (bit-test opts flag-resolve-virtual) 1 0))
-
+   (java.lang.reflect Executable Field Method Constructor Modifier)))
 
 (deftype ArgSig [^Class* atypes, ^boolean* anils]
   java.lang.Record)
@@ -204,19 +181,6 @@
 
 ;;; ------------------------------------------------------------------------
 
-(defn method-exact ^Method [^int opts ^Class owner ^String nm ^Class* atypes]
-  (letfn [(match-static ^Method [^Method m]
-            (when (modifiers-match? opts m)
-              m))]
-    (try
-      (match-static (.getMethod owner nm atypes))
-      (catch NoSuchMethodException _
-        (when (jb/interface? owner)
-          (try   ;if owner is an interface, then try again with Object
-            (match-static (.getMethod Object nm atypes))
-            (catch NoSuchMethodException _
-              nil)))))))
-
 (defn- methods-with [^int opts ^Class owner ^String nm ^ArgSig as]
   (let [ms (.getMethods owner)]
     (loop [acc (), i (dec (alength ms))]
@@ -225,7 +189,7 @@
         (let [m (aget ms i)]
           (recur (cond-> acc
                    (and (= nm (.getName m))
-                        (modifiers-match? opts m)
+                        (resolve/static-virtual-match? opts m)
                         (parameter-count-match? as m)
                         (not (.isBridge m)))
                    (conj-alignment as m))
@@ -291,31 +255,31 @@
                 argv (invocation-argv argv align)]
             (invoke-constr* x-env owner c argv)))]
 
-  ;; pre: At least one of `flag-resolve-field` or
-  ;; `flag-resolve-method` is set.  Exactly one of
-  ;; `flag-resolve-static` or `flag-resolve-virtual` is set.
+  ;; pre: At least one of `flag-field` or `flag-method` is set.
+  ;; Exactly one of `flag-static` or `flag-virtual` is set.
   (defn- member* ^Expr [^long x-env ^Class owner ^String nm
                         ^IPersistentVector argv ^int opts]
-    (let [as (arg-sig argv (first-argument-index opts))
+    (let [as (arg-sig argv (resolve/first-argument-index opts))
           owner-cd (if (jb/array? owner) rt/object (rt/describe-class owner))
-          k (rt/method-kind owner (bit-test opts flag-resolve-static))]
+          k (resolve/method-kind (bit-test opts resolve/flag-static) owner)]
       
       (letfn [(wrong [ms]
                 (wrong-member ms
-                              (str (if (bit-test opts flag-resolve-static)
+                              (str (if (bit-test opts resolve/flag-static)
                                      "static"
                                      "virtual")
-                                   (cond (fields-only? opts) " field"
-                                         (methods-only? opts) " method"
+                                   (cond (resolve/fields-only? opts) " field"
+                                         (resolve/methods-only? opts) " method"
                                          :else " member"))
                               owner nm as))
           
               (load-field []
                 (try
                   (let [f (.getField owner nm)]
-                    (if (and (modifiers-match? opts f) (zero? (arg-count as)))
+                    (if (and (resolve/static-virtual-match? opts f)
+                             (zero? (arg-count as)))
                       (let [mhd (MethodHandleDesc/ofField
-                                 (rt/field-kind (bit-test opts flag-resolve-static))
+                                 (resolve/field-kind (bit-test opts resolve/flag-static))
                                  (rt/describe-class owner) (.getName f)
                                  (rt/cd-of (.getType f)))]
                         (x/invoke-xref x-env (.getType f) argv nil mhd
@@ -324,9 +288,9 @@
                   (catch NoSuchFieldException _
                     (wrong ()))))]
 
-        (if (fields-only? opts)
+        (if (resolve/fields-only? opts)
           (load-field)
-          (if-some [m (method-exact opts owner nm (.atypes as))]
+          (if-some [m (resolve/method-exact opts owner nm (.atypes as))]
             (invoke-method* x-env k owner-cd m argv)
             ;; `atypes` does not include receiver, but the receiver is
             ;; counted as an implicit invocation argument
@@ -335,7 +299,7 @@
               (if-some [align (pick-alignment ms)]
                 (invoke-method x-env k owner-cd align argv)
                 (wrong ms))
-              (if (methods-only? opts)
+              (if (resolve/methods-only? opts)
                 (wrong ())
                 (load-field))))))))
 
@@ -343,16 +307,16 @@
                       ^IPersistentVector argv ^int opts]
     (if (.startsWith nm "-")
       (member* x-env owner (.substring nm 1) argv
-               (bit-set opts flag-resolve-field))
+               (bit-set opts resolve/flag-field))
       (member* x-env owner nm argv
-               (cond-> (bit-set opts flag-resolve-method)
-                 (= (count argv) (first-argument-index opts))
-                 (bit-set flag-resolve-field)))))
+               (cond-> (bit-set opts resolve/flag-method)
+                 (= (count argv) (resolve/first-argument-index opts))
+                 (bit-set resolve/flag-field)))))
 
   (defn method ^Expr [^long x-env ^Class owner ^String nm
                       ^IPersistentVector argv ^int opts]
     (member* x-env owner nm argv
-             (bit-set opts flag-resolve-method)))
+             (bit-set opts resolve/flag-method)))
 
   (defn constructor ^Expr [^long x-env ^Class owner ^IPersistentVector argv]
     (let [nm ConstantDescs/INIT_NAME

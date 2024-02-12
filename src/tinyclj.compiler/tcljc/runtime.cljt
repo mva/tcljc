@@ -39,13 +39,6 @@
 (def mhk-interface-static DirectMethodHandleDesc$Kind/INTERFACE_STATIC) ;6
 (def mhk-interface-special DirectMethodHandleDesc$Kind/INTERFACE_SPECIAL) ;7
 
-(defn method-kind ^DirectMethodHandleDesc$Kind [^Class owner ^boolean static?]
-  (if (.isInterface owner)
-    (if static? mhk-interface-static mhk-interface-virtual)
-    (if static? mhk-static mhk-virtual)))
-(defn field-kind ^DirectMethodHandleDesc$Kind [^boolean static?]
-  (if static? mhk-static-getter mhk-getter))
-
 (def dcd-default-name ConstantDescs/DEFAULT_NAME)
 
 (defn describe-constable ^ConstantDesc [^Constable x]

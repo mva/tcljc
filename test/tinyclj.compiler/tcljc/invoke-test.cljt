@@ -7,6 +7,7 @@
 ;; You must not remove this notice, or any other, from this software.
 (ns tcljc.invoke-test
   (:require [tcljc.javabase :as jb]
+            [tcljc.compiler.resolve :as resolve]
             [tcljc.compiler.invoke :as invoke]
             [tcljc.expr :as x]
             [tcljc.bootstrap :refer [asm-expr]]
@@ -39,10 +40,10 @@
     (inv1 (invoke/constructor x/flags-no-ln owner (fake-argv atypes))))
   (defn inv-static [^Class owner ^String nm & ^Class* atypes]
     (inv1 (invoke/member x/flags-no-ln owner nm
-                         (fake-argv atypes) invoke/opts-static)))
+                         (fake-argv atypes) resolve/opts-static)))
   (defn inv-virtual [^Class owner ^String nm & ^Class* atypes]
     (inv1 (invoke/member x/flags-no-ln owner nm
-                         (fake-argv (cons owner atypes)) invoke/opts-virtual))))
+                         (fake-argv (cons owner atypes)) resolve/opts-virtual))))
 
 (deftest constructor-invoke-test
   (is (= '(INVOKE-XREF CONSTRUCTOR "HashMap" "<init>" "()V" :owner-is-class)
@@ -202,11 +203,11 @@
   ;; single candidate: argument is of type int
   (is (thrown-with-msg? ExceptionInfo #"no static method matching"
                         (invoke/member x/flags-no-ln java.lang.Integer "bitCount"
-                                       [x/expr-nil-object] invoke/opts-static)))
+                                       [x/expr-nil-object] resolve/opts-static)))
   ;; overloaded: argument is either int, long, float, or double
   (is (thrown-with-msg? ExceptionInfo #"no static method matching"
                         (invoke/member x/flags-no-ln java.lang.Math "abs"
-                                       [x/expr-nil-object] invoke/opts-static))))
+                                       [x/expr-nil-object] resolve/opts-static))))
 
 ;;; Clojure 1.12.0-alpha6 has this to say: "Note: Static fields are
 ;;; values and should be referenced without parens unless they are
