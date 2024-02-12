@@ -403,7 +403,7 @@
          (meta (read1 "^{:k 1} ' ^{:k 2, :l 2} a"))))
 
   (is (thrown-with-msg? ExceptionInfo
-                        #"metadata must be symbol, keyword, string or map"
+                        #"metadata must be symbol, keyword, string, map, or vector"
                         (read1 "^123 a")))
   (is (thrown-with-msg? ExceptionInfo
                         #"metadata can only be applied to IMeta instances"
@@ -411,6 +411,14 @@
 
 (deftest meta-discard-test
   (is (= '{:foo true} (meta (read1 "^:foo #_b a")))))
+
+(deftest meta-param-tags-test
+  (is (= '{:param-tags []} (meta (read1 "^[] foo"))))
+  (is (= '{:param-tags [int]} (meta (read1 "^[int] foo"))))
+  (is (= '{:param-tags [double int]} (meta (read1 "^[double int] foo"))))
+  (is (= '{:param-tags [_]} (meta (read1 "^[_] foo"))))
+  (is (= '{:param-tags [_ _]} (meta (read1 "^[_ _] foo"))))
+  (is (= '{:param-tags [_ long]} (meta (read1 "^[_ long] foo")))))
 
 (deftest line-column-test
   ;; Note: Clojure's reader does not add implicit :line/:column meta

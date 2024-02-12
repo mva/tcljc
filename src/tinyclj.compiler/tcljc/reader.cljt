@@ -62,7 +62,8 @@
     (keyword? dm) (assoc m dm (object true))
     (string? dm) (assoc m :tag dm)
     (map? dm) (merge m dm)
-    :else (wrong "metadata must be symbol, keyword, string or map")))
+    (vector? dm) (assoc m :param-tags dm)
+    :else (wrong "metadata must be symbol, keyword, string, map, or vector")))
 
 (defn- register-meta! [^IMeta x ^IPersistentMap m ^ArrayList arg-env]
   (when (some? arg-env)

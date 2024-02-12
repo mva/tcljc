@@ -34,7 +34,7 @@
                FnForm Arity ArityCode FnPatch
                PrimitiveFnRef FnPrimitiveFn FnMacroFn
                DeftypeDef MethodDef IAdaptPath)
-   (clojure.lang Symbol Var ISeq IPersistentVector IPersistentMap IMeta
+   (clojure.lang Symbol Keyword Var ISeq IPersistentVector IPersistentMap IMeta
                  ExceptionInfo)
    (java.lang.classfile ClassFile Opcode)
    (java.lang.constant ConstantDesc ClassDesc DirectMethodHandleDesc
@@ -1182,19 +1182,22 @@
                  (x/invoke-fn x-env jb/cl-polymorphic-type
                               (-> (mapv consume-for-descriptor op+argv)
                                   (x/fix-vararg-array)))))))
-       
+
+       (quote-value-of [m ^Keyword k]
+         (if-some [e (find m k)]
+           (assoc m k (list cfg/sym-quote (val e)))
+           m))
        (compile-meta ^Expr [m]
          (if (nil? m)
            x/expr-nil-object
            ;; Problem: Cannot evaluate the `foo` in a meta map like
            ;; {:tag foo}.  E.g. `int` would refer to a primitive
-           ;; function and does not have a value, while `objects` only
-           ;; exists as a class shortcut and not as a global var.
-           ;; Solution: Quote the value of the :tag map entry to
-           ;; retain its Symbol (or String) value.
-           (compile-atom (if-some [[k v] (find m :tag)]
-                           (assoc m k (list cfg/sym-quote v))
-                           m))))
+           ;; function and does not have a value, and `Object*` is not
+           ;; an imported name.  Solution: Quote the values of :tag
+           ;; and :param-tags map entries to retain any symbol values.
+           (-> (quote-value-of m :tag)
+               (quote-value-of :param-tags)
+               (compile-atom))))
        (collection-form ^Expr [^Symbol tp-clnm elems ^DirectMethodHandleDesc mhd]
          (coll-literal (ctx/get-type tp-clnm (.ctx env))
                        (map consume-for-descriptor (expr-forms elems))
