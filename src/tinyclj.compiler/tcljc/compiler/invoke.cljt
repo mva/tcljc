@@ -186,7 +186,7 @@
           (let [ptypes (.getParameterTypes e)]
             (ArgSig. ptypes (new boolean* (alength ptypes)))))]
   
-  (defn filter-dominators [es]
+  (defn- filter-dominators [es]
     (letfn [(dominates-all? ^boolean [^Executable e]
               (let [ps (parameter-sig e)]
                 (every? #(compatible-args? ps %) es)))]

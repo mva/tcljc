@@ -44,7 +44,7 @@
                (first)))
 
         (drop-equal-parameters [ms]
-          ;; get rid of any matches with different owners by equal
+          ;; get rid of any matches with different owners but equal
           ;; parameter types, like
           ;; (.containsKey ^boolean [clojure.lang.Associative Object]
           ;; (.containsKey ^boolean [java.util.Map Object]
@@ -64,7 +64,6 @@
          (filter (fn ^boolean [^Method m]
                    (and (= nm (.getName m))
                         (= arity (.getParameterCount m)))))
-         (invoke/filter-dominators)
          (drop-equal-parameters)))
 
   ;; If `return-type` is not cl-polymorphic-type, then it must match
