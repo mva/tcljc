@@ -854,9 +854,9 @@
        (dot-form* ^Expr [^long x-env ^Expr cl-or-inst ^String nm arg-forms]
          (if-some [owner (x/classname-type cl-or-inst)]
            (let [argv (expr-forms arg-forms)]
-             (invoke/member x-env owner nm argv resolve/opts-static))
+             (invoke/dot-member x-env owner nm argv resolve/opts-static))
            (let [argv (expr-forms* [cl-or-inst] arg-forms)]
-             (invoke/member x-env (x/type cl-or-inst) nm argv resolve/opts-virtual))))
+             (invoke/dot-member x-env (x/type cl-or-inst) nm argv resolve/opts-virtual))))
        (dot-form ^Expr [[_ owner member-or-list & xr :as form]]
          (wrong/check-argc-min 2 form)
          (let [cl-or-inst (expr-form owner)]
@@ -1327,8 +1327,8 @@
                                      inst formr)))
                (do (wrong/check-argc-min 1 form)
                    (let [argv (expr-forms (rest form))]
-                     (invoke/member x-env (x/type (nth argv 0))
-                                    (subs nm 1) argv resolve/opts-virtual))))
+                     (invoke/dot-member x-env (x/type (nth argv 0)) (subs nm 1)
+                                        argv resolve/opts-virtual))))
              
              (and (nil? (namespace x)) (ends-with-dot? nm))
              (new-form (list* 'new (symbol nil (subs nm 0 (dec (count nm))))

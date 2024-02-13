@@ -19,7 +19,7 @@
 (def flag-virtual 1)
 (def flag-field 2)
 (def flag-method 3)
-(def flag-unresolved-returns-nil 4)
+(def flag-no-candidate-returns-nil 4)
 
 (def opts-virtual (bit-set 0 flag-virtual))
 (def opts-static (bit-set 0 flag-static))
@@ -58,6 +58,14 @@
   (try
     (.getConstructor owner atypes)
     (catch NoSuchMethodException _
+      nil)))
+
+(defn field-exact ^Field [^int opts ^Class owner ^String nm]
+  (try
+    (let [f (.getField owner nm)]
+      (when (static-virtual-match? opts f)
+        f))
+    (catch NoSuchFieldException _
       nil)))
 
 ;;; ------------------------------------------------------------------------

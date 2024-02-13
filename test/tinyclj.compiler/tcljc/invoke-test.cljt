@@ -38,12 +38,12 @@
   
   (defn inv-constr [^Class owner & ^Class* atypes]
     (inv1 (invoke/constructor x/flags-no-ln owner (fake-argv atypes))))
-  (defn inv-static [^Class owner ^String nm & ^Class* atypes]
-    (inv1 (invoke/member x/flags-no-ln owner nm
-                         (fake-argv atypes) resolve/opts-static)))
-  (defn inv-virtual [^Class owner ^String nm & ^Class* atypes]
-    (inv1 (invoke/member x/flags-no-ln owner nm
-                         (fake-argv (cons owner atypes)) resolve/opts-virtual))))
+  (defn dot-static [^Class owner ^String nm & ^Class* atypes]
+    (inv1 (invoke/dot-member x/flags-no-ln owner nm
+                             (fake-argv atypes) resolve/opts-static)))
+  (defn dot-virtual [^Class owner ^String nm & ^Class* atypes]
+    (inv1 (invoke/dot-member x/flags-no-ln owner nm
+                             (fake-argv (cons owner atypes)) resolve/opts-virtual))))
 
 (deftest constructor-invoke-test
   (is (= '(INVOKE-XREF CONSTRUCTOR "HashMap" "<init>" "()V" :owner-is-class)
@@ -51,57 +51,57 @@
 
 (deftest static-field-test
   (is (= '(INVOKE-XREF STATIC_GETTER "Math" "PI" "D" :owner-is-class)
-         (inv-static java.lang.Math "PI"))))
+         (dot-static java.lang.Math "PI"))))
 
 (deftest static-invoke-test
   (is (= '(INVOKE-XREF STATIC "System" "getProperties"
                        "()Ljava/util/Properties;"
                        :owner-is-class)
-         (inv-static java.lang.System "getProperties")))
+         (dot-static java.lang.System "getProperties")))
   (is (= '(INVOKE-XREF STATIC "System" "getProperty"
                        "(Ljava/lang/String;)Ljava/lang/String;"
                        :owner-is-class)
-         (inv-static java.lang.System "getProperty" String)))
+         (dot-static java.lang.System "getProperty" String)))
 
   (is (= '(INVOKE-XREF STATIC "MethodHandles" "lookup"
                        "()Ljava/lang/invoke/MethodHandles$Lookup;"
                        :owner-is-class)
-         (inv-static java.lang.invoke.MethodHandles "lookup")))
+         (dot-static java.lang.invoke.MethodHandles "lookup")))
   (is (= '(INVOKE-XREF STATIC "RT" "setCoreLookup"
                        "(Ljava/lang/invoke/MethodHandles$Lookup;)V"
                        :owner-is-class)
-         (inv-static tinyclj.lang.RT "setCoreLookup"
+         (dot-static tinyclj.lang.RT "setCoreLookup"
                      java.lang.invoke.MethodHandles$Lookup)))
 
   ;; Math/log takes a double and requires implicit conversion from int
   (is (= '(INVOKE-XREF STATIC "Math" "log" "(D)D" :owner-is-class)
-         (inv-static java.lang.Math "log" jb/int)))
+         (dot-static java.lang.Math "log" jb/int)))
   (is (thrown-with-msg? ExceptionInfo #"no static method matching"
-                        (inv-static java.lang.Math "log" jb/boolean)))
+                        (dot-static java.lang.Math "log" jb/boolean)))
   (is (thrown-with-msg? ExceptionInfo #"no static method matching"
-                        (inv-static java.lang.Math "log" jb/char)))
+                        (dot-static java.lang.Math "log" jb/char)))
   
   ;; Math/max has four paired overloads
   (is (= '(INVOKE-XREF STATIC "Math" "max" "(II)I" :owner-is-class)
-         (inv-static java.lang.Math "max" jb/int jb/int)))
+         (dot-static java.lang.Math "max" jb/int jb/int)))
   (is (= '(INVOKE-XREF STATIC "Math" "max" "(JJ)J" :owner-is-class)
-         (inv-static java.lang.Math "max" jb/long jb/long)))
+         (dot-static java.lang.Math "max" jb/long jb/long)))
   (is (= '(INVOKE-XREF STATIC "Math" "max" "(FF)F" :owner-is-class)
-         (inv-static java.lang.Math "max" jb/float jb/float)))
+         (dot-static java.lang.Math "max" jb/float jb/float)))
   (is (= '(INVOKE-XREF STATIC "Math" "max" "(DD)D" :owner-is-class)
-         (inv-static java.lang.Math "max" jb/double jb/double)))
+         (dot-static java.lang.Math "max" jb/double jb/double)))
 
   ;; varargs call with box of primitive int passed via the `args`
   ;; array of type `Object...`
   (is (= '(INVOKE-XREF STATIC "String" "format"
                        "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;"
                        :owner-is-class)
-         (inv-static String "format" String jb/int))))
+         (dot-static String "format" String jb/int))))
 
 
 (deftest virtual-field-test
   (is (= '(INVOKE-XREF GETTER "Point" "x" "I" :owner-is-class)
-         (inv-virtual java.awt.Point "x"))))
+         (dot-virtual java.awt.Point "x"))))
 
 ;;; Note: In general, the owner of an invoke instruction is the class
 ;;; from which the resolve process started, *not* the class that
@@ -111,41 +111,41 @@
 (deftest virtual-invoke-test
   (is (= '(INVOKE-XREF VIRTUAL "String" "toUpperCase"
                        "()Ljava/lang/String;" :owner-is-class)
-         (inv-virtual String "toUpperCase")))
+         (dot-virtual String "toUpperCase")))
   (is (= '(INVOKE-XREF VIRTUAL "Class" "getName"
                        "()Ljava/lang/String;" :owner-is-class)
-         (inv-virtual Class "getName")))
+         (dot-virtual Class "getName")))
 
   ;; varargs call: no `parameterTypes` and three `parameterTypes`
   (is (= '(INVOKE-XREF VIRTUAL "Class" "getMethod"
                        "(Ljava/lang/String;[Ljava/lang/Class;)Ljava/lang/reflect/Method;"
                        :owner-is-class)
-         (inv-virtual Class "getMethod" String)))
+         (dot-virtual Class "getMethod" String)))
   (is (= '(INVOKE-XREF VIRTUAL "Class" "getConstructor"
                        "([Ljava/lang/Class;)Ljava/lang/reflect/Constructor;"
                        :owner-is-class)
-         (inv-virtual Class "getConstructor" Class Class Class)))
+         (dot-virtual Class "getConstructor" Class Class Class)))
 
   ;; `withInterfaceSymbols` with an `Object` argument is ambiguous in
   ;; Clojure (but not in Java!), and resolved to a single method with
   ;; `List`, `ClassDesc`, or an empty argument list
   (is (thrown-with-msg? ExceptionInfo #"multiple virtual methods match"
-                        (inv-virtual java.lang.classfile.ClassBuilder
+                        (dot-virtual java.lang.classfile.ClassBuilder
                                      "withInterfaceSymbols" Object)))
   (is (= '(INVOKE-XREF INTERFACE_VIRTUAL "ClassBuilder" "withInterfaceSymbols"
                        "(Ljava/util/List;)Ljava/lang/classfile/ClassBuilder;"
                        :owner-is-itf)
-         (inv-virtual java.lang.classfile.ClassBuilder "withInterfaceSymbols"
+         (dot-virtual java.lang.classfile.ClassBuilder "withInterfaceSymbols"
                       java.util.List)))
   (is (= '(INVOKE-XREF INTERFACE_VIRTUAL "ClassBuilder" "withInterfaceSymbols"
                        "([Ljava/lang/constant/ClassDesc;)Ljava/lang/classfile/ClassBuilder;"
                        :owner-is-itf)
-         (inv-virtual java.lang.classfile.ClassBuilder "withInterfaceSymbols"
+         (dot-virtual java.lang.classfile.ClassBuilder "withInterfaceSymbols"
                       java.lang.constant.ClassDesc)))
   (is (= '(INVOKE-XREF INTERFACE_VIRTUAL "ClassBuilder" "withInterfaceSymbols"
                        "([Ljava/lang/constant/ClassDesc;)Ljava/lang/classfile/ClassBuilder;"
                        :owner-is-itf)
-         (inv-virtual java.lang.classfile.ClassBuilder "withInterfaceSymbols"))))
+         (dot-virtual java.lang.classfile.ClassBuilder "withInterfaceSymbols"))))
 
 (deftest interface-varargs-clash-test
   ;; this should resolve to the varargs method
@@ -153,7 +153,7 @@
   (is (= '(INVOKE-XREF INTERFACE_STATIC "MethodTypeDesc" "of"
                        "(Ljava/lang/constant/ClassDesc;[Ljava/lang/constant/ClassDesc;)Ljava/lang/constant/MethodTypeDesc;"
                        :owner-is-itf)
-         (inv-static java.lang.constant.MethodTypeDesc "of"
+         (dot-static java.lang.constant.MethodTypeDesc "of"
                      java.lang.constant.ClassDesc
                      java.lang.constant.ClassDesc)))
   
@@ -163,7 +163,7 @@
                        "MethodTypeDesc" "of"
                        "(Ljava/lang/constant/ClassDesc;Ljava/util/List;)Ljava/lang/constant/MethodTypeDesc;"
                        :owner-is-itf)
-         (inv-static java.lang.constant.MethodTypeDesc "of"
+         (dot-static java.lang.constant.MethodTypeDesc "of"
                      java.lang.constant.ClassDesc
                      java.util.List))))
 
@@ -173,7 +173,7 @@
   (is (= '(INVOKE-XREF INTERFACE_STATIC "Set" "of"
                        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Set;"
                        :owner-is-itf)
-         (inv-static java.util.Set "of"
+         (dot-static java.util.Set "of"
                      java.nio.file.attribute.PosixFilePermission
                      java.nio.file.attribute.PosixFilePermission
                      java.nio.file.attribute.PosixFilePermission))))
@@ -182,18 +182,18 @@
   (is (= '(INVOKE-XREF INTERFACE_VIRTUAL "Path" "resolve"
                        "(Ljava/lang/String;)Ljava/nio/file/Path;"
                        :owner-is-itf)
-         (inv-virtual java.nio.file.Path "resolve" String)))
+         (dot-virtual java.nio.file.Path "resolve" String)))
   (is (= '(INVOKE-XREF INTERFACE_VIRTUAL "Path" "resolve"
                        "(Ljava/lang/String;[Ljava/lang/String;)Ljava/nio/file/Path;"
                        :owner-is-itf)
-         (inv-virtual java.nio.file.Path "resolve" String String))))
+         (dot-virtual java.nio.file.Path "resolve" String String))))
 
 (deftest void-argument-test
   (is (= '(INVOKE-XREF STATIC "Math" "log" "(D)D" :owner-is-class)
-         (inv-static java.lang.Math "log" jb/void)))
+         (dot-static java.lang.Math "log" jb/void)))
   (is (= '(INVOKE-XREF STATIC "Objects" "toString"
                        "(Ljava/lang/Object;)Ljava/lang/String;" :owner-is-class)
-         (inv-static java.util.Objects "toString" jb/void))))
+         (dot-static java.util.Objects "toString" jb/void))))
 
 ;;; Argument nil is treated specially when looking for matching
 ;;; methods.  Instead of satisfying a primitive parameter by unboxing
@@ -202,12 +202,14 @@
 (deftest nil-argument-to-primitive-parameter-test
   ;; single candidate: argument is of type int
   (is (thrown-with-msg? ExceptionInfo #"no static method matching"
-                        (invoke/member x/flags-no-ln java.lang.Integer "bitCount"
-                                       [x/expr-nil-object] resolve/opts-static)))
+                        (invoke/dot-member x/flags-no-ln java.lang.Integer
+                                           "bitCount" [x/expr-nil-object]
+                                           resolve/opts-static)))
   ;; overloaded: argument is either int, long, float, or double
   (is (thrown-with-msg? ExceptionInfo #"no static method matching"
-                        (invoke/member x/flags-no-ln java.lang.Math "abs"
-                                       [x/expr-nil-object] resolve/opts-static))))
+                        (invoke/dot-member x/flags-no-ln java.lang.Math
+                                           "abs" [x/expr-nil-object]
+                                           resolve/opts-static))))
 
 ;;; Clojure 1.12.0-alpha6 has this to say: "Note: Static fields are
 ;;; values and should be referenced without parens unless they are

@@ -209,17 +209,27 @@
 (letfn [(pick-alignment ^Alignment [[^Alignment align & alignr]]
           (when (and (some? align) (nil? alignr))
             align))
-        (wrong-member [aligns ^String member-label ^Class owner ^String nm
-                       ^ArgSig as]
+        (wrong-member [^String member-label ^Class owner ^String nm ^ArgSig as
+                       matches]
           (letfn [(invoke-ex-data []
                     {:invoke/name nm
                      :invoke/owner owner
                      :invoke/arg-types (.atypes as)})]
-            (if-some [as (seq aligns)]
+            (if (some? (seq matches))
               (-> (str "multiple " member-label "s matching ")
                   (wrong/unresolved-interop nm owner (invoke-ex-data)))
               (-> (str "no " member-label " matching ")
                   (wrong/unresolved-interop nm owner (invoke-ex-data))))))
+        (wrong-resolve [^int opts ^Class owner ^String nm ^ArgSig as matches]
+          (when-not (and (bit-test opts resolve/flag-no-candidate-returns-nil)
+                         (nil? (seq matches)))
+            (let [label (str (if (bit-test opts resolve/flag-static)
+                               "static"
+                               "virtual")
+                             (cond (resolve/fields-only? opts) " field"
+                                   (resolve/methods-only? opts) " method"
+                                   :else " member"))]
+              (wrong-member label owner nm as matches))))
         
         (settable? ^boolean [^Field f]
           (not (Modifier/isFinal (.getModifiers f))))
@@ -248,66 +258,62 @@
                 argv (invocation-argv argv align)]
             (invoke-constr* x-env owner c argv)))]
 
-  ;; pre: At least one of `flag-field` or `flag-method` is set.
-  ;; Exactly one of `flag-static` or `flag-virtual` is set.
-  (defn- member* ^Expr [^long x-env ^Class owner ^String nm
-                        ^IPersistentVector argv ^int opts]
+  ;; pre: `flag-field` is set, as well exactly one of `flag-static` or
+  ;; `flag-virtual`.
+  (defn- dot-load-field* ^Expr [^long x-env ^Class owner ^String nm
+                                ^ArgSig as ^IPersistentVector argv ^int opts]
+    (if-some [f (when (zero? (arg-count as))
+                  (resolve/field-exact opts owner nm))]
+      (x/invoke-xref x-env (.getType f) argv nil
+                     (rt/mhd-of-field owner f) (settable? f))
+      (wrong-resolve opts owner nm as ())))
+  
+  ;; pre: `flag-method` is set, as well exactly one of `flag-static`
+  ;; or `flag-virtual`.
+  (defn- dot-invoke-method* ^Expr [^long x-env ^Class owner ^String nm
+                                   ^ArgSig as ^IPersistentVector argv ^int opts]
+    (if-some [m (resolve/method-exact opts owner nm (.atypes as))]
+      (invoke-method* x-env owner m argv)
+      (if-some [ms (seq (->> (methods-with opts owner nm as)
+                             (dominating-alignments)))]
+        (if-some [align (pick-alignment ms)]
+          (invoke-method x-env owner align argv)
+          (wrong-resolve opts owner nm as ms))
+        (wrong-resolve opts owner nm as ()))))
+
+  (defn dot-member ^Expr [^long x-env ^Class owner ^String nm
+                          ^IPersistentVector argv ^int opts]
     (let [as (arg-sig argv (resolve/first-argument-index opts))]
-      (letfn [(wrong ^Expr [ms]
-                (when-not (bit-test opts resolve/flag-unresolved-returns-nil)
-                  (let [label (str (if (bit-test opts resolve/flag-static)
-                                     "static"
-                                     "virtual")
-                                   (cond (resolve/fields-only? opts) " field"
-                                         (resolve/methods-only? opts) " method"
-                                         :else " member"))]
-                    (wrong-member ms label owner nm as))))
-          
-              (load-field []
-                (try
-                  (let [f (.getField owner nm)]
-                    (if (and (resolve/static-virtual-match? opts f)
-                             (zero? (arg-count as)))
-                      (x/invoke-xref x-env (.getType f) argv nil
-                                     (rt/mhd-of-field owner f) (settable? f))
-                      (wrong ())))
-                  (catch NoSuchFieldException _
-                    (wrong ()))))]
+      ;; `atypes` does not include receiver, but the receiver is
+      ;; counted as an implicit invocation argument
+      (cond
+        (.startsWith nm "-")
+        (dot-load-field* x-env owner (.substring nm 1)
+                         as argv (bit-set opts resolve/flag-field))
 
-        (if (resolve/fields-only? opts)
-          (load-field)
-          (if-some [m (resolve/method-exact opts owner nm (.atypes as))]
-            (invoke-method* x-env owner m argv)
-            ;; `atypes` does not include receiver, but the receiver is
-            ;; counted as an implicit invocation argument
-            (if-some [ms (seq (->> (methods-with opts owner nm as)
-                                   (dominating-alignments)))]
-              (if-some [align (pick-alignment ms)]
-                (invoke-method x-env owner align argv)
-                (wrong ms))
-              (if (resolve/methods-only? opts)
-                (wrong ())
-                (load-field))))))))
-
-  (defn member ^Expr [^long x-env ^Class owner ^String nm
-                      ^IPersistentVector argv ^int opts]
-    (if (.startsWith nm "-")
-      (member* x-env owner (.substring nm 1) argv
-               (bit-set opts resolve/flag-field))
-      (member* x-env owner nm argv
-               (cond-> (bit-set opts resolve/flag-method)
-                 (= (count argv) (resolve/first-argument-index opts))
-                 (bit-set resolve/flag-field)))))
+        (zero? (arg-count as))
+        (let [opts (-> (bit-set opts resolve/flag-method)
+                       (bit-set resolve/flag-field))
+              m-opts (bit-set opts resolve/flag-no-candidate-returns-nil)]
+          (or (dot-invoke-method* x-env owner nm as argv m-opts)
+              (dot-load-field* x-env owner nm as argv opts)))
+        
+        :else (dot-invoke-method* x-env owner nm as argv
+                                  (bit-set opts resolve/flag-method)))))
 
   (defn method ^Expr [^long x-env ^Class owner ^String nm
                       ^IPersistentVector argv ^int opts]
-    (member* x-env owner nm argv
-             (bit-set opts resolve/flag-method)))
+    (let [as (arg-sig argv (resolve/first-argument-index opts))]
+      (dot-invoke-method* x-env owner nm as argv
+                          (bit-set opts resolve/flag-method))))
 
   (defn try-load-static-field ^Expr [^long x-env ^Class owner ^String nm]
-    (member* x-env owner nm [] (-> resolve/opts-static
-                                   (bit-set resolve/flag-unresolved-returns-nil)
-                                   (bit-set resolve/flag-field))))
+    (let [opts (-> resolve/opts-static
+                   (bit-set resolve/flag-no-candidate-returns-nil)
+                   (bit-set resolve/flag-field))
+          argv []
+          as (arg-sig argv (resolve/first-argument-index opts))]
+      (dot-load-field* x-env owner nm as argv opts)))
   
   (defn constructor ^Expr [^long x-env ^Class owner ^IPersistentVector argv]
     (let [nm ConstantDescs/INIT_NAME
@@ -318,4 +324,4 @@
                       (dominating-alignments))]
           (if-some [align (pick-alignment cs)]
             (invoke-constr x-env owner align argv)
-            (wrong-member cs "constructor" owner nm as)))))))
+            (wrong-member "constructor" owner nm as cs)))))))
