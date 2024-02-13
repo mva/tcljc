@@ -220,5 +220,5 @@
 ;;; Dot form translation is unchanged, but the interpretation of
 ;;; `Classname/member` is adjusted accordingly.
 (deftest invoke-static-field-test
-  (is (thrown-with-msg? ExceptionInfo #"no static method matching"
+  (is (thrown-with-msg? ExceptionInfo #"does not implement `IFn`"
                         (asm-expr (System/out)))))

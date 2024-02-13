@@ -301,12 +301,6 @@
         :else (dot-invoke-method* x-env owner nm as argv
                                   (bit-set opts resolve/flag-method)))))
 
-  (defn method ^Expr [^long x-env ^Class owner ^String nm
-                      ^IPersistentVector argv ^int opts]
-    (let [as (arg-sig argv (resolve/first-argument-index opts))]
-      (dot-invoke-method* x-env owner nm as argv
-                          (bit-set opts resolve/flag-method))))
-
   (defn try-load-static-field ^Expr [^long x-env ^Class owner ^String nm]
     (let [opts (-> resolve/opts-static
                    (bit-set resolve/flag-no-candidate-returns-nil)

@@ -350,6 +350,10 @@
          (#_REF_getStatic 2 #_REF_putStatic 4 #_REF_invokeStatic 6) true
          #_else false)))
 
+(defn invoke-xref-static-method? ^boolean [^Expr x]
+  (and (invoke-xref? x)
+       (= (-> ^InvokeXref x .mhd .refKind) #_REF_invokeStatic 6)))
+
 (defn invoke-xref-not-special? ^boolean [^Expr x]
   (and (invoke-xref? x)
        (case (-> ^InvokeXref x .mhd .refKind)

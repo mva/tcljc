@@ -185,3 +185,27 @@
            (ARETURN)]
          (asm-expr (let* [f ^{:param-tags [String]} BigInteger/new]
                      (f "123"))))))
+
+(deftest invoke-value-of-executable-test
+  (is (= '[(LDC "123")
+           (INVOKEVIRTUAL Object "toString" "()Ljava/lang/String;")
+           (ARETURN)]
+         (asm-expr (Object/toString "123"))))
+  (is (= '[(LDC "123")
+           (INVOKESTATIC Integer "valueOf"
+                         "(Ljava/lang/String;)Ljava/lang/Integer;")
+           (ARETURN)]
+         ;; note: without :param-tags this would use the regular
+         ;; static method invocation code path
+         (asm-expr (^{:param-tags [String]} Integer/valueOf "123"))))
+  (is (= '[(NEW BigInteger)
+           (DUP)
+           (LDC "123")
+           (INVOKESPECIAL BigInteger "<init>" "(Ljava/lang/String;)V")
+           (ARETURN)]
+         (asm-expr (^{:param-tags [String]} BigInteger/new "123")))))
+
+(deftest invoke-without-any-candidates-test
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+         (asm-expr [^byte b]
+                   (Integer/toUnsignedInt b)))))
