@@ -242,10 +242,14 @@
           (invoke-arity ^CodeBuilder [^CodeBuilder xb ^InvokeArity x]
             (let [fnc (-> x .fn-form .!fnc)
                   ac (.arity-code fnc (.at-idx x))
-                  ep (.emit-plan fnc)]
+                  ep (.emit-plan fnc)
+                  mhd (.load-mh-ext ac)]
+              (when (= (.kind mhd) rt/mhk-constructor)
+                ;; new-dup-dance when invoking a Class/new value
+                (-> xb (.new_ (.owner mhd)) (.dup)))
               (if-some [va-ctp (x/at-extern-vararg-type (.at ac))]
-                (invoke-arity-va xb x ep (.at ac) (.load-mh-ext ac) va-ctp)
-                (invoke-arity-fa xb x ep (.at ac) (.load-mh-ext ac)))
+                (invoke-arity-va xb x ep (.at ac) mhd va-ctp)
+                (invoke-arity-fa xb x ep (.at ac) mhd))
               xb))
 
           (invoke-setter ^CodeBuilder [^CodeBuilder xb ^InvokeXref x]

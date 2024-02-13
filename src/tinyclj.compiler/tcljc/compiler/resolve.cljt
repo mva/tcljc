@@ -10,17 +10,20 @@
    [tcljc.javabase :as jb]
    [tcljc.runtime :as rt])
   (:import
-   (java.lang.constant DirectMethodHandleDesc$Kind)
-   (java.lang.reflect Method Member Modifier)
+   (java.lang.constant DirectMethodHandleDesc DirectMethodHandleDesc$Kind
+                       MethodHandleDesc ConstantDescs)
+   (java.lang.reflect Method Constructor Executable Field Member Modifier)
    (java.util Arrays)))
 
 (def flag-static 0)
 (def flag-virtual 1)
 (def flag-field 2)
 (def flag-method 3)
+(def flag-unresolved-returns-nil 4)
 
 (def opts-virtual (bit-set 0 flag-virtual))
 (def opts-static (bit-set 0 flag-static))
+(def ^:private opts-static-or-virtual (bit-or opts-static opts-virtual))
 
 (let [mask-field (bit-set 0 flag-field)
       mask-method (bit-set 0 flag-method)
@@ -37,14 +40,6 @@
 (defn first-argument-index ^int [^int opts] ;skips receiver
   (if (bit-test opts flag-virtual) 1 0))
 
-(defn method-kind ^DirectMethodHandleDesc$Kind [^boolean static? ^Class owner]
-  (if (.isInterface owner)
-    (if static? rt/mhk-interface-static rt/mhk-interface-virtual)
-    (if static? rt/mhk-static rt/mhk-virtual)))
-(defn field-kind ^DirectMethodHandleDesc$Kind [^boolean static?]
-  (if static? rt/mhk-static-getter rt/mhk-getter))
-
-
 (defn method-exact ^Method [^int opts ^Class owner ^String nm ^Class* atypes]
   (letfn [(method-or-throw ^Method [^Class owner] ;throws NoSuchMethodException
             (let [m (.getMethod owner nm atypes)] ;works for class and array
@@ -58,6 +53,62 @@
             (method-or-throw Object)
             (catch NoSuchMethodException _
               nil)))))))
+
+(defn constructor-exact ^Constructor [^Class owner ^Class* atypes]
+  (try
+    (.getConstructor owner atypes)
+    (catch NoSuchMethodException _
+      nil)))
+
+;;; ------------------------------------------------------------------------
+
+;;; `ptags` of nil does not contrain arity or parameter types of
+;;; constructors or methods.
+(defn executables [^Class owner ^String nm ^Class* ptags]
+  (letfn [(parameters-match? ^boolean [^Class* ptags ^Class* ptypes]
+            (loop [i (dec (alength ptypes))]
+              (cond
+                (neg? i) true
+                         
+                (let [ptag (aget ptags i)]
+                  (or (jb/same-class? ptag (aget ptypes i))
+                      (jb/polymorphic? ptag)))
+                (recur (dec i))
+                         
+                :else false)))
+          (matches-ptags? ^boolean [^Class* ptypes]
+            (or (nil? ptags)
+                (and (= (alength ptypes) (alength ptags))
+                     (parameters-match? ptags ptypes))))
+          (methods [^Method* ms]
+            (loop [acc (), i (dec (alength ms))]
+              (if (neg? i)
+                acc
+                (recur (let [m (aget ms i)]
+                         (cond-> acc
+                           (and (= nm (.getName m))
+                                (matches-ptags? (.getParameterTypes m))
+                                (not (.isBridge m)))
+                           (conj m)))
+                       (dec i)))))
+          (constructors [^Constructor* cs]
+            (loop [acc (), i (dec (alength cs))]
+              (if (neg? i)
+                acc
+                (recur (let [c (aget cs i)]
+                         (cond-> acc
+                           (matches-ptags? (.getParameterTypes c))
+                           (conj c)))
+                       (dec i)))))]
+    (if (= nm "new")
+      (if-some [c (when (some? ptags)
+                    (constructor-exact owner ptags))]
+        (cons c nil)
+        (constructors (.getConstructors owner)))
+      (if-some [m (when (some? ptags)
+                    (method-exact opts-static-or-virtual owner nm ptags))]
+        (cons m nil)
+        (methods (.getMethods owner))))))
 
 ;;; ------------------------------------------------------------------------
 

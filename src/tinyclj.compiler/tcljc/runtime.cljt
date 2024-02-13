@@ -19,7 +19,7 @@
                        DirectMethodHandleDesc DirectMethodHandleDesc$Kind
                        MethodTypeDesc MethodHandleDesc)
    (java.lang.invoke MethodHandles$Lookup MethodHandle TypeDescriptor$OfField)
-   (java.lang.reflect Method Constructor)
+   (java.lang.reflect Method Constructor Field Modifier)
    (java.util List)
    (java.util.regex Pattern))
   (:refer-clojure
@@ -70,6 +70,35 @@
   (MethodTypeDesc/of return-type parameter-types))
 (defn mtd-of ^MethodTypeDesc [return-type parameter-types]
   (MethodTypeDesc/of (cd-of return-type) (cd-list-of parameter-types)))
+
+
+(defn method-kind ^DirectMethodHandleDesc$Kind [^Method m ^Class owner]
+  (let [static? (Modifier/isStatic (.getModifiers m))]
+    (if (.isInterface owner)
+      (if static? mhk-interface-static mhk-interface-virtual)
+      (if static? mhk-static mhk-virtual))))
+(defn- field-kind ^DirectMethodHandleDesc$Kind [^Field f]
+  (let [static? (Modifier/isStatic (.getModifiers f))]
+    (if static? mhk-static-getter mhk-getter)))
+
+(letfn [(owner-desc ^ClassDesc [^Class owner]
+          (if (.isArray owner)
+            ConstantDescs/CD_Object
+            (describe-class owner)))]
+
+  (defn mhd-of-field ^DirectMethodHandleDesc [^Class owner ^Field f]
+    (MethodHandleDesc/ofField (field-kind f) (owner-desc owner) (.getName f)
+                              (describe-class (.getType f))))
+  (defn mhd-of-method ^DirectMethodHandleDesc [^Class owner ^Method m]
+    (let [desc (-> (mtd-of (.getReturnType m) (.getParameterTypes m))
+                   (.descriptorString))]
+      (MethodHandleDesc/of (method-kind m owner) (owner-desc owner)
+                           (.getName m) desc)))
+  (defn mhd-of-constructor ^DirectMethodHandleDesc [^Class owner ^Constructor c]
+    (let [desc (-> (mtd-of ConstantDescs/CD_void (.getParameterTypes c))
+                   (.descriptorString))]
+      (MethodHandleDesc/of mhk-constructor (owner-desc owner)
+                           ConstantDescs/INIT_NAME desc))))
 
 
 (def object-constructor

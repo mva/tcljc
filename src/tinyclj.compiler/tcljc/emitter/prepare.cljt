@@ -143,8 +143,11 @@
         fspec (with-param-ld-st fspec)]
     (.set-emit-plan fnc (emitfn/mk-emit-statics fspec))
     (dotimes [i (.arity-count fnc)]
-      (let [ac (arity-code-static statics-owner (aget aca i) fspec)]
-        (.set-arity-code fnc i ac)))))
+      (let [ac (aget aca i)
+            ac' (if (.load-mh-ext ac) ;provided when wrapping executable
+                  ac
+                  (arity-code-static statics-owner ac fspec))]
+        (.set-arity-code fnc i ac')))))
 
 ;;; ------------------------------------------------------------------------
 

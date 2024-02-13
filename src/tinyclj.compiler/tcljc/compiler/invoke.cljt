@@ -224,31 +224,24 @@
         (settable? ^boolean [^Field f]
           (not (Modifier/isFinal (.getModifiers f))))
 
-        (invoke-method* ^Expr [^long x-env ^DirectMethodHandleDesc$Kind k
-                               ^ClassDesc owner ^Method m
+        (invoke-method* ^Expr [^long x-env ^Class owner ^Method m
                                ^IPersistentVector argv]
-          (let [desc (-> (rt/mtd-of (.getReturnType m) (.getParameterTypes m))
-                         (.descriptorString))
-                mhd (MethodHandleDesc/of k owner (.getName m) desc)]
-            (x/invoke-xref x-env (.getReturnType m) argv nil mhd false)))
-        (invoke-method ^Expr [^long x-env ^DirectMethodHandleDesc$Kind k
-                              ^ClassDesc owner ^Alignment align
+          (x/invoke-xref x-env (.getReturnType m) argv nil
+                         (rt/mhd-of-method owner m) false))
+        (invoke-method ^Expr [^long x-env ^Class owner ^Alignment align
                               ^IPersistentVector argv]
           (let [m ^Method (.exec align)
                 argv (invocation-argv argv align)]
             (if (and (some? (.varargs align)) (nil? (.va-array-type align)))
-              (x/invoke-poly x-env jb/cl-polymorphic-type argv nil k
-                             owner (.getName m) (.isInterface k))
-              (invoke-method* x-env k owner m argv))))
+              (x/invoke-poly x-env jb/cl-polymorphic-type argv nil
+                             (rt/method-kind m owner) (rt/describe-class owner)
+                             (.getName m) (.isInterface owner))
+              (invoke-method* x-env owner m argv))))
 
         (invoke-constr* ^Expr [^long x-env ^Class owner ^Constructor c
                                ^IPersistentVector argv]
-          (let [desc (-> (rt/mtd-of rt/void (.getParameterTypes c))
-                         (.descriptorString))
-                mhd (MethodHandleDesc/of rt/mhk-constructor
-                                         (rt/describe-class owner)
-                                         ConstantDescs/INIT_NAME desc)]
-            (x/invoke-xref x-env owner argv nil mhd false)))
+          (x/invoke-xref x-env owner argv nil
+                         (rt/mhd-of-constructor owner c) false))
         (invoke-constr ^Expr [^long x-env ^Class owner
                               ^Alignment align ^IPersistentVector argv]
           (let [c ^Constructor (.exec align)
@@ -259,31 +252,24 @@
   ;; Exactly one of `flag-static` or `flag-virtual` is set.
   (defn- member* ^Expr [^long x-env ^Class owner ^String nm
                         ^IPersistentVector argv ^int opts]
-    (let [as (arg-sig argv (resolve/first-argument-index opts))
-          owner-cd (if (jb/array? owner) rt/object (rt/describe-class owner))
-          k (resolve/method-kind (bit-test opts resolve/flag-static) owner)]
-      
-      (letfn [(wrong [ms]
-                (wrong-member ms
-                              (str (if (bit-test opts resolve/flag-static)
+    (let [as (arg-sig argv (resolve/first-argument-index opts))]
+      (letfn [(wrong ^Expr [ms]
+                (when-not (bit-test opts resolve/flag-unresolved-returns-nil)
+                  (let [label (str (if (bit-test opts resolve/flag-static)
                                      "static"
                                      "virtual")
                                    (cond (resolve/fields-only? opts) " field"
                                          (resolve/methods-only? opts) " method"
-                                         :else " member"))
-                              owner nm as))
+                                         :else " member"))]
+                    (wrong-member ms label owner nm as))))
           
               (load-field []
                 (try
                   (let [f (.getField owner nm)]
                     (if (and (resolve/static-virtual-match? opts f)
                              (zero? (arg-count as)))
-                      (let [mhd (MethodHandleDesc/ofField
-                                 (resolve/field-kind (bit-test opts resolve/flag-static))
-                                 (rt/describe-class owner) (.getName f)
-                                 (rt/cd-of (.getType f)))]
-                        (x/invoke-xref x-env (.getType f) argv nil mhd
-                                       (settable? f)))
+                      (x/invoke-xref x-env (.getType f) argv nil
+                                     (rt/mhd-of-field owner f) (settable? f))
                       (wrong ())))
                   (catch NoSuchFieldException _
                     (wrong ()))))]
@@ -291,13 +277,13 @@
         (if (resolve/fields-only? opts)
           (load-field)
           (if-some [m (resolve/method-exact opts owner nm (.atypes as))]
-            (invoke-method* x-env k owner-cd m argv)
+            (invoke-method* x-env owner m argv)
             ;; `atypes` does not include receiver, but the receiver is
             ;; counted as an implicit invocation argument
             (if-some [ms (seq (->> (methods-with opts owner nm as)
                                    (dominating-alignments)))]
               (if-some [align (pick-alignment ms)]
-                (invoke-method x-env k owner-cd align argv)
+                (invoke-method x-env owner align argv)
                 (wrong ms))
               (if (resolve/methods-only? opts)
                 (wrong ())
@@ -318,13 +304,15 @@
     (member* x-env owner nm argv
              (bit-set opts resolve/flag-method)))
 
+  (defn try-load-static-field ^Expr [^long x-env ^Class owner ^String nm]
+    (member* x-env owner nm [] (-> resolve/opts-static
+                                   (bit-set resolve/flag-unresolved-returns-nil)
+                                   (bit-set resolve/flag-field))))
+  
   (defn constructor ^Expr [^long x-env ^Class owner ^IPersistentVector argv]
     (let [nm ConstantDescs/INIT_NAME
           as (arg-sig argv 0)]
-      (if-some [c (try
-                    (.getConstructor owner (.atypes as))
-                    (catch NoSuchMethodException _
-                      nil))]
+      (if-some [c (resolve/constructor-exact owner (.atypes as))]
         (invoke-constr* x-env owner c argv)
         (let [cs (->> (constructors-with owner as)
                       (dominating-alignments))]

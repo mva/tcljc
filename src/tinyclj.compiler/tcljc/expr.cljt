@@ -1236,7 +1236,7 @@
      ^BindingRef this-bref
      ;; For an arity, the value of its function.  For a method, the
      ;; implicit receiver parameter.  If it exists, the corresponding
-     ;; name is `(.this-name at)`.  Note: For functions its
+     ;; name is `(.this-name at)`.  Note: For a function its
      ;; `to-fn-form´ member can only bake in the initial version of
      ;; `fn-form`, without fixed arity return types.
      

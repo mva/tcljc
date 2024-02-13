@@ -1183,6 +1183,22 @@
                               (-> (mapv consume-for-descriptor op+argv)
                                   (x/fix-vararg-array)))))))
 
+       (compile-executable-as-fn ^Expr [^Class owner ^Symbol sym]
+         (let [ptags (sig/param-tags-of sym (.ctx env))
+               nm (name sym)]
+           (when-some [es (seq (resolve/executables owner nm ptags))]
+             (when (some? (next es))
+               (-> (str "multiple " (if (= nm "new") "constructors" "methods")
+                        " matching ")
+                   (wrong/unresolved-interop nm owner {})))
+             (let [tp (ctx/get-type rt/clnm-abstract-fn (.ctx env))
+                   level (level-fn-form env)
+                   unique-mnm (.pick-unique-mnm (compile-io env)
+                                                (.mnm-path env) nil
+                                                (list 'fn* sym))]
+               (sig/fn-form-executable sym tp level unique-mnm
+                                       owner (first es))))))
+       
        (quote-value-of [m ^Keyword k]
          (if-some [e (find m k)]
            (assoc m k (list cfg/sym-quote (val e)))
@@ -1202,10 +1218,11 @@
          (coll-literal (ctx/get-type tp-clnm (.ctx env))
                        (map consume-for-descriptor (expr-forms elems))
                        mhd))
-       (resolve-static-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
+       (resolve-class-member ^Expr [^Symbol sym] ;pre: (some? (namespace sym))
          (let [ns-part (namespace sym)]
            (if-some [tp (ctx/get-type (symbol nil ns-part) (.ctx env))]
-             (invoke/member x-env tp (name sym) [] resolve/opts-static)
+             (or (invoke/try-load-static-field x-env tp (name sym))
+                 (compile-executable-as-fn tp sym))
              (wrong-unresolved-nmsp ns-part sym))))
        (compile-atom ^Expr [form]
          (if (instance? IMeta form)
@@ -1213,7 +1230,7 @@
                  (symbol? form) ;close to 90% hit rate for "is a symbol"
                  (if (namespace form)
                    (or (resolve-qname-global form (.ctx env))
-                       (resolve-static-member form)
+                       (resolve-class-member form)
                        (wrong-unresolved form))
                    (or (resolve-sname-local env form)
                        (resolve-sname-global form (.ctx env))

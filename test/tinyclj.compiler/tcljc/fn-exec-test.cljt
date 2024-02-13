@@ -1,0 +1,187 @@
+;; Copyright (c) Michael van Acken. All rights reserved.
+;; The use and distribution terms for this software are covered by the
+;; Eclipse Public License 2.0 (https:;;www.eclipse.org/legal/epl-v20.html)
+;; which can be found in the file epl-v20.html at the root of this distribution.
+;; By using this software in any fashion, you are agreeing to be bound by
+;; the terms of this license.
+;; You must not remove this notice, or any other, from this software.
+(ns tcljc.fn-exec-test
+  (:require [tcljc.bootstrap :refer [asm-expr str-expr]]
+            [tinyclj.alpha.ptest :refer :all])
+  (:import (clojure.lang ExceptionInfo)))
+
+;;; Note: Tests using `^[...]` syntax must use `str-expr` instead of
+;;; `asm-expr` as long the bootstrap compiler tclj-in-tclj does not
+;;; support this meta syntax.
+
+(deftest value-of-virtual-Object-method-test
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                    [[VIRTUAL Object "toString" "()Ljava/lang/String;"]]])
+              (ARETURN)]]
+    (is (= exp (asm-expr Object/toString)))
+    (is (= exp (asm-expr ^{:param-tags []} Object/toString)))
+    (is (= exp (str-expr "^[] Object/toString"))))
+
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                    [[VIRTUAL Object "equals" "(Ljava/lang/Object;)Z"]]])
+              (ARETURN)]]
+    (is (= exp (asm-expr Object/equals)))
+    (is (= exp (asm-expr ^{:param-tags [_]} Object/equals)))
+    (is (= exp (asm-expr ^{:param-tags [Object]} Object/equals)))
+    (is (= exp (str-expr "^[_] Object/equals")))
+    (is (= exp (str-expr "^[Object] Object/equals")))))
+
+(deftest value-of-static-Math-method-test
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                    [[STATIC Math "cos" "(D)D"]]])
+              (ARETURN)]]
+    (is (= exp (asm-expr Math/cos)))
+    (is (= exp (asm-expr ^{:param-tags [double]} Math/cos)))
+    (is (= exp (str-expr "^[double] Math/cos"))))
+
+  (is (thrown-with-msg? ExceptionInfo #"multiple methods matching"
+                        (asm-expr Math/floorMod)))
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                    [[STATIC Math "floorMod" "(JJ)J"]]])
+              (ARETURN)]]
+    (is (= exp (asm-expr ^{:param-tags [long long]} Math/floorMod)))
+    (is (= exp (asm-expr ^{:param-tags [_ long]} Math/floorMod)))
+    (is (= exp (str-expr "^[long long] Math/floorMod")))
+    (is (= exp (str-expr "^[_ long] Math/floorMod")))))
+
+(deftest method-value-errors-test
+  (is (thrown-with-msg? ExceptionInfo #"multiple methods matching"
+                        (asm-expr Math/floorMod)))
+  (is (thrown-with-msg? ExceptionInfo #"multiple methods matching"
+                        (asm-expr ^{:param-tags [_ _]} Math/floorMod)))
+  (is (thrown-with-msg? ExceptionInfo #"multiple methods matching"
+                        (asm-expr ^{:param-tags [long _]} Math/floorMod)))
+
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+                        (asm-expr ^{:param-tags [_]} Math/floorMod)))
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+                        (asm-expr ^{:param-tags [_ _ _]} Math/floorMod)))
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+                        (asm-expr ^{:param-tags [float _]} Math/floorMod)))
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+                        (asm-expr ^{:param-tags [float float]} Math/floorMod))))
+
+(deftest constructor-value-errors-test
+  ;; interface has no constructor
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+                        (asm-expr Runnable/new)))
+  ;; array type has no constructor
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+                        (asm-expr Object*/new))))
+
+(deftest value-of-Object-constructor-test
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                    [[CONSTRUCTOR Object "<init>" "()V"]]])
+              (ARETURN)]]
+    (is (= exp (asm-expr Object/new)))
+    (is (= exp (asm-expr ^{:param-tags []} Object/new)))
+    (is (= exp (str-expr "^[] Object/new")))))
+
+(deftest value-of-BigInteger-constructor-test
+  (is (thrown-with-msg? ExceptionInfo #"multiple constructors matching"
+                        (asm-expr java.math.BigInteger/new)))
+
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                    [[CONSTRUCTOR BigInteger "<init>"
+                      "(Ljava/lang/String;)V"]]])
+              (ARETURN)]]
+    (is (= exp (asm-expr ^{:param-tags [String]} java.math.BigInteger/new)))
+    (is (= exp (str-expr "^[String] java.math.BigInteger/new"))))
+
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                    [[CONSTRUCTOR BigInteger "<init>"
+                      "(Ljava/lang/String;I)V"]]])
+              (ARETURN)]]
+    (is (= exp (asm-expr ^{:param-tags [String int]} java.math.BigInteger/new)))
+    (is (= exp (str-expr "^[String int] java.math.BigInteger/new")))))
+
+(deftest static-varargs-method-test
+  (is (thrown-with-msg? ExceptionInfo #"multiple methods matching"
+                        (asm-expr String/format)))
+  
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                    [[STATIC String "format"
+                      "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;"]]])
+              (ARETURN)]]
+    (is (= exp (asm-expr ^{:param-tags [_ _]} String/format)))
+    (is (= exp (str-expr "^[_ _] String/format"))))
+
+  (is (= '[(LDC "%10s")
+           (ICONST_1) (ANEWARRAY "Object[]")
+           (DUP) (ICONST_0) (LDC "123") (AASTORE)
+           (INVOKESTATIC String "format"
+                         "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;")
+           (ARETURN)]
+         (asm-expr (let* [f ^{:param-tags [String Object*]} String/format]
+                     (f "%10s" "123")))))
+
+  (is (= '[["LOCAL 0: Object[] arr"]
+           (LDC "%10s")
+           (ICONST_1) (ANEWARRAY "Object[]") ;must create varargs array
+           (DUP) (ICONST_0) (ALOAD_0) (AASTORE)
+           (INVOKESTATIC String "format"
+                         "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;")
+           (ARETURN)]
+         ;; Create a varargs function(!) `f` that takes an array of
+         ;; Object and then invoke it.  Check that this follows the
+         ;; Clojure calling convention.  That is, a varargs array
+         ;; wrapping the arguments is always created even if an array
+         ;; value matching the vararg array's type is provided.
+         (asm-expr [^Object* arr]
+                   (let* [f ^{:param-tags [String Object*]} String/format]
+                     (f "%10s" arr))))))
+
+(deftest virtual-varargs-method-test
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                    [[VIRTUAL String "formatted"
+                      "([Ljava/lang/Object;)Ljava/lang/String;"]]])
+              (ARETURN)]]
+    (is (= exp (asm-expr String/formatted)))
+    (is (= exp (asm-expr ^{:param-tags [_]} String/formatted)))
+    (is (= exp (str-expr "^[_] String/formatted"))))
+
+  (is (= '[(LDC "%10s")
+           (ICONST_1) (ANEWARRAY "Object[]")
+           (DUP) (ICONST_0) (LDC "123") (AASTORE)
+           (INVOKEVIRTUAL String "formatted"
+                          "([Ljava/lang/Object;)Ljava/lang/String;")
+           (ARETURN)]
+         (asm-expr (let* [f ^{:param-tags [Object*]} String/formatted]
+                     (f "%10s" "123")))))
+
+  (is (= '[["LOCAL 0: Object[] arr"]
+           (LDC "%10s")
+           (ICONST_1) (ANEWARRAY "Object[]") ;must create varargs array
+           (DUP) (ICONST_0) (ALOAD_0) (AASTORE)
+           (INVOKEVIRTUAL String "formatted"
+                          "([Ljava/lang/Object;)Ljava/lang/String;")
+           (ARETURN)]
+         ;; like static test above: check Clojure calling convection
+         (asm-expr [^Object* arr]
+                   (let* [f ^{:param-tags [Object*]} String/formatted]
+                     (f "%10s" arr))))))
+
+(deftest let-value-of-executable-then-invoke-test
+  (is (= '[(LDC "123")
+           (INVOKEVIRTUAL Object "toString" "()Ljava/lang/String;")
+           (ARETURN)]
+         (asm-expr (let* [f Object/toString]
+                     (f "123")))))
+  (is (= '[(LDC "123")
+           (INVOKESTATIC Integer "valueOf"
+                         "(Ljava/lang/String;)Ljava/lang/Integer;")
+           (ARETURN)]
+         (asm-expr (let* [f ^{:param-tags [String]} Integer/valueOf]
+                     (f "123")))))
+  (is (= '[(NEW BigInteger)
+           (DUP)
+           (LDC "123")
+           (INVOKESPECIAL BigInteger "<init>" "(Ljava/lang/String;)V")
+           (ARETURN)]
+         (asm-expr (let* [f ^{:param-tags [String]} BigInteger/new]
+                     (f "123"))))))

@@ -16,10 +16,11 @@
    [tcljc.context :as ctx]
    [tcljc.compiler.resolve :as resolve])
   (:import
-   (tcljc.expr FnForm Arity Binding)
+   (tcljc.expr FnForm Arity ArityCode Binding)
    (tcljc.context Ctx)
-   (clojure.lang Symbol)
-   (java.lang.reflect Method)))
+   (clojure.lang Symbol IPersistentVector)
+   (java.lang.reflect Method Constructor Executable Modifier)
+   (java.util.concurrent CompletableFuture)))
 
 (defn wrong-class [x]
   (if (instance? NoClassDefFoundError x)
@@ -47,7 +48,6 @@
 
 (defn tag-of ^Class [form ^boolean void? ^Class no-hint ^Ctx ctx]
   (tag-of* (get-tag form) void? no-hint ctx))
-
 
 ;;; ------------------------------------------------------------------------
 
@@ -218,3 +218,56 @@
           (if-some [itf-tag (tag-of (first form) false nil ctx)]
             (mk-fn-form-itf (ensure-interface itf-tag) aforms)
             (mk-fn-form-fct nil aforms)))))))
+
+;;; ------------------------------------------------------------------------
+
+(defn- get-param-tags ^IPersistentVector [form]
+  (when-some [ptags (-> form (meta) :param-tags)]
+    (if (and (vector? ptags) (every? symbol? ptags))
+      ptags
+      (wrong/other ":param-tags value must be a vector of symbols"))))
+
+(defn param-tags-of ^Class* [form ^Ctx ctx] ;nil if there is no :param-tags
+  (when-some [ptags (get-param-tags form)]
+    (let [a (new Class* (count ptags))]
+      (dotimes [i (alength a)]
+        (let [ptag (nth ptags i)]
+          (aset a i (if (= ptag '_)
+                      jb/cl-polymorphic-type
+                      (tag-of* ptag false nil ctx)))))
+      a)))
+
+(letfn [(at-of-executable ^Arity [^Class owner ^Executable exec ^int level]
+          (let [ptypes (cond->> (.getParameterTypes exec)
+                         (and (instance? Method exec)
+                              (not (Modifier/isStatic (.getModifiers exec))))
+                         (cons owner))
+                paramv (mapv #(mk-param level '_ ^Class %1) ptypes)
+                rtype (if (instance? Method exec)
+                        (.getReturnType ^Method exec)
+                        owner)
+                method-name (if (instance? Method exec)
+                              (.getName ^Method exec)
+                              "new")]
+            (Arity. paramv rtype (count paramv) (.isVarArgs exec) false
+                    nil method-name 'this level cfg/no-line-number nil
+                    (util/mk-shm) 0)))
+        
+        (ac-of-executable ^ArityCode [^Class owner ^Executable exec
+                                           ^Arity at]
+          (let [mhd (if (instance? Method exec)
+                      (rt/mhd-of-method owner ^Method exec)
+                      (rt/mhd-of-constructor owner ^Constructor exec))]
+            (ArityCode. at nil x/expr-empty mhd mhd false)))]
+  
+  (defn fn-form-executable          ;aka "method/constructor as value"
+    ^FnForm [form ^Class type ^int level ^String unique-mnm
+             ^Class owner ^Executable exec]
+    (let [at (at-of-executable owner exec level)
+          at-sigs [at]
+          body-fut (-> (doto (new ArityCode* 1)
+                         (aset 0 (ac-of-executable owner exec at)))
+                       (CompletableFuture/completedFuture))
+          fnc (x/mk-fn-code (count at-sigs) false)]
+      (FnForm. x/flags-no-ln type [] nil level unique-mnm
+               rt/mhd-AFn nil at-sigs body-fut fnc))))
