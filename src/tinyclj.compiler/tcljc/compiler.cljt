@@ -1345,7 +1345,7 @@
                             (bit-set resolve/flag-no-candidate-returns-nil))]
                (if-some [ptags (sig/param-tags-of op-form (.ctx env))]
                  (compile-executable-as-fn owner op-form ptags)
-                 (or (invoke/dot-member x-env owner (name op-form) argv opts)
+                 (or (invoke/member x-env owner (name op-form) argv opts)
                      (compile-executable-as-fn owner op-form nil))))
              (wrong-unresolved-nmsp ns-part op-form))))
        (compile-list ^Expr [^ISeq form]

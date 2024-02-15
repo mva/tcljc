@@ -281,13 +281,13 @@
           (wrong-resolve opts owner nm as ms))
         (wrong-resolve opts owner nm as ()))))
 
-  (defn dot-member ^Expr [^long x-env ^Class owner ^String nm
-                          ^IPersistentVector argv ^int opts]
+  (defn member ^Expr [^long x-env ^Class owner ^String nm
+                      ^IPersistentVector argv ^int opts]
     (let [as (arg-sig argv (resolve/first-argument-index opts))]
       ;; `atypes` does not include receiver, but the receiver is
       ;; counted as an implicit invocation argument
       (cond
-        (.startsWith nm "-")
+        (and (.startsWith nm "-") (bit-test opts resolve/flag-minus-is-field))
         (dot-load-field* x-env owner (.substring nm 1)
                          as argv (bit-set opts resolve/flag-field))
 
@@ -301,6 +301,10 @@
         :else (dot-invoke-method* x-env owner nm as argv
                                   (bit-set opts resolve/flag-method)))))
 
+  (defn dot-member ^Expr [^long x-env ^Class owner ^String nm
+                          ^IPersistentVector argv ^int opts]
+    (member x-env owner nm argv (bit-set opts resolve/flag-minus-is-field)))
+  
   (defn try-load-static-field ^Expr [^long x-env ^Class owner ^String nm]
     (let [opts (-> resolve/opts-static
                    (bit-set resolve/flag-no-candidate-returns-nil)

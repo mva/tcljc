@@ -20,6 +20,7 @@
 (def flag-field 2)
 (def flag-method 3)
 (def flag-no-candidate-returns-nil 4)
+(def flag-minus-is-field 5)
 
 (def opts-virtual (bit-set 0 flag-virtual))
 (def opts-static (bit-set 0 flag-static))

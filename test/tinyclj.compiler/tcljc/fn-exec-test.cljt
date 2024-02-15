@@ -205,7 +205,16 @@
            (ARETURN)]
          (asm-expr (^{:param-tags [String]} BigInteger/new "123")))))
 
-(deftest invoke-without-any-candidates-test
+(deftest no-available-candidate-test
   (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
-         (asm-expr [^byte b]
-                   (Integer/toUnsignedInt b)))))
+                        (asm-expr [^byte b]
+                                  (Integer/toUnsignedInt b))))
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+                        (asm-expr (System/out 123))))
+  
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+                        (asm-expr System/no_such_field)))
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+                        (asm-expr System/-out)))
+  (is (thrown-with-msg? ExceptionInfo #"undefined symbol"
+                        (asm-expr (System/-out)))))
