@@ -30,8 +30,8 @@
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "two" "I")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "add2" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "add2" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "some-name~2" "(II)I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "some-name~2" "(II)I")
@@ -67,8 +67,8 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "oddfalse" "Z")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "oddtrue" "Z")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "is-odd" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "is-odd" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "rec-odd~1" "(I)Z"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "incomplete-even~1" "(I)Z")
@@ -126,8 +126,8 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "oddfalse" "Z")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "oddtrue" "Z")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "is-odd" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "is-odd" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "rec-odd~1" "(I)Z"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "rec-odd~1" "(I)Z")
@@ -185,8 +185,8 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "oddfalse" "Z")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "oddtrue" "Z")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "is-odd" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "is-odd" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "rec-odd~1" "(I)Z"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "rec-even~1" "(I)Z")
@@ -245,8 +245,8 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "oddfalse" "Z")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "oddtrue" "Z")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "is-odd" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "is-odd" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "is-odd~2" "(II)Z"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "is-odd~2" "(II)Z")
@@ -321,7 +321,7 @@
 (deftest self-ref-statics
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "self-ref~0" "()Ljava/lang/Object;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "self-ref~0" "()Ljava/lang/Object;"]]])
              (ARETURN)]
             
@@ -344,8 +344,8 @@
 
 (deftest self-ref-virtuals-stateful
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
@@ -440,7 +440,7 @@
 (deftest other-ref-statics
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL] "other-ref~0" "()Ljava/lang/Object;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "some-fn~0" "()Ljava/lang/Object;"]]])
              (ARETURN)]
                         
@@ -469,8 +469,8 @@
 
 (deftest flyweight
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~1" "([I)I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~1" "([I)I")
@@ -501,8 +501,8 @@
 
 (deftest flyweight-stateless
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~1" "([I)I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~1" "([I)I")
@@ -533,8 +533,8 @@
 
 (deftest flyweight-indirect
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~1" "([I)I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~1" "([I)I")
@@ -572,8 +572,8 @@
 
 (deftest flyweight-forward
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~1" "([I)I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~1" "([I)I")
@@ -611,8 +611,8 @@
 
 (deftest flyweight-name-conflict
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~2" "(II)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~2" "(II)Ljava/lang/Object;")
@@ -740,8 +740,8 @@
 
 (deftest letfn-over-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~2" "(II)I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~2" "(II)I")
@@ -933,8 +933,8 @@
 
 (deftest virtuals-passed-into-flyweight
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "top" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "top" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "top~1" "(I)I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "top~1" "(I)I")

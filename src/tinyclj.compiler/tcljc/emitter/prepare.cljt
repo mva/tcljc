@@ -256,7 +256,7 @@
                (rt/cd-of (aget (.itf-tags fn-form) 0)))
              (if (translate-to-virtuals? fn-form)
                (fn-class-desc fn-form)
-               rt/StaticFnMh))
+               rt/StaticFn))
            (.set-ld-clx (.!fnc fn-form))))
 
     ;; Assign translation patterns.

@@ -11,9 +11,9 @@
 
 (def exp-one-macro
   '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-     [(METHOD [PUBLIC STATIC FINAL] "one-macro" "()Ltinyclj/lang/StaticFnMh;")
+     [(METHOD [PUBLIC STATIC FINAL] "one-macro" "()Ltinyclj/lang/StaticFn;")
       (RuntimeVisibleAnnotations (Macro))
-      (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+      (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
             [[STATIC . "one-macro~2" "(Ljava/lang/Object;Ljava/lang/Object;)I"]]])
       (ARETURN)]
      [(METHOD [PUBLIC STATIC FINAL] "one-macro~2" "(Ljava/lang/Object;Ljava/lang/Object;)I")
@@ -58,14 +58,14 @@
 (deftest macro-call-to-same-segment
   ;; my-defn should call sigs from the same namespace segment
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC RT "cons" "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;"]]])
              (ARETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "loop" "()Ltinyclj/lang/StaticFnMh;")
+            [(METHOD [PUBLIC STATIC FINAL] "loop" "()Ltinyclj/lang/StaticFn;")
              (RuntimeVisibleAnnotations (Macro))
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "loop~3" "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "loop~3" "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
@@ -93,9 +93,9 @@
              (RETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/_11" nil "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "my-fn" "()Ltinyclj/lang/StaticFnMh;")
+            [(METHOD [PUBLIC STATIC FINAL] "my-fn" "()Ltinyclj/lang/StaticFn;")
              (RuntimeVisibleAnnotations (Macro))
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "my-fn~3"
                      "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
@@ -123,13 +123,13 @@
              (RETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/_12" nil "pkg/ns0/_11")
-            [(METHOD [PUBLIC STATIC FINAL] "first" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "first" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC RT "first" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "sigs" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "sigs" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "sigs~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "sigs~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
@@ -137,9 +137,9 @@
              (ACONST_NULL)
              (ARETURN)]            
             
-            [(METHOD [PUBLIC STATIC FINAL] "my-defn" "()Ltinyclj/lang/StaticFnMh;")
+            [(METHOD [PUBLIC STATIC FINAL] "my-defn" "()Ltinyclj/lang/StaticFn;")
              (RuntimeVisibleAnnotations (Macro))
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "my-defn~4" "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "my-defn~4" "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;")
@@ -209,8 +209,8 @@
 (deftest fallback-value-in-meta
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             
-            [(METHOD [PUBLIC STATIC FINAL] "list" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "list" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "list~1" "([Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL VARARGS] "list~1" "([Ljava/lang/Object;)Ljava/lang/Object;")
@@ -219,8 +219,8 @@
              (INVOKESTATIC Literal "list" "([Ljava/lang/Object;)Lclojure/lang/IPersistentList;")
              (ARETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "__nil-pred" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "__nil-pred" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "__nil-pred~1" "(Ljava/lang/Object;)Z"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "__nil-pred~1" "(Ljava/lang/Object;)Z")
@@ -233,10 +233,10 @@
              (ICONST_0)
              (IRETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "nil-pred" "()Ltinyclj/lang/StaticFnMh;")
+            [(METHOD [PUBLIC STATIC FINAL] "nil-pred" "()Ltinyclj/lang/StaticFn;")
              (RuntimeVisibleAnnotations
               (Macro ["macroValue" "pkg.ns0/__nil-pred"]))
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "nil-pred~3" "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "nil-pred~3" "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
@@ -272,7 +272,7 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "y" "Ljava/lang/Object;")]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
-             (INVOKESTATIC _10 "__nil-pred" "()Ltinyclj/lang/StaticFnMh;")
+             (INVOKESTATIC _10 "__nil-pred" "()Ltinyclj/lang/StaticFn;")
              (INVOKESTATIC Objects "requireNonNull" "(Ljava/lang/Object;)Ljava/lang/Object;")
              (PUTSTATIC . "y" "Ljava/lang/Object;")
              (RETURN)]]

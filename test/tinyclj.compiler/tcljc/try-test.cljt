@@ -476,8 +476,8 @@
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Ljava/lang/String;")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~0" "()V"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")

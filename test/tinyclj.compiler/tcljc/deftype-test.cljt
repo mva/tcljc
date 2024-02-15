@@ -237,8 +237,8 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "x" "Lpkg/ns0/Vec3;")]
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "y" "Lpkg/ns0/Vec3;")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "-_GT_Vec3" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "-_GT_Vec3" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "-_GT_Vec3~3" "(FFF)Lpkg/ns0/Vec3;"]]
                    #_[[CONSTRUCTOR Vec3 "<init>" "(FFF)V"]]])
              (ARETURN)]
@@ -951,9 +951,9 @@
              (RETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "deftype" "()Ltinyclj/lang/StaticFnMh;")
+            [(METHOD [PUBLIC STATIC FINAL] "deftype" "()Ltinyclj/lang/StaticFn;")
              (RuntimeVisibleAnnotations (Macro))
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;" [[STATIC . "deftype~2" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"]]])
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;" [[STATIC . "deftype~2" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "deftype~2" "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;")
              ["LOCAL 0: Object &form"]

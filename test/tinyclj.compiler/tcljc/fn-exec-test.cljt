@@ -15,14 +15,14 @@
 ;;; support this meta syntax.
 
 (deftest value-of-virtual-Object-method-test
-  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                     [[VIRTUAL Object "toString" "()Ljava/lang/String;"]]])
               (ARETURN)]]
     (is (= exp (asm-expr Object/toString)))
     (is (= exp (asm-expr ^{:param-tags []} Object/toString)))
     (is (= exp (str-expr "^[] Object/toString"))))
 
-  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                     [[VIRTUAL Object "equals" "(Ljava/lang/Object;)Z"]]])
               (ARETURN)]]
     (is (= exp (asm-expr Object/equals)))
@@ -32,7 +32,7 @@
     (is (= exp (str-expr "^[Object] Object/equals")))))
 
 (deftest value-of-static-Math-method-test
-  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                     [[STATIC Math "cos" "(D)D"]]])
               (ARETURN)]]
     (is (= exp (asm-expr Math/cos)))
@@ -41,7 +41,7 @@
 
   (is (thrown-with-msg? ExceptionInfo #"multiple methods matching"
                         (asm-expr Math/floorMod)))
-  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                     [[STATIC Math "floorMod" "(JJ)J"]]])
               (ARETURN)]]
     (is (= exp (asm-expr ^{:param-tags [long long]} Math/floorMod)))
@@ -75,7 +75,7 @@
                         (asm-expr Object*/new))))
 
 (deftest value-of-Object-constructor-test
-  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                     [[CONSTRUCTOR Object "<init>" "()V"]]])
               (ARETURN)]]
     (is (= exp (asm-expr Object/new)))
@@ -86,14 +86,14 @@
   (is (thrown-with-msg? ExceptionInfo #"multiple constructors matching"
                         (asm-expr java.math.BigInteger/new)))
 
-  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                     [[CONSTRUCTOR BigInteger "<init>"
                       "(Ljava/lang/String;)V"]]])
               (ARETURN)]]
     (is (= exp (asm-expr ^{:param-tags [String]} java.math.BigInteger/new)))
     (is (= exp (str-expr "^[String] java.math.BigInteger/new"))))
 
-  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                     [[CONSTRUCTOR BigInteger "<init>"
                       "(Ljava/lang/String;I)V"]]])
               (ARETURN)]]
@@ -104,7 +104,7 @@
   (is (thrown-with-msg? ExceptionInfo #"multiple methods matching"
                         (asm-expr String/format)))
   
-  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                     [[STATIC String "format"
                       "(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;"]]])
               (ARETURN)]]
@@ -137,7 +137,7 @@
                      (f "%10s" arr))))))
 
 (deftest virtual-varargs-method-test
-  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+  (let [exp '[(LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                     [[VIRTUAL String "formatted"
                       "([Ljava/lang/Object;)Ljava/lang/String;"]]])
               (ARETURN)]]

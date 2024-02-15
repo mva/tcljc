@@ -207,8 +207,8 @@
 
 (deftest refer-static-fn-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/exp/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "inc1" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "inc1" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "inc1~1" "(I)I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "inc1~1" "(I)I")
@@ -235,8 +235,8 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
                     "three_alias" "I")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "apply1" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "apply1" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "apply1~2" "(Ljava/lang/Object;I)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "apply1~2" "(Ljava/lang/Object;I)Ljava/lang/Object;")
@@ -247,8 +247,8 @@
              (INVOKEDYNAMIC "_" "(Ljava/lang/Object;I)Ljava/lang/Object;" :bsm-invoke-fn [])
              (ARETURN)]
 
-            #_[(METHOD [PUBLIC STATIC FINAL] "inc1_alias" "()Ltinyclj/lang/StaticFnMh;")
-               (INVOKESTATIC _10 "inc1" "()Ltinyclj/lang/StaticFnMh;")
+            #_[(METHOD [PUBLIC STATIC FINAL] "inc1_alias" "()Ltinyclj/lang/StaticFn;")
+               (INVOKESTATIC _10 "inc1" "()Ltinyclj/lang/StaticFn;")
                (ARETURN)]
 
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
@@ -257,7 +257,7 @@
              (LDC ___)
              (INVOKESTATIC RT "ensureInitialized" "(Ljava/lang/Class;)V")
              
-             (INVOKESTATIC _10 "inc1" "()Ltinyclj/lang/StaticFnMh;")
+             (INVOKESTATIC _10 "inc1" "()Ltinyclj/lang/StaticFn;")
              (ICONST_2)
              (INVOKESTATIC . "apply1~2" "(Ljava/lang/Object;I)Ljava/lang/Object;")
              (PUTSTATIC . "three" "Ljava/lang/Object;")
@@ -305,8 +305,8 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~0" "()Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()Ljava/lang/Object;")
@@ -333,9 +333,9 @@
 
 (deftest require-macro-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/exp/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "simple-macro" "()Ltinyclj/lang/StaticFnMh;")
+            [(METHOD [PUBLIC STATIC FINAL] "simple-macro" "()Ltinyclj/lang/StaticFn;")
              (RuntimeVisibleAnnotations (Macro))
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "simple-macro~2"
                      "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
@@ -356,8 +356,8 @@
              (ARETURN)]]
            
            [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~0" "()Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()Ljava/lang/Object;")

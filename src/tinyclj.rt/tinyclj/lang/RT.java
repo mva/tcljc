@@ -124,8 +124,8 @@ public final class RT {
                                                 Class memberType, Object x) {
     if (!AFnMh.class.isAssignableFrom(memberType)) {
       return null; // if not emitted as function typed value by compiler
-    } else if (x instanceof StaticFnMh) {
-      return ((StaticFnMh)x).__directMethodHandles();
+    } else if (x instanceof StaticFn) {
+      return ((StaticFn)x).__directMethodHandles();
     } else if (x instanceof AFnMh) {
       var a = new ArrayList();
       for (Method m : x.getClass().getDeclaredMethods()) {

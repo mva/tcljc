@@ -69,8 +69,8 @@
             [(METHOD [PUBLIC STATIC FINAL] "Runnable~0" "()V")
              (RETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "g~0" "()Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "g~0" "()Ljava/lang/Object;")
@@ -111,8 +111,8 @@
              (ICONST_0)
              (IRETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "g~0" "()I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "g~0" "()I")
@@ -162,8 +162,8 @@
              (ICONST_2)
              (IRETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~1" "(Ljava/lang/Object;)V"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~1" "(Ljava/lang/Object;)V")

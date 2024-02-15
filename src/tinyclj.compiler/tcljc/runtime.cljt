@@ -175,11 +175,11 @@
 
 (def clnm-ifn 'clojure.lang.IFn)
 (def clnm-abstract-fn 'tinyclj.lang.AFnMh)
-(def clnm-static-fn 'tinyclj.lang.StaticFnMh)
+(def clnm-static-fn 'tinyclj.lang.StaticFn)
 
 (def IFn (ClassDesc/of (name clnm-ifn)))
 (def AFn (ClassDesc/of (name clnm-abstract-fn)))
-(def StaticFnMh (ClassDesc/of (name clnm-static-fn)))
+(def StaticFn (ClassDesc/of (name clnm-static-fn)))
 
 (def name-requires "requires~1")
 
@@ -291,7 +291,7 @@
 (def bsm-clause-code
   (mhd-static [BootstrapMethod "bsmCaseClauseCode"]
               CallSite [Lookup String MethodType ObjectArray]))
-(def bsm-static-fn (mhd-static [BootstrapMethod "createStaticFn"] StaticFnMh
+(def bsm-static-fn (mhd-static [BootstrapMethod "createStaticFn"] StaticFn
                                [Lookup String Class MethodHandleArray]))
 (def bsm-invoke-fn (mhd-static [BootstrapMethod "invokeFn"]
                                CallSite [Lookup String MethodType]))

@@ -70,10 +70,10 @@ public final class BootstrapMethod {
   }
 
   
-  public static tinyclj.lang.StaticFnMh
+  public static tinyclj.lang.StaticFn
     createStaticFn(Lookup lookup, String nm, Class<?> type, MethodHandle... mhs)
   {
-    return tinyclj.lang.StaticFnMh.create(mhs);
+    return tinyclj.lang.StaticFn.create(mhs);
   }
 
 

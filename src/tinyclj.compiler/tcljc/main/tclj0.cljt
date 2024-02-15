@@ -58,7 +58,7 @@
     (if (nil? apply-mh)
       ;; compiler and application share runtime?  careful, this is a
       ;; very brittle method type!
-      ^tinyclj.lang.StaticFnMh (.invokeExact global-mh)
+      ^tinyclj.lang.StaticFn (.invokeExact global-mh)
       (.invoke global-mh)))
     
   (pick-unique-mnm [_ mnm-path-env dflt-nm form]
@@ -125,8 +125,8 @@
                     collect-macro-definitions?)))
 
 (defn- get-apply-mh ^MethodHandle [^MethodHandles$Lookup rt-lookup]
-  (let [compiler-rt-witness tinyclj.lang.AFnMh
-        app-rt-witness (.resolveConstantDesc rt/AFn rt-lookup)
+  (let [compiler-rt-witness tinyclj.lang.StaticFn
+        app-rt-witness (.resolveConstantDesc rt/StaticFn rt-lookup)
         shared-runtime? (identical? compiler-rt-witness app-rt-witness)]
     (if shared-runtime?
       nil                            ;can use macro/apply-macro-direct

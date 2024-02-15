@@ -24,8 +24,8 @@
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             
             [(METHOD [PUBLIC STATIC FINAL] "const-body"
-                     "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                     "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "const-body~0" "()I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "const-body~0" "()I")
@@ -33,8 +33,8 @@
              (IRETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "const-body-m"
-                     "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                     "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "const-body-m~0" "()I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "const-body-m~0" "()I")
@@ -42,8 +42,8 @@
              (IRETURN)]
             
             [(METHOD [PUBLIC STATIC FINAL] "const-try"
-                     "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                     "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "const-try~0" "()I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "const-try~0" "()I")

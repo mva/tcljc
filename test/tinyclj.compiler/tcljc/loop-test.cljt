@@ -206,16 +206,16 @@
 
 (deftest rebind-recur-alias
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~0" "()Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()Ljava/lang/Object;")
              (ACONST_NULL)
              (ARETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "g" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "g~0" "()Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "g~0" "()Ljava/lang/Object;")
@@ -223,7 +223,7 @@
              (ASTORE_0)
              ["LOCAL 0: Object x"]
              [L:0]
-             (INVOKESTATIC . "f" "()Ltinyclj/lang/StaticFnMh;")
+             (INVOKESTATIC . "f" "()Ltinyclj/lang/StaticFn;")
              (ASTORE_0)
              (GOTO L:0)]
 
@@ -318,8 +318,8 @@
 (deftest cons-into-list
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             [(METHOD [PUBLIC STATIC FINAL]
-                     "list" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+                     "list" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "fn~1" "([Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL VARARGS]
@@ -369,8 +369,8 @@
 
 (deftest join-vector-with-null-test
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "lift-ns" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;" [[STATIC . "lift-ns~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
+            [(METHOD [PUBLIC STATIC FINAL] "lift-ns" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;" [[STATIC . "lift-ns~1" "(Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "lift-ns~1" "(Ljava/lang/Object;)Ljava/lang/Object;")
              ["LOCAL 0: Object m"]

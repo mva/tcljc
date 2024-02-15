@@ -165,8 +165,8 @@
             [(FIELD [PUBLIC STATIC VOLATILE] "flag" "Z")
              (ConstantValue 0)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "f~0" "()V"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()V")
@@ -717,10 +717,10 @@
             [(FIELD [PUBLIC STATIC FINAL] "b" "I")
              (ConstantValue 3)]
 
-            [(METHOD [PUBLIC STATIC FINAL] "add" "()Ltinyclj/lang/StaticFnMh;")
+            [(METHOD [PUBLIC STATIC FINAL] "add" "()Ltinyclj/lang/StaticFn;")
              (RuntimeVisibleAnnotations (Macro))
              
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "add~3" "(Ljava/lang/Object;Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL BRIDGE VARARGS] "add~3"
@@ -785,8 +785,8 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "b" "Lclojure/lang/Var;")
              (Signature "Lclojure/lang/Var<Ljava/lang/Object;>;")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;" [[STATIC . "f~0" "()Z"]]])
+            [(METHOD [PUBLIC STATIC FINAL] "f" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;" [[STATIC . "f~0" "()Z"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "f~0" "()Z")
              (GETSTATIC . "a" "Lclojure/lang/Var;")

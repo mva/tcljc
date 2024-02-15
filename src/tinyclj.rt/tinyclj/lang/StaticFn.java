@@ -16,7 +16,7 @@ import clojure.lang.IPersistentMap;
 // ...)`, the inside meta is always `nil` for instances of this class.
 // The inside view maps `nm` always to a constant singleton value,
 // which has no external decorations applied.
-public final class StaticFnMh extends AFnMh {
+public final class StaticFn extends AFnMh {
   protected final MethodHandle[] mhs;
   
   /* The last element of `arities` is non-null for a varargs function,
@@ -30,8 +30,8 @@ public final class StaticFnMh extends AFnMh {
   
 
   @Override
-  public final StaticFnMh __withMetaImpl(IPersistentMap meta) {
-    return new StaticFnMh(meta, mhs, arities);
+  public final StaticFn __withMetaImpl(IPersistentMap meta) {
+    return new StaticFn(meta, mhs, arities);
   }
   
   @Override
@@ -58,7 +58,7 @@ public final class StaticFnMh extends AFnMh {
     return a;
   }
 
-  private StaticFnMh(IPersistentMap meta,
+  private StaticFn(IPersistentMap meta,
                      MethodHandle[] mhs,
                      MethodHandle[] arities) {
     super(meta);
@@ -66,14 +66,14 @@ public final class StaticFnMh extends AFnMh {
     this.arities = arities;
   }
 
-  private StaticFnMh(IPersistentMap meta, MethodHandle[] mhs) {
+  private StaticFn(IPersistentMap meta, MethodHandle[] mhs) {
     this(meta, mhs, spreadMhs(mhs));
   }
 
   // Pre-condition: Non-empty `mhs` is sorted by strictly ascending
   // parameter count (aka arity).  Only the last MethodHandle can be
   // varargs.
-  public static final StaticFnMh create(MethodHandle[] mhs) {
-    return new StaticFnMh(null, mhs);
+  public static final StaticFn create(MethodHandle[] mhs) {
+    return new StaticFn(null, mhs);
   }
 }

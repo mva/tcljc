@@ -74,8 +74,8 @@
 
 (deftest static-method-wrapper
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
-            [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "rcons~2"
                      "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;"]]])
              (ARETURN)]
@@ -103,8 +103,8 @@
 (deftest static-method-wrapper-elided
   (is (= '[[(CLASS Vx [PUBLIC] "pkg/ns0/_10")
             
-            [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "cons" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC RT "cons"
                      "(Ljava/lang/Object;Ljava/lang/Object;)Lclojure/lang/ISeq;"]]])
              (ARETURN)]

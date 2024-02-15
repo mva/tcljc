@@ -69,8 +69,8 @@
             [(FIELD [PUBLIC STATIC FINAL TRANSIENT]
                     "cfn" "Lclojure/lang/IPersistentMap;")]
             
-            [(METHOD [PUBLIC STATIC FINAL] "add2" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "add2" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "add2~2" "(II)I"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "add2~2" "(II)I")
@@ -81,8 +81,8 @@
              (IADD)
              (IRETURN)]
             
-            [(METHOD [PUBLIC STATIC FINAL] "mk-add1" "()Ltinyclj/lang/StaticFnMh;")
-             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFnMh;"
+            [(METHOD [PUBLIC STATIC FINAL] "mk-add1" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
                    [[STATIC . "mk-add1~1" "(I)Ltinyclj/lang/AFnMh;"]]])
              (ARETURN)]
             [(METHOD [PUBLIC STATIC FINAL] "mk-add1~1" "(I)Ltinyclj/lang/AFnMh;")
@@ -95,7 +95,7 @@
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
 
-             (INVOKESTATIC . "add2" "()Ltinyclj/lang/StaticFnMh;")
+             (INVOKESTATIC . "add2" "()Ltinyclj/lang/StaticFn;")
              (ACONST_NULL)
              (INVOKEVIRTUAL AFnMh "withMeta" "(Lclojure/lang/IPersistentMap;)Lclojure/lang/IObj;")
              (INVOKEINTERFACE IObj "meta" "()Lclojure/lang/IPersistentMap;" :itf)
@@ -183,7 +183,7 @@
                  (def mk-add1 (fn* mk-add1 ^auto-return-type [^int a]
                                    (fn* add1 ^int [^int b]
                                         (+ a b))))
-                 ;; meta on StaticFnMh
+                 ;; meta on StaticFn
                  (def sfn (.meta (.withMeta add2 nil)))
                  ;; meta on capturing fn
                  (def cfn (.meta (.withMeta (mk-add1 1) nil)))]))))
