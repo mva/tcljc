@@ -1183,10 +1183,10 @@
                               (-> (mapv consume-for-descriptor op+argv)
                                   (x/fix-vararg-array)))))))
 
-       (compile-executable-as-fn ^Expr [^Class owner ^Symbol sym ^Class* ptags]
+       (compile-member-as-fn ^Expr [^Class owner ^Symbol sym ^Class* ptags]
          (let [nm (name sym)]
-           (when-some [es (seq (resolve/executables owner nm ptags))]
-             (when (some? (next es))
+           (when-some [ms (resolve/members owner nm ptags)]
+             (when (some? (next ms))
                (-> (str "multiple " (if (= nm "new") "constructors" "methods")
                         " matching ")
                    (wrong/unresolved-interop nm owner {})))
@@ -1195,8 +1195,8 @@
                    unique-mnm (.pick-unique-mnm (compile-io env)
                                                 (.mnm-path env) nil
                                                 (list 'fn* sym))]
-               (sig/fn-form-executable sym tp level unique-mnm
-                                       owner (first es))))))
+               (sig/fn-form-member sym tp level unique-mnm
+                                   owner (first ms))))))
        
        (quote-value-of [m ^Keyword k]
          (if-some [e (find m k)]
@@ -1222,7 +1222,7 @@
            (if-some [tp (ctx/get-type (symbol nil ns-part) (.ctx env))]
              (or (invoke/try-load-static-field x-env tp (name sym))
                  (let [ptags (sig/param-tags-of sym (.ctx env))]
-                   (compile-executable-as-fn tp sym ptags)))
+                   (compile-member-as-fn tp sym ptags)))
              (wrong-unresolved-nmsp ns-part sym))))
        (compile-atom ^Expr [form]
          (if (instance? IMeta form)
@@ -1335,7 +1335,7 @@
                               (rest form)))
 
              :else nil)))
-       (compile-static-invoke-form ^Expr [^Symbol op-form form]
+       (compile-class-member-form ^Expr [^Symbol op-form form]
          ;; pre: (some? (namespace op-form))
          (let [ns-part (namespace op-form)]
            (if-some [x (classname-expr (symbol nil ns-part) (.ctx env))]
@@ -1344,9 +1344,9 @@
                    opts (-> resolve/opts-static
                             (bit-set resolve/flag-no-candidate-returns-nil))]
                (if-some [ptags (sig/param-tags-of op-form (.ctx env))]
-                 (compile-executable-as-fn owner op-form ptags)
+                 (compile-member-as-fn owner op-form ptags)
                  (or (invoke/member x-env owner (name op-form) argv opts)
-                     (compile-executable-as-fn owner op-form nil))))
+                     (compile-member-as-fn owner op-form nil))))
              (wrong-unresolved-nmsp ns-part op-form))))
        (compile-list ^Expr [^ISeq form]
          (let [op-form (first form)]
@@ -1358,7 +1358,7 @@
                                (resolve-sname-global op-form (.ctx env))
                                (wrong-unresolved op-form))
                            (or (resolve-qname-global op-form (.ctx env))
-                               (compile-static-invoke-form op-form form)
+                               (compile-class-member-form op-form form)
                                (wrong-unresolved op-form)))]
                    (cond
                      (or (x/invoke-xref-static-method? x) (x/invoke-poly? x))

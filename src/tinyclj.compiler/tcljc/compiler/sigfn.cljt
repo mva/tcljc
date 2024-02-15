@@ -19,7 +19,7 @@
    (tcljc.expr FnForm Arity ArityCode Binding)
    (tcljc.context Ctx)
    (clojure.lang Symbol IPersistentVector)
-   (java.lang.reflect Method Constructor Executable Modifier)
+   (java.lang.reflect Method Constructor Field Executable Member Modifier)
    (java.util.concurrent CompletableFuture)))
 
 (defn wrong-class [x]
@@ -237,36 +237,46 @@
                       (tag-of* ptag false nil ctx)))))
       a)))
 
-(letfn [(at-of-executable ^Arity [^Class owner ^Executable exec ^int level]
-          (let [ptypes (cond->> (.getParameterTypes exec)
-                         (and (instance? Method exec)
-                              (not (Modifier/isStatic (.getModifiers exec))))
-                         (cons owner))
-                paramv (mapv #(mk-param level '_ ^Class %1) ptypes)
-                rtype (if (instance? Method exec)
-                        (.getReturnType ^Method exec)
-                        owner)
-                method-name (if (instance? Method exec)
-                              (.getName ^Method exec)
-                              "new")]
-            (Arity. paramv rtype (count paramv) (.isVarArgs exec) false
-                    nil method-name 'this level cfg/no-line-number nil
-                    (util/mk-shm) 0)))
+(letfn [(member-ptypes [^Class owner ^Member m]
+          (if (instance? Field m)
+            (cons owner nil)            ;virtual field
+            (cond->> (.getParameterTypes ^Executable m)
+              (and (instance? Method m)
+                   (not (Modifier/isStatic (.getModifiers m))))
+              (cons owner))))
+        (member-rtype ^Class [^Class owner ^Member m]
+          (cond
+            (instance? Method m) (.getReturnType ^Method m)
+            (instance? Field m) (.getType ^Field m)
+            :else owner))               ;constructor
+        (at-of-member ^Arity [^Class owner ^Member m ^int level]
+          (let [paramv (mapv #(mk-param level '_ ^Class %1)
+                             (member-ptypes owner m))
+                method-name (if (instance? Constructor m)
+                              "new"
+                              (.getName m))
+                varargs? (and (instance? Executable m)
+                              (.isVarArgs ^Executable m))]
+            (Arity. paramv (member-rtype owner m) (count paramv)
+                    varargs? false nil method-name 'this level
+                    cfg/no-line-number nil (util/mk-shm) 0)))
         
-        (ac-of-executable ^ArityCode [^Class owner ^Executable exec
-                                           ^Arity at]
-          (let [mhd (if (instance? Method exec)
-                      (rt/mhd-of-method owner ^Method exec)
-                      (rt/mhd-of-constructor owner ^Constructor exec))]
+        (ac-of-member ^ArityCode [^Class owner ^Member m ^Arity at]
+          (let [mhd (cond (instance? Method m)
+                          (rt/mhd-of-method owner ^Method m)
+                          (instance? Field m)
+                          (rt/mhd-of-field owner ^Field m)
+                          :else
+                          (rt/mhd-of-constructor owner ^Constructor m))]
             (ArityCode. at nil x/expr-empty mhd mhd false)))]
   
-  (defn fn-form-executable          ;aka "method/constructor as value"
+  (defn fn-form-member ;aka "method/constructor/virtual-field as value"
     ^FnForm [form ^Class type ^int level ^String unique-mnm
-             ^Class owner ^Executable exec]
-    (let [at (at-of-executable owner exec level)
+             ^Class owner ^Member m]
+    (let [at (at-of-member owner m level)
           at-sigs [at]
           body-fut (-> (doto (new ArityCode* 1)
-                         (aset 0 (ac-of-executable owner exec at)))
+                         (aset 0 (ac-of-member owner m at)))
                        (CompletableFuture/completedFuture))
           fnc (x/mk-fn-code (count at-sigs) false)]
       (FnForm. x/flags-no-ln type [] nil level unique-mnm

@@ -72,8 +72,8 @@
 ;;; ------------------------------------------------------------------------
 
 ;;; `ptags` of nil does not contrain arity or parameter types of
-;;; constructors or methods.
-(defn executables [^Class owner ^String nm ^Class* ptags]
+;;; constructors, methods, or virtual fields.
+(defn members [^Class owner ^String nm ^Class* ptags] ;nil if there is no match
   (letfn [(parameters-match? ^boolean [^Class* ptags ^Class* ptypes]
             (loop [i (dec (alength ptypes))]
               (cond
@@ -109,15 +109,19 @@
                            (matches-ptags? (.getParameterTypes c))
                            (conj c)))
                        (dec i)))))]
-    (if (= nm "new")
-      (if-some [c (when (some? ptags)
-                    (constructor-exact owner ptags))]
-        (cons c nil)
-        (constructors (.getConstructors owner)))
-      (if-some [m (when (some? ptags)
-                    (method-exact opts-static-or-virtual owner nm ptags))]
-        (cons m nil)
-        (methods (.getMethods owner))))))
+    
+    (or (if (= nm "new")
+          (if-some [c (when (some? ptags)
+                        (constructor-exact owner ptags))]
+            (cons c nil)
+            (seq (constructors (.getConstructors owner))))
+          (if-some [m (when (some? ptags)
+                        (method-exact opts-static-or-virtual owner nm ptags))]
+            (cons m nil)
+            (seq (methods (.getMethods owner)))))
+        (when (or (nil? ptags) (zero? (alength ptags)))
+          (when-some [f (field-exact opts-virtual owner nm)]
+            (cons f nil))))))
 
 ;;; ------------------------------------------------------------------------
 
