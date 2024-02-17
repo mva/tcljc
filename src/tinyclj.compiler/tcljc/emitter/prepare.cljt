@@ -106,7 +106,7 @@
         body-expr (x/first-arg ^LoopBody (.body-expr ac))]
     
     (letfn [(arity-static* ^ArityCode [^DirectMethodHandleDesc load-mh-ext]
-              (if (and (x/invoke-xref-not-special? body-expr)
+              (if (and (x/invoke-xref? body-expr)
                        (jb/same-class? (.rtype at) (x/type body-expr))
                        (parameters-to-args? (.paramv at) (x/argv body-expr)))
                 ;; elide method definition, use wrapped invoke directly

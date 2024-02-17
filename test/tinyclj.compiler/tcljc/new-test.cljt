@@ -10,9 +10,15 @@
             [tinyclj.alpha.ptest :refer :all]))
 
 (deftest new-object-test
+  ;; materialized as dedicated method
   (is (= '[(NEW Object) (DUP)
            (INVOKESPECIAL Object "<init>" "()V")
            (ARETURN)]
+         (asm-expr (identity (new Object)))))
+  (is (instance? Object (call-expr (identity (new Object)))))
+
+  ;; elided method definition
+  (is (= '[fn-arity-method-elided]
          (asm-expr (new Object))))
   (is (instance? Object (call-expr (new Object)))))
 

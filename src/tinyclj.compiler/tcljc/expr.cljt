@@ -354,12 +354,6 @@
   (and (invoke-xref? x)
        (= (-> ^InvokeXref x .mhd .refKind) #_REF_invokeStatic 6)))
 
-(defn invoke-xref-not-special? ^boolean [^Expr x]
-  (and (invoke-xref? x)
-       (case (-> ^InvokeXref x .mhd .refKind)
-         (#_REF_invokeSpecial 7 #_REF_newInvokeSpecial 8) false
-         #_else true)))
-
 (defn settable-getter? ^boolean [^Expr x]
   (and (invoke-xref? x) (.settable-field? ^InvokeXref x)))
 

@@ -239,36 +239,28 @@
             
             [(METHOD [PUBLIC STATIC FINAL] "-_GT_Vec3" "()Ltinyclj/lang/StaticFn;")
              (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
-                   [[STATIC . "-_GT_Vec3~3" "(FFF)Lpkg/ns0/Vec3;"]]
-                   #_[[CONSTRUCTOR Vec3 "<init>" "(FFF)V"]]])
+                   [[CONSTRUCTOR Vec3 "<init>" "(FFF)V"]]])
              (ARETURN)]
-            [(METHOD [PUBLIC STATIC FINAL] "-_GT_Vec3~3" "(FFF)Lpkg/ns0/Vec3;")
-             ["LOCAL 0: float x"]
-             ["LOCAL 1: float y"]
-             ["LOCAL 2: float z"]
-             (NEW Vec3)
-             (DUP)
-             (FLOAD_0)
-             (FLOAD_1)
-             (FLOAD_2)
-             (INVOKESPECIAL Vec3 "<init>" "(FFF)V")
-             (ARETURN)]
-            
+
             
             [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
              (LDC "pkg.ns0")
              (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
 
+             (NEW Vec3)
+             (DUP)
              (FCONST_1)
              (FCONST_1)
              (FCONST_1)
-             (INVOKESTATIC . "-_GT_Vec3~3" "(FFF)Lpkg/ns0/Vec3;")
+             (INVOKESPECIAL Vec3 "<init>" "(FFF)V")
              (PUTSTATIC . "x" "Lpkg/ns0/Vec3;")
              
+             (NEW Vec3)
+             (DUP)
              (FCONST_1)
              (FCONST_1)
              (FCONST_1)
-             (INVOKESTATIC . "-_GT_Vec3~3" "(FFF)Lpkg/ns0/Vec3;")
+             (INVOKESPECIAL Vec3 "<init>" "(FFF)V")
              (PUTSTATIC . "y" "Lpkg/ns0/Vec3;")
              
              (RETURN)]]

@@ -369,14 +369,19 @@
               (let [x (first xs)]
                 (and (seq? x)
                      (= 'METHOD (first x))
-                     (= mnm (nth x 2))))))]
+                     (= mnm (nth x 2))))))
+          (body-as-vector [m-seq]
+            (if (some? m-seq)
+              (->> (first m-seq)        ;first method
+                   (rest)               ;drop method header
+                   (vec))               ;return as vector
+              '[fn-arity-method-elided]))]
     (->> (nmsp (ns-with-fnbody params form))
          (filter (matches-class? "pkg/ns0/_10")) ;seq of at most one class
-         (first)                        ;first class or nil
+         (first)                                 ;first class or nil
          (filter (matches-method? (method-name params))) ;methods for name
-         (first)                        ;first method or nil
-         (rest)                         ;drop method header
-         (vec))))                       ;return as vector
+         (seq)
+         (body-as-vector))))
 
 ;;; If `form` is optimized away completely because it can be delegated
 ;;; to an existing method instance, then wrap it in a ```(identity
