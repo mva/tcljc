@@ -155,7 +155,7 @@
                                         (rt/describe-class java.util.Arrays)
                                         "copyOf" mtd)]
      (-> (x/invoke-xref x-env param-tp
-                        [a (x/array-length (x/dup atp))] nil mhd false)
+                        [a (x/array-length (x/dup atp))] mhd)
          (xf/checkcast atp)))))
 
 (def ^:private xaload-form

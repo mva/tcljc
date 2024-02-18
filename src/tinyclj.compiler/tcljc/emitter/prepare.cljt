@@ -107,6 +107,7 @@
     
     (letfn [(arity-static* ^ArityCode [^DirectMethodHandleDesc load-mh-ext]
               (if (and (x/invoke-xref? body-expr)
+                       (= (.varargs? ^InvokeXref body-expr) (.varargs? at))
                        (jb/same-class? (.rtype at) (x/type body-expr))
                        (parameters-to-args? (.paramv at) (x/argv body-expr)))
                 ;; elide method definition, use wrapped invoke directly

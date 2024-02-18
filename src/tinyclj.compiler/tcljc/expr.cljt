@@ -327,19 +327,21 @@
                      ^:pass-to-super-constructor ^IPersistentVector argv
                      ^:pass-to-super-constructor ^Object const-value
                      ^DirectMethodHandleDesc mhd
+                     ^boolean varargs?  ;if `mhd` denotes a varargs Executable
                      ^boolean settable-field?]
   Expr
   (with-code [this tp argv]
-    (InvokeXref. (flags-of this) tp argv (.const-value this) mhd settable-field?)))
+    (InvokeXref. (flags-of this) tp argv (.const-value this) mhd
+                 varargs? settable-field?)))
 
 (defn invoke-xref
   (^InvokeXref [^long flags ^Class type ^IPersistentVector argv
                 ^DirectMethodHandleDesc mhd]
-   (invoke-xref flags type argv nil mhd false))
+   (invoke-xref flags type argv nil mhd false false))
   (^InvokeXref [^long flags ^Class type ^IPersistentVector argv
                 ^Object const-value ^DirectMethodHandleDesc mhd
-                ^boolean settable-field?]
-   (InvokeXref. flags type argv const-value mhd settable-field?)))
+                ^boolean varargs? ^boolean settable-field?]
+   (InvokeXref. flags type argv const-value mhd varargs? settable-field?)))
 
 (defn invoke-xref? ^boolean [^Expr x]
   (instance? InvokeXref x))

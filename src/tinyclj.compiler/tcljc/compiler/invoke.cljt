@@ -237,7 +237,7 @@
         (invoke-method* ^Expr [^long x-env ^Class owner ^Method m
                                ^IPersistentVector argv]
           (x/invoke-xref x-env (.getReturnType m) argv nil
-                         (rt/mhd-of-method owner m) false))
+                         (rt/mhd-of-method owner m) (.isVarArgs m) false))
         (invoke-method ^Expr [^long x-env ^Class owner ^Alignment align
                               ^IPersistentVector argv]
           (let [m ^Method (.exec align)
@@ -251,7 +251,7 @@
         (invoke-constr* ^Expr [^long x-env ^Class owner ^Constructor c
                                ^IPersistentVector argv]
           (x/invoke-xref x-env owner argv nil
-                         (rt/mhd-of-constructor owner c) false))
+                         (rt/mhd-of-constructor owner c) (.isVarArgs c) false))
         (invoke-constr ^Expr [^long x-env ^Class owner
                               ^Alignment align ^IPersistentVector argv]
           (let [c ^Constructor (.exec align)
@@ -265,7 +265,7 @@
     (if-some [f (when (zero? (arg-count as))
                   (resolve/field-exact opts owner nm))]
       (x/invoke-xref x-env (.getType f) argv nil
-                     (rt/mhd-of-field owner f) (settable? f))
+                     (rt/mhd-of-field owner f) false (settable? f))
       (wrong-resolve opts owner nm as ())))
   
   ;; pre: `flag-method` is set, as well exactly one of `flag-static`

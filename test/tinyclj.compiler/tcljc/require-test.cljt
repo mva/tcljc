@@ -382,3 +382,242 @@
                  (ns pkg.ns0
                    (:require pkg.exp))
                  (def f (fn* f [] (pkg.exp/simple-macro)))]))))
+
+(deftest import-varargs-fn-wrapping-constructor
+  (is (= '[[(CLASS Vx [PUBLIC FINAL] "pkg/exp/T" nil "java/lang/Object" [IType])
+            [(FIELD [PUBLIC FINAL] "value" "Ljava/lang/Object;")]
+            [(FIELD [PUBLIC FINAL] "hooks" "[Ljava/util/function/Consumer;")]
+            
+            [(METHOD [PUBLIC] "<init>" "(Ljava/lang/Object;[Ljava/util/function/Consumer;)V")
+             (ALOAD_0)
+             (INVOKESPECIAL Object "<init>" "()V")
+             (ALOAD_0)
+             (ALOAD_1)
+             (PUTFIELD . "value" "Ljava/lang/Object;")
+             (ALOAD_0)
+             (ALOAD_2)
+             (PUTFIELD . "hooks" "[Ljava/util/function/Consumer;")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/exp/_10")
+            [(METHOD [PUBLIC STATIC FINAL] "mk-t-varargs-constr"
+                     "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
+                   [[STATIC . "mk-t-varargs-constr~2"
+                     "(Ljava/lang/Object;[Ljava/util/function/Consumer;)Lpkg/exp/T;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL VARARGS] "mk-t-varargs-constr~2"
+                     "(Ljava/lang/Object;[Ljava/util/function/Consumer;)Lpkg/exp/T;")
+             ["LOCAL 0: Object value"]
+             ["LOCAL 1: Consumer[] hooks"]
+             (NEW T)
+             (DUP)
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESPECIAL T "<init>" "(Ljava/lang/Object;[Ljava/util/function/Consumer;)V")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "mk-t-varargs-new" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
+                   [[STATIC . "mk-t-varargs-new~2"
+                     "(Ljava/lang/Object;[Ljava/util/function/Consumer;)Lpkg/exp/T;"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL VARARGS] "mk-t-varargs-new~2"
+                     "(Ljava/lang/Object;[Ljava/util/function/Consumer;)Lpkg/exp/T;")
+             ["LOCAL 0: Object value"]
+             ["LOCAL 1: Consumer[] hooks"]
+             (NEW T)
+             (DUP)
+             (ALOAD_0)
+             (ALOAD_1)
+             (INVOKESPECIAL T "<init>" "(Ljava/lang/Object;[Ljava/util/function/Consumer;)V")
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "mk-t-fixargs" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
+                   [[CONSTRUCTOR T "<init>"
+                     "(Ljava/lang/Object;[Ljava/util/function/Consumer;)V"]]])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.exp")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/exp/___" nil "pkg/exp/_10")
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "c"
+                    "Ljava/util/function/Consumer;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "t-1"
+                    "Lpkg/exp/T;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "t-2"
+                    "Lpkg/exp/T;")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "t-3"
+                    "Lpkg/exp/T;")]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "Consumer~1" "(Ljava/lang/Object;)V")
+             ["LOCAL 0: Object x"]
+             (RETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (LDC ___)
+             (INVOKESTATIC RT "ensureInitialized" "(Ljava/lang/Class;)V")
+             (INVOKEDYNAMIC "accept" "()Ljava/util/function/Consumer;"
+                            :bsm-metafactory
+                            ["MethodTypeDesc[(Object)void]"
+                             [STATIC . "Consumer~1" "(Ljava/lang/Object;)V"]
+                             "MethodTypeDesc[(Object)void]"])
+             (PUTSTATIC . "c" "Ljava/util/function/Consumer;")
+             
+             (ACONST_NULL)
+             (ICONST_1)
+             (ANEWARRAY "Consumer[]")
+             (DUP)
+             (ICONST_0)
+             (GETSTATIC . "c" "Ljava/util/function/Consumer;")
+             (AASTORE)
+             (INVOKESTATIC _10 "mk-t-varargs-constr~2" "(Ljava/lang/Object;[Ljava/util/function/Consumer;)Lpkg/exp/T;")
+             (PUTSTATIC . "t-1" "Lpkg/exp/T;")
+             
+             (ACONST_NULL)
+             (ICONST_1)
+             (ANEWARRAY "Consumer[]")
+             (DUP)
+             (ICONST_0)
+             (GETSTATIC . "c" "Ljava/util/function/Consumer;")
+             (AASTORE)
+             (INVOKESTATIC _10 "mk-t-varargs-new~2" "(Ljava/lang/Object;[Ljava/util/function/Consumer;)Lpkg/exp/T;")
+             (PUTSTATIC . "t-2" "Lpkg/exp/T;")
+             
+             (NEW T)
+             (DUP)
+             (ACONST_NULL)
+             (ICONST_0)
+             (ANEWARRAY "Consumer[]")
+             (INVOKESPECIAL T "<init>" "(Ljava/lang/Object;[Ljava/util/function/Consumer;)V")
+             (PUTSTATIC . "t-3" "Lpkg/exp/T;")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "pkg.exp,tinyclj.core")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.exp)
+                 (import* java.util.function.Consumer)
+                 (deftype* pkg.exp/T pkg.exp.T
+                   [value ^Consumer* hooks]
+                   :implements [clojure.lang.IType])
+                 (import* pkg.exp.T)
+                 (def mk-t-varargs-constr
+                   (fn* mk-t-varargs-constr ^T [value & ^Consumer* hooks]
+                        (T. value hooks)))
+                 (def mk-t-varargs-new
+                   (fn* mk-t-varargs-new ^T [value & ^Consumer* hooks]
+                        (T/new value hooks)))
+                 (def mk-t-fixargs pkg.exp.T/new)
+                 
+                 (ns pkg.ns0
+                   (:require pkg.exp))
+                 (import* java.util.function.Consumer)
+                 (def c (^Consumer fn* [x] nil))
+                 (def t-1 (pkg.exp/mk-t-varargs-constr nil c))
+                 (def t-2 (pkg.exp/mk-t-varargs-new nil c))
+                 (def t-3 (pkg.exp/mk-t-fixargs nil (new Consumer* 0)))]))))
+
+(deftest import-varargs-fn-wrapping-static-method
+  (is (= '[[(CLASS Vx [PUBLIC] "pkg/exp/_10")
+            [(METHOD [PUBLIC STATIC FINAL] "hash-varargs-static"
+                     "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
+                   [[STATIC . "hash-varargs-static~1" "([Ljava/lang/Object;)I"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL VARARGS] "hash-varargs-static~1"
+                     "([Ljava/lang/Object;)I")
+             ["LOCAL 0: Object[] objs"]
+             (ALOAD_0)
+             (INVOKESTATIC Arrays "hashCode" "([Ljava/lang/Object;)I")
+             (IRETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "hash-varargs-member"
+                     "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
+                   [[STATIC . "hash-varargs-member~1" "([Ljava/lang/Object;)I"]]])
+             (ARETURN)]
+            [(METHOD [PUBLIC STATIC FINAL VARARGS] "hash-varargs-member~1" "([Ljava/lang/Object;)I")
+             ["LOCAL 0: Object[] objs"]
+             (ALOAD_0)
+             (INVOKESTATIC Arrays "hashCode" "([Ljava/lang/Object;)I")
+             (IRETURN)]
+            
+            [(METHOD [PUBLIC STATIC FINAL] "hash-from-member" "()Ltinyclj/lang/StaticFn;")
+             (LDC [:bsm-static-fn "_" "Ltinyclj/lang/StaticFn;"
+                   [[STATIC Arrays "hashCode" "([Ljava/lang/Object;)I"]]])
+             (ARETURN)]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.exp")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (RETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/exp/___" nil "pkg/exp/_10")
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "tinyclj.core")
+             (ARETURN)]]
+           
+           [(CLASS Vx [PUBLIC] "pkg/ns0/_10")
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "h-1" "I")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "h-2" "I")]
+            [(FIELD [PUBLIC STATIC FINAL TRANSIENT] "h-3" "I")]
+            
+            [(METHOD [PUBLIC STATIC] "<clinit>" "()V")
+             (LDC "pkg.ns0")
+             (INVOKESTATIC RT "createNamespace" "(Ljava/lang/String;)V")
+             (LDC ___)
+             (INVOKESTATIC RT "ensureInitialized" "(Ljava/lang/Class;)V")
+             
+             (ICONST_1)
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
+             (LDC "foo")
+             (AASTORE)
+             (INVOKESTATIC _10 "hash-varargs-static~1" "([Ljava/lang/Object;)I")
+             (PUTSTATIC . "h-1" "I")
+             
+             (ICONST_1)
+             (ANEWARRAY "Object[]")
+             (DUP)
+             (ICONST_0)
+             (LDC "bar")
+             (AASTORE)
+             (INVOKESTATIC _10 "hash-varargs-member~1" "([Ljava/lang/Object;)I")
+             (PUTSTATIC . "h-2" "I")
+             
+             (ICONST_0)
+             (ANEWARRAY "Object[]")
+             (INVOKESTATIC Arrays "hashCode" "([Ljava/lang/Object;)I")
+             (PUTSTATIC . "h-3" "I")
+             (RETURN)]]
+           [(CLASS Vx [PUBLIC] "pkg/ns0/___" nil "pkg/ns0/_10")
+            [(METHOD [PUBLIC STATIC FINAL] "requires~1" "()Ljava/lang/String;")
+             (LDC "pkg.exp,tinyclj.core")
+             (ARETURN)]]]
+         (nmsp '[(ns pkg.exp)
+                 (import* java.util.Arrays)
+                 (def hash-varargs-static
+                   (fn* hash-varargs-static ^int [& ^Object* objs]
+                        (Arrays/hashCode objs)))
+                 (def hash-varargs-member
+                   (fn* hash-varargs-member ^int [& ^Object* objs]
+                        (^{:param-tags [Object*]} Arrays/hashCode objs)))
+                 (def hash-from-member ^{:param-tags [Object*]} Arrays/hashCode)
+                 
+                 (ns pkg.ns0
+                   (:require pkg.exp))
+                 (def h-1 (pkg.exp/hash-varargs-static "foo"))
+                 (def h-2 (pkg.exp/hash-varargs-member "bar"))
+                 (def h-3 (pkg.exp/hash-from-member (new Object* 0)))]))))

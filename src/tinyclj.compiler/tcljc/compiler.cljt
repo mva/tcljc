@@ -239,7 +239,7 @@
     (if (and (x/const-value? x) (x/const-value? m))
       (x/const tp (with-meta (x/recover-primitive-const x)
                     (x/recover-primitive-const m)))
-      (x/invoke-xref x/flags-no-ln tp [x m] nil rt/mhd-with-meta false))))
+      (x/invoke-xref x/flags-no-ln tp [x m] rt/mhd-with-meta))))
 
 (defn- coll-literal ^Expr [^Class tp elems ^DirectMethodHandleDesc mhd]
   (if (every? x/const-value? elems)
@@ -251,7 +251,7 @@
                     rt/mhd-list (or (list* cs) ())
                     (throw (IllegalArgumentException.)))))
     (let [argv [(invoke/as-vararg-array (vec elems) jb/ObjectArray)]]
-      (x/invoke-xref x/flags-no-ln tp argv mhd))))
+      (x/invoke-xref x/flags-no-ln tp argv nil mhd true false))))
 
 (defn- compile-quote ^Expr [form ^Ctx ctx]
   (if (instance? IMeta form)
