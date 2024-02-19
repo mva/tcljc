@@ -25,7 +25,7 @@
                        DirectMethodHandleDesc$Kind MethodHandleDesc
                        MethodTypeDesc ConstantDescs)
    (java.lang.invoke MethodHandles$Lookup TypeDescriptor$OfField)
-   (java.lang.reflect Member Method Field)
+   (java.lang.reflect Member Method Constructor Field Modifier)
    (java.util.concurrent Future))
   (:refer-clojure :exclude [type identity pop]))
 
@@ -342,6 +342,23 @@
                 ^Object const-value ^DirectMethodHandleDesc mhd
                 ^boolean varargs? ^boolean settable-field?]
    (InvokeXref. flags type argv const-value mhd varargs? settable-field?)))
+
+(defn invoke-member ^InvokeXref [^long flags ^Class owner ^Member member
+                                 ^IPersistentVector argv]
+  (condp instance? member
+    Method
+    (let [m ^Method member]
+      (invoke-xref flags (.getReturnType m) argv nil
+                   (rt/mhd-of-method owner m) (.isVarArgs m) false))
+    Constructor
+    (let [c ^Constructor member]
+      (invoke-xref flags owner argv nil
+                   (rt/mhd-of-constructor owner c) (.isVarArgs c) false))
+    Field
+    (let [f ^Field member
+          settable? (not (Modifier/isFinal (.getModifiers f)))]
+      (invoke-xref flags (.getType f) argv nil
+                   (rt/mhd-of-field owner f) false settable?))))
 
 (defn invoke-xref? ^boolean [^Expr x]
   (instance? InvokeXref x))
