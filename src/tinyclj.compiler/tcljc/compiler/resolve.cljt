@@ -41,10 +41,21 @@
 (defn first-argument-index ^int [^int opts] ;skips receiver
   (if (bit-test opts flag-virtual) 1 0))
 
+
+;;; Problem: class MethodHandle.PolymorphicSignature is not public
+(def ^:private ann-polymorphic-signature
+  (Class/forName "java.lang.invoke.MethodHandle$PolymorphicSignature"
+                 false (ClassLoader/getPlatformClassLoader)))
+
+(defn signature-polymorphic? ^boolean [^Executable e]
+  (and (.isVarArgs e) (.isAnnotationPresent e ann-polymorphic-signature)))
+
+;;; Returns nil for PolymorphicSignature method.
 (defn method-exact ^Method [^int opts ^Class owner ^String nm ^Class* atypes]
   (letfn [(method-or-throw ^Method [^Class owner] ;throws NoSuchMethodException
             (let [m (.getMethod owner nm atypes)] ;works for class and array
-              (when (static-virtual-match? opts m)
+              (when (and (static-virtual-match? opts m)
+                         (not (signature-polymorphic? m)))
                 m)))]
     (try
       (method-or-throw owner)
@@ -55,9 +66,12 @@
             (catch NoSuchMethodException _
               nil)))))))
 
+;;; Returns nil for PolymorphicSignature constructor.
 (defn constructor-exact ^Constructor [^Class owner ^Class* atypes]
   (try
-    (.getConstructor owner atypes)
+    (let [c (.getConstructor owner atypes)]
+      (when (not (signature-polymorphic? c))
+        c))
     (catch NoSuchMethodException _
       nil)))
 

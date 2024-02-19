@@ -46,21 +46,12 @@
     (tp/argument-conversion (aget (.atypes as) aidx) ptype)))
 
 
-;;; Problem: class MethodHandle.PolymorphicSignature is not public
-(def ^:private ann-polymorphic-signature
-  (Class/forName "java.lang.invoke.MethodHandle$PolymorphicSignature"
-                 false (ClassLoader/getPlatformClassLoader)))
-
 (deftype Alignment [^Executable exec
                     ^TypeConversion* fixargs
                     ^TypeConversion* varargs
                     ^Class va-array-type]) ;array type, or nil if polymorphic
 
-(letfn [(signature-polymorphic? ^boolean [^Executable e] ;pre: e.isVarArgs()
-          (and (instance? Method e)
-               (.isAnnotationPresent ^Method e ann-polymorphic-signature)))
-        
-        (fixarg-conversions ^TypeConversion* [^ArgSig as ^int n-fixargs
+(letfn [(fixarg-conversions ^TypeConversion* [^ArgSig as ^int n-fixargs
                                               ^Class* ptypes]
           (let [atc (new TypeConversion* n-fixargs)]
             (loop [i 0]
@@ -108,21 +99,26 @@
   (defn- alignment ^Alignment [^ArgSig as ^Executable e]
     ;; pre: (parameter-count-match? atypes e)
     (let [ptypes (.getParameterTypes e)
+          polymorphic? (resolve/signature-polymorphic? e)
           varargs? (and (.isVarArgs e)
                         (not (and (= (arg-count as) (alength ptypes))
                                   (jb/jvm-assignable-to?
                                    (last-arg-type as)
                                    (aget ptypes (dec (alength ptypes)))))))
           n-fixargs (cond-> (alength ptypes)
-                      varargs? (dec))]
+                      (or varargs? polymorphic?) (dec))]
       (when-some [fixargs (fixarg-conversions as n-fixargs ptypes)]
-        (if varargs?
+        (cond
+          polymorphic?
+          (Alignment. e fixargs (polyarg-conversions as n-fixargs) nil)
+
+          varargs?
           (let [array-tp (aget ptypes (dec (alength ptypes)))
                 arg-tp (.getComponentType array-tp)]
-            (if (signature-polymorphic? e)
-              (Alignment. e fixargs (polyarg-conversions as n-fixargs) nil)
-              (when-some [varargs (vararg-conversions as n-fixargs arg-tp)]
-                (Alignment. e fixargs varargs array-tp))))
+            (when-some [varargs (vararg-conversions as n-fixargs arg-tp)]
+              (Alignment. e fixargs varargs array-tp)))
+
+          :else
           (Alignment. e fixargs nil nil)))))
 
   (defn as-vararg-array ^Expr [^IPersistentVector argv ^Class va-array-type]

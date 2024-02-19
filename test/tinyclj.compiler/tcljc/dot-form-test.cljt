@@ -219,6 +219,48 @@
          (asm-expr [^java.lang.invoke.MethodHandle mh]
                    ^void (.invoke mh)))))
 
+(deftest polymorphic-signature-vs-static-varargs-signature
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           ["LOCAL 1: Object[] objs"]
+           (ALOAD_0)
+           (ALOAD_1)
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "([Ljava/lang/Object;)Ljava/lang/Object;")
+           (ARETURN)]
+         ;; match static signature including result type
+         (asm-expr [^java.lang.invoke.MethodHandle mh ^Object* objs]
+                   (.invoke mh objs))))
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           ["LOCAL 1: Object[] objs"]
+           (ALOAD_0)
+           (ALOAD_1)
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "([Ljava/lang/Object;)I")
+           (IRETURN)]
+         ;; match static signature but not result type
+         (asm-expr ^int [^java.lang.invoke.MethodHandle mh ^Object* objs]
+                   ^int (.invoke mh objs))))
+  
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           ["LOCAL 1: Object obj"]
+           (ALOAD_0)
+           (ALOAD_1)
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "(Ljava/lang/Object;)Ljava/lang/Object;")
+           (ARETURN)]
+         ;; match result type but not static signature
+         (asm-expr [^java.lang.invoke.MethodHandle mh ^Object obj]
+                   (.invoke mh obj))))
+  (is (= '[["LOCAL 0: MethodHandle mh"]
+           ["LOCAL 1: Object obj"]
+           (ALOAD_0)
+           (ALOAD_1)
+           (INVOKEVIRTUAL MethodHandle "invoke"
+                          "(Ljava/lang/Object;)I")
+           (IRETURN)]
+         ;; match neither result type nor static signature
+         (asm-expr ^int [^java.lang.invoke.MethodHandle mh ^Object obj]
+                   ^int (.invoke mh obj)))))
 
 ;; (deftest class-in-op-position
 ;;   ;; happens when (clojure.lang.MapEntry. ...) is missing the dot
