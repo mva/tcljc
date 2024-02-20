@@ -917,8 +917,7 @@
                dyn-ld (ctx/dyn-ld (.ctx env))
                ;; use a one shot class loader derived from `dyn-ld`
                ld (cfg/class-loader-instance dyn-ld "tclj-eph" nil)
-               m (.getDeclaredMethod (class ld) "ephemeralClass"
-                                     (.arrayType Byte/TYPE))]
+               m (.getDeclaredMethod (class ld) "ephemeralClass" byte*)]
            (-> (.invoke m ld (doto (new Object* 1) (aset 0 bs)))
                (cfg/validate-defined-class))))
        (dtp-class-def ^DeftypeDef [^Env env short-sym fq-sym binary-sym

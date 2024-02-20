@@ -77,7 +77,7 @@
   (= n (tinyclj.core/short n)))
 
 (def Object java.lang.Object)
-(def ObjectArray (.arrayType Object))
+(def ObjectArray java.lang.Object*)
 (def String java.lang.String)
 (def Class java.lang.Class)
 (def Pattern java.util.regex.Pattern)

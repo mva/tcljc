@@ -215,7 +215,7 @@
 (defn class-loader-instance ^URLClassLoader [^ClassLoader parent ^String name
                                              source-paths]
   (let [dyn-cl-class (.loadClass parent "tinyclj.lang.DynamicClassLoader")
-        c (.getConstructor dyn-cl-class String (.arrayType URL) ClassLoader)
+        c (.getConstructor dyn-cl-class String URL* ClassLoader)
         urls (->> source-paths (map path-url) (distinct) (into-array URL))]
     (.newInstance c name urls parent)))
 

@@ -3946,7 +3946,7 @@
   {:added "1.0"
    :static true}
   ^Object** [^java.util.Collection coll]
-    (let [ret ^Object** (make-array (.arrayType Object) (. coll (size)))]
+    (let [ret ^Object** (make-array Object* (. coll (size)))]
       (loop [i 0 xs (seq coll)]
         (when xs
           (aset ret i (to-array (first xs)))

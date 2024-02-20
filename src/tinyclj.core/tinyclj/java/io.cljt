@@ -25,12 +25,12 @@
     ^{:doc "Type object for a Java primitive byte array."
       :private true
       }
- byte-array-type (.arrayType Byte/TYPE))
+ byte-array-type byte*)
 
 (def
     ^{:doc "Type object for a Java primitive char array."
       :private true}
- char-array-type (.arrayType Character/TYPE))
+ char-array-type char*)
 
 (defprotocol ^{:added "1.2"} Coercions
   "Coerce between various 'resource-namish' things."
