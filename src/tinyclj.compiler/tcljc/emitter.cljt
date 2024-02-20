@@ -118,7 +118,7 @@
         (doseq [^FnSpec fspec (.fn-specs tlf)]
           (.fn-methods (-> fspec .fn-form .!fnc .emit-plan) cb)))
       (-> (.withFlags cb ClassFile/ACC_PUBLIC)
-          (.withMethodBody ConstantDescs/CLASS_INIT_NAME rt/mtd-void-void
+          (.withMethodBody ConstantDescs/CLASS_INIT_NAME ConstantDescs/MTD_void
                            (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_STATIC)
                            (cf/with-xbh [xb]
                              (bytecode/emit-body xb (clinit))))))))

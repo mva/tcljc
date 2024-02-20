@@ -8,32 +8,27 @@
 (ns tcljc.main.beachhead
   (:require [tcljc.classfile :as cf])
   (:import (java.lang.classfile ClassFile)
-           (java.lang.constant ClassDesc MethodTypeDesc)
+           (java.lang.constant ClassDesc MethodTypeDesc ConstantDescs)
            (java.lang.invoke MethodHandles$Lookup MethodType)))
 
-(let [nm-beachhead "__beachhead"
-      cd-MethodHandles (ClassDesc/of "java.lang.invoke" "MethodHandles")
-      cd-Lookup (ClassDesc/of "java.lang.invoke" "MethodHandles$Lookup")]
-  
-  (defn- beachhead ^byte* [^String pkg-name]
-    (let [bhl-xb (cf/with-xbh [xb]
-                   (-> (.invokestatic xb cd-MethodHandles "lookup"
-                                      (MethodTypeDesc/of cd-Lookup))
-                       (.areturn)))]
-      (.build
-       (ClassFile/of)
-       (ClassDesc/of pkg-name nm-beachhead)
-       (cf/with-cbh [cb]
-         (-> (cf/with-version cb)
-             (.withFlags ClassFile/ACC_PUBLIC)
-             (.withMethodBody "beachheadLookup" (MethodTypeDesc/of cd-Lookup)
-                              (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_STATIC)
-                              bhl-xb))))))
+(defn- beachhead ^byte* [^String pkg-name]
+  (let [mtd (MethodTypeDesc/of ConstantDescs/CD_MethodHandles_Lookup)]
+    (.build
+     (ClassFile/of) (ClassDesc/of pkg-name "__beachhead")
+     (cf/with-cbh [cb]
+       (-> (cf/with-version cb)
+           (.withFlags ClassFile/ACC_PUBLIC)
+           (.withMethodBody
+            "beachheadLookup" mtd
+            (bit-or ClassFile/ACC_PUBLIC ClassFile/ACC_STATIC)
+            (cf/with-xbh [xb]
+              (-> (.invokestatic xb ConstantDescs/CD_MethodHandles "lookup" mtd)
+                  (.areturn)))))))))
 
-  (defn mk-lookup-in-pkg ^MethodHandles$Lookup [^MethodHandles$Lookup rt-lookup
-                                                ^ClassLoader dyn-ld
-                                                ^String pkg-name]
-    (let [bs (beachhead pkg-name)
-          mt (MethodType/methodType MethodHandles$Lookup (.arrayType Byte/TYPE))
-          mh (.findVirtual rt-lookup (class dyn-ld) "lookupInPackage" mt)]
-      ^MethodHandles$Lookup (.invokeExact (.bindTo mh dyn-ld) bs))))
+(defn mk-lookup-in-pkg ^MethodHandles$Lookup [^MethodHandles$Lookup rt-lookup
+                                              ^ClassLoader dyn-ld
+                                              ^String pkg-name]
+  (let [bs (beachhead pkg-name)
+        mt (MethodType/methodType MethodHandles$Lookup byte*)
+        mh (.findVirtual rt-lookup (class dyn-ld) "lookupInPackage" mt)]
+    ^MethodHandles$Lookup (.invokeExact (.bindTo mh dyn-ld) bs)))

@@ -156,8 +156,8 @@
 (def ^:private ObjectArray (.arrayType Object))
 (def ^:private Class ConstantDescs/CD_Class)
 (def Record (ClassDesc/of "java.lang.Record"))
-(def String (ClassDesc/of "java.lang.String"))
-(def ^:private Exception (ClassDesc/of "java.lang.Exception"))
+(def String ConstantDescs/CD_String)
+(def ^:private Exception ConstantDescs/CD_Exception)
 (def ^:private Function (ClassDesc/of "java.util.function.Function"))
 
 (def Alias (ClassDesc/of "tinyclj.lang.Alias"))
@@ -214,8 +214,6 @@
                               (mtd ~rtype ~ptypev)))
 
 ;;; useful building blocks for descriptors:
-(def mtd-void-void (mtd void []))
-(def mtd-object-void (mtd Object []))
 (def mtd-object-object (mtd Object [Object]))
 (def mtd-object-object-object (mtd Object [Object Object]))
 (def mtd-map-object (mtd map [Object]))
@@ -259,7 +257,7 @@
                                         Exception [Object]))
 (def mhd-array-to-iseq (mhd-static [ArraySeq "create"] ArraySeq [ObjectArray]))
 
-;;; records:
+;;; Clojure records:
 (def mhd-IPersistentMap-valAt (mhd-itf-virtual [map "valAt"]
                                                Object [Object Object]))
 (def mhd-IPersistentMap-without (mhd-itf-virtual [map "without"] map [Object]))
