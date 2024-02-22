@@ -12,10 +12,10 @@
            (java.lang.invoke MethodHandles$Lookup MethodType)))
 
 (defn- beachhead ^byte* [^String pkg-name]
-  (let [mtd (MethodTypeDesc/of ConstantDescs/CD_MethodHandles_Lookup)]
-    (.build
-     (ClassFile/of) (ClassDesc/of pkg-name "__beachhead")
-     (cf/with-cbh [cb]
+  (.build
+   (ClassFile/of) (ClassDesc/of pkg-name "__beachhead")
+   (cf/with-cbh [cb]
+     (let [mtd (MethodTypeDesc/of ConstantDescs/CD_MethodHandles_Lookup)]
        (-> (cf/with-version cb)
            (.withFlags ClassFile/ACC_PUBLIC)
            (.withMethodBody
