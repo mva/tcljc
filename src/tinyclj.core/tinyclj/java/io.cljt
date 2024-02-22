@@ -19,6 +19,7 @@
               StringReader ByteArrayInputStream
               BufferedInputStream BufferedOutputStream
               CharArrayReader Closeable)
+     (clojure.lang RT)
      (java.net URI URL MalformedURLException Socket URLDecoder URLEncoder)))
 
 (def
@@ -41,12 +42,6 @@
   (-> (tinyclj.string/replace s "+" (URLEncoder/encode "+" "UTF-8"))
       (URLDecoder/decode "UTF-8")))
 
-(defn- to-url ^URL [^String s]
-  (.toURL (let [uri (URI/create s)]
-            (if (.isAbsolute uri)
-              uri
-              (.toURI (File. s))))))
-
 (extend-protocol Coercions
   nil
   (as-file [_] nil)
@@ -54,11 +49,11 @@
   
   String
   (as-file [s] (File. s))
-  (as-url [s] (to-url s))
+  (as-url [s] (RT/toUrl s))
   
   File
   (as-file [f] f)
-  (as-url [f] (.toURL (.toURI f)))
+  (as-url [f] (RT/toUrl f))
 
   URL
   (as-url [u] u)
@@ -260,9 +255,15 @@
   IOFactory
   (assoc default-streams-impl
     :make-input-stream (fn [^String x opts]
-                         (make-input-stream (to-url x) opts))
+                         (try
+                          (make-input-stream (RT/toUrl x) opts)
+                          (catch MalformedURLException e
+                            (make-input-stream (File. x) opts))))
     :make-output-stream (fn [^String x opts]
-                          (make-output-stream (to-url x) opts))))
+                          (try
+                           (make-output-stream (RT/toUrl x) opts)
+                           (catch MalformedURLException err
+                             (make-output-stream (File. x) opts))))))
 
 (extend Socket
   IOFactory
