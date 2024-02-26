@@ -593,7 +593,7 @@
              (x/loop-body)))
        (auto-rtype? ^boolean [^Arity at]
          (jb/polymorphic? (.rtype at)))
-       (parse-arity-bodies ^FnForm [^FnForm fn-form ^Env env]
+       (parse-arity-bodies ^FnForm [^FnForm fn-form ^Env env ^long x-env]
          ;; Parse all function arities in one future.  While the
          ;; smallest unit of work a single arity's body, there is
          ;; little use in moving each arity into a future of its own.
@@ -815,11 +815,12 @@
                                              (x/fn-this-name fn-form)))
                             fn-formv)
                env (add-locals env bexprv)
-               bexprv (mapv (fn ^Binding [^Binding b]
+               bexprv (mapv (fn ^Binding [^Binding b form]
                               (let [fn-form ^FnForm (x/first-arg b)
-                                    fn-form' (parse-arity-bodies fn-form env)]
+                                    fn-form' (with-error-context [x-env form]
+                                               (parse-arity-bodies fn-form env x-env))]
                                 (x/local-binding (.bref b) fn-form')))
-                            bexprv)
+                            bexprv fnv)
                body (tp/progn-expr (mapv invoke-patch-fn bexprv)
                                    (tail-forms env x-env body))]
            (x/block bexprv body)))
@@ -833,7 +834,7 @@
                                             (.mnm-path env) nil form)
                fn-form (sig/destructure-fn*-form form level unique-mnm
                                                  x-env (.ctx env))]
-           (parse-arity-bodies fn-form env)))
+           (parse-arity-bodies fn-form env x-env)))
        
        (quote-form ^Expr [form]
          (wrong/check-argc 1 form)
